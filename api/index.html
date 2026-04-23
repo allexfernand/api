@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Dashboard Sanus · Live</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f5f3;color:#1a1a1a;min-height:100vh}
+.topbar{background:#fff;border-bottom:1px solid #e5e5e2;padding:14px 28px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
+.topbar h1{font-size:15px;font-weight:500}
+.topbar-right{display:flex;align-items:center;gap:12px}
+.status{font-size:11px;padding:3px 10px;border-radius:20px;font-weight:500}
+.status.loading{background:#faeeda;color:#854f0b}
+.status.ok{background:#eaf3de;color:#3b6d11}
+.status.error{background:#fcebeb;color:#a32d2d}
+.refresh-btn{font-size:12px;padding:4px 12px;border-radius:6px;border:1px solid #e5e5e2;background:#fff;cursor:pointer;color:#555}
+.refresh-btn:hover{background:#f5f5f3}
+.container{padding:20px 28px;max-width:1200px;margin:0 auto}
+.metrics{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:20px}
+@media(max-width:900px){.metrics{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:500px){.metrics{grid-template-columns:repeat(2,1fr)}}
+.card{background:#fff;border-radius:10px;border:1px solid #eee;padding:16px 18px}
+.card .label{font-size:11px;color:#999;margin-bottom:5px;text-transform:uppercase;letter-spacing:.4px}
+.card .value{font-size:22px;font-weight:500;line-height:1}
+.card .sub{font-size:11px;color:#bbb;margin-top:5px}
+.card.s{border-left:3px solid #1a1a1a}
+.card.u{border-left:3px solid #185FA5}
+.card.v{border-left:3px solid #0F6E56}
+.chart-card{background:#fff;border-radius:10px;border:1px solid #eee;padding:18px 22px;margin-bottom:16px}
+.chart-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px}
+.chart-header h2{font-size:13px;font-weight:500}
+.chart-header .src{font-size:11px;color:#bbb}
+.filters{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:12px}
+.fbtn{font-size:11px;padding:3px 10px;border-radius:20px;border:1px solid #e5e5e2;background:#fff;color:#777;cursor:pointer;transition:all .15s}
+.fbtn:hover{background:#f5f5f3}
+.fbtn.active{background:#1a1a1a;color:#fff;border-color:#1a1a1a}
+.fbtn.blue.active{background:#185FA5;border-color:#185FA5}
+.fbtn.green.active{background:#0F6E56;border-color:#0F6E56}
+.chart-wrap{position:relative;width:100%;height:260px}
+.skeleton{background:linear-gradient(90deg,#f0f0ee 25%,#e8e8e6 50%,#f0f0ee 75%);background-size:200% 100%;animation:shimmer 1.5s infinite;border-radius:6px;height:100%}
+@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+.bottom-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px}
+@media(max-width:700px){.bottom-grid{grid-template-columns:1fr}}
+.table-card{background:#fff;border-radius:10px;border:1px solid #eee;padding:18px 22px}
+.table-card h2{font-size:13px;font-weight:500;margin-bottom:12px}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;font-size:10px;color:#bbb;font-weight:500;text-transform:uppercase;letter-spacing:.4px;padding:0 0 7px;border-bottom:1px solid #eee}
+td{padding:8px 0;border-bottom:1px solid #f5f5f3;color:#555}
+td:last-child,th:last-child{text-align:right}
+.bar-inline{display:flex;align-items:center;gap:6px;justify-content:flex-end}
+.bar-bg{width:70px;height:3px;background:#f0f0ee;border-radius:2px;overflow:hidden}
+.bar-fill{height:100%;border-radius:2px}
+.err-box{background:#fcebeb;border-radius:8px;padding:12px 16px;font-size:12px;color:#a32d2d;margin-bottom:16px;display:none}
+footer{text-align:center;padding:12px;font-size:10px;color:#ccc}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>Dashboard Sanus <span style="font-weight:400;color:#aaa">· Live</span></h1>
+  <div class="topbar-right">
+    <span class="status loading" id="status">⏳ Carregando...</span>
+    <button class="refresh-btn" onclick="loadAll()">↻ Atualizar</button>
+    <span style="font-size:11px;color:#bbb" id="last-update"></span>
+  </div>
+</div>
+
+<div class="container">
+  <div class="err-box" id="err-box"></div>
+
+  <div class="metrics">
+    <div class="card s"><div class="label">Total sessões</div><div class="value" id="m-stotal">—</div><div class="sub">botmaker</div></div>
+    <div class="card s"><div class="label">Média diária</div><div class="value" id="m-savg">—</div><div class="sub">todos os dias</div></div>
+    <div class="card s"><div class="label">Pico sessões</div><div class="value" id="m-speak">—</div><div class="sub" id="m-speakdate">—</div></div>
+    <div class="card u"><div class="label">Total usuários</div><div class="value" id="m-utotal">—</div><div class="sub">beneficiaries</div></div>
+    <div class="card u"><div class="label">Novos/dia (média)</div><div class="value" id="m-uavg">—</div><div class="sub">dias com cadastro</div></div>
+    <div class="card v"><div class="label">Base acumulada</div><div class="value" id="m-vacc">—</div><div class="sub">vidas totais</div></div>
+  </div>
+
+  <div class="chart-card">
+    <div class="chart-header"><div><h2>Sessões por dia — <code>botmaker_session</code></h2><div class="src">agrupado por <code>creation_time</code></div></div></div>
+    <div class="filters" id="sfilters"><button class="fbtn active" data-m="all">Todos</button></div>
+    <div class="chart-wrap"><div class="skeleton" id="skel-s"></div><canvas id="sessionsChart" style="display:none"></canvas></div>
+  </div>
+
+  <div class="chart-card">
+    <div class="chart-header"><div><h2>Entrada de vidas por mês — <code>beneficiaries</code></h2><div class="src">novos cadastros · <code>created_at</code></div></div></div>
+    <div class="filters" id="vfilters"><button class="fbtn green active" data-v="month">Por mês</button></div>
+    <div class="chart-wrap"><div class="skeleton" id="skel-v"></div><canvas id="vidasChart" style="display:none"></canvas></div>
+  </div>
+
+  <div class="chart-card">
+    <div class="chart-header"><div><h2>Evolução acumulada de vidas — <code>beneficiaries</code></h2><div class="src">soma cumulativa por mês</div></div></div>
+    <div class="chart-wrap" style="height:240px"><div class="skeleton" id="skel-e"></div><canvas id="evolChart" style="display:none"></canvas></div>
+  </div>
+
+  <div class="bottom-grid">
+    <div class="table-card"><h2>Top 10 — sessões</h2><table id="stop-table"><thead><tr><th>Data</th><th>Sessões</th><th>Vol.</th></tr></thead><tbody></tbody></table></div>
+    <div class="table-card"><h2>Top 10 — novas vidas</h2><table id="utop-table"><thead><tr><th>Data</th><th>Usuários</th><th>Vol.</th></tr></thead><tbody></tbody></table></div>
+  </div>
+</div>
+
+<footer>Dados ao vivo via Databricks SQL · sanus_databricks.sanus_prod · atualiza a cada abertura</footer>
+
+<script>
+const fmt=n=>Number(n).toLocaleString('pt-BR');
+const fmtDate=d=>{const[y,m,dd]=d.slice(0,10).split('-');return`${dd}/${m}/${y}`};
+const monthNames={'01':'Jan','02':'Fev','03':'Mar','04':'Abr','05':'Mai','06':'Jun','07':'Jul','08':'Ago','09':'Set','10':'Out','11':'Nov','12':'Dez'};
+
+let sessionsData=[],usersData=[];
+let sChart,vChart,eChart;
+
+function setStatus(type,msg){const el=document.getElementById('status');el.className='status '+type;el.textContent=msg;}
+function showErr(msg){const el=document.getElementById('err-box');el.style.display='block';el.textContent='⚠️ '+msg;}
+function showCanvas(s,c){document.getElementById(s).style.display='none';document.getElementById(c).style.display='block';}
+
+function updateMetrics(){
+  const sv=sessionsData.map(d=>d[1]),st=sv.reduce((a,b)=>a+b,0),sp=Math.max(...sv);
+  document.getElementById('m-stotal').textContent=fmt(st);
+  document.getElementById('m-savg').textContent=fmt(Math.round(st/sv.length));
+  document.getElementById('m-speak').textContent=fmt(sp);
+  document.getElementById('m-speakdate').textContent=fmtDate(sessionsData.find(d=>d[1]===sp)[0]);
+  const uv=usersData.map(d=>d[1]),ut=uv.reduce((a,b)=>a+b,0);
+  document.getElementById('m-utotal').textContent=fmt(ut);
+  document.getElementById('m-uavg').textContent=fmt(Math.round(ut/uv.length));
+  document.getElementById('m-vacc').textContent=fmt(ut);
+}
+
+function buildFilters(){
+  const years=[...new Set(sessionsData.map(d=>d[0].slice(0,4)))].sort();
+  const months=[...new Set(sessionsData.map(d=>d[0].slice(0,7)))].sort();
+  const sc=document.getElementById('sfilters');
+  sc.innerHTML='<button class="fbtn active" data-m="all">Todos</button>';
+  years.forEach(y=>{const b=document.createElement('button');b.className='fbtn';b.dataset.m=y;b.textContent=y;sc.appendChild(b);});
+  months.slice(-3).forEach(m=>{const[y,mm]=m.split('-');const b=document.createElement('button');b.className='fbtn';b.dataset.m=m;b.textContent=`${monthNames[mm]}/${y.slice(2)}`;sc.appendChild(b);});
+
+  const uyears=[...new Set(usersData.map(d=>d[0].slice(0,4)))].sort();
+  const vc=document.getElementById('vfilters');
+  vc.innerHTML='<button class="fbtn green active" data-v="month">Por mês</button>';
+  uyears.forEach(y=>{const b=document.createElement('button');b.className='fbtn green';b.dataset.v=y;b.textContent=y;vc.appendChild(b);});
+}
+
+function mkChart(id,type,labels,values,color,bg){
+  return new Chart(document.getElementById(id),{
+    type,
+    data:{labels,datasets:[{data:values,borderColor:color,backgroundColor:bg,borderWidth:type==='bar'?0:1.8,borderRadius:type==='bar'?4:0,pointRadius:values.length>80?0:3,pointHoverRadius:5,pointBackgroundColor:color,fill:type!=='bar',tension:0.35}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{backgroundColor:'#fff',borderColor:'#e5e5e2',borderWidth:1,titleColor:'#888',bodyColor:'#1a1a1a',callbacks:{label:c=>`${fmt(c.parsed.y)}`}}},scales:{x:{ticks:{maxRotation:45,autoSkip:true,maxTicksLimit:18,font:{size:10},color:'#bbb'},grid:{color:'rgba(0,0,0,0.04)'},border:{display:false}},y:{beginAtZero:true,ticks:{font:{size:10},color:'#bbb',callback:v=>fmt(v)},grid:{color:'rgba(0,0,0,0.04)'},border:{display:false}}}}
+  });
+}
+
+function renderSessions(f){
+  const d=f==='all'?sessionsData:sessionsData.filter(x=>x[0].startsWith(f));
+  if(sChart)sChart.destroy();
+  showCanvas('skel-s','sessionsChart');
+  sChart=mkChart('sessionsChart','line',d.map(x=>fmtDate(x[0])),d.map(x=>x[1]),'#1a1a1a','rgba(26,26,26,0.06)');
+  renderTopTable(d,'stop-table','#1a1a1a');
+}
+
+function renderVidas(mode){
+  let labels,values;
+  if(mode==='month'){
+    const m={};usersData.forEach(([d,v])=>{const k=d.slice(0,7);m[k]=(m[k]||0)+v;});
+    const e=Object.entries(m).sort((a,b)=>a[0]>b[0]?1:-1);
+    labels=e.map(([k])=>{const[y,mm]=k.split('-');return`${monthNames[mm]}/${y.slice(2)}`});
+    values=e.map(([,v])=>v);
+  } else {
+    const fd=usersData.filter(d=>d[0].startsWith(mode));
+    labels=fd.map(d=>fmtDate(d[0]));values=fd.map(d=>d[1]);
+  }
+  if(vChart)vChart.destroy();
+  showCanvas('skel-v','vidasChart');
+  vChart=mkChart('vidasChart',mode==='month'?'bar':'line',labels,values,'#185FA5',mode==='month'?'rgba(24,95,165,0.75)':'rgba(24,95,165,0.08)');
+}
+
+function renderEvol(){
+  const m={};usersData.forEach(([d,v])=>{const k=d.slice(0,7);m[k]=(m[k]||0)+v;});
+  const e=Object.entries(m).sort((a,b)=>a[0]>b[0]?1:-1);
+  let acc=0;
+  const labels=e.map(([k])=>{const[y,mm]=k.split('-');return`${monthNames[mm]}/${y.slice(2)}`});
+  const values=e.map(([,v])=>{acc+=v;return acc;});
+  if(eChart)eChart.destroy();
+  showCanvas('skel-e','evolChart');
+  eChart=mkChart('evolChart','line',labels,values,'#0F6E56','rgba(15,110,86,0.08)');
+}
+
+function renderTopTable(data,tbId,color){
+  const sorted=[...data].sort((a,b)=>b[1]-a[1]).slice(0,10);
+  const max=sorted[0]?.[1]||1;
+  document.querySelector(`#${tbId} tbody`).innerHTML=sorted.map(([d,v])=>`
+    <tr><td>${fmtDate(d)}</td><td><strong>${fmt(v)}</strong></td>
+    <td><div class="bar-inline"><div class="bar-bg"><div class="bar-fill" style="width:${Math.round(v/max*100)}%;background:${color}"></div></div></div></td></tr>`).join('');
+}
+
+document.getElementById('sfilters').addEventListener('click',e=>{
+  const b=e.target.closest('.fbtn');if(!b)return;
+  document.querySelectorAll('#sfilters .fbtn').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active');renderSessions(b.dataset.m);
+});
+document.getElementById('vfilters').addEventListener('click',e=>{
+  const b=e.target.closest('.fbtn');if(!b)return;
+  document.querySelectorAll('#vfilters .fbtn').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active');renderVidas(b.dataset.v);
+});
+
+async function loadAll(){
+  setStatus('loading','⏳ Carregando...');
+  document.getElementById('err-box').style.display='none';
+  try{
+    const res=await fetch('/api/data');
+    if(!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json=await res.json();
+    if(json.error) throw new Error(json.error);
+    sessionsData=json.sessions;
+    usersData=json.users;
+    updateMetrics();
+    buildFilters();
+    renderSessions('all');
+    renderVidas('month');
+    renderEvol();
+    renderTopTable(usersData,'utop-table','#185FA5');
+    setStatus('ok','✓ Dados ao vivo');
+    document.getElementById('last-update').textContent='Atualizado: '+new Date().toLocaleTimeString('pt-BR');
+  }catch(err){
+    setStatus('error','✗ Erro');
+    showErr(err.message);
+  }
+}
+
+loadAll();
+</script>
+</body>
+</html>
