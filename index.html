@@ -102,8 +102,8 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
 
 <!-- Tabs -->
 <div class="tabs">
-  <div class="tab active" data-tab="demografica">Perfil Populacional</div>
-  <div class="tab" data-tab="perfil">Análise Demográfica</div>
+  <div class="tab active" data-tab="perfil">Perfil Populacional</div>
+  <div class="tab" data-tab="demografica">Análise Demográfica</div>
 </div>
 
 <!-- Filter bar -->
@@ -122,8 +122,36 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
 <div class="container">
   <div class="err-box" id="err-box"></div>
 
+  <!-- Tab: Perfil Populacional -->
+  <div class="tab-content active" id="tab-perfil">
+    <div style="text-align:center;padding:80px 20px;color:#bbb">
+      <div style="font-size:40px;margin-bottom:12px">🏗️</div>
+      <div style="font-size:16px;font-weight:500;color:#888">Em construção</div>
+      <div style="font-size:13px;margin-top:6px">Os dados de perfil populacional serão adicionados em breve.</div>
+    </div>
+  </div>
+
   <!-- Tab: Análise Demográfica -->
-  <div class="tab-content active" id="tab-demografica">
+  <div class="tab-content" id="tab-demografica">
+
+    <!-- Bullet: Total de Vidas -->
+    <div style="background:#fff;border-radius:10px;border:1px solid #e8e8e8;padding:18px 24px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.04);display:flex;align-items:center;gap:24px;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:12px">
+        <div style="width:44px;height:44px;border-radius:50%;background:linear-gradient(135deg,#00A69C,#2E7D9A);display:flex;align-items:center;justify-content:center;font-size:20px">🫀</div>
+        <div>
+          <div style="font-size:11px;color:#999;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Total de Vidas Cadastradas</div>
+          <div style="font-size:32px;font-weight:700;color:#00A69C;line-height:1" id="bullet-vidas">—</div>
+          <div style="font-size:11px;color:#bbb;margin-top:3px">beneficiaries · acumulado desde mai/2022</div>
+        </div>
+      </div>
+      <div style="flex:1;min-width:200px">
+        <div style="font-size:11px;color:#999;margin-bottom:6px">Progresso acumulado</div>
+        <div style="background:#f0f0f0;border-radius:10px;height:10px;overflow:hidden">
+          <div id="bullet-bar" style="height:100%;border-radius:10px;background:linear-gradient(90deg,#00A69C,#2E7D9A);width:0%;transition:width 1s ease"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:10px;color:#bbb;margin-top:4px"><span>0</span><span id="bullet-peak-label">—</span></div>
+      </div>
+    </div>
 
     <div class="metrics">
       <div class="card s"><div class="label">Total sessões</div><div class="value" id="m-stotal">—</div><div class="sub">botmaker</div></div>
@@ -328,7 +356,13 @@ async function loadAll(fetchOrgs=true){
       });
     }
 
-    updateMetrics();
+    // Bullet de vidas
+  const uv=usersData.map(d=>d[1]),ut=uv.reduce((a,b)=>a+b,0);
+  document.getElementById('bullet-vidas').textContent=fmt(ut);
+  const peakMonth=ut; // usa total como referência de 100%
+  document.getElementById('bullet-bar').style.width='100%';
+  document.getElementById('bullet-peak-label').textContent=fmt(ut)+' vidas';
+  
     buildSFilters();
     buildVFilters();
     renderSessions('all');
