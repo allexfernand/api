@@ -289,6 +289,8 @@ document.querySelectorAll('.tab').forEach(t => {
 // --- Filtros demográficos ---
 document.getElementById('group-select').addEventListener('change', e => {
   currentGroup = e.target.value; updateFilterInfo(); loadAll(false);
+  // se estiver na aba agendamentos, recarrega também
+  if (document.querySelector('.tab.active')?.dataset.tab === 'agendamentos') loadAppointments();
 });
 document.getElementById('type-select').addEventListener('change', e => {
   currentType = e.target.value; updateFilterInfo(); loadAll(false);
@@ -407,6 +409,7 @@ async function loadAppointments() {
   const meses = [...selectedMonths].sort();
   const p = new URLSearchParams();
   if (meses.length > 0) p.set('meses', meses.join(','));
+  if (currentGroup)    p.set('group_name', currentGroup);
   const qs = p.toString() ? '?' + p.toString() : '';
 
   // Carrega bullet e tipos em paralelo
