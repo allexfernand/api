@@ -215,10 +215,21 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
 
   <!-- Tab: Agendamentos -->
   <div class="tab-content" id="tab-agendamentos">
-    <div style="text-align:center;padding:80px 20px;color:#bbb">
-      <div style="font-size:40px;margin-bottom:12px">📅</div>
-      <div style="font-size:16px;font-weight:500;color:#888">Em construção</div>
-      <div style="font-size:13px;margin-top:6px">Os dados de agendamentos serão adicionados em breve.</div>
+
+    <!-- Bullet total agendamentos -->
+    <div class="card-box" style="display:flex;align-items:center;gap:20px;padding:20px 28px">
+      <div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#6366f1,#4f46e5);display:flex;align-items:center;justify-content:center">
+        <i class="fa-solid fa-calendar-check" style="font-size:20px;color:#fff"></i>
+      </div>
+      <div>
+        <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;margin-bottom:3px">Total de Agendamentos</div>
+        <div style="font-size:34px;font-weight:700;color:#6366f1;letter-spacing:-1px;line-height:1" id="bullet-agend">—</div>
+        <div style="font-size:11px;color:#cbd5e1;margin-top:3px" id="bullet-agend-periodo">Concluídos com sucesso · todos os períodos</div>
+      </div>
+    </div>
+
+    <div style="text-align:center;padding:60px 20px;color:#bbb">
+      <div style="font-size:13px;margin-top:6px">Mais dados de agendamentos serão adicionados em breve.</div>
     </div>
   </div>
 
@@ -240,8 +251,10 @@ document.querySelectorAll('.tab').forEach(t => {
     document.querySelectorAll('.tab-content').forEach(x => x.classList.remove('active'));
     t.classList.add('active');
     document.getElementById('tab-' + t.dataset.tab).classList.add('active');
-    // mostra filtro período só na aba agendamentos
-    document.getElementById('filter-periodo').style.display = t.dataset.tab === 'agendamentos' ? 'flex' : 'none';
+    // mostra filtro período só na aba agendamentos e carrega dados
+    const isAgend = t.dataset.tab === 'agendamentos';
+    document.getElementById('filter-periodo').style.display = isAgend ? 'flex' : 'none';
+    if (isAgend) loadAppointments();
   });
 });
 
@@ -267,12 +280,14 @@ function updateFilterInfo() {
 
 function clearFilters() {
   currentGroup = ''; currentType = '';
-  document.getElementById('group-select').value = '';
-  document.getElementById('type-select').value  = '';
+  document.getElementById('group-select').value   = '';
+  document.getElementById('type-select').value    = '';
   document.getElementById('periodo-inicio').value = '';
   document.getElementById('periodo-fim').value    = '';
   document.getElementById('filter-info').textContent = '';
+  document.getElementById('bullet-agend-periodo').textContent = 'Concluídos com sucesso · todos os períodos';
   loadAll(false);
+  loadAppointments();
 }
 
 function buildQS() {
@@ -385,7 +400,34 @@ function renderAgeGroups(data) {
   });
 }
 
-// --- Cargas ---
+// --- Agendamentos ---
+async function loadAppointments() {
+  const inicio = document.getElementById('periodo-inicio').value;
+  const fim    = document.getElementById('periodo-fim').value;
+  const p = new URLSearchParams();
+  if (inicio) p.set('inicio', inicio);
+  if (fim)    p.set('fim', fim);
+  const qs = p.toString() ? '?' + p.toString() : '';
+
+  document.getElementById('bullet-agend').textContent = '—';
+
+  const d = await safeGet('/api/appointments' + qs);
+  if (d && !d.error) {
+    document.getElementById('bullet-agend').textContent = fmt(d.total);
+    const label = inicio && fim
+      ? `Concluídos com sucesso · ${inicio} até ${fim}`
+      : inicio ? `Concluídos com sucesso · a partir de ${inicio}`
+      : fim    ? `Concluídos com sucesso · até ${fim}`
+      : 'Concluídos com sucesso · todos os períodos';
+    document.getElementById('bullet-agend-periodo').textContent = label;
+  } else {
+    document.getElementById('bullet-agend').textContent = 'Erro';
+  }
+}
+
+// Listener filtro período
+document.getElementById('periodo-inicio').addEventListener('change', loadAppointments);
+document.getElementById('periodo-fim').addEventListener('change', loadAppointments);
 async function safeGet(url) {
   try { const r = await fetch(url); if (!r.ok) throw new Error(r.status); return await r.json(); }
   catch (e) { return null; }
