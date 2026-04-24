@@ -42,11 +42,12 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
 
   const groupName = req.query.group_name || null;
-  // Usa name_economic_group quando existir; senão, cai pro name da organização
-  const groupExpr = `COALESCE(NULLIF(TRIM(o.name_economic_group), ''), o.name)`;
+  // Filtro de vidas: quando uma matriz é selecionada, considera todas as organizações
+  // cujo matriz_id aponta pra essa matriz (pelo nome)
   const groupFilter = groupName
     ? `INNER JOIN sanus_databricks.sanus_prod.organizations o ON b.organization_id = o.id
-       WHERE b.created_at IS NOT NULL AND ${groupExpr} = '${escape(groupName)}'`
+       INNER JOIN sanus_databricks.sanus_prod.organizations matriz ON o.matriz_id = matriz.id
+       WHERE b.created_at IS NOT NULL AND matriz.name = '${escape(groupName)}'`
     : `WHERE b.created_at IS NOT NULL`;
 
   try {
@@ -62,16 +63,20 @@ export default async function handler(req, res) {
         ${groupFilter}
         GROUP BY 1 ORDER BY 1
       `),
-      // Grupos econômicos — usa name_economic_group quando existir, senão cai pro name
+      // Matrizes ativas — organizações cujo id é referenciado como matriz_id por alguma outra
       !groupName ? runQuery(wh.id, `
         SELECT
-          COALESCE(NULLIF(TRIM(name_economic_group), ''), name) AS grupo,
-          COUNT(*) AS total_orgs
-        FROM sanus_databricks.sanus_prod.organizations
-        WHERE COALESCE(NULLIF(TRIM(name_economic_group), ''), name) IS NOT NULL
-          AND TRIM(COALESCE(NULLIF(TRIM(name_economic_group), ''), name)) != ''
-        GROUP BY COALESCE(NULLIF(TRIM(name_economic_group), ''), name)
-        ORDER BY grupo ASC
+          o1.name AS grupo,
+          (SELECT COUNT(*) FROM sanus_databricks.sanus_prod.organizations o3 WHERE o3.matriz_id = o1.id) AS total_filiais
+        FROM sanus_databricks.sanus_prod.organizations o1
+        WHERE o1.active = true
+          AND o1.name IS NOT NULL
+          AND o1.id IN (
+            SELECT o2.matriz_id
+            FROM sanus_databricks.sanus_prod.organizations o2
+            WHERE o2.matriz_id IS NOT NULL
+          )
+        ORDER BY o1.name ASC
       `) : Promise.resolve(null),
     ]);
 
