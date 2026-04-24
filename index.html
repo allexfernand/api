@@ -75,14 +75,20 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
         <i class="fa-solid fa-chevron-down" style="font-size:10px;color:#94a3b8"></i>
       </button>
       <div id="periodo-dropdown" style="display:none;position:absolute;top:36px;left:0;background:#fff;border:1px solid #e2e8f0;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.1);z-index:999;min-width:280px;padding:8px">
-        <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 8px 8px;border-bottom:1px solid #f1f5f9;margin-bottom:6px">
-          <span style="font-size:11px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.5px">Selecione os meses</span>
+                  <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 8px 8px;border-bottom:1px solid #f1f5f9;margin-bottom:6px">
+          <span style="font-size:11px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.5px">Últimos 12 meses</span>
           <div style="display:flex;gap:8px">
-            <button onclick="selectAllPeriodo()" style="font-size:11px;color:#00A69C;background:none;border:none;cursor:pointer;font-weight:600">Todos</button>
+            <button onclick="selectAllPeriodo()" style="font-size:11px;color:#6366f1;background:none;border:none;cursor:pointer;font-weight:600">Selecionar tudo</button>
             <button onclick="clearPeriodo()" style="font-size:11px;color:#94a3b8;background:none;border:none;cursor:pointer">Limpar</button>
           </div>
         </div>
         <div id="periodo-options" style="max-height:240px;overflow-y:auto;display:grid;grid-template-columns:1fr 1fr;gap:2px"></div>
+        <div style="border-top:1px solid #f1f5f9;margin-top:6px;padding-top:6px">
+          <label style="display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:6px;cursor:pointer;font-size:12px;color:#6366f1;font-weight:600">
+            <input type="checkbox" id="cb-tudo" style="accent-color:#6366f1" onchange="onTudoChange(this)"/>
+            Tudo (sem filtro de período)
+          </label>
+        </div>
       </div>
     </div>
   </div>
@@ -304,7 +310,7 @@ function buildPeriodoOptions() {
   const container = document.getElementById('periodo-options');
   if (container.children.length > 0) return;
   const now = new Date();
-  for (let i = 0; i < 24; i++) {
+  for (let i = 0; i < 12; i++) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
     const val = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
     const mm  = String(d.getMonth()+1).padStart(2,'0');
@@ -339,6 +345,7 @@ document.addEventListener('click', e => {
 });
 
 function selectAllPeriodo() {
+  document.getElementById('cb-tudo').checked = false;
   document.querySelectorAll('#periodo-options input[type=checkbox]').forEach(cb => {
     cb.checked = true; selectedMonths.add(cb.value);
   });
@@ -346,8 +353,22 @@ function selectAllPeriodo() {
 }
 
 function clearPeriodo() {
+  document.getElementById('cb-tudo').checked = false;
   document.querySelectorAll('#periodo-options input[type=checkbox]').forEach(cb => { cb.checked = false; });
   selectedMonths.clear(); updatePeriodoLabel();
+}
+
+function onTudoChange(el) {
+  if (el.checked) {
+    // desmarca meses individuais e usa "tudo"
+    document.querySelectorAll('#periodo-options input[type=checkbox]').forEach(cb => { cb.checked = false; });
+    selectedMonths.clear();
+    document.getElementById('periodo-label').textContent = 'Tudo';
+    loadAppointments();
+  } else {
+    updatePeriodoLabel();
+    loadAppointments();
+  }
 }
 
 function updatePeriodoLabel() {
