@@ -37,13 +37,15 @@ export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   if (req.method === "OPTIONS") return res.status(200).end();
 
-  const meses = req.query.meses
-    ? req.query.meses.split(',').filter(m => /^\d{4}-\d{2}$/.test(m))
-    : [];
+  const meses     = req.query.meses ? req.query.meses.split(',').filter(m => /^\d{4}-\d{2}$/.test(m)) : [];
+  const groupName = req.query.group_name || null;
 
-  // Usa data_do_agendamento (timestamp) para filtrar por mês/ano
   const periodoFilter = meses.length > 0
     ? `AND DATE_FORMAT(data_do_agendamento, 'yyyy-MM') IN (${meses.map(m => `'${m}'`).join(',')})`
+    : '';
+
+  const groupFilter = groupName
+    ? `AND grupo_economico LIKE '%${groupName.replace(/'/g, "''")}'`
     : '';
 
   try {
