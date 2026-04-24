@@ -277,17 +277,7 @@ function renderTopTable(data,tbId,color){
     <td><div class="bar-inline"><div class="bar-bg"><div class="bar-fill" style="width:${Math.round(v/max*100)}%;background:${color}"></div></div></div></td></tr>`).join('');
 }
 
-// --- Filter events ---
-document.getElementById('sfilters').addEventListener('click',e=>{
-  const b=e.target.closest('.fbtn');if(!b)return;
-  document.querySelectorAll('#sfilters .fbtn').forEach(x=>x.classList.remove('active'));
-  b.classList.add('active');renderSessions(b.dataset.m);
-});
-document.getElementById('vfilters').addEventListener('click',e=>{
-  const b=e.target.closest('.fbtn');if(!b)return;
-  document.querySelectorAll('#vfilters .fbtn').forEach(x=>x.classList.remove('active'));
-  b.classList.add('active');renderVidas(b.dataset.v);
-});
+
 
 // Filtro de empresa
 document.getElementById('org-select').addEventListener('change',e=>{
