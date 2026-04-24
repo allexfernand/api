@@ -289,6 +289,55 @@ function renderEvol(){
   });
 }
 
+let companiesData=[];
+
+function filterCompanies(){
+  const q=document.getElementById('company-search').value.toLowerCase();
+  const filtered=companiesData.filter(c=>c.empresa.toLowerCase().includes(q));
+  renderCompaniesTable(filtered);
+}
+
+function renderCompaniesTable(data){
+  const total=data.reduce((a,c)=>a+c.total,0);
+  const grandTotal=companiesData.reduce((a,c)=>a+c.total,0);
+  const tbody=document.getElementById('companies-tbody');
+  tbody.innerHTML=data.slice(0,100).map((c,i)=>{
+    const pct=grandTotal>0?((c.total/grandTotal)*100).toFixed(1):'0';
+    const barW=grandTotal>0?Math.round((c.total/companiesData[0].total)*100):0;
+    return`<tr style="border-bottom:1px solid #f8fafc;transition:background .1s" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
+      <td style="padding:9px 12px;color:#cbd5e1;font-size:11px;font-weight:600">${i+1}</td>
+      <td style="padding:9px 12px;color:#334155;font-weight:500">${c.empresa}</td>
+      <td style="padding:9px 12px;text-align:right;font-weight:700;color:#1e293b">${fmt(c.total)}</td>
+      <td style="padding:9px 12px;text-align:right;color:#64748b;font-size:12px">${pct}%</td>
+      <td style="padding:9px 12px">
+        <div style="background:#f1f5f9;border-radius:4px;height:6px;overflow:hidden">
+          <div style="height:100%;width:${barW}%;background:linear-gradient(90deg,#00A69C,#2E7D9A);border-radius:4px;transition:width .3s"></div>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+  const footer=document.getElementById('companies-footer');
+  if(footer) footer.textContent=`Exibindo ${Math.min(data.length,100)} de ${data.length} empresas`;
+}
+
+async function loadCompanies(){
+  document.getElementById('companies-loading').style.display='block';
+  document.getElementById('companies-wrap').style.display='none';
+  try{
+    const url='/api/companies'+(currentGroup?`?group_name=${encodeURIComponent(currentGroup)}`:'');
+    const res=await fetch(url);
+    if(!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json=await res.json();
+    if(json.error) throw new Error(json.error);
+    companiesData=json.companies||[];
+    document.getElementById('companies-loading').style.display='none';
+    document.getElementById('companies-wrap').style.display='block';
+    renderCompaniesTable(companiesData);
+  }catch(e){
+    document.getElementById('companies-loading').textContent='⚠️ Erro ao carregar empresas: '+e.message;
+  }
+}
+
 function renderDemographics(demo){
   console.log('Demografia recebida:', demo);
   const d=demo||{};
@@ -382,6 +431,7 @@ async function loadAll(fetchOrgs=true){
 
     renderDemographics(demo);
     renderEvol();
+    loadCompanies();
 
     setStatus('ok','✓ Dados ao vivo');
     const lu=document.getElementById('last-upd');
