@@ -4,6 +4,7 @@
     "api/demographics.js": { "maxDuration": 60 },
     "api/companies.js":    { "maxDuration": 60 },
     "api/agegroups.js":    { "maxDuration": 60 },
-    "api/appointments.js": { "maxDuration": 60 }
+    "api/appointments.js": { "maxDuration": 60 },
+    "api/solicitations.js": { "maxDuration": 60 }
   }
 }
