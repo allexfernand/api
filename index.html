@@ -279,12 +279,25 @@ async function loadAll(fetchOrgs=true){
 
   try{
     const url='/api/data'+(currentGroup?`?group_name=${encodeURIComponent(currentGroup)}`:'');
-    const res=await fetch(url);
+    const demoUrl='/api/demographics'+(currentGroup?`?group_name=${encodeURIComponent(currentGroup)}`:'');
+
+    // Faz as 2 requisições em paralelo (cada uma respeita o limite de 10s do Vercel)
+    const [res, demoRes]=await Promise.all([
+      fetch(url),
+      fetch(demoUrl).catch(e=>({ok:false,err:e}))
+    ]);
+
     if(!res.ok) throw new Error(`HTTP ${res.status}`);
     const json=await res.json();
     if(json.error) throw new Error(json.error);
 
     usersData=json.users||[];
+
+    // Demografia (se falhar, não quebra)
+    let demo=null;
+    if(demoRes && demoRes.ok){
+      try { demo=await demoRes.json(); } catch(e){ demo=null; }
+    }
 
     if(fetchOrgs && Array.isArray(json.groups)){
       const sel=document.getElementById('group-select');
