@@ -37,16 +37,11 @@ export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   if (req.method === "OPTIONS") return res.status(200).end();
 
-  const inicio = req.query.inicio || null;
-  const fim    = req.query.fim    || null;
+  const meses = req.query.meses ? req.query.meses.split(',').filter(m => /^\d{4}-\d{2}$/.test(m)) : [];
 
-  // Filtro de período opcional
-  const periodoFilter = inicio && fim
-    ? `AND data_agendamento BETWEEN '${inicio}' AND '${fim}'`
-    : inicio
-    ? `AND data_agendamento >= '${inicio}'`
-    : fim
-    ? `AND data_agendamento <= '${fim}'`
+  // Filtro de período: lista de meses selecionados
+  const periodoFilter = meses.length > 0
+    ? `AND DATE_FORMAT(data_agendamento, 'yyyy-MM') IN (${meses.map(m => `'${m}'`).join(',')})`
     : '';
 
   try {
