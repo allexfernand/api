@@ -34,20 +34,22 @@ const getCell = (cell) => {
 const toInt = (v) => { const n = parseInt(getCell(v)); return Number.isFinite(n) ? n : 0; };
 const toDate = (v) => { const raw = getCell(v); return raw ? String(raw).slice(0, 10) : ""; };
 
-function buildGroupFilter(groupName) {
-  return groupName
-    ? `WHERE b.created_at IS NOT NULL
-       AND b.organization_id IN (
-         SELECT id FROM sanus_databricks.sanus_prod.organizations
-         WHERE name = '${escape(groupName)}'
-         UNION
-         SELECT id FROM sanus_databricks.sanus_prod.organizations
-         WHERE matriz_id = (
-           SELECT id FROM sanus_databricks.sanus_prod.organizations
-           WHERE name = '${escape(groupName)}' LIMIT 1
-         )
-       )`
-    : `WHERE b.created_at IS NOT NULL`;
+function buildFilters(groupName, typeFilter) {
+  const conditions = [`b.created_at IS NOT NULL`];
+  if (groupName) {
+    conditions.push(`b.organization_id IN (
+      SELECT id FROM sanus_databricks.sanus_prod.organizations WHERE name = '${escape(groupName)}'
+      UNION
+      SELECT id FROM sanus_databricks.sanus_prod.organizations
+      WHERE matriz_id = (SELECT id FROM sanus_databricks.sanus_prod.organizations WHERE name = '${escape(groupName)}' LIMIT 1)
+    )`);
+  }
+  if (typeFilter === 'TITULAR') {
+    conditions.push(`UPPER(TRIM(COALESCE(b.type_kinship,''))) = 'TITULAR'`);
+  } else if (typeFilter === 'DEPENDENTE') {
+    conditions.push(`UPPER(TRIM(COALESCE(b.type_kinship,''))) != 'TITULAR'`);
+  }
+  return `WHERE ${conditions.join(' AND ')}`;
 }
 
 export default async function handler(req, res) {
@@ -57,7 +59,8 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
 
   const groupName = req.query.group_name || null;
-  const groupFilter = buildGroupFilter(groupName);
+  const typeFilter = req.query.type || null;
+  const groupFilter = buildFilters(groupName, typeFilter);
 
   try {
     const { warehouses = [] } = await dbFetch("/api/2.0/sql/warehouses");
@@ -65,14 +68,12 @@ export default async function handler(req, res) {
     if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
 
     const [userRows, groupRows] = await Promise.all([
-      // Vidas por dia
       runQuery(wh.id, `
         SELECT DATE_TRUNC('DAY', b.created_at) AS dia, COUNT(DISTINCT b.id) AS n
         FROM sanus_databricks.sanus_prod.beneficiaries b
         ${groupFilter}
         GROUP BY 1 ORDER BY 1
       `),
-      // Matrizes ativas (só na carga sem filtro)
       !groupName ? runQuery(wh.id, `
         SELECT o1.name AS grupo, COUNT(filiais.id) AS total_filiais
         FROM sanus_databricks.sanus_prod.organizations o1
@@ -96,11 +97,7 @@ export default async function handler(req, res) {
         })).filter((g) => g.economic_group)
       : null;
 
-    res.status(200).json({
-      users: parse(userRows),
-      groups,
-      updatedAt: new Date().toISOString(),
-    });
+    res.status(200).json({ users: parse(userRows), groups, updatedAt: new Date().toISOString() });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
