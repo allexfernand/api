@@ -56,6 +56,7 @@ export default async function handler(req, res) {
       FROM sanus_databricks.sanus_prod.atendimento_gold_live
       WHERE motivo = 'Concluído com sucesso'
         ${periodoFilter}
+        ${groupFilter}
     `);
 
     res.status(200).json({ total: toInt(rows[0]?.[0]) });
