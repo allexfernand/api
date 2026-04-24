@@ -193,10 +193,12 @@ function clearFilters(){
 
 async function loadAll(fetchOrgs=true){
   setStatus('loading','⏳ Buscando dados...');
-  document.getElementById('err-box').style.display='none';
-  // volta skeleton
-  document.getElementById('skel-e').style.display='block';
-  document.getElementById('evolChart').style.display='none';
+  const errBox=document.getElementById('err-box');
+  if(errBox) errBox.style.display='none';
+  const skel=document.getElementById('skel-e');
+  const cv=document.getElementById('evolChart');
+  if(skel) skel.style.display='block';
+  if(cv) cv.style.display='none';
 
   try{
     const url='/api/data'+(currentOrg?`?org_id=${encodeURIComponent(currentOrg)}`:'');
@@ -207,29 +209,33 @@ async function loadAll(fetchOrgs=true){
 
     usersData=json.users||[];
 
-    // Popula dropdown de orgs só na primeira carga
-    if(fetchOrgs && json.organizations){
+    if(fetchOrgs && Array.isArray(json.organizations)){
       const sel=document.getElementById('org-select');
-      sel.innerHTML='<option value="">(Todas as empresas)</option>';
-      json.organizations.forEach(o=>{
-        const opt=document.createElement('option');
-        opt.value=o.id;
-        opt.textContent=o.name;
-        sel.appendChild(opt);
-      });
+      if(sel){
+        sel.innerHTML='<option value="">(Todas as empresas)</option>';
+        json.organizations.forEach(o=>{
+          if(!o||!o.id||!o.name) return;
+          const opt=document.createElement('option');
+          opt.value=o.id;
+          opt.textContent=o.name;
+          sel.appendChild(opt);
+        });
+      }
     }
 
-    // Bullet de vidas
     const ut=usersData.reduce((a,[,v])=>a+v,0);
-    document.getElementById('bullet-vidas').textContent=fmt(ut);
+    const bv=document.getElementById('bullet-vidas');
+    if(bv) bv.textContent=fmt(ut);
 
     renderEvol();
 
     setStatus('ok','✓ Dados ao vivo');
-    document.getElementById('last-upd').textContent='Atualizado: '+new Date().toLocaleTimeString('pt-BR');
+    const lu=document.getElementById('last-upd');
+    if(lu) lu.textContent='Atualizado: '+new Date().toLocaleTimeString('pt-BR');
   }catch(err){
+    console.error('loadAll error:',err);
     setStatus('error','✗ Erro');
-    showErr(err.message);
+    showErr(err.message+' — '+(err.stack||'').split('\n')[1]);
   }
 }
 
