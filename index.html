@@ -47,6 +47,17 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .err-box{background:#fcebeb;border-radius:8px;padding:12px 16px;font-size:12px;color:#a32d2d;margin-bottom:16px;display:none}
 .tab-content{display:none}.tab-content.active{display:block}
 footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
+
+/* Demografia */
+.demo-card{border-right:1px solid #f0f0f0}
+.demo-card:last-child{border-right:none}
+.demo-icon{width:56px;height:56px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:26px;margin:0 auto 10px}
+.demo-value{font-size:26px;font-weight:700;color:#1a1a1a;line-height:1;margin-bottom:6px}
+.demo-label{font-size:11px;color:#888;font-weight:500}
+@media(max-width:900px){
+  #demo-grid{grid-template-columns:repeat(2,1fr)!important}
+  .demo-card[style*="span 2"]{grid-column:span 2!important}
+}
 </style>
 </head>
 <body>
@@ -103,6 +114,72 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
           <div style="font-size:32px;font-weight:700;color:#00A69C;line-height:1" id="bullet-vidas">—</div>
           <div style="font-size:11px;color:#bbb;margin-top:3px">beneficiaries · acumulado desde mai/2022</div>
         </div>
+      </div>
+    </div>
+
+    <!-- Demografia -->
+    <div style="background:#fff;border-radius:10px;border:1px solid #e8e8e8;padding:24px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.04)">
+      <h2 style="font-size:14px;font-weight:600;margin-bottom:20px">Perfil demográfico</h2>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:20px" id="demo-grid">
+
+        <div class="demo-card" style="text-align:center;padding:16px 10px">
+          <div class="demo-icon" style="background:#e8e8e8">👤</div>
+          <div class="demo-value" id="d-total">—</div>
+          <div class="demo-label">Qtd Vidas</div>
+        </div>
+
+        <div class="demo-card" style="text-align:center;padding:16px 10px">
+          <div class="demo-icon" style="background:#f0f0f0">📅</div>
+          <div class="demo-value" id="d-idade">—</div>
+          <div class="demo-label">Idade Média</div>
+        </div>
+
+        <div class="demo-card" style="text-align:center;padding:16px 10px">
+          <div class="demo-icon" style="background:#f0f0f0">🗓️</div>
+          <div class="demo-value" id="d-49">—</div>
+          <div class="demo-label">&gt; 49 anos</div>
+        </div>
+
+        <div class="demo-card" style="text-align:center;padding:16px 10px">
+          <div class="demo-icon" style="background:#f5e9e9">👩</div>
+          <div class="demo-value" id="d-mulheres-19-38">—</div>
+          <div class="demo-label">Mulheres 19 a 38 anos</div>
+        </div>
+
+        <div class="demo-card" style="text-align:center;padding:16px 10px;grid-column:span 2">
+          <div class="demo-icon" style="background:#eef3f7">👨‍👩‍👧</div>
+          <div style="display:flex;justify-content:center;gap:30px;align-items:baseline">
+            <div>
+              <div class="demo-value" id="d-dep">—</div>
+              <div class="demo-label">Dependente <span id="d-dep-pct" style="color:#00A69C;font-weight:600">—</span></div>
+            </div>
+            <div style="color:#ddd;font-size:20px">|</div>
+            <div>
+              <div class="demo-value" id="d-tit">—</div>
+              <div class="demo-label">Titular <span id="d-tit-pct" style="color:#00A69C;font-weight:600">—</span></div>
+            </div>
+          </div>
+          <div style="margin-top:10px;font-size:12px;color:#888">
+            <strong id="d-ratio" style="color:#00A69C">—</strong> dependentes por titular
+          </div>
+        </div>
+
+        <div class="demo-card" style="text-align:center;padding:16px 10px;grid-column:span 2">
+          <div style="display:flex;justify-content:center;gap:20px;align-items:center">
+            <div style="width:36px;height:36px;border-radius:50%;background:#f5d5dd;display:flex;align-items:center;justify-content:center;font-size:18px">♀</div>
+            <div>
+              <div class="demo-value" id="d-fem">—</div>
+              <div class="demo-label">Feminino <span id="d-fem-pct" style="color:#E788A5;font-weight:600">—</span></div>
+            </div>
+            <div style="color:#ddd;font-size:20px">|</div>
+            <div>
+              <div class="demo-value" id="d-masc">—</div>
+              <div class="demo-label">Masculino <span id="d-masc-pct" style="color:#5BA9D1;font-weight:600">—</span></div>
+            </div>
+            <div style="width:36px;height:36px;border-radius:50%;background:#d9e9f3;display:flex;align-items:center;justify-content:center;font-size:18px">♂</div>
+          </div>
+        </div>
+
       </div>
     </div>
 
@@ -212,20 +289,15 @@ async function loadAll(fetchOrgs=true){
     if(fetchOrgs && Array.isArray(json.groups)){
       const sel=document.getElementById('group-select');
       if(sel){
-        // agrupa por economic_group (pode ter várias matrizes por grupo)
-        const byGroup={};
-        json.groups.forEach(g=>{
-          if(!g.economic_group) return;
-          if(!byGroup[g.economic_group]) byGroup[g.economic_group]={total:0,matrizes:0};
-          byGroup[g.economic_group].total+=g.total_filiais;
-          byGroup[g.economic_group].matrizes++;
-        });
-        const ordered=Object.entries(byGroup).sort((a,b)=>b[1].total-a[1].total);
+        // ordenação alfabética (case-insensitive, pt-BR)
+        const ordered=[...json.groups].sort((a,b)=>
+          a.economic_group.localeCompare(b.economic_group,'pt-BR',{sensitivity:'base'})
+        );
         sel.innerHTML='<option value="">(Todos os grupos)</option>';
-        ordered.forEach(([name,info])=>{
+        ordered.forEach(g=>{
           const opt=document.createElement('option');
-          opt.value=name;
-          opt.textContent=`${name} (${info.total} filiais)`;
+          opt.value=g.economic_group;
+          opt.textContent=g.economic_group;
           sel.appendChild(opt);
         });
       }
