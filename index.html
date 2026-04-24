@@ -297,7 +297,7 @@ function renderEvol() {
   eChart = new Chart(cv, {
     type: 'line',
     data: { labels, datasets: [{ data: values, borderColor: '#00A69C', backgroundColor: 'rgba(0,166,156,0.08)', borderWidth: 2, pointRadius: 3, pointBackgroundColor: '#00A69C', fill: true, tension: 0.35 }] },
-    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { backgroundColor: '#fff', borderColor: '#e2e8f0', borderWidth: 1, callbacks: { label: c => `${fmt(c.parsed.y)} vidas` } } }, scales: { x: { ticks: { font: { size: 10 }, color: '#94a3b8', maxRotation: 45, autoSkip: true, maxTicksLimit: 14 }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } }, y: { beginAtZero: false, ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => fmt(v) }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } } } }
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { backgroundColor: '#1e293b', borderColor: '#334155', borderWidth: 1, titleColor: '#94a3b8', bodyColor: '#f1f5f9', callbacks: { label: c => `${fmt(c.parsed.y)} vidas` } } }, scales: { x: { ticks: { font: { size: 10 }, color: '#94a3b8', maxRotation: 45, autoSkip: true, maxTicksLimit: 14 }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } }, y: { beginAtZero: false, ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => fmt(v) }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } } } }
   });
 }
 
