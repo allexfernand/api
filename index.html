@@ -9,7 +9,6 @@
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f0f2f5;color:#1a1a1a;min-height:100vh}
 
-/* Header */
 .header{background:#fff;border-bottom:1px solid #e0e0e0;padding:0 28px;display:flex;align-items:center;justify-content:space-between;height:56px}
 .logo{display:flex;align-items:center;gap:8px;font-size:20px;font-weight:700;color:#00A69C}
 .logo span{color:#1a1a1a}
@@ -22,13 +21,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .refresh-btn:hover{background:#f5f5f5}
 .last-upd{font-size:11px;color:#bbb}
 
-/* Tabs */
 .tabs{background:#fff;border-bottom:2px solid #e0e0e0;padding:0 28px;display:flex;gap:0}
 .tab{padding:14px 24px;font-size:13px;font-weight:500;color:#888;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .15s}
 .tab:hover{color:#00A69C}
 .tab.active{color:#00A69C;border-bottom-color:#00A69C}
 
-/* Filter bar */
 .filterbar{background:#fff;border-bottom:1px solid #e8e8e8;padding:10px 28px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
 .filter-group{display:flex;align-items:center;gap:8px}
 .filter-group label{font-size:12px;color:#888;font-weight:500;white-space:nowrap}
@@ -37,49 +34,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .clear-btn{font-size:12px;padding:5px 10px;border-radius:6px;border:1px solid #ddd;background:#f5f5f5;color:#666;cursor:pointer}
 .clear-btn:hover{background:#eee}
 
-/* Container */
 .container{padding:20px 28px;max-width:1280px;margin:0 auto}
 
-/* Metrics */
-.metrics{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:20px}
-@media(max-width:1000px){.metrics{grid-template-columns:repeat(3,1fr)}}
-@media(max-width:600px){.metrics{grid-template-columns:repeat(2,1fr)}}
-.card{background:#fff;border-radius:10px;border:1px solid #e8e8e8;padding:16px 18px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
-.card .label{font-size:11px;color:#999;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px}
-.card .value{font-size:24px;font-weight:600;line-height:1}
-.card .sub{font-size:11px;color:#bbb;margin-top:5px}
-.card.s{border-top:3px solid #1a1a1a}
-.card.u{border-top:3px solid #00A69C}
-.card.v{border-top:3px solid #2E7D9A}
-
-/* Charts */
 .chart-card{background:#fff;border-radius:10px;border:1px solid #e8e8e8;padding:20px 24px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
 .chart-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:8px}
 .chart-header h2{font-size:14px;font-weight:600}
 .chart-header .src{font-size:11px;color:#bbb;margin-top:2px}
-.filters{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:14px}
-.fbtn{font-size:11px;padding:3px 10px;border-radius:20px;border:1px solid #ddd;background:#fff;color:#777;cursor:pointer;transition:all .15s}
-.fbtn:hover{background:#f5f5f5}
-.fbtn.active{background:#1a1a1a;color:#fff;border-color:#1a1a1a}
-.fbtn.teal.active{background:#00A69C;border-color:#00A69C}
-.chart-wrap{position:relative;width:100%;height:260px}
+.chart-wrap{position:relative;width:100%;height:300px}
 .skeleton{background:linear-gradient(90deg,#f0f0ee 25%,#e8e8e6 50%,#f0f0ee 75%);background-size:200% 100%;animation:shimmer 1.5s infinite;border-radius:6px;height:100%}
 @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
 
-/* Tables */
-.bottom-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px}
-@media(max-width:700px){.bottom-grid{grid-template-columns:1fr}}
-.table-card{background:#fff;border-radius:10px;border:1px solid #e8e8e8;padding:20px 22px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
-.table-card h2{font-size:14px;font-weight:600;margin-bottom:12px}
-table{width:100%;border-collapse:collapse;font-size:12px}
-th{text-align:left;font-size:10px;color:#bbb;font-weight:500;text-transform:uppercase;letter-spacing:.4px;padding:0 0 8px;border-bottom:1px solid #eee}
-td{padding:9px 0;border-bottom:1px solid #f5f5f3;color:#555}
-td:last-child,th:last-child{text-align:right}
-.bar-inline{display:flex;align-items:center;gap:6px;justify-content:flex-end}
-.bar-bg{width:70px;height:4px;background:#f0f0ee;border-radius:2px;overflow:hidden}
-.bar-fill{height:100%;border-radius:2px}
-
-/* Misc */
 .err-box{background:#fcebeb;border-radius:8px;padding:12px 16px;font-size:12px;color:#a32d2d;margin-bottom:16px;display:none}
 .tab-content{display:none}.tab-content.active{display:block}
 footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
@@ -87,7 +51,6 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
 </head>
 <body>
 
-<!-- Header -->
 <div class="header">
   <div class="logo">
     <svg width="28" height="28" viewBox="0 0 32 32" fill="none"><rect width="32" height="32" rx="6" fill="#00A69C"/><path d="M8 16h4v8H8zM14 10h4v14h-4zM20 13h4v11h-4z" fill="#fff"/></svg>
@@ -100,13 +63,11 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
   </div>
 </div>
 
-<!-- Tabs -->
 <div class="tabs">
   <div class="tab active" data-tab="perfil">Perfil Populacional</div>
   <div class="tab" data-tab="demografica">Análise Demográfica</div>
 </div>
 
-<!-- Filter bar -->
 <div class="filterbar">
   <div class="filter-group">
     <label>🏢 Empresa</label>
@@ -118,7 +79,6 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
   <span style="font-size:11px;color:#bbb;margin-left:auto" id="filter-info"></span>
 </div>
 
-<!-- Content -->
 <div class="container">
   <div class="err-box" id="err-box"></div>
 
@@ -144,45 +104,28 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
           <div style="font-size:11px;color:#bbb;margin-top:3px">beneficiaries · acumulado desde mai/2022</div>
         </div>
       </div>
-      <div style="flex:1;min-width:200px">
-        <div style="font-size:11px;color:#999;margin-bottom:6px">Progresso acumulado</div>
-        <div style="background:#f0f0f0;border-radius:10px;height:10px;overflow:hidden">
-          <div id="bullet-bar" style="height:100%;border-radius:10px;background:linear-gradient(90deg,#00A69C,#2E7D9A);width:0%;transition:width 1s ease"></div>
-        </div>
-        <div style="display:flex;justify-content:space-between;font-size:10px;color:#bbb;margin-top:4px"><span>0</span><span id="bullet-peak-label">—</span></div>
-      </div>
     </div>
 
+    <!-- Gráfico de evolução -->
     <div class="chart-card">
       <div class="chart-header"><div><h2>Evolução acumulada de vidas</h2><div class="src"><code>beneficiaries.created_at</code> · soma cumulativa mensal</div></div></div>
-      <div class="chart-wrap" style="height:300px"><div class="skeleton" id="skel-e"></div><canvas id="evolChart" style="display:none"></canvas></div>
+      <div class="chart-wrap"><div class="skeleton" id="skel-e"></div><canvas id="evolChart" style="display:none"></canvas></div>
     </div>
 
   </div>
-
-  <!-- Tab: Perfil Populacional -->
-  <div class="tab-content" id="tab-perfil">
-    <div style="text-align:center;padding:80px 20px;color:#bbb">
-      <div style="font-size:40px;margin-bottom:12px">🏗️</div>
-      <div style="font-size:16px;font-weight:500;color:#888">Em construção</div>
-      <div style="font-size:13px;margin-top:6px">Os dados de perfil populacional serão adicionados em breve.</div>
-    </div>
-  </div>
-
 </div>
 
 <footer>Dados ao vivo · Databricks SQL · <code>sanus_databricks.sanus_prod</code></footer>
 
 <script>
 const fmt=n=>Number(n).toLocaleString('pt-BR');
-const fmtDate=d=>{const[y,m,dd]=d.slice(0,10).split('-');return`${dd}/${m}/${y}`};
 const mN={'01':'Jan','02':'Fev','03':'Mar','04':'Abr','05':'Mai','06':'Jun','07':'Jul','08':'Ago','09':'Set','10':'Out','11':'Nov','12':'Dez'};
 
-let sessionsData=[],usersData=[];
-let sChart,vChart,eChart;
+let usersData=[];
+let eChart;
 let currentOrg='';
 
-// --- Tabs ---
+// Tabs
 document.querySelectorAll('.tab').forEach(t=>{
   t.addEventListener('click',()=>{
     document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
@@ -192,100 +135,53 @@ document.querySelectorAll('.tab').forEach(t=>{
   });
 });
 
-// --- Helpers ---
 function setStatus(type,msg){const el=document.getElementById('status');el.className='status '+type;el.textContent=msg;}
 function showErr(msg){const el=document.getElementById('err-box');el.style.display='block';el.textContent='⚠️ '+msg;}
-function showCanvas(s,c){document.getElementById(s).style.display='none';document.getElementById(c).style.display='block';}
 
-function updateMetrics(){
-  if(!sessionsData.length||!usersData.length) return;
-  const sv=sessionsData.map(d=>d[1]),st=sv.reduce((a,b)=>a+b,0),sp=Math.max(...sv);
-  document.getElementById('m-stotal').textContent=fmt(st);
-  document.getElementById('m-savg').textContent=fmt(Math.round(st/sv.length));
-  document.getElementById('m-speak').textContent=fmt(sp);
-  document.getElementById('m-speakdate').textContent=fmtDate(sessionsData.find(d=>d[1]===sp)[0]);
-  const uv=usersData.map(d=>d[1]),ut=uv.reduce((a,b)=>a+b,0);
-  document.getElementById('m-utotal').textContent=fmt(ut);
-  document.getElementById('m-uavg').textContent=fmt(Math.round(ut/uv.length));
-  document.getElementById('m-vacc').textContent=fmt(ut);
-}
+function renderEvol(){
+  if(!usersData.length) return;
+  const m={};
+  usersData.forEach(([d,v])=>{const k=d.slice(0,7);m[k]=(m[k]||0)+v;});
+  const entries=Object.entries(m).sort((a,b)=>a[0]>b[0]?1:-1);
+  let acc=0;
+  const labels=entries.map(([k])=>{const[y,mm]=k.split('-');return`${mN[mm]}/${y.slice(2)}`});
+  const values=entries.map(([,v])=>{acc+=v;return acc;});
 
-function buildSFilters(){
-  const years=[...new Set(sessionsData.map(d=>d[0].slice(0,4)))].sort();
-  const months=[...new Set(sessionsData.map(d=>d[0].slice(0,7)))].sort();
-  const sc=document.getElementById('sfilters');
-  sc.innerHTML='<button class="fbtn active" data-m="all">Todos</button>';
-  years.forEach(y=>{const b=document.createElement('button');b.className='fbtn';b.dataset.m=y;b.textContent=y;sc.appendChild(b);});
-  months.slice(-3).forEach(m=>{const[y,mm]=m.split('-');const b=document.createElement('button');b.className='fbtn';b.dataset.m=m;b.textContent=`${mN[mm]}/${y.slice(2)}`;sc.appendChild(b);});
-}
+  document.getElementById('skel-e').style.display='none';
+  const cv=document.getElementById('evolChart');
+  cv.style.display='block';
 
-function buildVFilters(){
-  const years=[...new Set(usersData.map(d=>d[0].slice(0,4)))].sort();
-  const vc=document.getElementById('vfilters');
-  vc.innerHTML='<button class="fbtn teal active" data-v="month">Por mês</button>';
-  years.forEach(y=>{const b=document.createElement('button');b.className='fbtn teal';b.dataset.v=y;b.textContent=y;vc.appendChild(b);});
-}
-
-function mkChart(id,type,labels,values,color,bg){
-  return new Chart(document.getElementById(id),{
-    type,
-    data:{labels,datasets:[{data:values,borderColor:color,backgroundColor:bg,borderWidth:type==='bar'?0:1.8,borderRadius:type==='bar'?5:0,pointRadius:values.length>80?0:3,pointHoverRadius:5,pointBackgroundColor:color,fill:type!=='bar',tension:0.35}]},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{backgroundColor:'#fff',borderColor:'#e5e5e2',borderWidth:1,titleColor:'#888',bodyColor:'#1a1a1a',callbacks:{label:c=>`${fmt(c.parsed.y)}`}}},scales:{x:{ticks:{maxRotation:45,autoSkip:true,maxTicksLimit:18,font:{size:10},color:'#bbb'},grid:{color:'rgba(0,0,0,0.04)'},border:{display:false}},y:{beginAtZero:true,ticks:{font:{size:10},color:'#bbb',callback:v=>fmt(v)},grid:{color:'rgba(0,0,0,0.04)'},border:{display:false}}}}
+  if(eChart)eChart.destroy();
+  eChart=new Chart(cv,{
+    type:'line',
+    data:{labels,datasets:[{
+      data:values,
+      borderColor:'#00A69C',
+      backgroundColor:'rgba(0,166,156,0.08)',
+      borderWidth:2,
+      pointRadius:3,
+      pointBackgroundColor:'#00A69C',
+      pointHoverRadius:6,
+      fill:true,
+      tension:0.35
+    }]},
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{backgroundColor:'#fff',borderColor:'#e5e5e2',borderWidth:1,titleColor:'#888',bodyColor:'#1a1a1a',callbacks:{label:c=>`${fmt(c.parsed.y)} vidas acumuladas`}}},
+      scales:{
+        x:{ticks:{maxRotation:45,autoSkip:true,maxTicksLimit:18,font:{size:10},color:'#bbb'},grid:{color:'rgba(0,0,0,0.04)'},border:{display:false}},
+        y:{beginAtZero:true,ticks:{font:{size:10},color:'#bbb',callback:v=>fmt(v)},grid:{color:'rgba(0,0,0,0.04)'},border:{display:false}}
+      }
+    }
   });
 }
 
-function renderSessions(f){
-  const d=f==='all'?sessionsData:sessionsData.filter(x=>x[0].startsWith(f));
-  if(sChart)sChart.destroy();
-  showCanvas('skel-s','sessionsChart');
-  sChart=mkChart('sessionsChart','line',d.map(x=>fmtDate(x[0])),d.map(x=>x[1]),'#1a1a1a','rgba(26,26,26,0.06)');
-  renderTopTable(d,'stop-table','#1a1a1a');
-}
-
-function renderVidas(mode){
-  let labels,values;
-  if(mode==='month'){
-    const m={};usersData.forEach(([d,v])=>{const k=d.slice(0,7);m[k]=(m[k]||0)+v;});
-    const e=Object.entries(m).sort((a,b)=>a[0]>b[0]?1:-1);
-    labels=e.map(([k])=>{const[y,mm]=k.split('-');return`${mN[mm]}/${y.slice(2)}`});
-    values=e.map(([,v])=>v);
-  } else {
-    const fd=usersData.filter(d=>d[0].startsWith(mode));
-    labels=fd.map(d=>fmtDate(d[0]));values=fd.map(d=>d[1]);
-  }
-  if(vChart)vChart.destroy();
-  showCanvas('skel-v','vidasChart');
-  vChart=mkChart('vidasChart',mode==='month'?'bar':'line',labels,values,'#00A69C',mode==='month'?'rgba(0,166,156,0.75)':'rgba(0,166,156,0.08)');
-}
-
-function renderEvol(){
-  const m={};usersData.forEach(([d,v])=>{const k=d.slice(0,7);m[k]=(m[k]||0)+v;});
-  const e=Object.entries(m).sort((a,b)=>a[0]>b[0]?1:-1);
-  let acc=0;
-  const labels=e.map(([k])=>{const[y,mm]=k.split('-');return`${mN[mm]}/${y.slice(2)}`});
-  const values=e.map(([,v])=>{acc+=v;return acc;});
-  if(eChart)eChart.destroy();
-  showCanvas('skel-e','evolChart');
-  eChart=mkChart('evolChart','line',labels,values,'#2E7D9A','rgba(46,125,154,0.08)');
-}
-
-function renderTopTable(data,tbId,color){
-  const sorted=[...data].sort((a,b)=>b[1]-a[1]).slice(0,10);
-  const max=sorted[0]?.[1]||1;
-  document.querySelector(`#${tbId} tbody`).innerHTML=sorted.map(([d,v])=>`
-    <tr><td>${fmtDate(d)}</td><td><strong>${fmt(v)}</strong></td>
-    <td><div class="bar-inline"><div class="bar-bg"><div class="bar-fill" style="width:${Math.round(v/max*100)}%;background:${color}"></div></div></div></td></tr>`).join('');
-}
-
-
-
-// Filtro de empresa
 document.getElementById('org-select').addEventListener('change',e=>{
   currentOrg=e.target.value;
   const sel=e.target;
   const orgName=sel.options[sel.selectedIndex].text;
   document.getElementById('filter-info').textContent=currentOrg?`Filtrando: ${orgName}`:'';
-  loadAll(false); // recarrega sem buscar orgs de novo
+  loadAll(false);
 });
 
 function clearFilters(){
@@ -295,10 +191,13 @@ function clearFilters(){
   loadAll(false);
 }
 
-// --- Load data ---
 async function loadAll(fetchOrgs=true){
   setStatus('loading','⏳ Buscando dados...');
   document.getElementById('err-box').style.display='none';
+  // volta skeleton
+  document.getElementById('skel-e').style.display='block';
+  document.getElementById('evolChart').style.display='none';
+
   try{
     const url='/api/data'+(currentOrg?`?org_id=${encodeURIComponent(currentOrg)}`:'');
     const res=await fetch(url);
@@ -306,8 +205,7 @@ async function loadAll(fetchOrgs=true){
     const json=await res.json();
     if(json.error) throw new Error(json.error);
 
-    sessionsData=json.sessions;
-    usersData=json.users;
+    usersData=json.users||[];
 
     // Popula dropdown de orgs só na primeira carga
     if(fetchOrgs && json.organizations){
@@ -322,18 +220,11 @@ async function loadAll(fetchOrgs=true){
     }
 
     // Bullet de vidas
-  const uv=usersData.map(d=>d[1]),ut=uv.reduce((a,b)=>a+b,0);
-  document.getElementById('bullet-vidas').textContent=fmt(ut);
-  const peakMonth=ut; // usa total como referência de 100%
-  document.getElementById('bullet-bar').style.width='100%';
-  document.getElementById('bullet-peak-label').textContent=fmt(ut)+' vidas';
-  
-    buildSFilters();
-    buildVFilters();
-    renderSessions('all');
-    renderVidas('month');
+    const ut=usersData.reduce((a,[,v])=>a+v,0);
+    document.getElementById('bullet-vidas').textContent=fmt(ut);
+
     renderEvol();
-    renderTopTable(usersData,'utop-table','#00A69C');
+
     setStatus('ok','✓ Dados ao vivo');
     document.getElementById('last-upd').textContent='Atualizado: '+new Date().toLocaleTimeString('pt-BR');
   }catch(err){
