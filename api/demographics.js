@@ -34,6 +34,24 @@ const getCell = (cell) => {
 const toInt = (v) => { const n = parseInt(getCell(v)); return Number.isFinite(n) ? n : 0; };
 const toNum = (v) => { const n = parseFloat(getCell(v)); return Number.isFinite(n) ? n : 0; };
 
+function buildFilters(groupName, typeFilter) {
+  const conditions = [];
+  if (groupName) {
+    conditions.push(`b.organization_id IN (
+      SELECT id FROM sanus_databricks.sanus_prod.organizations WHERE name = '${escape(groupName)}'
+      UNION
+      SELECT id FROM sanus_databricks.sanus_prod.organizations
+      WHERE matriz_id = (SELECT id FROM sanus_databricks.sanus_prod.organizations WHERE name = '${escape(groupName)}' LIMIT 1)
+    )`);
+  }
+  if (typeFilter === 'TITULAR') {
+    conditions.push(`UPPER(TRIM(COALESCE(b.type_kinship,''))) = 'TITULAR'`);
+  } else if (typeFilter === 'DEPENDENTE') {
+    conditions.push(`UPPER(TRIM(COALESCE(b.type_kinship,''))) != 'TITULAR'`);
+  }
+  return conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+}
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
@@ -41,14 +59,8 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
 
   const groupName = req.query.group_name || null;
-  const groupFilter = groupName
-    ? `WHERE b.organization_id IN (
-         SELECT id FROM sanus_databricks.sanus_prod.organizations WHERE name = '${escape(groupName)}'
-         UNION
-         SELECT id FROM sanus_databricks.sanus_prod.organizations
-         WHERE matriz_id = (SELECT id FROM sanus_databricks.sanus_prod.organizations WHERE name = '${escape(groupName)}' LIMIT 1)
-       )`
-    : ``;
+  const typeFilter = req.query.type || null;
+  const groupFilter = buildFilters(groupName, typeFilter);
 
   try {
     const { warehouses = [] } = await dbFetch("/api/2.0/sql/warehouses");
