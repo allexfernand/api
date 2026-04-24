@@ -105,7 +105,6 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
   <!-- Tab: Análise Demográfica -->
   <div class="tab-content" id="tab-demografica">
 
-    <!-- Bullet: Total de Vidas -->
     <div style="background:#fff;border-radius:10px;border:1px solid #e8e8e8;padding:18px 24px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.04);display:flex;align-items:center;gap:24px;flex-wrap:wrap">
       <div style="display:flex;align-items:center;gap:12px">
         <div style="width:44px;height:44px;border-radius:50%;background:linear-gradient(135deg,#00A69C,#2E7D9A);display:flex;align-items:center;justify-content:center;font-size:20px">🫀</div>
@@ -117,7 +116,6 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
       </div>
     </div>
 
-    <!-- Demografia -->
     <div style="background:#fff;border-radius:10px;border:1px solid #e8e8e8;padding:24px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.04)">
       <h2 style="font-size:14px;font-weight:600;margin-bottom:20px">Perfil demográfico</h2>
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:20px" id="demo-grid">
@@ -183,7 +181,6 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
       </div>
     </div>
 
-    <!-- Gráfico de evolução -->
     <div class="chart-card">
       <div class="chart-header"><div><h2>Evolução acumulada de vidas</h2><div class="src"><code>beneficiaries.created_at</code> · soma cumulativa mensal</div></div></div>
       <div class="chart-wrap"><div class="skeleton" id="skel-e"></div><canvas id="evolChart" style="display:none"></canvas></div>
@@ -202,7 +199,6 @@ let usersData=[];
 let eChart;
 let currentGroup='';
 
-// Tabs
 document.querySelectorAll('.tab').forEach(t=>{
   t.addEventListener('click',()=>{
     document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
@@ -232,25 +228,41 @@ function renderEvol(){
   eChart=new Chart(cv,{
     type:'line',
     data:{labels,datasets:[{
-      data:values,
-      borderColor:'#00A69C',
-      backgroundColor:'rgba(0,166,156,0.08)',
-      borderWidth:2,
-      pointRadius:3,
-      pointBackgroundColor:'#00A69C',
-      pointHoverRadius:6,
-      fill:true,
-      tension:0.35
+      data:values,borderColor:'#00A69C',backgroundColor:'rgba(0,166,156,0.08)',
+      borderWidth:2,pointRadius:3,pointBackgroundColor:'#00A69C',pointHoverRadius:6,fill:true,tension:0.35
     }]},
-    options:{
-      responsive:true,maintainAspectRatio:false,
+    options:{responsive:true,maintainAspectRatio:false,
       plugins:{legend:{display:false},tooltip:{backgroundColor:'#fff',borderColor:'#e5e5e2',borderWidth:1,titleColor:'#888',bodyColor:'#1a1a1a',callbacks:{label:c=>`${fmt(c.parsed.y)} vidas acumuladas`}}},
-      scales:{
-        x:{ticks:{maxRotation:45,autoSkip:true,maxTicksLimit:18,font:{size:10},color:'#bbb'},grid:{color:'rgba(0,0,0,0.04)'},border:{display:false}},
-        y:{beginAtZero:true,ticks:{font:{size:10},color:'#bbb',callback:v=>fmt(v)},grid:{color:'rgba(0,0,0,0.04)'},border:{display:false}}
-      }
+      scales:{x:{ticks:{maxRotation:45,autoSkip:true,maxTicksLimit:18,font:{size:10},color:'#bbb'},grid:{color:'rgba(0,0,0,0.04)'},border:{display:false}},y:{beginAtZero:true,ticks:{font:{size:10},color:'#bbb',callback:v=>fmt(v)},grid:{color:'rgba(0,0,0,0.04)'},border:{display:false}}}
     }
   });
+}
+
+function renderDemographics(demo){
+  console.log('Demografia recebida:', demo);
+  const d=demo||{};
+  const total=Number(d.total_vidas)||0;
+  const pct=n=>total>0?((n/total)*100).toFixed(1).replace('.',',')+'%':'—';
+  const setText=(id,v)=>{
+    const el=document.getElementById(id);
+    if(el){el.textContent=v}
+    else{console.warn('Elemento não encontrado:',id)}
+  };
+
+  setText('d-total',total?fmt(total):'—');
+  setText('d-idade',d.idade_media?Number(d.idade_media):'—');
+  setText('d-49',fmt(Number(d.mais_49)||0));
+  setText('d-mulheres-19-38',fmt(Number(d.mulheres_19_38)||0));
+  setText('d-dep',fmt(Number(d.dependentes)||0));
+  setText('d-tit',fmt(Number(d.titulares)||0));
+  setText('d-dep-pct',pct(Number(d.dependentes)||0));
+  setText('d-tit-pct',pct(Number(d.titulares)||0));
+  setText('d-fem',fmt(Number(d.feminino)||0));
+  setText('d-masc',fmt(Number(d.masculino)||0));
+  setText('d-fem-pct',pct(Number(d.feminino)||0));
+  setText('d-masc-pct',pct(Number(d.masculino)||0));
+  const tit=Number(d.titulares)||0,dep=Number(d.dependentes)||0;
+  setText('d-ratio',tit>0?(dep/tit).toFixed(2).replace('.',','):'—');
 }
 
 document.getElementById('group-select').addEventListener('change',e=>{
@@ -300,7 +312,6 @@ async function loadAll(fetchOrgs=true){
     if(fetchOrgs && Array.isArray(json.groups)){
       const sel=document.getElementById('group-select');
       if(sel){
-        // ordenação alfabética (case-insensitive, pt-BR)
         const ordered=[...json.groups].sort((a,b)=>
           a.economic_group.localeCompare(b.economic_group,'pt-BR',{sensitivity:'base'})
         );
@@ -318,6 +329,7 @@ async function loadAll(fetchOrgs=true){
     const bv=document.getElementById('bullet-vidas');
     if(bv) bv.textContent=fmt(ut);
 
+    renderDemographics(demo);
     renderEvol();
 
     setStatus('ok','✓ Dados ao vivo');
@@ -326,7 +338,7 @@ async function loadAll(fetchOrgs=true){
   }catch(err){
     console.error('loadAll error:',err);
     setStatus('error','✗ Erro');
-    showErr(err.message+' — '+(err.stack||'').split('\n')[1]);
+    showErr(err.message);
   }
 }
 
