@@ -215,10 +215,21 @@ function renderEvol(){
   if(!usersData.length) return;
   const m={};
   usersData.forEach(([d,v])=>{const k=d.slice(0,7);m[k]=(m[k]||0)+v;});
-  const entries=Object.entries(m).sort((a,b)=>a[0]>b[0]?1:-1);
-  let acc=0;
+
+  // Calcula acumulado total primeiro (soma de todos os meses)
+  const allEntries=Object.entries(m).sort((a,b)=>a[0]>b[0]?1:-1);
+  let runningAcc=0;
+  const accByMonth={};
+  allEntries.forEach(([k,v])=>{runningAcc+=v;accByMonth[k]=runningAcc;});
+
+  // Filtra apenas os últimos 12 meses a partir de hoje
+  const now=new Date();
+  const cutoff=new Date(now.getFullYear(),now.getMonth()-11,1); // 12 meses atrás
+  const cutoffStr=cutoff.toISOString().slice(0,7); // ex: "2024-05"
+  const entries=allEntries.filter(([k])=>k>=cutoffStr);
+
   const labels=entries.map(([k])=>{const[y,mm]=k.split('-');return`${mN[mm]}/${y.slice(2)}`});
-  const values=entries.map(([,v])=>{acc+=v;return acc;});
+  const values=entries.map(([k])=>accByMonth[k]);
 
   document.getElementById('skel-e').style.display='none';
   const cv=document.getElementById('evolChart');
