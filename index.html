@@ -10,7 +10,6 @@
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f0f2f5;color:#1a1a1a;min-height:100vh}
 .header{background:#fff;border-bottom:1px solid #e0e0e0;padding:0 28px;display:flex;align-items:center;justify-content:space-between;height:56px}
-.logo{display:flex;align-items:center;gap:8px;font-size:20px;font-weight:700;color:#00A69C}
 .header-right{display:flex;align-items:center;gap:12px}
 .status{font-size:11px;padding:3px 10px;border-radius:20px;font-weight:500}
 .status.loading{background:#faeeda;color:#854f0b}
@@ -26,6 +25,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .filter-group{display:flex;align-items:center;gap:8px}
 .filter-group label{font-size:12px;color:#888;font-weight:500;white-space:nowrap}
 .filter-select{font-size:12px;padding:5px 10px;border-radius:6px;border:1px solid #ddd;background:#fff;color:#333;min-width:200px;max-width:300px;cursor:pointer}
+.filter-date{font-size:12px;padding:5px 10px;border-radius:6px;border:1px solid #ddd;background:#fff;color:#333;cursor:pointer}
 .clear-btn{font-size:12px;padding:5px 10px;border-radius:6px;border:1px solid #ddd;background:#f5f5f5;color:#666;cursor:pointer}
 .container{padding:20px 28px;max-width:1280px;margin:0 auto}
 .card-box{background:#fff;border-radius:12px;border:1px solid #e8e8e8;padding:24px 28px;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.06)}
@@ -42,7 +42,7 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
 <body>
 
 <div class="header">
-  <div class="logo">
+  <div>
     <img src="https://web.sanus.tech/assets/images/logo_sanus.svg" alt="Sanus" style="height:32px;width:auto"/>
   </div>
   <div class="header-right">
@@ -70,21 +70,23 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
       <option value="DEPENDENTE">Dependente</option>
     </select>
   </div>
-  <!-- Filtro período: só visível na aba Agendamentos -->
   <div class="filter-group" id="filter-periodo" style="display:none">
     <label>📅 Período</label>
-    <input type="date" id="periodo-inicio" class="filter-select" style="min-width:140px;max-width:160px"/>
+    <input type="date" id="periodo-inicio" class="filter-date"/>
     <span style="font-size:12px;color:#888">até</span>
-    <input type="date" id="periodo-fim" class="filter-select" style="min-width:140px;max-width:160px"/>
+    <input type="date" id="periodo-fim" class="filter-date"/>
   </div>
   <button class="clear-btn" onclick="clearFilters()">✕ Limpar</button>
   <span style="font-size:11px;color:#bbb;margin-left:auto" id="filter-info"></span>
 </div>
 
 <div class="container">
+
+  <!-- Tab: Análise Demográfica -->
   <div class="tab-content active" id="tab-demografica">
 
-    <div class="card-box" style="display:flex;align-items:center;gap:20px;padding:20px 28px">      <div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#00A69C,#2E7D9A);display:flex;align-items:center;justify-content:center">
+    <div class="card-box" style="display:flex;align-items:center;gap:20px;padding:20px 28px">
+      <div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#00A69C,#2E7D9A);display:flex;align-items:center;justify-content:center">
         <i class="fa-solid fa-heart-pulse" style="font-size:20px;color:#fff"></i>
       </div>
       <div>
@@ -210,6 +212,8 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
     </div>
 
   </div>
+
+  <!-- Tab: Agendamentos -->
   <div class="tab-content" id="tab-agendamentos">
     <div style="text-align:center;padding:80px 20px;color:#bbb">
       <div style="font-size:40px;margin-bottom:12px">📅</div>
@@ -218,15 +222,16 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
     </div>
   </div>
 
-</div>Dados ao vivo · Databricks SQL · <code>sanus_databricks.sanus_prod</code></footer>
+</div>
+
+<footer>Dados ao vivo · Databricks SQL · <code>sanus_databricks.sanus_prod</code></footer>
 
 <script>
 const fmt = n => Number(n).toLocaleString('pt-BR');
 const mN = {'01':'Jan','02':'Fev','03':'Mar','04':'Abr','05':'Mai','06':'Jun','07':'Jul','08':'Ago','09':'Set','10':'Out','11':'Nov','12':'Dez'};
 
 let usersData = [], companiesData = [], eChart, agegroupChart;
-let currentGroup = '';
-let currentType  = '';
+let currentGroup = '', currentType = '';
 
 // --- Tabs ---
 document.querySelectorAll('.tab').forEach(t => {
@@ -235,6 +240,8 @@ document.querySelectorAll('.tab').forEach(t => {
     document.querySelectorAll('.tab-content').forEach(x => x.classList.remove('active'));
     t.classList.add('active');
     document.getElementById('tab-' + t.dataset.tab).classList.add('active');
+    // mostra filtro período só na aba agendamentos
+    document.getElementById('filter-periodo').style.display = t.dataset.tab === 'agendamentos' ? 'flex' : 'none';
   });
 });
 
@@ -244,7 +251,6 @@ document.getElementById('group-select').addEventListener('change', e => {
   updateFilterInfo();
   loadAll(false);
 });
-
 document.getElementById('type-select').addEventListener('change', e => {
   currentType = e.target.value;
   updateFilterInfo();
@@ -260,10 +266,11 @@ function updateFilterInfo() {
 }
 
 function clearFilters() {
-  currentGroup = '';
-  currentType  = '';
+  currentGroup = ''; currentType = '';
   document.getElementById('group-select').value = '';
   document.getElementById('type-select').value  = '';
+  document.getElementById('periodo-inicio').value = '';
+  document.getElementById('periodo-fim').value    = '';
   document.getElementById('filter-info').textContent = '';
   loadAll(false);
 }
@@ -276,7 +283,6 @@ function buildQS() {
   return s ? '?' + s : '';
 }
 
-// --- Status ---
 function setStatus(type, msg) {
   const el = document.getElementById('status');
   el.className = 'status ' + type;
@@ -302,7 +308,10 @@ function renderEvol() {
   eChart = new Chart(cv, {
     type: 'line',
     data: { labels, datasets: [{ data: values, borderColor: '#00A69C', backgroundColor: 'rgba(0,166,156,0.08)', borderWidth: 2, pointRadius: 3, pointBackgroundColor: '#00A69C', fill: true, tension: 0.35 }] },
-    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { backgroundColor: '#1e293b', borderColor: '#334155', borderWidth: 1, titleColor: '#94a3b8', bodyColor: '#f1f5f9', callbacks: { label: c => `${fmt(c.parsed.y)} vidas` } } }, scales: { x: { ticks: { font: { size: 10 }, color: '#94a3b8', maxRotation: 45, autoSkip: true, maxTicksLimit: 14 }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } }, y: { beginAtZero: false, ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => fmt(v) }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } } } }
+    options: { responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { backgroundColor: '#1e293b', borderColor: '#334155', borderWidth: 1, titleColor: '#94a3b8', bodyColor: '#f1f5f9', callbacks: { label: c => `${fmt(c.parsed.y)} vidas` } } },
+      scales: { x: { ticks: { font: { size: 10 }, color: '#94a3b8', maxRotation: 45, autoSkip: true, maxTicksLimit: 14 }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } }, y: { beginAtZero: false, ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => fmt(v) }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } } }
+    }
   });
 }
 
@@ -321,7 +330,6 @@ function renderDemographics(d) {
   s('d-tit', fmt(Number(d.titulares)||0));
   s('d-dep-pct', pct(Number(d.dependentes)||0));
   s('d-tit-pct', pct(Number(d.titulares)||0));
-  // bullet segregado
   s('bullet-tit', fmt(Number(d.titulares)||0));
   s('bullet-dep', fmt(Number(d.dependentes)||0));
   const fem = Number(d.feminino)||0, masc = Number(d.masculino)||0, ni = Number(d.nao_informado)||0;
@@ -371,13 +379,13 @@ function renderAgeGroups(data) {
       { label: 'Masculino', data: data.map(d => d.masculino), backgroundColor: 'rgba(59,130,246,0.85)',  borderRadius: 3 },
     ]},
     options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y',
-      plugins: { legend: { display: false }, tooltip: { backgroundColor: '#fff', borderColor: '#e2e8f0', borderWidth: 1, titleColor: '#64748b', bodyColor: '#1e293b', callbacks: { label: c => `${c.dataset.label}: ${fmt(c.parsed.x)}` } } },
+      plugins: { legend: { display: false }, tooltip: { backgroundColor: '#1e293b', borderColor: '#334155', borderWidth: 1, titleColor: '#94a3b8', bodyColor: '#f1f5f9', callbacks: { label: c => `${c.dataset.label}: ${fmt(c.parsed.x)}` } } },
       scales: { x: { ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => fmt(v) }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } }, y: { ticks: { font: { size: 11 }, color: '#64748b' }, grid: { display: false }, border: { display: false } } }
     }
   });
 }
 
-// --- Cargas assíncronas ---
+// --- Cargas ---
 async function safeGet(url) {
   try { const r = await fetch(url); if (!r.ok) throw new Error(r.status); return await r.json(); }
   catch (e) { return null; }
@@ -415,45 +423,29 @@ async function loadAgeGroups() {
 
 async function loadAll(fetchOrgs = true) {
   setStatus('loading', '⏳ Carregando...');
-  const qs = buildQS();
-
-  // Reset skeleton evolução
   document.getElementById('skel-e').style.display = 'block';
   document.getElementById('evolChart').style.display = 'none';
-
   try {
-    const res = await fetch('/api/data' + qs);
+    const res = await fetch('/api/data' + buildQS());
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const json = await res.json();
     if (json.error) throw new Error(json.error);
-
     usersData = json.users || [];
-
     if (fetchOrgs && Array.isArray(json.groups)) {
       const sel = document.getElementById('group-select');
       const ordered = [...json.groups].sort((a,b) => a.economic_group.localeCompare(b.economic_group, 'pt-BR', { sensitivity: 'base' }));
       sel.innerHTML = '<option value="">(Todos os grupos)</option>';
-      ordered.forEach(g => {
-        const o = document.createElement('option');
-        o.value = g.economic_group;
-        o.textContent = g.economic_group;
-        sel.appendChild(o);
-      });
+      ordered.forEach(g => { const o = document.createElement('option'); o.value = g.economic_group; o.textContent = g.economic_group; sel.appendChild(o); });
     }
-
     const ut = usersData.reduce((a, [,v]) => a+v, 0);
     const bv = document.getElementById('bullet-vidas');
     if (bv) bv.textContent = fmt(ut);
-
     renderEvol();
     setStatus('ok', '✓ Dados ao vivo');
     document.getElementById('last-upd').textContent = 'Atualizado: ' + new Date().toLocaleTimeString('pt-BR');
-
-    // Cargas paralelas sem bloquear
     loadDemographics();
     loadCompanies();
     loadAgeGroups();
-
   } catch (err) {
     setStatus('error', '✗ Erro: ' + err.message);
   }
