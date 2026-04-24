@@ -62,7 +62,7 @@ export default async function handler(req, res) {
     const wh = warehouses.find((w) => w.state === "RUNNING") || warehouses[0];
     if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
 
-    const [userRows, groupRows] = await Promise.all([
+    const [userRows, groupRows, demoRows] = await Promise.all([
       // Vidas por dia (com filtro opcional de matriz)
       runQuery(wh.id, `
         SELECT DATE_TRUNC('DAY', b.created_at) AS dia, COUNT(DISTINCT b.id) AS n
@@ -88,6 +88,20 @@ export default async function handler(req, res) {
         GROUP BY o1.name
         ORDER BY o1.name ASC
       `) : Promise.resolve(null),
+      // Demografia (mesmo filtro opcional por matriz)
+      runQuery(wh.id, `
+        SELECT
+          COUNT(*) AS total_vidas,
+          AVG(DATEDIFF(CURRENT_DATE(), b.birthday) / 365.25) AS idade_media,
+          SUM(CASE WHEN DATEDIFF(CURRENT_DATE(), b.birthday) / 365.25 > 49 THEN 1 ELSE 0 END) AS mais_49,
+          SUM(CASE WHEN UPPER(TRIM(b.type_kinship)) = 'TITULAR' THEN 1 ELSE 0 END) AS titulares,
+          SUM(CASE WHEN UPPER(TRIM(b.type_kinship)) != 'TITULAR' AND b.type_kinship IS NOT NULL AND TRIM(b.type_kinship) != '' THEN 1 ELSE 0 END) AS dependentes,
+          SUM(CASE WHEN UPPER(TRIM(b.gender)) = 'FEMININO' THEN 1 ELSE 0 END) AS feminino,
+          SUM(CASE WHEN UPPER(TRIM(b.gender)) = 'MASCULINO' THEN 1 ELSE 0 END) AS masculino,
+          SUM(CASE WHEN UPPER(TRIM(b.gender)) = 'FEMININO' AND DATEDIFF(CURRENT_DATE(), b.birthday) / 365.25 BETWEEN 19 AND 38 THEN 1 ELSE 0 END) AS mulheres_19_38
+        FROM sanus_databricks.sanus_prod.beneficiaries b
+        ${groupFilter}
+      `),
     ]);
 
     // Extrai valor seja qual for o formato de retorno (string, número, ou objeto Genie-like)
@@ -115,9 +129,29 @@ export default async function handler(req, res) {
         })).filter((g) => g.economic_group)
       : null;
 
+    // Demografia
+    const toNum = (v) => {
+      const raw = getCell(v);
+      if (raw === null) return 0;
+      const n = parseFloat(raw);
+      return Number.isFinite(n) ? n : 0;
+    };
+    const dRow = demoRows && demoRows[0] ? demoRows[0] : [];
+    const demographics = {
+      total_vidas: toInt(dRow[0]),
+      idade_media: Math.round(toNum(dRow[1])),
+      mais_49: toInt(dRow[2]),
+      titulares: toInt(dRow[3]),
+      dependentes: toInt(dRow[4]),
+      feminino: toInt(dRow[5]),
+      masculino: toInt(dRow[6]),
+      mulheres_19_38: toInt(dRow[7]),
+    };
+
     res.status(200).json({
       users: parse(userRows),
       groups,
+      demographics,
       updatedAt: new Date().toISOString(),
     });
   } catch (err) {
