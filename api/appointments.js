@@ -37,11 +37,13 @@ export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   if (req.method === "OPTIONS") return res.status(200).end();
 
-  const meses = req.query.meses ? req.query.meses.split(',').filter(m => /^\d{4}-\d{2}$/.test(m)) : [];
+  const meses = req.query.meses
+    ? req.query.meses.split(',').filter(m => /^\d{4}-\d{2}$/.test(m))
+    : [];
 
-  // Filtro de período: lista de meses selecionados
+  // Usa data_do_agendamento (timestamp) para filtrar por mês/ano
   const periodoFilter = meses.length > 0
-    ? `AND DATE_FORMAT(data_agendamento, 'yyyy-MM') IN (${meses.map(m => `'${m}'`).join(',')})`
+    ? `AND DATE_FORMAT(data_do_agendamento, 'yyyy-MM') IN (${meses.map(m => `'${m}'`).join(',')})`
     : '';
 
   try {
@@ -53,7 +55,7 @@ export default async function handler(req, res) {
       SELECT COUNT(*) AS total_tickets
       FROM sanus_databricks.sanus_prod.atendimento_gold_live
       WHERE motivo = 'Concluído com sucesso'
-      ${periodoFilter}
+        ${periodoFilter}
     `);
 
     res.status(200).json({ total: toInt(rows[0]?.[0]) });
