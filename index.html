@@ -70,9 +70,9 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
 
 <div class="filterbar">
   <div class="filter-group">
-    <label>🏢 Empresa</label>
-    <select class="filter-select" id="org-select">
-      <option value="">(Todas as empresas)</option>
+    <label>🏢 Grupo Econômico</label>
+    <select class="filter-select" id="group-select">
+      <option value="">(Todos os grupos)</option>
     </select>
   </div>
   <button class="clear-btn" onclick="clearFilters()">✕ Limpar</button>
@@ -123,7 +123,7 @@ const mN={'01':'Jan','02':'Fev','03':'Mar','04':'Abr','05':'Mai','06':'Jun','07'
 
 let usersData=[];
 let eChart;
-let currentOrg='';
+let currentGroup='';
 
 // Tabs
 document.querySelectorAll('.tab').forEach(t=>{
@@ -176,17 +176,17 @@ function renderEvol(){
   });
 }
 
-document.getElementById('org-select').addEventListener('change',e=>{
-  currentOrg=e.target.value;
+document.getElementById('group-select').addEventListener('change',e=>{
+  currentGroup=e.target.value;
   const sel=e.target;
-  const orgName=sel.options[sel.selectedIndex].text;
-  document.getElementById('filter-info').textContent=currentOrg?`Filtrando: ${orgName}`:'';
+  const groupName=sel.options[sel.selectedIndex].text;
+  document.getElementById('filter-info').textContent=currentGroup?`Filtrando: ${groupName}`:'';
   loadAll(false);
 });
 
 function clearFilters(){
-  currentOrg='';
-  document.getElementById('org-select').value='';
+  currentGroup='';
+  document.getElementById('group-select').value='';
   document.getElementById('filter-info').textContent='';
   loadAll(false);
 }
@@ -201,7 +201,7 @@ async function loadAll(fetchOrgs=true){
   if(cv) cv.style.display='none';
 
   try{
-    const url='/api/data'+(currentOrg?`?org_id=${encodeURIComponent(currentOrg)}`:'');
+    const url='/api/data'+(currentGroup?`?group_name=${encodeURIComponent(currentGroup)}`:'');
     const res=await fetch(url);
     if(!res.ok) throw new Error(`HTTP ${res.status}`);
     const json=await res.json();
@@ -209,15 +209,23 @@ async function loadAll(fetchOrgs=true){
 
     usersData=json.users||[];
 
-    if(fetchOrgs && Array.isArray(json.organizations)){
-      const sel=document.getElementById('org-select');
+    if(fetchOrgs && Array.isArray(json.groups)){
+      const sel=document.getElementById('group-select');
       if(sel){
-        sel.innerHTML='<option value="">(Todas as empresas)</option>';
-        json.organizations.forEach(o=>{
-          if(!o||!o.id||!o.name) return;
+        // agrupa por economic_group (pode ter várias matrizes por grupo)
+        const byGroup={};
+        json.groups.forEach(g=>{
+          if(!g.economic_group) return;
+          if(!byGroup[g.economic_group]) byGroup[g.economic_group]={total:0,matrizes:0};
+          byGroup[g.economic_group].total+=g.total_filiais;
+          byGroup[g.economic_group].matrizes++;
+        });
+        const ordered=Object.entries(byGroup).sort((a,b)=>b[1].total-a[1].total);
+        sel.innerHTML='<option value="">(Todos os grupos)</option>';
+        ordered.forEach(([name,info])=>{
           const opt=document.createElement('option');
-          opt.value=o.id;
-          opt.textContent=o.name;
+          opt.value=name;
+          opt.textContent=`${name} (${info.total} filiais)`;
           sel.appendChild(opt);
         });
       }
