@@ -62,6 +62,12 @@ export default async function handler(req, res) {
     const wh = warehouses.find((w) => w.state === "RUNNING") || warehouses[0];
     if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
 
+    // Função que tenta rodar a query, mas se falhar retorna null em vez de quebrar tudo
+    const safeRun = async (sql) => {
+      try { return await runQuery(wh.id, sql); }
+      catch (e) { console.error("Query falhou:", e.message); return null; }
+    };
+
     const [userRows, groupRows, demoRows] = await Promise.all([
       // Vidas por dia (com filtro opcional de matriz)
       runQuery(wh.id, `
@@ -88,17 +94,17 @@ export default async function handler(req, res) {
         GROUP BY o1.name
         ORDER BY o1.name ASC
       `) : Promise.resolve(null),
-      // Demografia (mesmo filtro opcional por matriz)
-      runQuery(wh.id, `
+      // Demografia (com safeRun — se falhar, ainda carrega o resto)
+      safeRun(`
         SELECT
           COUNT(*) AS total_vidas,
-          AVG(DATEDIFF(CURRENT_DATE(), b.birthday) / 365.25) AS idade_media,
-          SUM(CASE WHEN DATEDIFF(CURRENT_DATE(), b.birthday) / 365.25 > 49 THEN 1 ELSE 0 END) AS mais_49,
-          SUM(CASE WHEN UPPER(TRIM(b.type_kinship)) = 'TITULAR' THEN 1 ELSE 0 END) AS titulares,
-          SUM(CASE WHEN UPPER(TRIM(b.type_kinship)) != 'TITULAR' AND b.type_kinship IS NOT NULL AND TRIM(b.type_kinship) != '' THEN 1 ELSE 0 END) AS dependentes,
-          SUM(CASE WHEN UPPER(TRIM(b.gender)) = 'FEMININO' THEN 1 ELSE 0 END) AS feminino,
-          SUM(CASE WHEN UPPER(TRIM(b.gender)) = 'MASCULINO' THEN 1 ELSE 0 END) AS masculino,
-          SUM(CASE WHEN UPPER(TRIM(b.gender)) = 'FEMININO' AND DATEDIFF(CURRENT_DATE(), b.birthday) / 365.25 BETWEEN 19 AND 38 THEN 1 ELSE 0 END) AS mulheres_19_38
+          AVG(CASE WHEN b.birthday IS NOT NULL THEN MONTHS_BETWEEN(CURRENT_DATE(), b.birthday) / 12 END) AS idade_media,
+          SUM(CASE WHEN b.birthday IS NOT NULL AND MONTHS_BETWEEN(CURRENT_DATE(), b.birthday) / 12 > 49 THEN 1 ELSE 0 END) AS mais_49,
+          SUM(CASE WHEN UPPER(TRIM(COALESCE(b.type_kinship, ''))) = 'TITULAR' THEN 1 ELSE 0 END) AS titulares,
+          SUM(CASE WHEN UPPER(TRIM(COALESCE(b.type_kinship, ''))) NOT IN ('TITULAR', '') THEN 1 ELSE 0 END) AS dependentes,
+          SUM(CASE WHEN UPPER(TRIM(COALESCE(b.gender, ''))) = 'FEMININO' THEN 1 ELSE 0 END) AS feminino,
+          SUM(CASE WHEN UPPER(TRIM(COALESCE(b.gender, ''))) = 'MASCULINO' THEN 1 ELSE 0 END) AS masculino,
+          SUM(CASE WHEN UPPER(TRIM(COALESCE(b.gender, ''))) = 'FEMININO' AND b.birthday IS NOT NULL AND MONTHS_BETWEEN(CURRENT_DATE(), b.birthday) / 12 BETWEEN 19 AND 38 THEN 1 ELSE 0 END) AS mulheres_19_38
         FROM sanus_databricks.sanus_prod.beneficiaries b
         ${groupFilter}
       `),
