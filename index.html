@@ -238,7 +238,27 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
         <div style="font-size:11px;color:#94a3b8;margin-top:3px" id="bullet-agend-periodo">Concluídos com sucesso · todos os períodos</div>
       </div>
     </div>
-    <div style="text-align:center;padding:40px 20px;color:#bbb;font-size:13px">Mais dados serão adicionados em breve.</div>
+
+    <!-- Tipos de Solicitação -->
+    <div class="card-box">
+      <div class="section-title"><i class="fa-solid fa-list-check" style="margin-right:6px"></i>Tipos de Solicitação</div>
+      <div class="loading-box" id="solic-loading"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...</div>
+      <div id="solic-content" style="display:none">
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead>
+            <tr style="border-bottom:2px solid #f1f5f9">
+              <th style="text-align:left;padding:8px 10px;font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:.5px">Tipo</th>
+              <th style="text-align:right;padding:8px 10px;font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:.5px">Quantidade</th>
+              <th style="text-align:right;padding:8px 10px;font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:.5px">%</th>
+              <th style="padding:8px 10px;width:160px"></th>
+            </tr>
+          </thead>
+          <tbody id="solic-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div style="text-align:center;padding:20px;color:#bbb;font-size:13px">Mais dados serão adicionados em breve.</div>
   </div>
 
 </div>
@@ -388,15 +408,53 @@ async function loadAppointments() {
   const p = new URLSearchParams();
   if (meses.length > 0) p.set('meses', meses.join(','));
   const qs = p.toString() ? '?' + p.toString() : '';
-  const d = await safeGet('/api/appointments' + qs);
-  if (d && !d.error) {
-    document.getElementById('bullet-agend').textContent = fmt(d.total);
+
+  // Carrega bullet e tipos em paralelo
+  const [appt, solic] = await Promise.all([
+    safeGet('/api/appointments' + qs),
+    safeGet('/api/solicitations' + qs),
+  ]);
+
+  // Bullet total
+  if (appt && !appt.error) {
+    document.getElementById('bullet-agend').textContent = fmt(appt.total);
     let label = 'Concluídos com sucesso · todos os períodos';
     if (meses.length === 1) { const [y,mm] = meses[0].split('-'); label = `Concluídos com sucesso · ${mN[mm]}/${y}`; }
     else if (meses.length > 1) label = `Concluídos com sucesso · ${meses.length} meses selecionados`;
     document.getElementById('bullet-agend-periodo').textContent = label;
   } else {
     document.getElementById('bullet-agend').textContent = 'Erro';
+  }
+
+  // Tipos de solicitação
+  const sl = document.getElementById('solic-loading');
+  const sc = document.getElementById('solic-content');
+  if (solic && !solic.error && solic.items) {
+    const colors = { 'Consulta':'#6366f1','Exame':'#00A69C','Terapia':'#e879a0','Outros':'#f59e0b','Nulo':'#94a3b8' };
+    const max = solic.items[0]?.quantidade || 1;
+    document.getElementById('solic-tbody').innerHTML = solic.items.map(it => {
+      const color = colors[it.tipo] || '#94a3b8';
+      const bw = Math.round((it.quantidade / max) * 100);
+      return `<tr onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
+        <td style="padding:10px 10px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <div style="width:10px;height:10px;border-radius:50%;background:${color};flex-shrink:0"></div>
+            <span style="font-weight:500;color:#334155">${it.tipo}</span>
+          </div>
+        </td>
+        <td style="padding:10px 10px;text-align:right;font-weight:700;color:#1e293b">${fmt(it.quantidade)}</td>
+        <td style="padding:10px 10px;text-align:right;color:#64748b;font-size:12px">${it.percentual.toFixed(1).replace('.',',')}%</td>
+        <td style="padding:10px 10px">
+          <div style="background:#f1f5f9;border-radius:4px;height:6px;overflow:hidden">
+            <div style="height:100%;width:${bw}%;background:${color};border-radius:4px;transition:width .4s"></div>
+          </div>
+        </td>
+      </tr>`;
+    }).join('');
+    if (sl) sl.style.display = 'none';
+    if (sc) sc.style.display = 'block';
+  } else {
+    if (sl) sl.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>Erro ao carregar tipos';
   }
 }
 
