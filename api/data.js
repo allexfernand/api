@@ -1,16 +1,10 @@
-// api/data.js
+// api/data.js — apenas usuários e grupos (rápido)
 const HOST  = process.env.DATABRICKS_HOST;
 const TOKEN = process.env.DATABRICKS_TOKEN;
-const HEADERS = {
-  "Authorization": `Bearer ${TOKEN}`,
-  "Content-Type": "application/json",
-};
+const HEADERS = { "Authorization": `Bearer ${TOKEN}`, "Content-Type": "application/json" };
 
 async function dbFetch(path, options = {}) {
-  const res = await fetch(`${HOST}${path}`, {
-    ...options,
-    headers: { ...HEADERS, ...(options.headers || {}) },
-  });
+  const res = await fetch(`${HOST}${path}`, { ...options, headers: { ...HEADERS, ...(options.headers || {}) } });
   if (!res.ok) throw new Error(`Databricks ${res.status}: ${await res.text()}`);
   return res.json();
 }
@@ -22,7 +16,7 @@ async function runQuery(warehouseId, sql) {
   });
   let { statement_id: sid, status: { state } } = data;
   while (state === "PENDING" || state === "RUNNING") {
-    await new Promise((r) => setTimeout(r, 2500));
+    await new Promise((r) => setTimeout(r, 2000));
     data = await dbFetch(`/api/2.0/sql/statements/${sid}`);
     state = data.status.state;
   }
@@ -30,21 +24,17 @@ async function runQuery(warehouseId, sql) {
   return data.result?.data_array || [];
 }
 
-// escape simples pra evitar quebra de query com aspas
-function escape(s) {
-  return String(s).replace(/'/g, "''");
+function escape(s) { return String(s).replace(/'/g, "''"); }
+
+async function getWarehouseId() {
+  const { warehouses = [] } = await dbFetch("/api/2.0/sql/warehouses");
+  const wh = warehouses.find((w) => w.state === "RUNNING") || warehouses[0];
+  if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
+  return wh.id;
 }
 
-export default async function handler(req, res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-  if (req.method === "OPTIONS") return res.status(200).end();
-
-  const groupName = req.query.group_name || null;
-  // Quando uma matriz é selecionada: inclui beneficiários da própria matriz
-  // E também de todas suas filiais (organizações cujo matriz_id aponta pra essa matriz)
-  const groupFilter = groupName
+function buildGroupFilter(groupName) {
+  return groupName
     ? `WHERE b.created_at IS NOT NULL
        AND b.organization_id IN (
          SELECT id FROM sanus_databricks.sanus_prod.organizations
@@ -56,71 +46,53 @@ export default async function handler(req, res) {
          WHERE matriz.name = '${escape(groupName)}'
        )`
     : `WHERE b.created_at IS NOT NULL`;
+}
+
+const getCell = (cell) => {
+  if (cell === null || cell === undefined) return null;
+  if (typeof cell === "object" && cell.string_value !== undefined) return cell.string_value;
+  return cell;
+};
+const toInt = (v) => {
+  const raw = getCell(v);
+  if (raw === null) return 0;
+  const n = parseInt(raw);
+  return Number.isFinite(n) ? n : 0;
+};
+const toDate = (v) => {
+  const raw = getCell(v);
+  return raw ? String(raw).slice(0, 10) : "";
+};
+
+export default async function handler(req, res) {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  if (req.method === "OPTIONS") return res.status(200).end();
+
+  const groupName = req.query.group_name || null;
+  const groupFilter = buildGroupFilter(groupName);
 
   try {
-    const { warehouses = [] } = await dbFetch("/api/2.0/sql/warehouses");
-    const wh = warehouses.find((w) => w.state === "RUNNING") || warehouses[0];
-    if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
+    const whId = await getWarehouseId();
 
-    // Função que tenta rodar a query, mas se falhar retorna null em vez de quebrar tudo
-    const safeRun = async (sql) => {
-      try { return await runQuery(wh.id, sql); }
-      catch (e) { console.error("Query falhou:", e.message); return null; }
-    };
-
-    const [userRows, groupRows, demoRows] = await Promise.all([
-      // Vidas por dia (com filtro opcional de matriz)
-      runQuery(wh.id, `
+    const [userRows, groupRows] = await Promise.all([
+      runQuery(whId, `
         SELECT DATE_TRUNC('DAY', b.created_at) AS dia, COUNT(DISTINCT b.id) AS n
         FROM sanus_databricks.sanus_prod.beneficiaries b
         ${groupFilter}
         GROUP BY 1 ORDER BY 1
       `),
-      // Matrizes ativas — organizações cujo id é referenciado como matriz_id por alguma outra
-      !groupName ? runQuery(wh.id, `
-        SELECT
-          o1.name AS grupo,
-          COUNT(filiais.id) AS total_filiais
+      !groupName ? runQuery(whId, `
+        SELECT o1.name AS grupo, COUNT(filiais.id) AS total_filiais
         FROM sanus_databricks.sanus_prod.organizations o1
-        LEFT JOIN sanus_databricks.sanus_prod.organizations filiais
-          ON filiais.matriz_id = o1.id
-        WHERE o1.active = true
-          AND o1.name IS NOT NULL
-          AND o1.id IN (
-            SELECT o2.matriz_id
-            FROM sanus_databricks.sanus_prod.organizations o2
-            WHERE o2.matriz_id IS NOT NULL
-          )
+        LEFT JOIN sanus_databricks.sanus_prod.organizations filiais ON filiais.matriz_id = o1.id
+        WHERE o1.active = true AND o1.name IS NOT NULL
+          AND o1.id IN (SELECT matriz_id FROM sanus_databricks.sanus_prod.organizations WHERE matriz_id IS NOT NULL)
         GROUP BY o1.name
         ORDER BY o1.name ASC
       `) : Promise.resolve(null),
-      // Demografia — versão simplificada, só titular/dependente pra testar
-      safeRun(`
-        SELECT
-          COUNT(*) AS total_vidas,
-          SUM(CASE WHEN UPPER(TRIM(COALESCE(b.type_kinship, ''))) = 'TITULAR' THEN 1 ELSE 0 END) AS titulares,
-          SUM(CASE WHEN UPPER(TRIM(COALESCE(b.type_kinship, ''))) NOT IN ('TITULAR', '') THEN 1 ELSE 0 END) AS dependentes
-        FROM sanus_databricks.sanus_prod.beneficiaries b
-        ${groupFilter}
-      `),
     ]);
-
-    // Extrai valor seja qual for o formato de retorno (string, número, ou objeto Genie-like)
-    const getCell = (cell) => {
-      if (cell === null || cell === undefined) return null;
-      if (typeof cell === "object" && cell.string_value !== undefined) return cell.string_value;
-      return cell;
-    };
-    const toInt = (v) => {
-      const raw = getCell(v);
-      if (raw === null) return 0;
-      const n = parseInt(raw);
-      return Number.isFinite(n) ? n : 0;
-    };
-    const toDate = (v) => {
-      const raw = getCell(v);
-      return raw ? String(raw).slice(0, 10) : "";
-    };
 
     const parse = (rows) => (rows || []).map((r) => [toDate(r[0]), toInt(r[1])]);
     const groups = groupRows
@@ -130,31 +102,7 @@ export default async function handler(req, res) {
         })).filter((g) => g.economic_group)
       : null;
 
-    // Demografia
-    const toNum = (v) => {
-      const raw = getCell(v);
-      if (raw === null) return 0;
-      const n = parseFloat(raw);
-      return Number.isFinite(n) ? n : 0;
-    };
-    const dRow = demoRows && demoRows[0] ? demoRows[0] : [];
-    const demographics = {
-      total_vidas: toInt(dRow[0]),
-      idade_media: 0,
-      mais_49: 0,
-      titulares: toInt(dRow[1]),
-      dependentes: toInt(dRow[2]),
-      feminino: 0,
-      masculino: 0,
-      mulheres_19_38: 0,
-    };
-
-    res.status(200).json({
-      users: parse(userRows),
-      groups,
-      demographics,
-      updatedAt: new Date().toISOString(),
-    });
+    res.status(200).json({ users: parse(userRows), groups, updatedAt: new Date().toISOString() });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
