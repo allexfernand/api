@@ -346,6 +346,7 @@ function buildQS(){
   if(currentGroup) p.set('group_name',currentGroup);
   if(currentType)  p.set('type',currentType);
   const s=p.toString();
+  console.log('buildQS →', s || '(sem filtros)');
   return s?'?'+s:'';
 }
 
