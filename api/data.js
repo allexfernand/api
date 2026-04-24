@@ -42,12 +42,19 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
 
   const groupName = req.query.group_name || null;
-  // Filtro de vidas: quando uma matriz é selecionada, considera todas as organizações
-  // cujo matriz_id aponta pra essa matriz (pelo nome)
+  // Quando uma matriz é selecionada: inclui beneficiários da própria matriz
+  // E também de todas suas filiais (organizações cujo matriz_id aponta pra essa matriz)
   const groupFilter = groupName
-    ? `INNER JOIN sanus_databricks.sanus_prod.organizations o ON b.organization_id = o.id
-       INNER JOIN sanus_databricks.sanus_prod.organizations matriz ON o.matriz_id = matriz.id
-       WHERE b.created_at IS NOT NULL AND matriz.name = '${escape(groupName)}'`
+    ? `WHERE b.created_at IS NOT NULL
+       AND b.organization_id IN (
+         SELECT id FROM sanus_databricks.sanus_prod.organizations
+         WHERE name = '${escape(groupName)}'
+         UNION
+         SELECT filial.id FROM sanus_databricks.sanus_prod.organizations filial
+         INNER JOIN sanus_databricks.sanus_prod.organizations matriz
+           ON filial.matriz_id = matriz.id
+         WHERE matriz.name = '${escape(groupName)}'
+       )`
     : `WHERE b.created_at IS NOT NULL`;
 
   try {
@@ -56,7 +63,7 @@ export default async function handler(req, res) {
     if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
 
     const [userRows, groupRows] = await Promise.all([
-      // Vidas por dia (com filtro opcional de grupo econômico)
+      // Vidas por dia (com filtro opcional de matriz)
       runQuery(wh.id, `
         SELECT DATE_TRUNC('DAY', b.created_at) AS dia, COUNT(DISTINCT b.id) AS n
         FROM sanus_databricks.sanus_prod.beneficiaries b
@@ -83,14 +90,27 @@ export default async function handler(req, res) {
       `) : Promise.resolve(null),
     ]);
 
-    const parse = (rows) => (rows || []).map((r) => [r[0].slice(0, 10), parseInt(r[1])]);
+    // Extrai valor seja qual for o formato de retorno (string, número, ou objeto Genie-like)
+    const getCell = (cell) => {
+      if (cell === null || cell === undefined) return null;
+      if (typeof cell === "object" && cell.string_value !== undefined) return cell.string_value;
+      return cell;
+    };
     const toInt = (v) => {
-      const n = parseInt(v);
+      const raw = getCell(v);
+      if (raw === null) return 0;
+      const n = parseInt(raw);
       return Number.isFinite(n) ? n : 0;
     };
+    const toDate = (v) => {
+      const raw = getCell(v);
+      return raw ? String(raw).slice(0, 10) : "";
+    };
+
+    const parse = (rows) => (rows || []).map((r) => [toDate(r[0]), toInt(r[1])]);
     const groups = groupRows
       ? groupRows.map((r) => ({
-          economic_group: r[0] ? String(r[0]).trim() : null,
+          economic_group: getCell(r[0]) ? String(getCell(r[0])).trim() : null,
           total_orgs: toInt(r[1]),
         })).filter((g) => g.economic_group)
       : null;
