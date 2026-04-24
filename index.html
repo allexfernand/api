@@ -274,6 +274,20 @@ document.querySelectorAll('.tab').forEach(t=>{
   });
 });
 
+// fetch com timeout de 15s
+async function fetchWithTimeout(url, ms=15000){
+  const ctrl=new AbortController();
+  const timer=setTimeout(()=>ctrl.abort(),ms);
+  try{
+    const res=await fetch(url,{signal:ctrl.signal});
+    clearTimeout(timer);
+    return res;
+  }catch(e){
+    clearTimeout(timer);
+    throw e;
+  }
+}
+
 function setStatus(type,msg){const el=document.getElementById('status');el.className='status '+type;el.textContent=msg;}
 function showErr(msg){const el=document.getElementById('err-box');el.style.display='block';el.textContent='⚠️ '+msg;}
 
@@ -454,20 +468,15 @@ async function loadAll(fetchOrgs=true){
 
   try{
     const qs=currentGroup?`?group_name=${encodeURIComponent(currentGroup)}`:'';
-    const [res, demoRes]=await Promise.all([
-      fetch('/api/data'+qs),
-      fetch('/api/demographics'+qs)
-    ]);
 
+    // Carrega dados principais primeiro (obrigatório)
+    const res=await fetchWithTimeout('/api/data'+qs);
     if(!res.ok) throw new Error(`HTTP ${res.status}`);
     const json=await res.json();
     if(json.error) throw new Error(json.error);
-
-    let demo={};
-    if(demoRes.ok){ try{ demo=await demoRes.json(); }catch(e){} }
-
     usersData=json.users||[];
 
+    // Popula grupos
     if(fetchOrgs && Array.isArray(json.groups)){
       const sel=document.getElementById('group-select');
       if(sel){
@@ -486,14 +495,18 @@ async function loadAll(fetchOrgs=true){
     const bv=document.getElementById('bullet-vidas');
     if(bv) bv.textContent=fmt(ut);
 
-    renderDemographics(demo);
+    // Renderiza o que já tem
     renderEvol();
-    loadCompanies();
-    loadAgeGroups();
-
     setStatus('ok','✓ Dados ao vivo');
     const lu=document.getElementById('last-upd');
     if(lu) lu.textContent='Atualizado: '+new Date().toLocaleTimeString('pt-BR');
+
+    // Carrega o resto em paralelo sem bloquear
+    Promise.allSettled([
+      fetchWithTimeout('/api/demographics'+qs).then(r=>r.ok?r.json():null).then(demo=>{if(demo&&!demo.error)renderDemographics(demo);}),
+      loadCompanies(),
+      loadAgeGroups(),
+    ]);
   }catch(err){
     setStatus('error','✗ Erro');
     showErr(err.message);
