@@ -72,9 +72,22 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
   </div>
   <div class="filter-group" id="filter-periodo" style="display:none">
     <label>📅 Período</label>
-    <input type="date" id="periodo-inicio" class="filter-date"/>
-    <span style="font-size:12px;color:#888">até</span>
-    <input type="date" id="periodo-fim" class="filter-date"/>
+    <div style="position:relative">
+      <button id="periodo-btn" onclick="togglePeriodoDropdown()" style="font-size:12px;padding:5px 12px;border-radius:6px;border:1px solid #ddd;background:#fff;color:#333;cursor:pointer;min-width:200px;text-align:left;display:flex;align-items:center;justify-content:space-between;gap:8px">
+        <span id="periodo-label">(Todos os meses)</span>
+        <i class="fa-solid fa-chevron-down" style="font-size:10px;color:#94a3b8"></i>
+      </button>
+      <div id="periodo-dropdown" style="display:none;position:absolute;top:36px;left:0;background:#fff;border:1px solid #e2e8f0;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.1);z-index:999;min-width:280px;padding:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 8px 8px;border-bottom:1px solid #f1f5f9;margin-bottom:6px">
+          <span style="font-size:11px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.5px">Selecione os meses</span>
+          <div style="display:flex;gap:8px">
+            <button onclick="selectAllPeriodo()" style="font-size:11px;color:#00A69C;background:none;border:none;cursor:pointer;font-weight:600">Todos</button>
+            <button onclick="clearPeriodo()" style="font-size:11px;color:#94a3b8;background:none;border:none;cursor:pointer">Limpar</button>
+          </div>
+        </div>
+        <div id="periodo-options" style="max-height:240px;overflow-y:auto;display:grid;grid-template-columns:1fr 1fr;gap:2px"></div>
+      </div>
+    </div>
   </div>
   <button class="clear-btn" onclick="clearFilters()">✕ Limpar</button>
   <span style="font-size:11px;color:#bbb;margin-left:auto" id="filter-info"></span>
@@ -400,7 +413,82 @@ function renderAgeGroups(data) {
   });
 }
 
-// --- Agendamentos ---
+// --- Período dropdown ---
+let selectedMonths = new Set();
+
+function buildPeriodoOptions() {
+  const container = document.getElementById('periodo-options');
+  container.innerHTML = '';
+  // Gera últimos 24 meses
+  const now = new Date();
+  for (let i = 0; i < 24; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const val = d.toISOString().slice(0, 7); // ex: "2025-04"
+    const [y, mm] = val.split('-');
+    const label = `${mN[mm]}/${y}`;
+    const item = document.createElement('label');
+    item.style.cssText = 'display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:6px;cursor:pointer;font-size:12px;color:#334155';
+    item.onmouseover = () => item.style.background = '#f8fafc';
+    item.onmouseout  = () => item.style.background = '';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox'; cb.value = val;
+    cb.style.accentColor = '#6366f1';
+    cb.addEventListener('change', () => {
+      if (cb.checked) selectedMonths.add(val);
+      else selectedMonths.delete(val);
+      updatePeriodoLabel();
+      loadAppointments();
+    });
+    item.appendChild(cb);
+    item.appendChild(document.createTextNode(label));
+    container.appendChild(item);
+  }
+}
+
+function togglePeriodoDropdown() {
+  const dd = document.getElementById('periodo-dropdown');
+  dd.style.display = dd.style.display === 'none' ? 'block' : 'none';
+}
+
+// Fecha dropdown ao clicar fora
+document.addEventListener('click', e => {
+  const btn = document.getElementById('periodo-btn');
+  const dd  = document.getElementById('periodo-dropdown');
+  if (dd && btn && !btn.contains(e.target) && !dd.contains(e.target)) {
+    dd.style.display = 'none';
+  }
+});
+
+function selectAllPeriodo() {
+  document.querySelectorAll('#periodo-options input[type=checkbox]').forEach(cb => {
+    cb.checked = true;
+    selectedMonths.add(cb.value);
+  });
+  updatePeriodoLabel();
+  loadAppointments();
+}
+
+function clearPeriodo() {
+  document.querySelectorAll('#periodo-options input[type=checkbox]').forEach(cb => {
+    cb.checked = false;
+  });
+  selectedMonths.clear();
+  updatePeriodoLabel();
+  loadAppointments();
+}
+
+function updatePeriodoLabel() {
+  const lbl = document.getElementById('periodo-label');
+  if (selectedMonths.size === 0) {
+    lbl.textContent = '(Todos os meses)';
+  } else if (selectedMonths.size === 1) {
+    const [val] = selectedMonths;
+    const [y, mm] = val.split('-');
+    lbl.textContent = `${mN[mm]}/${y}`;
+  } else {
+    lbl.textContent = `${selectedMonths.size} meses selecionados`;
+  }
+}
 async function loadAppointments() {
   const inicio = document.getElementById('periodo-inicio').value;
   const fim    = document.getElementById('periodo-fim').value;
