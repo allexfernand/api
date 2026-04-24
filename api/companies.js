@@ -32,6 +32,24 @@ const getCell = (cell) => {
   return cell;
 };
 
+function buildFilters(groupName, typeFilter) {
+  const conditions = [];
+  if (groupName) {
+    conditions.push(`b.ID_EMPRESA IN (
+      SELECT id FROM sanus_databricks.sanus_prod.organizations WHERE name = '${escape(groupName)}'
+      UNION
+      SELECT id FROM sanus_databricks.sanus_prod.organizations
+      WHERE matriz_id = (SELECT id FROM sanus_databricks.sanus_prod.organizations WHERE name = '${escape(groupName)}' LIMIT 1)
+    )`);
+  }
+  if (typeFilter === 'TITULAR') {
+    conditions.push(`UPPER(TRIM(COALESCE(b.GRAU_PARENTESCO,''))) = 'TITULAR'`);
+  } else if (typeFilter === 'DEPENDENTE') {
+    conditions.push(`UPPER(TRIM(COALESCE(b.GRAU_PARENTESCO,''))) != 'TITULAR'`);
+  }
+  return conditions.length ? `AND ${conditions.join(' AND ')}` : '';
+}
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
@@ -39,21 +57,8 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
 
   const groupName = req.query.group_name || null;
-
-  // Filtro por grupo: usa ID_EMPRESA da view cruzando com organizations
-  // Inclui a própria matriz + todas as filiais (via matriz_id)
-  const groupFilter = groupName ? `
-    AND b.ID_EMPRESA IN (
-      SELECT id FROM sanus_databricks.sanus_prod.organizations
-      WHERE name = '${escape(groupName)}'
-      UNION
-      SELECT id FROM sanus_databricks.sanus_prod.organizations
-      WHERE matriz_id = (
-        SELECT id FROM sanus_databricks.sanus_prod.organizations
-        WHERE name = '${escape(groupName)}' LIMIT 1
-      )
-    )
-  ` : "";
+  const typeFilter = req.query.type || null;
+  const extraFilter = buildFilters(groupName, typeFilter);
 
   try {
     const { warehouses = [] } = await dbFetch("/api/2.0/sql/warehouses");
@@ -66,7 +71,7 @@ export default async function handler(req, res) {
         COUNT(*) AS total
       FROM sanus_databricks.sanus_prod.vw_beneficiarios b
       WHERE NOME_CLIENTE IS NOT NULL
-        ${groupFilter}
+        ${extraFilter}
       GROUP BY NOME_CLIENTE
       ORDER BY total DESC
     `);
