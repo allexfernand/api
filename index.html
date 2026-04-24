@@ -25,7 +25,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .filterbar{background:#fff;border-bottom:1px solid #e8e8e8;padding:10px 28px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
 .filter-group{display:flex;align-items:center;gap:8px}
 .filter-group label{font-size:12px;color:#888;font-weight:500;white-space:nowrap}
-.filter-select{font-size:12px;padding:5px 10px;border-radius:6px;border:1px solid #ddd;background:#fff;color:#333;min-width:220px;max-width:320px;cursor:pointer}
+.filter-select{font-size:12px;padding:5px 10px;border-radius:6px;border:1px solid #ddd;background:#fff;color:#333;min-width:200px;max-width:300px;cursor:pointer}
 .clear-btn{font-size:12px;padding:5px 10px;border-radius:6px;border:1px solid #ddd;background:#f5f5f5;color:#666;cursor:pointer}
 .container{padding:20px 28px;max-width:1280px;margin:0 auto}
 .card-box{background:#fff;border-radius:12px;border:1px solid #e8e8e8;padding:24px 28px;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.06)}
@@ -76,7 +76,6 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
 </div>
 
 <div class="container">
-
   <div class="tab-content active" id="tab-perfil">
     <div style="text-align:center;padding:80px 20px;color:#bbb">
       <div style="font-size:40px;margin-bottom:12px">🏗️</div>
@@ -86,7 +85,6 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
 
   <div class="tab-content" id="tab-demografica">
 
-    <!-- Bullet -->
     <div class="card-box" style="display:flex;align-items:center;gap:20px;padding:20px 28px">
       <div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#00A69C,#2E7D9A);display:flex;align-items:center;justify-content:center">
         <i class="fa-solid fa-heart-pulse" style="font-size:20px;color:#fff"></i>
@@ -98,8 +96,7 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
       </div>
     </div>
 
-    <!-- Perfil demográfico -->
-    <div class="card-box" id="demo-card">
+    <div class="card-box">
       <div class="section-title"><i class="fa-solid fa-chart-pie" style="margin-right:6px"></i>Perfil demográfico</div>
       <div class="loading-box" id="demo-loading"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...</div>
       <div id="demo-content" style="display:none">
@@ -162,7 +159,6 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
       </div>
     </div>
 
-    <!-- Grid: Empresas + Faixa Etária -->
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
       <div class="card-box" style="margin-bottom:0">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">
@@ -177,7 +173,7 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
                 <th style="text-align:left;padding:6px 8px;font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase">#</th>
                 <th style="text-align:left;padding:6px 8px;font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase">Empresa</th>
                 <th style="text-align:right;padding:6px 8px;font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase">Total</th>
-                <th style="padding:6px 8px;width:70px"></th>
+                <th style="padding:6px 8px;width:80px"></th>
               </tr>
             </thead>
             <tbody id="companies-tbody"></tbody>
@@ -199,7 +195,6 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
       </div>
     </div>
 
-    <!-- Evolução -->
     <div class="chart-card">
       <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Evolução acumulada de vidas</h2>
       <div style="font-size:11px;color:#94a3b8;margin-bottom:14px"><code>beneficiaries.created_at</code> · últimos 12 meses</div>
@@ -212,205 +207,243 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
 <footer>Dados ao vivo · Databricks SQL · <code>sanus_databricks.sanus_prod</code></footer>
 
 <script>
-const fmt=n=>Number(n).toLocaleString('pt-BR');
-const mN={'01':'Jan','02':'Fev','03':'Mar','04':'Abr','05':'Mai','06':'Jun','07':'Jul','08':'Ago','09':'Set','10':'Out','11':'Nov','12':'Dez'};
-let usersData=[],companiesData=[],eChart,agegroupChart;
-let currentGroup='', currentType='';
+const fmt = n => Number(n).toLocaleString('pt-BR');
+const mN = {'01':'Jan','02':'Fev','03':'Mar','04':'Abr','05':'Mai','06':'Jun','07':'Jul','08':'Ago','09':'Set','10':'Out','11':'Nov','12':'Dez'};
 
-document.querySelectorAll('.tab').forEach(t=>{
-  t.addEventListener('click',()=>{
-    document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
-    document.querySelectorAll('.tab-content').forEach(x=>x.classList.remove('active'));
+let usersData = [], companiesData = [], eChart, agegroupChart;
+let currentGroup = '';
+let currentType  = '';
+
+// --- Tabs ---
+document.querySelectorAll('.tab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(x => x.classList.remove('active'));
     t.classList.add('active');
-    document.getElementById('tab-'+t.dataset.tab).classList.add('active');
+    document.getElementById('tab-' + t.dataset.tab).classList.add('active');
   });
 });
 
-function setStatus(type,msg){document.getElementById('status').className='status '+type;document.getElementById('status').textContent=msg;}
+// --- Filtros ---
+document.getElementById('group-select').addEventListener('change', e => {
+  currentGroup = e.target.value;
+  updateFilterInfo();
+  loadAll(false);
+});
 
-// Evolução
-function renderEvol(){
-  if(!usersData.length) return;
-  const m={};
-  usersData.forEach(([d,v])=>{const k=d.slice(0,7);m[k]=(m[k]||0)+v;});
-  const all=Object.entries(m).sort((a,b)=>a[0]>b[0]?1:-1);
-  let acc=0;const accM={};
-  all.forEach(([k,v])=>{acc+=v;accM[k]=acc;});
-  const now=new Date(),cut=new Date(now.getFullYear(),now.getMonth()-11,1);
-  const cutStr=cut.toISOString().slice(0,7);
-  const entries=all.filter(([k])=>k>=cutStr);
-  const labels=entries.map(([k])=>{const[y,mm]=k.split('-');return`${mN[mm]}/${y.slice(2)}`});
-  const values=entries.map(([k])=>accM[k]);
-  document.getElementById('skel-e').style.display='none';
-  const cv=document.getElementById('evolChart');cv.style.display='block';
-  if(eChart)eChart.destroy();
-  eChart=new Chart(cv,{type:'line',data:{labels,datasets:[{data:values,borderColor:'#00A69C',backgroundColor:'rgba(0,166,156,0.08)',borderWidth:2,pointRadius:3,pointBackgroundColor:'#00A69C',fill:true,tension:0.35}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{backgroundColor:'#fff',borderColor:'#e2e8f0',borderWidth:1,callbacks:{label:c=>`${fmt(c.parsed.y)} vidas`}}},scales:{x:{ticks:{font:{size:10},color:'#94a3b8',maxRotation:45,autoSkip:true,maxTicksLimit:14},grid:{color:'rgba(0,0,0,0.04)'},border:{display:false}},y:{beginAtZero:false,ticks:{font:{size:10},color:'#94a3b8',callback:v=>fmt(v)},grid:{color:'rgba(0,0,0,0.04)'},border:{display:false}}}}});
+document.getElementById('type-select').addEventListener('change', e => {
+  currentType = e.target.value;
+  updateFilterInfo();
+  loadAll(false);
+});
+
+function updateFilterInfo() {
+  const parts = [];
+  const gSel = document.getElementById('group-select');
+  if (currentGroup) parts.push(gSel.options[gSel.selectedIndex].text);
+  if (currentType)  parts.push(currentType === 'TITULAR' ? 'Titular' : 'Dependente');
+  document.getElementById('filter-info').textContent = parts.length ? `Filtrando: ${parts.join(' · ')}` : '';
 }
 
-// Demografia
-function renderDemographics(d){
-  document.getElementById('demo-loading').style.display='none';
-  document.getElementById('demo-content').style.display='block';
-  const total=Number(d.total_vidas)||0;
-  const pct=n=>total>0?((n/total)*100).toFixed(1).replace('.',',')+'%':'—';
-  const s=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
-  s('d-total',fmt(total));s('d-idade',d.idade_media||'—');s('d-49',fmt(Number(d.mais_49)||0));
-  s('d-mulheres-19-38',fmt(Number(d.mulheres_19_38)||0));
-  s('d-dep',fmt(Number(d.dependentes)||0));s('d-tit',fmt(Number(d.titulares)||0));
-  s('d-dep-pct',pct(Number(d.dependentes)||0));s('d-tit-pct',pct(Number(d.titulares)||0));
-  s('d-fem',fmt(Number(d.feminino)||0));s('d-masc',fmt(Number(d.masculino)||0));
-  const fem=Number(d.feminino)||0,masc=Number(d.masculino)||0,ni=Number(d.nao_informado)||0;
-  const gtotal=fem+masc+ni||1;
-  const pctG=n=>((n/gtotal)*100).toFixed(1).replace('.',',')+'%';
-  s('d-fem-pct',pctG(fem));s('d-masc-pct',pctG(masc));
-  s('d-ni',fmt(ni));s('d-ni-pct',pctG(ni));
-  const bfem=document.getElementById('bar-fem'),bmasc=document.getElementById('bar-masc'),bni=document.getElementById('bar-ni');
-  if(bfem) bfem.style.width=((fem/gtotal)*100).toFixed(1)+'%';
-  if(bmasc) bmasc.style.width=((masc/gtotal)*100).toFixed(1)+'%';
-  if(bni) bni.style.width=((ni/gtotal)*100).toFixed(1)+'%';
-  const tit=Number(d.titulares)||0,dep=Number(d.dependentes)||0;
-  s('d-ratio',tit>0?(dep/tit).toFixed(2).replace('.',','):'—');
+function clearFilters() {
+  currentGroup = '';
+  currentType  = '';
+  document.getElementById('group-select').value = '';
+  document.getElementById('type-select').value  = '';
+  document.getElementById('filter-info').textContent = '';
+  loadAll(false);
 }
 
-// Empresas
-function filterCompanies(){
-  const q=document.getElementById('company-search').value.toLowerCase();
-  renderCompaniesTable(companiesData.filter(c=>c.empresa.toLowerCase().includes(q)));
+function buildQS() {
+  const p = new URLSearchParams();
+  if (currentGroup) p.set('group_name', currentGroup);
+  if (currentType)  p.set('type', currentType);
+  const s = p.toString();
+  return s ? '?' + s : '';
 }
-function renderCompaniesTable(data){
-  const grand=companiesData.reduce((a,c)=>a+c.total,0);
-  document.getElementById('companies-tbody').innerHTML=data.slice(0,100).map((c,i)=>{
-    const bw=companiesData[0]?.total>0?Math.round(c.total/companiesData[0].total*100):0;
-    const pct=grand>0?((c.total/grand)*100).toFixed(1):'0';
-    return`<tr onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
+
+// --- Status ---
+function setStatus(type, msg) {
+  const el = document.getElementById('status');
+  el.className = 'status ' + type;
+  el.textContent = msg;
+}
+
+// --- Evolução ---
+function renderEvol() {
+  if (!usersData.length) return;
+  const m = {};
+  usersData.forEach(([d, v]) => { const k = d.slice(0,7); m[k] = (m[k]||0) + v; });
+  const all = Object.entries(m).sort((a,b) => a[0] > b[0] ? 1 : -1);
+  let acc = 0; const accM = {};
+  all.forEach(([k,v]) => { acc += v; accM[k] = acc; });
+  const now = new Date(), cut = new Date(now.getFullYear(), now.getMonth()-11, 1);
+  const cutStr = cut.toISOString().slice(0,7);
+  const entries = all.filter(([k]) => k >= cutStr);
+  const labels = entries.map(([k]) => { const [y,mm] = k.split('-'); return `${mN[mm]}/${y.slice(2)}`; });
+  const values = entries.map(([k]) => accM[k]);
+  document.getElementById('skel-e').style.display = 'none';
+  const cv = document.getElementById('evolChart'); cv.style.display = 'block';
+  if (eChart) eChart.destroy();
+  eChart = new Chart(cv, {
+    type: 'line',
+    data: { labels, datasets: [{ data: values, borderColor: '#00A69C', backgroundColor: 'rgba(0,166,156,0.08)', borderWidth: 2, pointRadius: 3, pointBackgroundColor: '#00A69C', fill: true, tension: 0.35 }] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { backgroundColor: '#fff', borderColor: '#e2e8f0', borderWidth: 1, callbacks: { label: c => `${fmt(c.parsed.y)} vidas` } } }, scales: { x: { ticks: { font: { size: 10 }, color: '#94a3b8', maxRotation: 45, autoSkip: true, maxTicksLimit: 14 }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } }, y: { beginAtZero: false, ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => fmt(v) }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } } } }
+  });
+}
+
+// --- Demografia ---
+function renderDemographics(d) {
+  document.getElementById('demo-loading').style.display = 'none';
+  document.getElementById('demo-content').style.display = 'block';
+  const total = Number(d.total_vidas) || 0;
+  const pct = n => total > 0 ? ((n/total)*100).toFixed(1).replace('.',',') + '%' : '—';
+  const s = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  s('d-total', fmt(total));
+  s('d-idade', d.idade_media || '—');
+  s('d-49', fmt(Number(d.mais_49)||0));
+  s('d-mulheres-19-38', fmt(Number(d.mulheres_19_38)||0));
+  s('d-dep', fmt(Number(d.dependentes)||0));
+  s('d-tit', fmt(Number(d.titulares)||0));
+  s('d-dep-pct', pct(Number(d.dependentes)||0));
+  s('d-tit-pct', pct(Number(d.titulares)||0));
+  const fem = Number(d.feminino)||0, masc = Number(d.masculino)||0, ni = Number(d.nao_informado)||0;
+  const gt = fem + masc + ni || 1;
+  const pg = n => ((n/gt)*100).toFixed(1).replace('.',',') + '%';
+  s('d-fem', fmt(fem)); s('d-masc', fmt(masc)); s('d-ni', fmt(ni));
+  s('d-fem-pct', pg(fem)); s('d-masc-pct', pg(masc)); s('d-ni-pct', pg(ni));
+  const bf = document.getElementById('bar-fem'), bm = document.getElementById('bar-masc'), bn = document.getElementById('bar-ni');
+  if (bf) bf.style.width = ((fem/gt)*100).toFixed(1) + '%';
+  if (bm) bm.style.width = ((masc/gt)*100).toFixed(1) + '%';
+  if (bn) bn.style.width = ((ni/gt)*100).toFixed(1) + '%';
+  const tit = Number(d.titulares)||0, dep = Number(d.dependentes)||0;
+  s('d-ratio', tit > 0 ? (dep/tit).toFixed(2).replace('.',',') : '—');
+}
+
+// --- Empresas ---
+function filterCompanies() {
+  const q = document.getElementById('company-search').value.toLowerCase();
+  renderCompaniesTable(companiesData.filter(c => c.empresa.toLowerCase().includes(q)));
+}
+function renderCompaniesTable(data) {
+  const grand = companiesData.reduce((a,c) => a+c.total, 0);
+  document.getElementById('companies-tbody').innerHTML = data.slice(0,100).map((c,i) => {
+    const bw = companiesData[0]?.total > 0 ? Math.round(c.total/companiesData[0].total*100) : 0;
+    const pct = grand > 0 ? ((c.total/grand)*100).toFixed(1) : '0';
+    return `<tr onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
       <td style="padding:6px 8px;color:#cbd5e1;font-size:10px">${i+1}</td>
       <td style="padding:6px 8px;color:#334155;font-weight:500">${c.empresa}</td>
       <td style="padding:6px 8px;text-align:right;font-weight:700;color:#1e293b">${fmt(c.total)}</td>
       <td style="padding:6px 8px"><div style="background:#f1f5f9;border-radius:3px;height:5px;overflow:hidden"><div style="height:100%;width:${bw}%;background:linear-gradient(90deg,#00A69C,#2E7D9A);border-radius:3px"></div></div><div style="font-size:10px;color:#94a3b8;text-align:right">${pct}%</div></td>
     </tr>`;
   }).join('');
-  const f=document.getElementById('companies-footer');
-  if(f) f.textContent=`${Math.min(data.length,100)} de ${data.length} · ${fmt(grand)} total`;
+  const f = document.getElementById('companies-footer');
+  if (f) f.textContent = `${Math.min(data.length,100)} de ${data.length} · ${fmt(grand)} total`;
 }
 
-// Faixa etária
-function renderAgeGroups(data){
-  document.getElementById('agegroup-loading').style.display='none';
-  document.getElementById('agegroup-wrap').style.display='block';
-  const cv=document.getElementById('agegroupChart');
-  if(agegroupChart)agegroupChart.destroy();
-  agegroupChart=new Chart(cv,{
-    type:'bar',
-    data:{labels:data.map(d=>d.faixa),datasets:[
-      {label:'Feminino',data:data.map(d=>d.feminino),backgroundColor:'rgba(232,121,160,0.85)',borderRadius:3},
-      {label:'Masculino',data:data.map(d=>d.masculino),backgroundColor:'rgba(59,130,246,0.85)',borderRadius:3},
+// --- Faixa etária ---
+function renderAgeGroups(data) {
+  document.getElementById('agegroup-loading').style.display = 'none';
+  document.getElementById('agegroup-wrap').style.display = 'block';
+  const cv = document.getElementById('agegroupChart');
+  if (agegroupChart) agegroupChart.destroy();
+  agegroupChart = new Chart(cv, {
+    type: 'bar',
+    data: { labels: data.map(d => d.faixa), datasets: [
+      { label: 'Feminino',  data: data.map(d => d.feminino),  backgroundColor: 'rgba(232,121,160,0.85)', borderRadius: 3 },
+      { label: 'Masculino', data: data.map(d => d.masculino), backgroundColor: 'rgba(59,130,246,0.85)',  borderRadius: 3 },
     ]},
-    options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',
-      plugins:{legend:{display:false},tooltip:{backgroundColor:'#fff',borderColor:'#e2e8f0',borderWidth:1,titleColor:'#64748b',bodyColor:'#1e293b',callbacks:{label:c=>`${c.dataset.label}: ${fmt(c.parsed.x)}`}}},
-      scales:{x:{ticks:{font:{size:10},color:'#94a3b8',callback:v=>fmt(v)},grid:{color:'rgba(0,0,0,0.04)'},border:{display:false}},y:{ticks:{font:{size:11},color:'#64748b'},grid:{display:false},border:{display:false}}}}
+    options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y',
+      plugins: { legend: { display: false }, tooltip: { backgroundColor: '#fff', borderColor: '#e2e8f0', borderWidth: 1, titleColor: '#64748b', bodyColor: '#1e293b', callbacks: { label: c => `${c.dataset.label}: ${fmt(c.parsed.x)}` } } },
+      scales: { x: { ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => fmt(v) }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } }, y: { ticks: { font: { size: 11 }, color: '#64748b' }, grid: { display: false }, border: { display: false } } }
+    }
   });
 }
 
-// Filtros
-document.getElementById('group-select').addEventListener('change',e=>{
-  currentGroup=e.target.value;
-  updateFilterInfo();
-  loadAll(false);
-});
-document.getElementById('type-select').addEventListener('change',e=>{
-  currentType=e.target.value;
-  updateFilterInfo();
-  loadAll(false);
-});
-function updateFilterInfo(){
-  const parts=[];
-  if(currentGroup) parts.push(document.getElementById('group-select').options[document.getElementById('group-select').selectedIndex].text);
-  if(currentType) parts.push(currentType==='TITULAR'?'Titular':'Dependente');
-  document.getElementById('filter-info').textContent=parts.length?`Filtrando: ${parts.join(' · ')}`:'';
-}
-function clearFilters(){
-  currentGroup='';currentType='';
-  document.getElementById('group-select').value='';
-  document.getElementById('type-select').value='';
-  document.getElementById('filter-info').textContent='';
-  loadAll(false);
+// --- Cargas assíncronas ---
+async function safeGet(url) {
+  try { const r = await fetch(url); if (!r.ok) throw new Error(r.status); return await r.json(); }
+  catch (e) { return null; }
 }
 
-// Cargas independentes
-async function safeGet(url){
-  try{const r=await fetch(url);if(!r.ok)throw new Error(r.status);return await r.json();}catch(e){return null;}
+async function loadDemographics() {
+  document.getElementById('demo-loading').style.display = 'block';
+  document.getElementById('demo-content').style.display = 'none';
+  const d = await safeGet('/api/demographics' + buildQS());
+  if (d && !d.error) renderDemographics(d);
+  else document.getElementById('demo-loading').innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>Erro ao carregar demografia';
 }
 
-function buildQS(){
-  const p=new URLSearchParams();
-  if(currentGroup) p.set('group_name',currentGroup);
-  if(currentType)  p.set('type',currentType);
-  const s=p.toString();
-  return s?'?'+s:'';
-}
-
-async function loadDemographics(){
-  const qs=currentGroup?`?group_name=${encodeURIComponent(currentGroup)}`:'';
-  const d=await safeGet('/api/demographics'+qs);
-  if(d&&!d.error) renderDemographics(d);
-  else{document.getElementById('demo-loading').innerHTML='<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>Erro ao carregar demografia';}
-}
-
-async function loadCompanies(){
-  const qs=currentGroup?`?group_name=${encodeURIComponent(currentGroup)}`:'';
-  const d=await safeGet('/api/companies'+qs);
-  if(d&&!d.error&&d.companies){
-    companiesData=d.companies;
-    document.getElementById('companies-loading').style.display='none';
-    document.getElementById('companies-wrap').style.display='block';
+async function loadCompanies() {
+  document.getElementById('companies-loading').style.display = 'block';
+  document.getElementById('companies-wrap').style.display = 'none';
+  const d = await safeGet('/api/companies' + buildQS());
+  if (d && !d.error && d.companies) {
+    companiesData = d.companies;
+    document.getElementById('companies-loading').style.display = 'none';
+    document.getElementById('companies-wrap').style.display = 'block';
     renderCompaniesTable(companiesData);
-  }else{document.getElementById('companies-loading').innerHTML='<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>Erro ao carregar empresas';}
+  } else {
+    document.getElementById('companies-loading').innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>Erro ao carregar empresas';
+  }
 }
 
-async function loadAgeGroups(){
-  const qs=currentGroup?`?group_name=${encodeURIComponent(currentGroup)}`:'';
-  const d=await safeGet('/api/agegroups'+qs);
-  if(d&&!d.error&&d.agegroups) renderAgeGroups(d.agegroups);
-  else{document.getElementById('agegroup-loading').innerHTML='<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>Erro ao carregar faixas etárias';}
+async function loadAgeGroups() {
+  document.getElementById('agegroup-loading').style.display = 'block';
+  document.getElementById('agegroup-wrap').style.display = 'none';
+  const d = await safeGet('/api/agegroups' + buildQS());
+  if (d && !d.error && d.agegroups) renderAgeGroups(d.agegroups);
+  else document.getElementById('agegroup-loading').innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>Erro ao carregar faixas etárias';
 }
 
-async function loadAll(fetchOrgs=true){
-  setStatus('loading','⏳ Carregando...');
-  try{
-    const qs=currentGroup?`?group_name=${encodeURIComponent(currentGroup)}`:'';
-    const res=await fetch('/api/data'+qs);
-    if(!res.ok) throw new Error(`HTTP ${res.status}`);
-    const json=await res.json();
-    if(json.error) throw new Error(json.error);
-    usersData=json.users||[];
+async function loadAll(fetchOrgs = true) {
+  setStatus('loading', '⏳ Carregando...');
+  const qs = buildQS();
 
-    if(fetchOrgs&&Array.isArray(json.groups)){
-      const sel=document.getElementById('group-select');
-      const ordered=[...json.groups].sort((a,b)=>a.economic_group.localeCompare(b.economic_group,'pt-BR',{sensitivity:'base'}));
-      sel.innerHTML='<option value="">(Todos os grupos)</option>';
-      ordered.forEach(g=>{const o=document.createElement('option');o.value=g.economic_group;o.textContent=g.economic_group;sel.appendChild(o);});
+  // Reset skeleton evolução
+  document.getElementById('skel-e').style.display = 'block';
+  document.getElementById('evolChart').style.display = 'none';
+
+  try {
+    const res = await fetch('/api/data' + qs);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
+    if (json.error) throw new Error(json.error);
+
+    usersData = json.users || [];
+
+    if (fetchOrgs && Array.isArray(json.groups)) {
+      const sel = document.getElementById('group-select');
+      const ordered = [...json.groups].sort((a,b) => a.economic_group.localeCompare(b.economic_group, 'pt-BR', { sensitivity: 'base' }));
+      sel.innerHTML = '<option value="">(Todos os grupos)</option>';
+      ordered.forEach(g => {
+        const o = document.createElement('option');
+        o.value = g.economic_group;
+        o.textContent = g.economic_group;
+        sel.appendChild(o);
+      });
     }
 
-    const ut=usersData.reduce((a,[,v])=>a+v,0);
-    const bv=document.getElementById('bullet-vidas');
-    if(bv) bv.textContent=fmt(ut);
+    const ut = usersData.reduce((a, [,v]) => a+v, 0);
+    const bv = document.getElementById('bullet-vidas');
+    if (bv) bv.textContent = fmt(ut);
 
     renderEvol();
-    setStatus('ok','✓ Dados ao vivo');
-    document.getElementById('last-upd').textContent='Atualizado: '+new Date().toLocaleTimeString('pt-BR');
+    setStatus('ok', '✓ Dados ao vivo');
+    document.getElementById('last-upd').textContent = 'Atualizado: ' + new Date().toLocaleTimeString('pt-BR');
 
-    // Secundários em paralelo, sem bloquear
+    // Cargas paralelas sem bloquear
     loadDemographics();
     loadCompanies();
     loadAgeGroups();
 
-  }catch(err){
-    setStatus('error','✗ Erro: '+err.message);
+  } catch (err) {
+    setStatus('error', '✗ Erro: ' + err.message);
   }
 }
 
-function reload(){loadAll(true);}
-
+function reload() { loadAll(true); }
+loadAll(true);
 </script>
 </body>
 </html>
