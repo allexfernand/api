@@ -63,6 +63,14 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
     <label>🏢 Grupo Econômico</label>
     <select class="filter-select" id="group-select"><option value="">(Todos os grupos)</option></select>
   </div>
+  <div class="filter-group">
+    <label>👤 Tipo Beneficiário</label>
+    <select class="filter-select" id="type-select" onchange="onTypeChange()">
+      <option value="">(Todos)</option>
+      <option value="TITULAR">Titular</option>
+      <option value="DEPENDENTE">Dependente</option>
+    </select>
+  </div>
   <button class="clear-btn" onclick="clearFilters()">✕ Limpar</button>
   <span style="font-size:11px;color:#bbb;margin-left:auto" id="filter-info"></span>
 </div>
@@ -207,7 +215,7 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
 const fmt=n=>Number(n).toLocaleString('pt-BR');
 const mN={'01':'Jan','02':'Fev','03':'Mar','04':'Abr','05':'Mai','06':'Jun','07':'Jul','08':'Ago','09':'Set','10':'Out','11':'Nov','12':'Dez'};
 let usersData=[],companiesData=[],eChart,agegroupChart;
-let currentGroup='';
+let currentGroup='', currentType='';
 
 document.querySelectorAll('.tab').forEach(t=>{
   t.addEventListener('click',()=>{
@@ -306,14 +314,39 @@ function renderAgeGroups(data){
 // Filtros
 document.getElementById('group-select').addEventListener('change',e=>{
   currentGroup=e.target.value;
-  document.getElementById('filter-info').textContent=currentGroup?`Filtrando: ${e.target.options[e.target.selectedIndex].text}`:'';
+  updateFilterInfo();
   loadAll(false);
 });
-function clearFilters(){currentGroup='';document.getElementById('group-select').value='';document.getElementById('filter-info').textContent='';loadAll(false);}
+function onTypeChange(){
+  currentType=document.getElementById('type-select').value;
+  updateFilterInfo();
+  loadAll(false);
+}
+function updateFilterInfo(){
+  const parts=[];
+  if(currentGroup) parts.push(document.getElementById('group-select').options[document.getElementById('group-select').selectedIndex].text);
+  if(currentType) parts.push(currentType==='TITULAR'?'Titular':'Dependente');
+  document.getElementById('filter-info').textContent=parts.length?`Filtrando: ${parts.join(' · ')}`:'';
+}
+function clearFilters(){
+  currentGroup='';currentType='';
+  document.getElementById('group-select').value='';
+  document.getElementById('type-select').value='';
+  document.getElementById('filter-info').textContent='';
+  loadAll(false);
+}
 
 // Cargas independentes
 async function safeGet(url){
   try{const r=await fetch(url);if(!r.ok)throw new Error(r.status);return await r.json();}catch(e){return null;}
+}
+
+function buildQS(){
+  const p=new URLSearchParams();
+  if(currentGroup) p.set('group_name',currentGroup);
+  if(currentType)  p.set('type',currentType);
+  const s=p.toString();
+  return s?'?'+s:'';
 }
 
 async function loadDemographics(){
