@@ -67,8 +67,10 @@ export default async function handler(req, res) {
       !groupName ? runQuery(wh.id, `
         SELECT
           o1.name AS grupo,
-          (SELECT COUNT(*) FROM sanus_databricks.sanus_prod.organizations o3 WHERE o3.matriz_id = o1.id) AS total_filiais
+          COUNT(filiais.id) AS total_filiais
         FROM sanus_databricks.sanus_prod.organizations o1
+        LEFT JOIN sanus_databricks.sanus_prod.organizations filiais
+          ON filiais.matriz_id = o1.id
         WHERE o1.active = true
           AND o1.name IS NOT NULL
           AND o1.id IN (
@@ -76,15 +78,20 @@ export default async function handler(req, res) {
             FROM sanus_databricks.sanus_prod.organizations o2
             WHERE o2.matriz_id IS NOT NULL
           )
+        GROUP BY o1.name
         ORDER BY o1.name ASC
       `) : Promise.resolve(null),
     ]);
 
     const parse = (rows) => (rows || []).map((r) => [r[0].slice(0, 10), parseInt(r[1])]);
+    const toInt = (v) => {
+      const n = parseInt(v);
+      return Number.isFinite(n) ? n : 0;
+    };
     const groups = groupRows
       ? groupRows.map((r) => ({
           economic_group: r[0] ? String(r[0]).trim() : null,
-          total_orgs: parseInt(r[1]) || 0,
+          total_orgs: toInt(r[1]),
         })).filter((g) => g.economic_group)
       : null;
 
