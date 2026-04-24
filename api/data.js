@@ -94,17 +94,12 @@ export default async function handler(req, res) {
         GROUP BY o1.name
         ORDER BY o1.name ASC
       `) : Promise.resolve(null),
-      // Demografia (usa try_divide para evitar erros de divisão)
+      // Demografia — versão simplificada, só titular/dependente pra testar
       safeRun(`
         SELECT
           COUNT(*) AS total_vidas,
-          AVG(CASE WHEN b.birthday IS NOT NULL THEN try_divide(MONTHS_BETWEEN(CURRENT_DATE(), b.birthday), 12) END) AS idade_media,
-          SUM(CASE WHEN b.birthday IS NOT NULL AND try_divide(MONTHS_BETWEEN(CURRENT_DATE(), b.birthday), 12) > 49 THEN 1 ELSE 0 END) AS mais_49,
           SUM(CASE WHEN UPPER(TRIM(COALESCE(b.type_kinship, ''))) = 'TITULAR' THEN 1 ELSE 0 END) AS titulares,
-          SUM(CASE WHEN UPPER(TRIM(COALESCE(b.type_kinship, ''))) NOT IN ('TITULAR', '') THEN 1 ELSE 0 END) AS dependentes,
-          SUM(CASE WHEN UPPER(TRIM(COALESCE(b.gender, ''))) = 'FEMININO' THEN 1 ELSE 0 END) AS feminino,
-          SUM(CASE WHEN UPPER(TRIM(COALESCE(b.gender, ''))) = 'MASCULINO' THEN 1 ELSE 0 END) AS masculino,
-          SUM(CASE WHEN UPPER(TRIM(COALESCE(b.gender, ''))) = 'FEMININO' AND b.birthday IS NOT NULL AND try_divide(MONTHS_BETWEEN(CURRENT_DATE(), b.birthday), 12) BETWEEN 19 AND 38 THEN 1 ELSE 0 END) AS mulheres_19_38
+          SUM(CASE WHEN UPPER(TRIM(COALESCE(b.type_kinship, ''))) NOT IN ('TITULAR', '') THEN 1 ELSE 0 END) AS dependentes
         FROM sanus_databricks.sanus_prod.beneficiaries b
         ${groupFilter}
       `),
@@ -145,13 +140,13 @@ export default async function handler(req, res) {
     const dRow = demoRows && demoRows[0] ? demoRows[0] : [];
     const demographics = {
       total_vidas: toInt(dRow[0]),
-      idade_media: Math.round(toNum(dRow[1])),
-      mais_49: toInt(dRow[2]),
-      titulares: toInt(dRow[3]),
-      dependentes: toInt(dRow[4]),
-      feminino: toInt(dRow[5]),
-      masculino: toInt(dRow[6]),
-      mulheres_19_38: toInt(dRow[7]),
+      idade_media: 0,
+      mais_49: 0,
+      titulares: toInt(dRow[1]),
+      dependentes: toInt(dRow[2]),
+      feminino: 0,
+      masculino: 0,
+      mulheres_19_38: 0,
     };
 
     res.status(200).json({
