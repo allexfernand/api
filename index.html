@@ -153,36 +153,11 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
       </div>
     </div>
 
-    <div class="metrics">
-      <div class="card s"><div class="label">Total sessões</div><div class="value" id="m-stotal">—</div><div class="sub">botmaker</div></div>
-      <div class="card s"><div class="label">Média diária</div><div class="value" id="m-savg">—</div><div class="sub">todos os dias</div></div>
-      <div class="card s"><div class="label">Pico sessões</div><div class="value" id="m-speak">—</div><div class="sub" id="m-speakdate">—</div></div>
-      <div class="card u"><div class="label">Total usuários</div><div class="value" id="m-utotal">—</div><div class="sub">beneficiaries</div></div>
-      <div class="card u"><div class="label">Novos/dia (média)</div><div class="value" id="m-uavg">—</div><div class="sub">dias com cadastro</div></div>
-      <div class="card v"><div class="label">Base acumulada</div><div class="value" id="m-vacc">—</div><div class="sub">vidas totais</div></div>
-    </div>
-
-    <div class="chart-card">
-      <div class="chart-header"><div><h2>Sessões por dia</h2><div class="src"><code>botmaker_session.creation_time</code></div></div></div>
-      <div class="filters" id="sfilters"><button class="fbtn active" data-m="all">Todos</button></div>
-      <div class="chart-wrap"><div class="skeleton" id="skel-s"></div><canvas id="sessionsChart" style="display:none"></canvas></div>
-    </div>
-
-    <div class="chart-card">
-      <div class="chart-header"><div><h2>Entrada de vidas por mês</h2><div class="src"><code>beneficiaries.created_at</code></div></div></div>
-      <div class="filters" id="vfilters"><button class="fbtn teal active" data-v="month">Por mês</button></div>
-      <div class="chart-wrap"><div class="skeleton" id="skel-v"></div><canvas id="vidasChart" style="display:none"></canvas></div>
-    </div>
-
     <div class="chart-card">
       <div class="chart-header"><div><h2>Evolução acumulada de vidas</h2><div class="src"><code>beneficiaries.created_at</code> · soma cumulativa mensal</div></div></div>
-      <div class="chart-wrap" style="height:240px"><div class="skeleton" id="skel-e"></div><canvas id="evolChart" style="display:none"></canvas></div>
+      <div class="chart-wrap" style="height:300px"><div class="skeleton" id="skel-e"></div><canvas id="evolChart" style="display:none"></canvas></div>
     </div>
 
-    <div class="bottom-grid">
-      <div class="table-card"><h2>Top 10 — sessões</h2><table id="stop-table"><thead><tr><th>Data</th><th>Sessões</th><th>Vol.</th></tr></thead><tbody></tbody></table></div>
-      <div class="table-card"><h2>Top 10 — novas vidas</h2><table id="utop-table"><thead><tr><th>Data</th><th>Usuários</th><th>Vol.</th></tr></thead><tbody></tbody></table></div>
-    </div>
   </div>
 
   <!-- Tab: Perfil Populacional -->
