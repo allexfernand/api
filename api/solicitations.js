@@ -41,10 +41,14 @@ export default async function handler(req, res) {
   const meses = req.query.meses
     ? req.query.meses.split(',').filter(m => /^\d{4}-\d{2}$/.test(m))
     : [];
+  const groupName = req.query.group_name || null;
 
-  // Filtro de período usando hora_criacao_atendimento
   const periodoFilter = meses.length > 0
     ? `AND DATE_FORMAT(hora_criacao_atendimento, 'yyyy-MM') IN (${meses.map(m => `'${m}'`).join(',')})`
+    : '';
+
+  const groupFilter = groupName
+    ? `AND grupo_economico LIKE '%${groupName.replace(/'/g, "''")}%'`
     : '';
 
   try {
@@ -65,6 +69,7 @@ export default async function handler(req, res) {
       FROM sanus_databricks.sanus_prod.atendimento_gold_live
       WHERE motivo IN ('Concluído com sucesso', 'Concluído com sucesso pela DASA')
         ${periodoFilter}
+        ${groupFilter}
       GROUP BY tipo_agrupado
       ORDER BY quantidade DESC
     `);
