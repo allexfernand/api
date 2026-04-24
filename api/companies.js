@@ -40,16 +40,18 @@ export default async function handler(req, res) {
 
   const groupName = req.query.group_name || null;
 
-  // Quando há filtro de grupo, filtra pelos organization_ids da matriz + filiais
+  // Filtro por grupo: usa ID_EMPRESA da view cruzando com organizations
+  // Inclui a própria matriz + todas as filiais (via matriz_id)
   const groupFilter = groupName ? `
-    AND b.NOME_CLIENTE IN (
-      SELECT DISTINCT o.name
-      FROM sanus_databricks.sanus_prod.organizations o
-      WHERE o.name = '${escape(groupName)}'
-         OR o.matriz_id IN (
-           SELECT id FROM sanus_databricks.sanus_prod.organizations
-           WHERE name = '${escape(groupName)}'
-         )
+    AND b.ID_EMPRESA IN (
+      SELECT id FROM sanus_databricks.sanus_prod.organizations
+      WHERE name = '${escape(groupName)}'
+      UNION
+      SELECT id FROM sanus_databricks.sanus_prod.organizations
+      WHERE matriz_id = (
+        SELECT id FROM sanus_databricks.sanus_prod.organizations
+        WHERE name = '${escape(groupName)}' LIMIT 1
+      )
     )
   ` : "";
 
@@ -62,7 +64,7 @@ export default async function handler(req, res) {
       SELECT
         NOME_CLIENTE AS empresa,
         COUNT(*) AS total
-      FROM sanus_databricks.sanus_prod.vw_beneficiarios
+      FROM sanus_databricks.sanus_prod.vw_beneficiarios b
       WHERE NOME_CLIENTE IS NOT NULL
         ${groupFilter}
       GROUP BY NOME_CLIENTE
