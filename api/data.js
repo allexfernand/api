@@ -42,9 +42,11 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
 
   const groupName = req.query.group_name || null;
+  // Usa name_economic_group quando existir; senão, cai pro name da organização
+  const groupExpr = `COALESCE(NULLIF(TRIM(o.name_economic_group), ''), o.name)`;
   const groupFilter = groupName
     ? `INNER JOIN sanus_databricks.sanus_prod.organizations o ON b.organization_id = o.id
-       WHERE b.created_at IS NOT NULL AND o.name_economic_group = '${escape(groupName)}'`
+       WHERE b.created_at IS NOT NULL AND ${groupExpr} = '${escape(groupName)}'`
     : `WHERE b.created_at IS NOT NULL`;
 
   try {
@@ -60,19 +62,16 @@ export default async function handler(req, res) {
         ${groupFilter}
         GROUP BY 1 ORDER BY 1
       `),
-      // Grupos econômicos (query do usuário) — só na carga inicial
+      // Grupos econômicos — usa name_economic_group quando existir, senão cai pro name
       !groupName ? runQuery(wh.id, `
         SELECT
-          o.name_economic_group,
-          o.name AS nome_matriz,
-          COUNT(DISTINCT filiais.id) AS total_filiais
-        FROM sanus_databricks.sanus_prod.organizations o
-        INNER JOIN sanus_databricks.sanus_prod.organizations filiais
-          ON o.id = filiais.matriz_id
-        WHERE filiais.matriz_id IS NOT NULL
-          AND o.active = true
-        GROUP BY o.name_economic_group, o.name
-        ORDER BY total_filiais DESC
+          COALESCE(NULLIF(TRIM(name_economic_group), ''), name) AS grupo,
+          COUNT(*) AS total_orgs
+        FROM sanus_databricks.sanus_prod.organizations
+        WHERE COALESCE(NULLIF(TRIM(name_economic_group), ''), name) IS NOT NULL
+          AND TRIM(COALESCE(NULLIF(TRIM(name_economic_group), ''), name)) != ''
+        GROUP BY COALESCE(NULLIF(TRIM(name_economic_group), ''), name)
+        ORDER BY grupo ASC
       `) : Promise.resolve(null),
     ]);
 
@@ -80,9 +79,8 @@ export default async function handler(req, res) {
     const groups = groupRows
       ? groupRows.map((r) => ({
           economic_group: r[0] ? String(r[0]).trim() : null,
-          matriz: r[1] ? String(r[1]).trim() : null,
-          total_filiais: parseInt(r[2]) || 0,
-        }))
+          total_orgs: parseInt(r[1]) || 0,
+        })).filter((g) => g.economic_group)
       : null;
 
     res.status(200).json({
