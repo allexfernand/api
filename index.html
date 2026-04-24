@@ -53,8 +53,8 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
 </div>
 
 <div class="tabs">
-  <div class="tab active" data-tab="perfil">Perfil Populacional</div>
-  <div class="tab" data-tab="demografica">Análise Demográfica</div>
+  <div class="tab active" data-tab="demografica">Análise Demográfica</div>
+  <div class="tab" data-tab="agendamentos">Agendamentos</div>
 </div>
 
 <div class="filterbar">
@@ -75,14 +75,7 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
 </div>
 
 <div class="container">
-  <div class="tab-content active" id="tab-perfil">
-    <div style="text-align:center;padding:80px 20px;color:#bbb">
-      <div style="font-size:40px;margin-bottom:12px">🏗️</div>
-      <div style="font-size:16px;font-weight:500;color:#888">Em construção</div>
-    </div>
-  </div>
-
-  <div class="tab-content" id="tab-demografica">
+  <div class="tab-content active" id="tab-demografica">
 
     <div class="card-box" style="display:flex;align-items:center;gap:20px;padding:20px 28px">      <div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#00A69C,#2E7D9A);display:flex;align-items:center;justify-content:center">
         <i class="fa-solid fa-heart-pulse" style="font-size:20px;color:#fff"></i>
@@ -210,9 +203,15 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
     </div>
 
   </div>
-</div>
+  <div class="tab-content" id="tab-agendamentos">
+    <div style="text-align:center;padding:80px 20px;color:#bbb">
+      <div style="font-size:40px;margin-bottom:12px">📅</div>
+      <div style="font-size:16px;font-weight:500;color:#888">Em construção</div>
+      <div style="font-size:13px;margin-top:6px">Os dados de agendamentos serão adicionados em breve.</div>
+    </div>
+  </div>
 
-<footer>Dados ao vivo · Databricks SQL · <code>sanus_databricks.sanus_prod</code></footer>
+</div>Dados ao vivo · Databricks SQL · <code>sanus_databricks.sanus_prod</code></footer>
 
 <script>
 const fmt = n => Number(n).toLocaleString('pt-BR');
