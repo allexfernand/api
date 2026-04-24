@@ -70,6 +70,13 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
       <option value="DEPENDENTE">Dependente</option>
     </select>
   </div>
+  <!-- Filtro período: só visível na aba Agendamentos -->
+  <div class="filter-group" id="filter-periodo" style="display:none">
+    <label>📅 Período</label>
+    <input type="date" id="periodo-inicio" class="filter-select" style="min-width:140px;max-width:160px"/>
+    <span style="font-size:12px;color:#888">até</span>
+    <input type="date" id="periodo-fim" class="filter-select" style="min-width:140px;max-width:160px"/>
+  </div>
   <button class="clear-btn" onclick="clearFilters()">✕ Limpar</button>
   <span style="font-size:11px;color:#bbb;margin-left:auto" id="filter-info"></span>
 </div>
