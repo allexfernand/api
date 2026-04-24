@@ -131,10 +131,17 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
               <div style="width:52px;height:52px;border-radius:50%;background:#fce7f3;display:flex;align-items:center;justify-content:center"><i class="fa-solid fa-venus" style="font-size:20px;color:#e879a0"></i></div>
               <div style="width:52px;height:52px;border-radius:50%;background:#dbeafe;display:flex;align-items:center;justify-content:center"><i class="fa-solid fa-mars" style="font-size:20px;color:#3b82f6"></i></div>
             </div>
-            <div style="display:flex;justify-content:center;gap:20px">
+            <div style="display:flex;justify-content:center;gap:16px;flex-wrap:wrap">
               <div><div style="font-size:20px;font-weight:700;color:#e879a0" id="d-fem">—</div><div style="font-size:11px;color:#94a3b8">Feminino</div><div style="font-size:12px;font-weight:600;color:#e879a0" id="d-fem-pct">—</div></div>
               <div style="width:1px;background:#e2e8f0;height:44px;margin-top:4px"></div>
               <div><div style="font-size:20px;font-weight:700;color:#3b82f6" id="d-masc">—</div><div style="font-size:11px;color:#94a3b8">Masculino</div><div style="font-size:12px;font-weight:600;color:#3b82f6" id="d-masc-pct">—</div></div>
+              <div style="width:1px;background:#e2e8f0;height:44px;margin-top:4px"></div>
+              <div><div style="font-size:20px;font-weight:700;color:#94a3b8" id="d-ni">—</div><div style="font-size:11px;color:#94a3b8">Não inf.</div><div style="font-size:12px;font-weight:600;color:#94a3b8" id="d-ni-pct">—</div></div>
+            </div>
+            <div style="margin-top:10px;background:#f8fafc;border-radius:8px;overflow:hidden;height:6px;display:flex">
+              <div id="bar-fem" style="background:#e879a0;height:100%;transition:width .5s"></div>
+              <div id="bar-masc" style="background:#3b82f6;height:100%;transition:width .5s"></div>
+              <div id="bar-ni" style="background:#e2e8f0;height:100%;transition:width .5s"></div>
             </div>
           </div>
           <div style="background:#f1f5f9"></div>
@@ -244,7 +251,15 @@ function renderDemographics(d){
   s('d-dep',fmt(Number(d.dependentes)||0));s('d-tit',fmt(Number(d.titulares)||0));
   s('d-dep-pct',pct(Number(d.dependentes)||0));s('d-tit-pct',pct(Number(d.titulares)||0));
   s('d-fem',fmt(Number(d.feminino)||0));s('d-masc',fmt(Number(d.masculino)||0));
-  s('d-fem-pct',pct(Number(d.feminino)||0));s('d-masc-pct',pct(Number(d.masculino)||0));
+  const fem=Number(d.feminino)||0,masc=Number(d.masculino)||0,ni=Number(d.nao_informado)||0;
+  const gtotal=fem+masc+ni||1;
+  const pctG=n=>((n/gtotal)*100).toFixed(1).replace('.',',')+'%';
+  s('d-fem-pct',pctG(fem));s('d-masc-pct',pctG(masc));
+  s('d-ni',fmt(ni));s('d-ni-pct',pctG(ni));
+  const bfem=document.getElementById('bar-fem'),bmasc=document.getElementById('bar-masc'),bni=document.getElementById('bar-ni');
+  if(bfem) bfem.style.width=((fem/gtotal)*100).toFixed(1)+'%';
+  if(bmasc) bmasc.style.width=((masc/gtotal)*100).toFixed(1)+'%';
+  if(bni) bni.style.width=((ni/gtotal)*100).toFixed(1)+'%';
   const tit=Number(d.titulares)||0,dep=Number(d.dependentes)||0;
   s('d-ratio',tit>0?(dep/tit).toFixed(2).replace('.',','):'—');
 }
