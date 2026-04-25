@@ -41,7 +41,7 @@ export default async function handler(req, res) {
   const groupName = req.query.group_name || null;
 
   const periodoFilter = meses.length > 0
-    ? `AND DATE_FORMAT(data_do_agendamento, 'yyyy-MM') IN (${meses.map(m => `'${m}'`).join(',')})`
+    ? `AND DATE_FORMAT(hora_criacao_atendimento, 'yyyy-MM') IN (${meses.map(m => `'${m}'`).join(',')})`
     : '';
 
   const groupFilter = groupName
