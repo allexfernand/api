@@ -25,6 +25,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .filter-group{display:flex;align-items:center;gap:8px}
 .filter-group label{font-size:12px;color:#888;font-weight:500;white-space:nowrap}
 .filter-select{font-size:12px;padding:5px 10px;border-radius:6px;border:1px solid #ddd;background:#fff;color:#333;min-width:200px;max-width:300px;cursor:pointer}
+.filter-select:disabled{background:#f8fafc;color:#cbd5e1;cursor:not-allowed}
 .clear-btn{font-size:12px;padding:5px 10px;border-radius:6px;border:1px solid #ddd;background:#f5f5f5;color:#666;cursor:pointer}
 .container{padding:20px 28px;max-width:1280px;margin:0 auto}
 .card-box{background:#fff;border-radius:12px;border:1px solid #e8e8e8;padding:24px 28px;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.06)}
@@ -58,6 +59,12 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
   <div class="filter-group">
     <label>🏢 Grupo Econômico</label>
     <select class="filter-select" id="group-select"><option value="">(Todos os grupos)</option></select>
+  </div>
+  <div class="filter-group">
+    <label>🏬 Empresa</label>
+    <select class="filter-select" id="company-select" disabled>
+      <option value="">(Selecione um grupo primeiro)</option>
+    </select>
   </div>
   <div class="filter-group">
     <label>👤 Tipo Beneficiário</label>
@@ -270,7 +277,7 @@ const fmt = n => Number(n).toLocaleString('pt-BR');
 const mN = {'01':'Jan','02':'Fev','03':'Mar','04':'Abr','05':'Mai','06':'Jun','07':'Jul','08':'Ago','09':'Set','10':'Out','11':'Nov','12':'Dez'};
 
 let usersData = [], companiesData = [], eChart, agegroupChart;
-let currentGroup = '', currentType = '';
+let currentGroup = '', currentType = '', currentCompany = '';
 let selectedMonths = new Set();
 
 // --- Tabs ---
@@ -286,28 +293,76 @@ document.querySelectorAll('.tab').forEach(t => {
   });
 });
 
-// --- Filtros demográficos ---
+// --- Filtros ---
 document.getElementById('group-select').addEventListener('change', e => {
-  currentGroup = e.target.value; updateFilterInfo(); loadAll(false);
-  // se estiver na aba agendamentos, recarrega também
+  currentGroup = e.target.value;
+  // Ao trocar grupo, limpa empresa e recarrega lista
+  currentCompany = '';
+  loadCompanyOptions();
+  updateFilterInfo();
+  loadAll(false);
   if (document.querySelector('.tab.active')?.dataset.tab === 'agendamentos') loadAppointments();
 });
+
+document.getElementById('company-select').addEventListener('change', e => {
+  currentCompany = e.target.value;
+  updateFilterInfo();
+  loadAll(false);
+  if (document.querySelector('.tab.active')?.dataset.tab === 'agendamentos') loadAppointments();
+});
+
 document.getElementById('type-select').addEventListener('change', e => {
   currentType = e.target.value; updateFilterInfo(); loadAll(false);
+  if (document.querySelector('.tab.active')?.dataset.tab === 'agendamentos') loadAppointments();
 });
+
+// Carrega empresas do grupo selecionado para o dropdown de empresa
+async function loadCompanyOptions() {
+  const sel = document.getElementById('company-select');
+  if (!currentGroup) {
+    sel.innerHTML = '<option value="">(Selecione um grupo primeiro)</option>';
+    sel.disabled = true;
+    return;
+  }
+  // Estado de carregamento
+  sel.innerHTML = '<option value="">⏳ Carregando empresas...</option>';
+  sel.disabled = true;
+
+  const p = new URLSearchParams();
+  p.set('group_name', currentGroup);
+  const d = await safeGet('/api/companies?' + p.toString());
+
+  if (d && !d.error && Array.isArray(d.companies) && d.companies.length > 0) {
+    const ordered = [...d.companies].sort((a,b) =>
+      a.empresa.localeCompare(b.empresa, 'pt-BR', {sensitivity:'base'})
+    );
+    sel.innerHTML = '<option value="">(Todas as empresas)</option>' +
+      ordered.map(c => `<option value="${escapeAttr(c.empresa)}">${escapeHtml(c.empresa)} (${fmt(c.total)})</option>`).join('');
+    sel.disabled = false;
+  } else {
+    sel.innerHTML = '<option value="">(Nenhuma empresa encontrada)</option>';
+    sel.disabled = true;
+  }
+}
+
+function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function escapeAttr(s){return String(s).replace(/"/g,'&quot;');}
 
 function updateFilterInfo() {
   const parts = [];
   const gSel = document.getElementById('group-select');
   if (currentGroup) parts.push(gSel.options[gSel.selectedIndex].text);
+  if (currentCompany) parts.push(currentCompany);
   if (currentType)  parts.push(currentType === 'TITULAR' ? 'Titular' : 'Dependente');
   document.getElementById('filter-info').textContent = parts.length ? `Filtrando: ${parts.join(' · ')}` : '';
 }
 
 function clearFilters() {
-  currentGroup = ''; currentType = '';
+  currentGroup = ''; currentType = ''; currentCompany = '';
   document.getElementById('group-select').value = '';
   document.getElementById('type-select').value  = '';
+  document.getElementById('company-select').innerHTML = '<option value="">(Selecione um grupo primeiro)</option>';
+  document.getElementById('company-select').disabled = true;
   document.getElementById('filter-info').textContent = '';
   clearPeriodo();
   loadAll(false);
@@ -315,8 +370,9 @@ function clearFilters() {
 
 function buildQS() {
   const p = new URLSearchParams();
-  if (currentGroup) p.set('group_name', currentGroup);
-  if (currentType)  p.set('type', currentType);
+  if (currentGroup)   p.set('group_name', currentGroup);
+  if (currentCompany) p.set('company', currentCompany);
+  if (currentType)    p.set('type', currentType);
   const s = p.toString();
   return s ? '?' + s : '';
 }
@@ -375,14 +431,14 @@ function selectAllPeriodo() {
 }
 
 function clearPeriodo() {
-  document.getElementById('cb-tudo').checked = false;
+  const cbTudo = document.getElementById('cb-tudo');
+  if (cbTudo) cbTudo.checked = false;
   document.querySelectorAll('#periodo-options input[type=checkbox]').forEach(cb => { cb.checked = false; });
   selectedMonths.clear(); updatePeriodoLabel();
 }
 
 function onTudoChange(el) {
   if (el.checked) {
-    // desmarca meses individuais e usa "tudo"
     document.querySelectorAll('#periodo-options input[type=checkbox]').forEach(cb => { cb.checked = false; });
     selectedMonths.clear();
     document.getElementById('periodo-label').textContent = 'Tudo';
@@ -395,6 +451,7 @@ function onTudoChange(el) {
 
 function updatePeriodoLabel() {
   const lbl = document.getElementById('periodo-label');
+  if (!lbl) return;
   if (selectedMonths.size === 0) { lbl.textContent = '(Todos os meses)'; return; }
   if (selectedMonths.size === 1) {
     const [val] = selectedMonths; const [y,mm] = val.split('-');
@@ -408,17 +465,17 @@ async function loadAppointments() {
   document.getElementById('bullet-agend').textContent = '…';
   const meses = [...selectedMonths].sort();
   const p = new URLSearchParams();
-  if (meses.length > 0) p.set('meses', meses.join(','));
-  if (currentGroup)    p.set('group_name', currentGroup);
+  if (meses.length > 0)  p.set('meses', meses.join(','));
+  if (currentGroup)      p.set('group_name', currentGroup);
+  if (currentCompany)    p.set('company', currentCompany);
+  if (currentType)       p.set('type', currentType);
   const qs = p.toString() ? '?' + p.toString() : '';
 
-  // Carrega bullet e tipos em paralelo
   const [appt, solic] = await Promise.all([
     safeGet('/api/appointments' + qs),
     safeGet('/api/solicitations' + qs),
   ]);
 
-  // Bullet total
   if (appt && !appt.error) {
     document.getElementById('bullet-agend').textContent = fmt(appt.total);
     let label = 'Concluídos com sucesso · todos os períodos';
@@ -429,7 +486,6 @@ async function loadAppointments() {
     document.getElementById('bullet-agend').textContent = 'Erro';
   }
 
-  // Tipos de solicitação
   const sl = document.getElementById('solic-loading');
   const sc = document.getElementById('solic-content');
   if (solic && !solic.error && solic.items) {
@@ -509,7 +565,7 @@ function renderDemographics(d) {
   s('d-ratio', tit>0?(dep/tit).toFixed(2).replace('.',','):'—');
 }
 
-// --- Empresas ---
+// --- Empresas (quadro Beneficiários por Empresa) ---
 function filterCompanies() {
   const q = document.getElementById('company-search').value.toLowerCase();
   renderCompaniesTable(companiesData.filter(c => c.empresa.toLowerCase().includes(q)));
@@ -521,7 +577,7 @@ function renderCompaniesTable(data) {
     const pct = grand>0 ? ((c.total/grand)*100).toFixed(1) : '0';
     return `<tr onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
       <td style="padding:6px 8px;color:#cbd5e1;font-size:10px">${i+1}</td>
-      <td style="padding:6px 8px;color:#334155;font-weight:500">${c.empresa}</td>
+      <td style="padding:6px 8px;color:#334155;font-weight:500">${escapeHtml(c.empresa)}</td>
       <td style="padding:6px 8px;text-align:right;font-weight:700;color:#1e293b">${fmt(c.total)}</td>
       <td style="padding:6px 8px"><div style="background:#f1f5f9;border-radius:3px;height:5px;overflow:hidden"><div style="height:100%;width:${bw}%;background:linear-gradient(90deg,#00A69C,#2E7D9A);border-radius:3px"></div></div><div style="font-size:10px;color:#94a3b8;text-align:right">${pct}%</div></td>
     </tr>`;
