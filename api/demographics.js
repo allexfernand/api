@@ -73,6 +73,8 @@ export default async function handler(req, res) {
         AVG(CASE WHEN b.birthday IS NOT NULL
             THEN try_divide(MONTHS_BETWEEN(CURRENT_DATE(), b.birthday), 12) END)                              AS idade_media,
         SUM(CASE WHEN b.birthday IS NOT NULL
+            AND try_divide(MONTHS_BETWEEN(CURRENT_DATE(), b.birthday), 12) < 18 THEN 1 ELSE 0 END)            AS menores_18,
+        SUM(CASE WHEN b.birthday IS NOT NULL
             AND try_divide(MONTHS_BETWEEN(CURRENT_DATE(), b.birthday), 12) > 49 THEN 1 ELSE 0 END)           AS mais_49,
         SUM(CASE WHEN UPPER(TRIM(COALESCE(b.type_kinship,''))) = 'TITULAR'    THEN 1 ELSE 0 END)             AS titulares,
         SUM(CASE WHEN UPPER(TRIM(COALESCE(b.type_kinship,''))) NOT IN ('TITULAR','') THEN 1 ELSE 0 END)      AS dependentes,
@@ -91,13 +93,14 @@ export default async function handler(req, res) {
     res.status(200).json({
       total_vidas:    toInt(r[0]),
       idade_media:    Math.round(toNum(r[1])),
-      mais_49:        toInt(r[2]),
-      titulares:      toInt(r[3]),
-      dependentes:    toInt(r[4]),
-      feminino:       toInt(r[5]),
-      masculino:      toInt(r[6]),
-      nao_informado:  toInt(r[7]),
-      mulheres_19_38: toInt(r[8]),
+      menores_18:     toInt(r[2]),
+      mais_49:        toInt(r[3]),
+      titulares:      toInt(r[4]),
+      dependentes:    toInt(r[5]),
+      feminino:       toInt(r[6]),
+      masculino:      toInt(r[7]),
+      nao_informado:  toInt(r[8]),
+      mulheres_19_38: toInt(r[9]),
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

@@ -132,7 +132,7 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
       <div class="section-title"><i class="fa-solid fa-chart-pie" style="margin-right:6px"></i>Perfil demográfico</div>
       <div class="loading-box" id="demo-loading"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...</div>
       <div id="demo-content" style="display:none">
-        <div style="display:grid;grid-template-columns:1fr 1px 1fr 1px 1fr;margin-bottom:24px">
+        <div style="display:grid;grid-template-columns:1fr 1px 1fr 1px 1fr 1px 1fr;margin-bottom:24px">
           <div style="text-align:center;padding:0 20px">
             <div style="width:52px;height:52px;border-radius:50%;background:#f0f4f8;display:flex;align-items:center;justify-content:center;margin:0 auto 10px"><i class="fa-solid fa-user-group" style="font-size:20px;color:#64748b"></i></div>
             <div style="font-size:26px;font-weight:700;color:#1e293b" id="d-total">—</div>
@@ -143,6 +143,12 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
             <div style="width:52px;height:52px;border-radius:50%;background:#f0f4f8;display:flex;align-items:center;justify-content:center;margin:0 auto 10px"><i class="fa-regular fa-calendar-days" style="font-size:20px;color:#64748b"></i></div>
             <div style="font-size:26px;font-weight:700;color:#1e293b" id="d-idade">—</div>
             <div style="font-size:11px;color:#94a3b8;margin-top:4px">Idade Média</div>
+          </div>
+          <div style="background:#f1f5f9"></div>
+          <div style="text-align:center;padding:0 20px">
+            <div style="width:52px;height:52px;border-radius:50%;background:#f0f4f8;display:flex;align-items:center;justify-content:center;margin:0 auto 10px"><i class="fa-solid fa-child" style="font-size:20px;color:#64748b"></i></div>
+            <div style="font-size:26px;font-weight:700;color:#1e293b" id="d-menores-18">—</div>
+            <div style="font-size:11px;color:#94a3b8;margin-top:4px">&lt; 18 anos</div>
           </div>
           <div style="background:#f1f5f9"></div>
           <div style="text-align:center;padding:0 20px">
@@ -547,7 +553,7 @@ function renderDemographics(d) {
   const total = Number(d.total_vidas)||0;
   const pct = n => total>0 ? ((n/total)*100).toFixed(1).replace('.',',')+' %' : '—';
   const s = (id,v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
-  s('d-total',fmt(total)); s('d-idade',d.idade_media||'—'); s('d-49',fmt(Number(d.mais_49)||0));
+  s('d-total',fmt(total)); s('d-idade',d.idade_media||'—'); s('d-menores-18',fmt(Number(d.menores_18)||0)); s('d-49',fmt(Number(d.mais_49)||0));
   s('d-mulheres-19-38',fmt(Number(d.mulheres_19_38)||0));
   s('d-dep',fmt(Number(d.dependentes)||0)); s('d-tit',fmt(Number(d.titulares)||0));
   s('d-dep-pct',pct(Number(d.dependentes)||0)); s('d-tit-pct',pct(Number(d.titulares)||0));
