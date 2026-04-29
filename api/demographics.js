@@ -67,7 +67,12 @@ export default async function handler(req, res) {
     const wh = warehouses.find((w) => w.state === "RUNNING") || warehouses[0];
     if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
 
-    const rows = await runQuery(wh.id, `
+    const [totalRows, rows] = await Promise.all([
+      runQuery(wh.id, `
+        SELECT COUNT(*) AS total_beneficiarios
+        FROM hive_metastore.sanus_prod.beneficiaries
+      `),
+      runQuery(wh.id, `
       SELECT
         COUNT(*)                                                                                               AS total_vidas,
         AVG(CASE WHEN b.birthday IS NOT NULL
@@ -87,20 +92,23 @@ export default async function handler(req, res) {
             THEN 1 ELSE 0 END)                                                                                AS mulheres_19_38
       FROM sanus_databricks.sanus_prod.beneficiaries b
       ${groupFilter}
-    `);
+    `),
+    ]);
 
+    const total = totalRows[0] || [];
     const r = rows[0] || [];
     res.status(200).json({
-      total_vidas:    toInt(r[0]),
-      idade_media:    Math.round(toNum(r[1])),
-      menores_18:     toInt(r[2]),
-      mais_49:        toInt(r[3]),
-      titulares:      toInt(r[4]),
-      dependentes:    toInt(r[5]),
-      feminino:       toInt(r[6]),
-      masculino:      toInt(r[7]),
-      nao_informado:  toInt(r[8]),
-      mulheres_19_38: toInt(r[9]),
+      total_beneficiarios: toInt(total[0]),
+      total_vidas:         toInt(r[0]),
+      idade_media:         Math.round(toNum(r[1])),
+      menores_18:          toInt(r[2]),
+      mais_49:             toInt(r[3]),
+      titulares:           toInt(r[4]),
+      dependentes:         toInt(r[5]),
+      feminino:            toInt(r[6]),
+      masculino:           toInt(r[7]),
+      nao_informado:       toInt(r[8]),
+      mulheres_19_38:      toInt(r[9]),
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

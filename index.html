@@ -551,9 +551,10 @@ function renderDemographics(d) {
   document.getElementById('demo-loading').style.display = 'none';
   document.getElementById('demo-content').style.display = 'block';
   const total = Number(d.total_vidas)||0;
+  const totalBeneficiarios = Number(d.total_beneficiarios ?? d.total_vidas)||0;
   const pct = n => total>0 ? ((n/total)*100).toFixed(1).replace('.',',')+' %' : '—';
   const s = (id,v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
-  s('d-total',fmt(total)); s('d-idade',d.idade_media||'—'); s('d-menores-18',fmt(Number(d.menores_18)||0)); s('d-49',fmt(Number(d.mais_49)||0));
+  s('d-total',fmt(totalBeneficiarios)); s('d-idade',d.idade_media||'—'); s('d-menores-18',fmt(Number(d.menores_18)||0)); s('d-49',fmt(Number(d.mais_49)||0));
   s('d-mulheres-19-38',fmt(Number(d.mulheres_19_38)||0));
   s('d-dep',fmt(Number(d.dependentes)||0)); s('d-tit',fmt(Number(d.titulares)||0));
   s('d-dep-pct',pct(Number(d.dependentes)||0)); s('d-tit-pct',pct(Number(d.titulares)||0));
