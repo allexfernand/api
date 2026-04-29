@@ -53,6 +53,7 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
 <div class="tabs">
   <div class="tab active" data-tab="demografica">Análise Demográfica</div>
   <div class="tab" data-tab="agendamentos">Agendamentos</div>
+  <div class="tab" data-tab="sessoes">Sessões</div>
 </div>
 
 <div class="filterbar">
@@ -274,6 +275,22 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
     <div style="text-align:center;padding:20px;color:#bbb;font-size:13px">Mais dados serão adicionados em breve.</div>
   </div>
 
+  <!-- Tab: Sessões -->
+  <div class="tab-content" id="tab-sessoes">
+    <div class="card-box" style="display:flex;align-items:center;gap:20px;padding:20px 28px">
+      <div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#14b8a6,#0f766e);display:flex;align-items:center;justify-content:center">
+        <i class="fa-solid fa-comments" style="font-size:20px;color:#fff"></i>
+      </div>
+      <div>
+        <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;margin-bottom:3px">Total de Sessões</div>
+        <div style="font-size:34px;font-weight:700;color:#0f766e;letter-spacing:-1px;line-height:1" id="bullet-sessoes">—</div>
+        <div style="font-size:11px;color:#94a3b8;margin-top:3px" id="bullet-sessoes-periodo">botmaker_session · todos os períodos</div>
+      </div>
+    </div>
+
+    <div style="text-align:center;padding:20px;color:#bbb;font-size:13px">Mais dados serão adicionados em breve.</div>
+  </div>
+
 </div>
 
 <footer>Dados ao vivo · Databricks SQL · <code>sanus_databricks.sanus_prod</code></footer>
@@ -293,9 +310,10 @@ document.querySelectorAll('.tab').forEach(t => {
     document.querySelectorAll('.tab-content').forEach(x => x.classList.remove('active'));
     t.classList.add('active');
     document.getElementById('tab-' + t.dataset.tab).classList.add('active');
-    const isAgend = t.dataset.tab === 'agendamentos';
-    document.getElementById('filter-periodo').style.display = isAgend ? 'flex' : 'none';
-    if (isAgend) { buildPeriodoOptions(); loadAppointments(); }
+    const activeTab = t.dataset.tab;
+    const hasPeriodo = activeTab === 'agendamentos' || activeTab === 'sessoes';
+    document.getElementById('filter-periodo').style.display = hasPeriodo ? 'flex' : 'none';
+    if (hasPeriodo) { buildPeriodoOptions(); loadPeriodFilteredTab(); }
   });
 });
 
@@ -307,19 +325,19 @@ document.getElementById('group-select').addEventListener('change', e => {
   loadCompanyOptions();
   updateFilterInfo();
   loadAll(false);
-  if (document.querySelector('.tab.active')?.dataset.tab === 'agendamentos') loadAppointments();
+  if (isPeriodFilteredTab()) loadPeriodFilteredTab();
 });
 
 document.getElementById('company-select').addEventListener('change', e => {
   currentCompany = e.target.value;
   updateFilterInfo();
   loadAll(false);
-  if (document.querySelector('.tab.active')?.dataset.tab === 'agendamentos') loadAppointments();
+  if (isPeriodFilteredTab()) loadPeriodFilteredTab();
 });
 
 document.getElementById('type-select').addEventListener('change', e => {
   currentType = e.target.value; updateFilterInfo(); loadAll(false);
-  if (document.querySelector('.tab.active')?.dataset.tab === 'agendamentos') loadAppointments();
+  if (isPeriodFilteredTab()) loadPeriodFilteredTab();
 });
 
 // Carrega empresas do grupo selecionado para o dropdown de empresa
@@ -372,6 +390,7 @@ function clearFilters() {
   document.getElementById('filter-info').textContent = '';
   clearPeriodo();
   loadAll(false);
+  if (isPeriodFilteredTab()) loadPeriodFilteredTab();
 }
 
 function buildQS() {
@@ -387,6 +406,21 @@ function setStatus(type, msg) {
   const el = document.getElementById('status');
   el.className = 'status ' + type;
   el.textContent = msg;
+}
+
+function getActiveTab() {
+  return document.querySelector('.tab.active')?.dataset.tab || 'demografica';
+}
+
+function isPeriodFilteredTab() {
+  const activeTab = getActiveTab();
+  return activeTab === 'agendamentos' || activeTab === 'sessoes';
+}
+
+function loadPeriodFilteredTab() {
+  const activeTab = getActiveTab();
+  if (activeTab === 'agendamentos') loadAppointments();
+  else if (activeTab === 'sessoes') loadSessions();
 }
 
 // --- Período dropdown ---
@@ -408,7 +442,7 @@ function buildPeriodoOptions() {
     cb.style.accentColor = '#6366f1';
     cb.addEventListener('change', () => {
       if (cb.checked) selectedMonths.add(val); else selectedMonths.delete(val);
-      updatePeriodoLabel(); loadAppointments();
+      updatePeriodoLabel(); loadPeriodFilteredTab();
     });
     item.appendChild(cb);
     item.appendChild(document.createTextNode(lbl));
@@ -433,7 +467,7 @@ function selectAllPeriodo() {
   document.querySelectorAll('#periodo-options input[type=checkbox]').forEach(cb => {
     cb.checked = true; selectedMonths.add(cb.value);
   });
-  updatePeriodoLabel(); loadAppointments();
+  updatePeriodoLabel(); loadPeriodFilteredTab();
 }
 
 function clearPeriodo() {
@@ -448,10 +482,10 @@ function onTudoChange(el) {
     document.querySelectorAll('#periodo-options input[type=checkbox]').forEach(cb => { cb.checked = false; });
     selectedMonths.clear();
     document.getElementById('periodo-label').textContent = 'Tudo';
-    loadAppointments();
+    loadPeriodFilteredTab();
   } else {
     updatePeriodoLabel();
-    loadAppointments();
+    loadPeriodFilteredTab();
   }
 }
 
@@ -520,6 +554,34 @@ async function loadAppointments() {
     if (sc) sc.style.display = 'block';
   } else {
     if (sl) sl.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>Erro ao carregar tipos';
+  }
+}
+
+// --- Sessões ---
+async function loadSessions() {
+  const bullet = document.getElementById('bullet-sessoes');
+  const periodoLabel = document.getElementById('bullet-sessoes-periodo');
+  if (bullet) bullet.textContent = '…';
+
+  const meses = [...selectedMonths].sort();
+  const p = new URLSearchParams();
+  if (meses.length > 0)  p.set('meses', meses.join(','));
+  if (currentGroup)      p.set('group_name', currentGroup);
+  if (currentCompany)    p.set('company', currentCompany);
+  if (currentType)       p.set('type', currentType);
+  const qs = p.toString() ? '?' + p.toString() : '';
+
+  const sessions = await safeGet('/api/sessions' + qs);
+  if (sessions && !sessions.error) {
+    if (bullet) bullet.textContent = fmt(sessions.total);
+    let label = 'botmaker_session · todos os períodos';
+    if (meses.length === 1) { const [y,mm] = meses[0].split('-'); label = `botmaker_session · ${mN[mm]}/${y}`; }
+    else if (meses.length > 1) label = `botmaker_session · ${meses.length} meses selecionados`;
+    if (sessions.period_filter_applied === false) label = 'botmaker_session · período não aplicado';
+    if (periodoLabel) periodoLabel.textContent = label;
+  } else {
+    if (bullet) bullet.textContent = 'Erro';
+    if (periodoLabel) periodoLabel.textContent = 'Erro ao carregar sessões';
   }
 }
 
