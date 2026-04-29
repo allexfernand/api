@@ -37,6 +37,11 @@ const getCell = (cell) => {
 };
 const toInt = (v) => { const n = parseInt(getCell(v)); return Number.isFinite(n) ? n : 0; };
 
+const SESSION_TABLE = `hive_metastore.sanus_prod.botmaker_session`;
+const USERS_TABLE = `hive_metastore.sanus_prod.users`;
+const BENEFICIARIES_TABLE = `sanus_databricks.sanus_prod.beneficiaries`;
+const ORGANIZATIONS_TABLE = `sanus_databricks.sanus_prod.organizations`;
+
 function pickColumn(columns, candidates) {
   const byLower = new Map(columns.map((column) => [column.toLowerCase(), column]));
   for (const candidate of candidates) {
@@ -69,28 +74,11 @@ function buildFilters({ meses, groupName, company, typeFilter, hasSessionDate })
   }
   if (groupName) {
     const group = escape(groupName);
-    conditions.push(`organization_id IN (
-      SELECT CAST(id AS STRING)
-      FROM sanus_databricks.sanus_prod.organizations
-      WHERE name = '${group}'
-      UNION
-      SELECT CAST(id AS STRING)
-      FROM sanus_databricks.sanus_prod.organizations
-      WHERE matriz_id = (
-        SELECT id
-        FROM sanus_databricks.sanus_prod.organizations
-        WHERE name = '${group}'
-        LIMIT 1
-      )
-    )`);
+    conditions.push(`UPPER(TRIM(economic_group)) = UPPER(TRIM('${group}'))`);
   }
   if (company) {
     const escapedCompany = escape(company);
-    conditions.push(`organization_id IN (
-      SELECT CAST(id AS STRING)
-      FROM sanus_databricks.sanus_prod.organizations
-      WHERE UPPER(TRIM(name)) = UPPER(TRIM('${escapedCompany}'))
-    )`);
+    conditions.push(`UPPER(TRIM(company_name)) = UPPER(TRIM('${escapedCompany}'))`);
   }
   if (typeFilter === 'TITULAR') {
     conditions.push(`UPPER(TRIM(COALESCE(tipo_beneficiario, ''))) = 'TITULAR'`);
@@ -117,9 +105,9 @@ export default async function handler(req, res) {
     if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
 
     const [columns, userColumns, beneficiaryColumns] = await Promise.all([
-      getColumns(wh.id, `hive_metastore.sanus_prod.botmaker_session`),
-      getColumns(wh.id, `hive_metastore.sanus_prod.users`),
-      getColumns(wh.id, `hive_metastore.sanus_prod.beneficiaries`),
+      getColumns(wh.id, SESSION_TABLE),
+      getColumns(wh.id, USERS_TABLE),
+      getColumns(wh.id, BENEFICIARIES_TABLE),
     ]);
 
     const variablesColumn = pickColumn(columns, ['variables']);
@@ -246,13 +234,13 @@ export default async function handler(req, res) {
           ROW_NUMBER() OVER (ORDER BY ${sessionAtExpr}, ${inputCpfExpr}, ${variables}) AS session_row_id,
           ${sessionAtExpr} AS session_at,
           ${inputCpfExpr} AS cpf_holder
-        FROM hive_metastore.sanus_prod.botmaker_session
+        FROM ${SESSION_TABLE}
       ),
       users_by_cpf AS (
         SELECT
           ${userIdExpr} AS user_id,
           ${userCpfExpr} AS cpf
-        FROM hive_metastore.sanus_prod.users u
+        FROM ${USERS_TABLE} u
         WHERE ${userCpfExpr} IS NOT NULL
       ),
       beneficiaries_resolved AS (
@@ -261,18 +249,29 @@ export default async function handler(req, res) {
           ${beneficiaryTypeExpr} AS tipo_beneficiario,
           ${beneficiaryUserIdExpr} AS user_id,
           ${beneficiaryCpfExpr} AS cpf
-        FROM hive_metastore.sanus_prod.beneficiaries b
+        FROM ${BENEFICIARIES_TABLE} b
         WHERE ${beneficiaryOrgExpr} IS NOT NULL
+      ),
+      organizations_resolved AS (
+        SELECT
+          CAST(o.id AS STRING) AS organization_id,
+          CAST(o.name AS STRING) AS company_name,
+          CAST(COALESCE(matriz.name, o.name) AS STRING) AS economic_group
+        FROM ${ORGANIZATIONS_TABLE} o
+        LEFT JOIN ${ORGANIZATIONS_TABLE} matriz ON matriz.id = o.matriz_id
       ),
       base AS (
         SELECT
           s.session_row_id,
           s.session_at,
           b.organization_id,
-          b.tipo_beneficiario
+          b.tipo_beneficiario,
+          org.company_name,
+          org.economic_group
         FROM sessions s
         LEFT JOIN users_by_cpf u ON u.cpf = s.cpf_holder
         LEFT JOIN beneficiaries_resolved b ON ${beneficiaryJoinParts.join(' OR ')}
+        LEFT JOIN organizations_resolved org ON org.organization_id = b.organization_id
       )
       SELECT COUNT(DISTINCT session_row_id) AS total_sessoes
       FROM base
