@@ -281,26 +281,60 @@ export default async function handler(req, res) {
     `);
 
     const wantDebug = req.query.debug === '1' || hasBeneficiariesFilter;
+    const beneficiaryRawCpfExpr = beneficiaryCpfColumn
+      ? `CAST(b.${quoteIdent(beneficiaryCpfColumn)} AS STRING)`
+      : `CAST(NULL AS STRING)`;
     const debugQueryPromise = wantDebug && orgFilterSubqueries.length > 0
       ? runQuery(wh.id, `
+        WITH filtered_benef AS (
+          SELECT
+            ${beneficiaryUserIdExpr} AS user_id,
+            ${beneficiaryCpfExpr} AS cpf_norm,
+            ${beneficiaryRawCpfExpr} AS cpf_raw
+          FROM ${BENEFICIARIES_TABLE} b
+          WHERE ${beneficiaryConditions.join(' AND ')}
+        ),
+        sess AS (
+          SELECT ${inputCpfExpr} AS cpf_holder
+          FROM ${SESSION_TABLE}
+          WHERE ${inputCpfExpr} IS NOT NULL
+        )
         SELECT
           (SELECT COUNT(*) FROM ${ORGANIZATIONS_TABLE} WHERE id IN ${orgFilterSubqueries[0]}) AS orgs_in_filter,
-          (SELECT COUNT(*) FROM ${BENEFICIARIES_TABLE} b WHERE ${beneficiaryConditions.join(' AND ')}) AS beneficiaries_in_filter,
-          (SELECT COUNT(*) FROM ${BENEFICIARIES_TABLE} b
-            WHERE ${beneficiaryOrgExpr} IS NOT NULL
-              AND ${beneficiaryCpfColumn ? normalizeCpfExpr(`b.${quoteIdent(beneficiaryCpfColumn)}`) : 'NULL'} IS NOT NULL
-              AND ${beneficiaryConditions.join(' AND ')}
-          ) AS beneficiaries_in_filter_with_cpf
+          (SELECT COUNT(*) FROM filtered_benef) AS beneficiaries_in_filter,
+          (SELECT COUNT(*) FROM filtered_benef WHERE cpf_norm IS NOT NULL) AS beneficiaries_in_filter_with_cpf,
+          (SELECT COUNT(DISTINCT s.cpf_holder) FROM sess s
+            INNER JOIN filtered_benef b ON b.cpf_norm = s.cpf_holder) AS sessions_matched_by_cpf,
+          (SELECT COUNT(DISTINCT s.cpf_holder) FROM sess s
+            INNER JOIN ${USERS_TABLE} u ON ${userCpfExpr} = s.cpf_holder
+            INNER JOIN filtered_benef b ON b.user_id = ${userIdExpr}
+          ) AS sessions_matched_by_user_id,
+          (SELECT cpf_norm FROM filtered_benef WHERE cpf_norm IS NOT NULL LIMIT 1) AS sample_benef_cpf_norm,
+          (SELECT cpf_raw FROM filtered_benef WHERE cpf_raw IS NOT NULL LIMIT 1) AS sample_benef_cpf_raw,
+          (SELECT cpf_holder FROM sess LIMIT 1) AS sample_sess_cpf,
+          (SELECT LENGTH(cpf_norm) FROM filtered_benef WHERE cpf_norm IS NOT NULL LIMIT 1) AS sample_benef_cpf_len,
+          (SELECT LENGTH(cpf_holder) FROM sess LIMIT 1) AS sample_sess_cpf_len
       `)
       : Promise.resolve(null);
 
     const [rows, debugRows] = await Promise.all([mainQueryPromise, debugQueryPromise]);
 
+    const getStr = (cell) => {
+      const v = getCell(cell);
+      return v === null || v === undefined ? null : String(v);
+    };
     const debug = debugRows && debugRows[0]
       ? {
           orgs_in_filter: toInt(debugRows[0][0]),
           beneficiaries_in_filter: toInt(debugRows[0][1]),
           beneficiaries_in_filter_with_cpf: toInt(debugRows[0][2]),
+          sessions_matched_by_cpf: toInt(debugRows[0][3]),
+          sessions_matched_by_user_id: toInt(debugRows[0][4]),
+          sample_benef_cpf_norm: getStr(debugRows[0][5]),
+          sample_benef_cpf_raw: getStr(debugRows[0][6]),
+          sample_sess_cpf: getStr(debugRows[0][7]),
+          sample_benef_cpf_len: toInt(debugRows[0][8]),
+          sample_sess_cpf_len: toInt(debugRows[0][9]),
         }
       : null;
 
