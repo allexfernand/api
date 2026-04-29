@@ -580,7 +580,14 @@ async function loadSessions() {
     if (meses.length === 1) { const [y,mm] = meses[0].split('-'); label = `botmaker_session · ${mN[mm]}/${y}`; }
     else if (meses.length > 1) label = `botmaker_session · ${meses.length} meses selecionados`;
     if (sessions.period_filter_applied === false) label = 'botmaker_session · período não aplicado';
-    if (periodoLabel) periodoLabel.textContent = label;
+    if (sessions.debug) {
+      const d = sessions.debug;
+      label += ` · diag: orgs=${fmt(d.orgs_in_filter)} · benef=${fmt(d.beneficiaries_in_filter)} · benef c/cpf=${fmt(d.beneficiaries_in_filter_with_cpf)}`;
+    }
+    if (periodoLabel) {
+      periodoLabel.textContent = label;
+      periodoLabel.title = label;
+    }
   } else {
     if (bullet) bullet.textContent = 'Erro';
     const msg = sessions && sessions.error ? sessions.error : 'Erro ao carregar sessões';

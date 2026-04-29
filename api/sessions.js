@@ -210,20 +210,23 @@ export default async function handler(req, res) {
 
     const beneficiaryOrgIdent = `b.${quoteIdent(beneficiaryOrgColumn)}`;
     const beneficiaryConditions = [`${beneficiaryOrgExpr} IS NOT NULL`];
+    const orgFilterSubqueries = [];
     if (groupName) {
       const g = escape(groupName);
-      beneficiaryConditions.push(`${beneficiaryOrgIdent} IN (
+      const sub = `(
         SELECT id FROM ${ORGANIZATIONS_TABLE} WHERE name = '${g}'
         UNION
         SELECT id FROM ${ORGANIZATIONS_TABLE}
         WHERE matriz_id = (SELECT id FROM ${ORGANIZATIONS_TABLE} WHERE name = '${g}' LIMIT 1)
-      )`);
+      )`;
+      beneficiaryConditions.push(`${beneficiaryOrgIdent} IN ${sub}`);
+      orgFilterSubqueries.push(sub);
     }
     if (company) {
       const c = escape(company);
-      beneficiaryConditions.push(`${beneficiaryOrgIdent} IN (
-        SELECT id FROM ${ORGANIZATIONS_TABLE} WHERE name = '${c}'
-      )`);
+      const sub = `(SELECT id FROM ${ORGANIZATIONS_TABLE} WHERE name = '${c}')`;
+      beneficiaryConditions.push(`${beneficiaryOrgIdent} IN ${sub}`);
+      orgFilterSubqueries.push(sub);
     }
     if (typeFilter === 'TITULAR' && beneficiaryTypeColumn) {
       beneficiaryConditions.push(`UPPER(TRIM(COALESCE(CAST(b.${quoteIdent(beneficiaryTypeColumn)} AS STRING), ''))) = 'TITULAR'`);
@@ -238,7 +241,7 @@ export default async function handler(req, res) {
       hasSessionDate: Boolean(sessionDateColumn),
     });
 
-    const rows = await runQuery(wh.id, `
+    const mainQueryPromise = runQuery(wh.id, `
       WITH sessions AS (
         SELECT
           ROW_NUMBER() OVER (ORDER BY ${sessionAtExpr}, ${inputCpfExpr}, ${variables}) AS session_row_id,
@@ -277,9 +280,34 @@ export default async function handler(req, res) {
       ${whereClause}
     `);
 
+    const wantDebug = req.query.debug === '1' || hasBeneficiariesFilter;
+    const debugQueryPromise = wantDebug && orgFilterSubqueries.length > 0
+      ? runQuery(wh.id, `
+        SELECT
+          (SELECT COUNT(*) FROM ${ORGANIZATIONS_TABLE} WHERE id IN ${orgFilterSubqueries[0]}) AS orgs_in_filter,
+          (SELECT COUNT(*) FROM ${BENEFICIARIES_TABLE} b WHERE ${beneficiaryConditions.join(' AND ')}) AS beneficiaries_in_filter,
+          (SELECT COUNT(*) FROM ${BENEFICIARIES_TABLE} b
+            WHERE ${beneficiaryOrgExpr} IS NOT NULL
+              AND ${beneficiaryCpfColumn ? normalizeCpfExpr(`b.${quoteIdent(beneficiaryCpfColumn)}`) : 'NULL'} IS NOT NULL
+              AND ${beneficiaryConditions.join(' AND ')}
+          ) AS beneficiaries_in_filter_with_cpf
+      `)
+      : Promise.resolve(null);
+
+    const [rows, debugRows] = await Promise.all([mainQueryPromise, debugQueryPromise]);
+
+    const debug = debugRows && debugRows[0]
+      ? {
+          orgs_in_filter: toInt(debugRows[0][0]),
+          beneficiaries_in_filter: toInt(debugRows[0][1]),
+          beneficiaries_in_filter_with_cpf: toInt(debugRows[0][2]),
+        }
+      : null;
+
     res.status(200).json({
       total: toInt(rows[0]?.[0]),
       period_filter_applied: meses.length === 0 || Boolean(sessionDateColumn),
+      debug,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
