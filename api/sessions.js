@@ -67,14 +67,6 @@ function jsonValueExpr(variablesColumn, keys) {
   return `COALESCE(${expressions.join(', ')})`;
 }
 
-function buildFilters({ meses, hasSessionDate }) {
-  const conditions = [];
-  if (meses.length > 0 && hasSessionDate) {
-    conditions.push(`DATE_FORMAT(session_at, 'yyyy-MM') IN (${meses.map((m) => `'${m}'`).join(',')})`);
-  }
-  return conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-}
-
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
@@ -188,10 +180,7 @@ export default async function handler(req, res) {
     if (!userIdColumn || !userCpfColumn) throw new Error("Colunas de id/CPF não encontradas em users.");
     if (!beneficiaryOrgColumn) throw new Error("Coluna de empresa não encontrada em beneficiaries.");
 
-    const beneficiaryJoinParts = [];
-    if (beneficiaryUserIdColumn) beneficiaryJoinParts.push(`b.user_id = u.user_id`);
-    if (beneficiaryCpfColumn) beneficiaryJoinParts.push(`b.cpf = s.cpf_holder`);
-    if (beneficiaryJoinParts.length === 0) {
+    if (!beneficiaryUserIdColumn && !beneficiaryCpfColumn) {
       throw new Error("Não foi possível ligar beneficiaries com users/CPF.");
     }
 
@@ -234,51 +223,42 @@ export default async function handler(req, res) {
       beneficiaryConditions.push(`UPPER(TRIM(COALESCE(CAST(b.${quoteIdent(beneficiaryTypeColumn)} AS STRING), ''))) != 'TITULAR'`);
     }
     const hasBeneficiariesFilter = Boolean(groupName || company || typeFilter);
-    const beneficiariesJoinKind = hasBeneficiariesFilter ? 'INNER JOIN' : 'LEFT JOIN';
 
-    const whereClause = buildFilters({
-      meses,
-      hasSessionDate: Boolean(sessionDateColumn),
-    });
+    const sessionWhereParts = [`${inputCpfExpr} IS NOT NULL`];
+    if (meses.length > 0 && sessionDateColumn) {
+      sessionWhereParts.push(`DATE_FORMAT(${sessionAtExpr}, 'yyyy-MM') IN (${meses.map((m) => `'${m}'`).join(',')})`);
+    }
 
-    const mainQueryPromise = runQuery(wh.id, `
-      WITH sessions AS (
-        SELECT
-          ROW_NUMBER() OVER (ORDER BY ${sessionAtExpr}, ${inputCpfExpr}, ${variables}) AS session_row_id,
-          ${sessionAtExpr} AS session_at,
-          ${inputCpfExpr} AS cpf_holder
+    const mainQueryPromise = hasBeneficiariesFilter
+      ? runQuery(wh.id, `
+        WITH beneficiaries_resolved AS (
+          SELECT
+            ${beneficiaryUserIdExpr} AS user_id,
+            ${beneficiaryCpfExpr} AS cpf
+          FROM ${BENEFICIARIES_TABLE} b
+          WHERE ${beneficiaryConditions.join(' AND ')}
+        ),
+        relevant_cpfs AS (
+          SELECT cpf FROM beneficiaries_resolved WHERE cpf IS NOT NULL
+          UNION
+          SELECT ${userCpfExpr} AS cpf
+          FROM ${USERS_TABLE} u
+          WHERE ${userCpfExpr} IS NOT NULL
+            AND ${userIdExpr} IN (SELECT user_id FROM beneficiaries_resolved WHERE user_id IS NOT NULL)
+        )
+        SELECT COUNT(*) AS total_sessoes
+        FROM (
+          SELECT ${inputCpfExpr} AS cpf_holder
+          FROM ${SESSION_TABLE}
+          WHERE ${sessionWhereParts.join(' AND ')}
+        ) s
+        WHERE s.cpf_holder IN (SELECT cpf FROM relevant_cpfs)
+      `)
+      : runQuery(wh.id, `
+        SELECT COUNT(*) AS total_sessoes
         FROM ${SESSION_TABLE}
-      ),
-      users_by_cpf AS (
-        SELECT
-          ${userIdExpr} AS user_id,
-          ${userCpfExpr} AS cpf
-        FROM ${USERS_TABLE} u
-        WHERE ${userCpfExpr} IS NOT NULL
-      ),
-      beneficiaries_resolved AS (
-        SELECT
-          ${beneficiaryOrgExpr} AS organization_id,
-          ${beneficiaryTypeExpr} AS tipo_beneficiario,
-          ${beneficiaryUserIdExpr} AS user_id,
-          ${beneficiaryCpfExpr} AS cpf
-        FROM ${BENEFICIARIES_TABLE} b
-        WHERE ${beneficiaryConditions.join(' AND ')}
-      ),
-      base AS (
-        SELECT
-          s.session_row_id,
-          s.session_at,
-          b.organization_id,
-          b.tipo_beneficiario
-        FROM sessions s
-        LEFT JOIN users_by_cpf u ON u.cpf = s.cpf_holder
-        ${beneficiariesJoinKind} beneficiaries_resolved b ON ${beneficiaryJoinParts.join(' OR ')}
-      )
-      SELECT COUNT(DISTINCT session_row_id) AS total_sessoes
-      FROM base
-      ${whereClause}
-    `);
+        ${meses.length > 0 && sessionDateColumn ? `WHERE DATE_FORMAT(${sessionAtExpr}, 'yyyy-MM') IN (${meses.map((m) => `'${m}'`).join(',')})` : ''}
+      `);
 
     const wantDebug = req.query.debug === '1' || hasBeneficiariesFilter;
     const beneficiaryRawCpfExpr = beneficiaryCpfColumn
@@ -286,34 +266,27 @@ export default async function handler(req, res) {
       : `CAST(NULL AS STRING)`;
     const debugQueryPromise = wantDebug && orgFilterSubqueries.length > 0
       ? runQuery(wh.id, `
-        WITH filtered_benef AS (
-          SELECT
-            ${beneficiaryUserIdExpr} AS user_id,
-            ${beneficiaryCpfExpr} AS cpf_norm,
-            ${beneficiaryRawCpfExpr} AS cpf_raw
-          FROM ${BENEFICIARIES_TABLE} b
-          WHERE ${beneficiaryConditions.join(' AND ')}
-        ),
-        sess AS (
-          SELECT ${inputCpfExpr} AS cpf_holder
-          FROM ${SESSION_TABLE}
-          WHERE ${inputCpfExpr} IS NOT NULL
-        )
         SELECT
           (SELECT COUNT(*) FROM ${ORGANIZATIONS_TABLE} WHERE id IN ${orgFilterSubqueries[0]}) AS orgs_in_filter,
-          (SELECT COUNT(*) FROM filtered_benef) AS beneficiaries_in_filter,
-          (SELECT COUNT(*) FROM filtered_benef WHERE cpf_norm IS NOT NULL) AS beneficiaries_in_filter_with_cpf,
-          (SELECT COUNT(DISTINCT s.cpf_holder) FROM sess s
-            INNER JOIN filtered_benef b ON b.cpf_norm = s.cpf_holder) AS sessions_matched_by_cpf,
-          (SELECT COUNT(DISTINCT s.cpf_holder) FROM sess s
-            INNER JOIN ${USERS_TABLE} u ON ${userCpfExpr} = s.cpf_holder
-            INNER JOIN filtered_benef b ON b.user_id = ${userIdExpr}
-          ) AS sessions_matched_by_user_id,
-          (SELECT cpf_norm FROM filtered_benef WHERE cpf_norm IS NOT NULL LIMIT 1) AS sample_benef_cpf_norm,
-          (SELECT cpf_raw FROM filtered_benef WHERE cpf_raw IS NOT NULL LIMIT 1) AS sample_benef_cpf_raw,
-          (SELECT cpf_holder FROM sess LIMIT 1) AS sample_sess_cpf,
-          (SELECT LENGTH(cpf_norm) FROM filtered_benef WHERE cpf_norm IS NOT NULL LIMIT 1) AS sample_benef_cpf_len,
-          (SELECT LENGTH(cpf_holder) FROM sess LIMIT 1) AS sample_sess_cpf_len
+          (SELECT COUNT(*) FROM ${BENEFICIARIES_TABLE} b WHERE ${beneficiaryConditions.join(' AND ')}) AS beneficiaries_in_filter,
+          (SELECT COUNT(*) FROM ${BENEFICIARIES_TABLE} b
+            WHERE ${beneficiaryConditions.join(' AND ')}
+              AND ${beneficiaryCpfExpr} IS NOT NULL
+          ) AS beneficiaries_in_filter_with_cpf,
+          (SELECT ${beneficiaryCpfExpr} FROM ${BENEFICIARIES_TABLE} b
+            WHERE ${beneficiaryConditions.join(' AND ')}
+              AND ${beneficiaryCpfExpr} IS NOT NULL
+            LIMIT 1
+          ) AS sample_benef_cpf_norm,
+          (SELECT ${beneficiaryRawCpfExpr} FROM ${BENEFICIARIES_TABLE} b
+            WHERE ${beneficiaryConditions.join(' AND ')}
+              AND ${beneficiaryRawCpfExpr} IS NOT NULL
+            LIMIT 1
+          ) AS sample_benef_cpf_raw,
+          (SELECT ${inputCpfExpr} FROM ${SESSION_TABLE}
+            WHERE ${inputCpfExpr} IS NOT NULL
+            LIMIT 1
+          ) AS sample_sess_cpf
       `)
       : Promise.resolve(null);
 
@@ -328,15 +301,15 @@ export default async function handler(req, res) {
           orgs_in_filter: toInt(debugRows[0][0]),
           beneficiaries_in_filter: toInt(debugRows[0][1]),
           beneficiaries_in_filter_with_cpf: toInt(debugRows[0][2]),
-          sessions_matched_by_cpf: toInt(debugRows[0][3]),
-          sessions_matched_by_user_id: toInt(debugRows[0][4]),
-          sample_benef_cpf_norm: getStr(debugRows[0][5]),
-          sample_benef_cpf_raw: getStr(debugRows[0][6]),
-          sample_sess_cpf: getStr(debugRows[0][7]),
-          sample_benef_cpf_len: toInt(debugRows[0][8]),
-          sample_sess_cpf_len: toInt(debugRows[0][9]),
+          sample_benef_cpf_norm: getStr(debugRows[0][3]),
+          sample_benef_cpf_raw: getStr(debugRows[0][4]),
+          sample_sess_cpf: getStr(debugRows[0][5]),
         }
       : null;
+    if (debug) {
+      debug.sample_benef_cpf_len = debug.sample_benef_cpf_norm ? debug.sample_benef_cpf_norm.length : 0;
+      debug.sample_sess_cpf_len = debug.sample_sess_cpf ? debug.sample_sess_cpf.length : 0;
+    }
 
     res.status(200).json({
       total: toInt(rows[0]?.[0]),
