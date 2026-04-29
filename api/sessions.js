@@ -61,6 +61,20 @@ function buildFilters({ meses, groupName, company, typeFilter, hasSessionDate })
     const group = escape(groupName);
     conditions.push(`(
       UPPER(TRIM(COALESCE(grupo_economico, ''))) LIKE UPPER('%${group}%')
+      OR TRIM(COALESCE(organization_id, '')) IN (
+        SELECT CAST(id AS STRING)
+        FROM sanus_databricks.sanus_prod.organizations
+        WHERE name = '${group}'
+        UNION
+        SELECT CAST(id AS STRING)
+        FROM sanus_databricks.sanus_prod.organizations
+        WHERE matriz_id = (
+          SELECT id
+          FROM sanus_databricks.sanus_prod.organizations
+          WHERE name = '${group}'
+          LIMIT 1
+        )
+      )
       OR UPPER(TRIM(COALESCE(empresa, ''))) IN (
         SELECT UPPER(TRIM(name))
         FROM sanus_databricks.sanus_prod.organizations
@@ -75,7 +89,15 @@ function buildFilters({ meses, groupName, company, typeFilter, hasSessionDate })
     )`);
   }
   if (company) {
-    conditions.push(`UPPER(TRIM(COALESCE(empresa, ''))) = UPPER(TRIM('${escape(company)}'))`);
+    const escapedCompany = escape(company);
+    conditions.push(`(
+      UPPER(TRIM(COALESCE(empresa, ''))) = UPPER(TRIM('${escapedCompany}'))
+      OR TRIM(COALESCE(organization_id, '')) IN (
+        SELECT CAST(id AS STRING)
+        FROM sanus_databricks.sanus_prod.organizations
+        WHERE UPPER(TRIM(name)) = UPPER(TRIM('${escapedCompany}'))
+      )
+    )`);
   }
   if (typeFilter === 'TITULAR') {
     conditions.push(`UPPER(TRIM(COALESCE(tipo_beneficiario, ''))) = 'TITULAR'`);
@@ -114,11 +136,22 @@ export default async function handler(req, res) {
       'createdAt',
       'creation_time',
       'creationTime',
+      'creation_date',
+      'creationDate',
+      'created_time',
+      'createdTime',
       'session_created_at',
       'session_creation_time',
       'started_at',
       'start_time',
       'startTime',
+      'session_start',
+      'sessionStart',
+      'last_message_at',
+      'lastMessageAt',
+      'last_interaction_at',
+      'lastInteractionAt',
+      'updated_at',
       'timestamp',
       'data_criacao',
     ]);
@@ -156,6 +189,17 @@ export default async function handler(req, res) {
       'GRAU_PARENTESCO',
       'parentesco',
     ]);
+    const organizationIdExpr = jsonValueExpr(variablesColumn, [
+      'organization_id',
+      'organizationId',
+      'id_empresa',
+      'idEmpresa',
+      'ID_EMPRESA',
+      'empresa_id',
+      'empresaId',
+      'company_id',
+      'companyId',
+    ]);
     const whereClause = buildFilters({
       meses,
       groupName,
@@ -170,7 +214,8 @@ export default async function handler(req, res) {
           ${sessionAtExpr} AS session_at,
           ${grupoExpr} AS grupo_economico,
           ${empresaExpr} AS empresa,
-          ${tipoExpr} AS tipo_beneficiario
+          ${tipoExpr} AS tipo_beneficiario,
+          ${organizationIdExpr} AS organization_id
         FROM hive_metastore.sanus_prod.botmaker_session
       )
       SELECT COUNT(*) AS total_sessoes

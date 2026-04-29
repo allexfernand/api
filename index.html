@@ -388,7 +388,7 @@ function clearFilters() {
   document.getElementById('company-select').innerHTML = '<option value="">(Selecione um grupo primeiro)</option>';
   document.getElementById('company-select').disabled = true;
   document.getElementById('filter-info').textContent = '';
-  clearPeriodo();
+  clearPeriodo(false);
   loadAll(false);
   if (isPeriodFilteredTab()) loadPeriodFilteredTab();
 }
@@ -470,11 +470,12 @@ function selectAllPeriodo() {
   updatePeriodoLabel(); loadPeriodFilteredTab();
 }
 
-function clearPeriodo() {
+function clearPeriodo(reload=true) {
   const cbTudo = document.getElementById('cb-tudo');
   if (cbTudo) cbTudo.checked = false;
   document.querySelectorAll('#periodo-options input[type=checkbox]').forEach(cb => { cb.checked = false; });
   selectedMonths.clear(); updatePeriodoLabel();
+  if (reload && isPeriodFilteredTab()) loadPeriodFilteredTab();
 }
 
 function onTudoChange(el) {
