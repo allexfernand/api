@@ -26,6 +26,9 @@ async function runQuery(warehouseId, sql) {
 
 function escape(s) { return String(s).replace(/'/g, "''"); }
 function quoteIdent(s) { return `\`${String(s).replace(/`/g, "``")}\``; }
+function normalizeCpfExpr(expr) {
+  return `NULLIF(regexp_replace(TRIM(CAST(${expr} AS STRING)), '[^0-9]', ''), '')`;
+}
 
 const getCell = (cell) => {
   if (cell === null || cell === undefined) return null;
@@ -41,6 +44,13 @@ function pickColumn(columns, candidates) {
     if (column) return column;
   }
   return null;
+}
+
+async function getColumns(warehouseId, tableName) {
+  const rows = await runQuery(warehouseId, `DESCRIBE TABLE ${tableName}`);
+  return rows
+    .map((row) => String(getCell(row[0]) || '').trim())
+    .filter((column) => column && !column.startsWith('#'));
 }
 
 function jsonValueExpr(variablesColumn, keys) {
@@ -59,44 +69,27 @@ function buildFilters({ meses, groupName, company, typeFilter, hasSessionDate })
   }
   if (groupName) {
     const group = escape(groupName);
-    conditions.push(`(
-      UPPER(TRIM(COALESCE(grupo_economico, ''))) LIKE UPPER('%${group}%')
-      OR TRIM(COALESCE(organization_id, '')) IN (
-        SELECT CAST(id AS STRING)
+    conditions.push(`organization_id IN (
+      SELECT CAST(id AS STRING)
+      FROM sanus_databricks.sanus_prod.organizations
+      WHERE name = '${group}'
+      UNION
+      SELECT CAST(id AS STRING)
+      FROM sanus_databricks.sanus_prod.organizations
+      WHERE matriz_id = (
+        SELECT id
         FROM sanus_databricks.sanus_prod.organizations
         WHERE name = '${group}'
-        UNION
-        SELECT CAST(id AS STRING)
-        FROM sanus_databricks.sanus_prod.organizations
-        WHERE matriz_id = (
-          SELECT id
-          FROM sanus_databricks.sanus_prod.organizations
-          WHERE name = '${group}'
-          LIMIT 1
-        )
-      )
-      OR UPPER(TRIM(COALESCE(empresa, ''))) IN (
-        SELECT UPPER(TRIM(name))
-        FROM sanus_databricks.sanus_prod.organizations
-        WHERE name = '${group}'
-          OR matriz_id = (
-            SELECT id
-            FROM sanus_databricks.sanus_prod.organizations
-            WHERE name = '${group}'
-            LIMIT 1
-          )
+        LIMIT 1
       )
     )`);
   }
   if (company) {
     const escapedCompany = escape(company);
-    conditions.push(`(
-      UPPER(TRIM(COALESCE(empresa, ''))) = UPPER(TRIM('${escapedCompany}'))
-      OR TRIM(COALESCE(organization_id, '')) IN (
-        SELECT CAST(id AS STRING)
-        FROM sanus_databricks.sanus_prod.organizations
-        WHERE UPPER(TRIM(name)) = UPPER(TRIM('${escapedCompany}'))
-      )
+    conditions.push(`organization_id IN (
+      SELECT CAST(id AS STRING)
+      FROM sanus_databricks.sanus_prod.organizations
+      WHERE UPPER(TRIM(name)) = UPPER(TRIM('${escapedCompany}'))
     )`);
   }
   if (typeFilter === 'TITULAR') {
@@ -123,13 +116,15 @@ export default async function handler(req, res) {
     const wh = warehouses.find((w) => w.state === "RUNNING") || warehouses[0];
     if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
 
-    const describeRows = await runQuery(wh.id, `DESCRIBE TABLE hive_metastore.sanus_prod.botmaker_session`);
-    const columns = describeRows
-      .map((row) => String(getCell(row[0]) || '').trim())
-      .filter((column) => column && !column.startsWith('#'));
+    const [columns, userColumns, beneficiaryColumns] = await Promise.all([
+      getColumns(wh.id, `hive_metastore.sanus_prod.botmaker_session`),
+      getColumns(wh.id, `hive_metastore.sanus_prod.users`),
+      getColumns(wh.id, `hive_metastore.sanus_prod.beneficiaries`),
+    ]);
 
     const variablesColumn = pickColumn(columns, ['variables']);
     if (!variablesColumn) throw new Error("Coluna variables não encontrada em botmaker_session.");
+    const variables = `CAST(${quoteIdent(variablesColumn)} AS STRING)`;
 
     const sessionDateColumn = pickColumn(columns, [
       'created_at',
@@ -159,47 +154,84 @@ export default async function handler(req, res) {
       ? `try_cast(${quoteIdent(sessionDateColumn)} AS TIMESTAMP)`
       : `CAST(NULL AS TIMESTAMP)`;
 
-    const grupoExpr = jsonValueExpr(variablesColumn, [
-      'grupo_economico',
-      'grupoEconomico',
-      'economic_group',
-      'economicGroup',
-      'group_name',
-      'nome_grupo',
-      'nomeGrupo',
-      'NOME_GRUPO_ECONOMICO',
+    const inputCpfExpr = normalizeCpfExpr(jsonValueExpr(variablesColumn, [
+      'inputcpfholder',
+      'inputCpfHolder',
+      'input_cpf_holder',
+      'cpf_holder',
+      'cpfHolder',
+      'cpf',
+      'CPF',
+    ]));
+
+    const userIdColumn = pickColumn(userColumns, ['id', 'user_id', 'userId']);
+    const userCpfColumn = pickColumn(userColumns, [
+      'cpf',
+      'CPF',
+      'document',
+      'document_number',
+      'documentNumber',
+      'tax_id',
+      'taxId',
+      'cpf_holder',
     ]);
-    const empresaExpr = jsonValueExpr(variablesColumn, [
-      'empresa',
-      'company',
-      'nome_empresa',
-      'nomeEmpresa',
-      'nome_cliente',
-      'NOME_CLIENTE',
-      'cliente',
-      'razao_social',
-      'organization_name',
+    const beneficiaryUserIdColumn = pickColumn(beneficiaryColumns, [
+      'user_id',
+      'userId',
+      'id_user',
+      'id_usuario',
+      'usuario_id',
     ]);
-    const tipoExpr = jsonValueExpr(variablesColumn, [
-      'tipo_beneficiario',
-      'tipoBeneficiario',
+    const beneficiaryCpfColumn = pickColumn(beneficiaryColumns, [
+      'cpf',
+      'CPF',
+      'document',
+      'document_number',
+      'documentNumber',
+      'tax_id',
+      'taxId',
+      'cpf_holder',
+    ]);
+    const beneficiaryOrgColumn = pickColumn(beneficiaryColumns, [
+      'organization_id',
+      'organizationId',
+      'id_empresa',
+      'ID_EMPRESA',
+      'empresa_id',
+      'company_id',
+    ]);
+    const beneficiaryTypeColumn = pickColumn(beneficiaryColumns, [
       'type_kinship',
       'grau_parentesco',
       'grauParentesco',
       'GRAU_PARENTESCO',
-      'parentesco',
+      'kinship',
+      'tipo_beneficiario',
+      'beneficiary_type',
     ]);
-    const organizationIdExpr = jsonValueExpr(variablesColumn, [
-      'organization_id',
-      'organizationId',
-      'id_empresa',
-      'idEmpresa',
-      'ID_EMPRESA',
-      'empresa_id',
-      'empresaId',
-      'company_id',
-      'companyId',
-    ]);
+
+    if (!userIdColumn || !userCpfColumn) throw new Error("Colunas de id/CPF não encontradas em users.");
+    if (!beneficiaryOrgColumn) throw new Error("Coluna de empresa não encontrada em beneficiaries.");
+
+    const beneficiaryJoinParts = [];
+    if (beneficiaryUserIdColumn) beneficiaryJoinParts.push(`b.user_id = u.user_id`);
+    if (beneficiaryCpfColumn) beneficiaryJoinParts.push(`b.cpf = s.cpf_holder`);
+    if (beneficiaryJoinParts.length === 0) {
+      throw new Error("Não foi possível ligar beneficiaries com users/CPF.");
+    }
+
+    const userIdExpr = `CAST(u.${quoteIdent(userIdColumn)} AS STRING)`;
+    const userCpfExpr = normalizeCpfExpr(`u.${quoteIdent(userCpfColumn)}`);
+    const beneficiaryOrgExpr = `CAST(b.${quoteIdent(beneficiaryOrgColumn)} AS STRING)`;
+    const beneficiaryUserIdExpr = beneficiaryUserIdColumn
+      ? `CAST(b.${quoteIdent(beneficiaryUserIdColumn)} AS STRING)`
+      : `CAST(NULL AS STRING)`;
+    const beneficiaryCpfExpr = beneficiaryCpfColumn
+      ? normalizeCpfExpr(`b.${quoteIdent(beneficiaryCpfColumn)}`)
+      : `CAST(NULL AS STRING)`;
+    const beneficiaryTypeExpr = beneficiaryTypeColumn
+      ? `CAST(b.${quoteIdent(beneficiaryTypeColumn)} AS STRING)`
+      : `CAST(NULL AS STRING)`;
     const whereClause = buildFilters({
       meses,
       groupName,
@@ -209,16 +241,40 @@ export default async function handler(req, res) {
     });
 
     const rows = await runQuery(wh.id, `
-      WITH base AS (
+      WITH sessions AS (
         SELECT
+          ROW_NUMBER() OVER (ORDER BY ${sessionAtExpr}, ${inputCpfExpr}, ${variables}) AS session_row_id,
           ${sessionAtExpr} AS session_at,
-          ${grupoExpr} AS grupo_economico,
-          ${empresaExpr} AS empresa,
-          ${tipoExpr} AS tipo_beneficiario,
-          ${organizationIdExpr} AS organization_id
+          ${inputCpfExpr} AS cpf_holder
         FROM hive_metastore.sanus_prod.botmaker_session
+      ),
+      users_by_cpf AS (
+        SELECT
+          ${userIdExpr} AS user_id,
+          ${userCpfExpr} AS cpf
+        FROM hive_metastore.sanus_prod.users u
+        WHERE ${userCpfExpr} IS NOT NULL
+      ),
+      beneficiaries_resolved AS (
+        SELECT
+          ${beneficiaryOrgExpr} AS organization_id,
+          ${beneficiaryTypeExpr} AS tipo_beneficiario,
+          ${beneficiaryUserIdExpr} AS user_id,
+          ${beneficiaryCpfExpr} AS cpf
+        FROM hive_metastore.sanus_prod.beneficiaries b
+        WHERE ${beneficiaryOrgExpr} IS NOT NULL
+      ),
+      base AS (
+        SELECT
+          s.session_row_id,
+          s.session_at,
+          b.organization_id,
+          b.tipo_beneficiario
+        FROM sessions s
+        LEFT JOIN users_by_cpf u ON u.cpf = s.cpf_holder
+        LEFT JOIN beneficiaries_resolved b ON ${beneficiaryJoinParts.join(' OR ')}
       )
-      SELECT COUNT(*) AS total_sessoes
+      SELECT COUNT(DISTINCT session_row_id) AS total_sessoes
       FROM base
       ${whereClause}
     `);
