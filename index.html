@@ -583,7 +583,11 @@ async function loadSessions() {
     if (periodoLabel) periodoLabel.textContent = label;
   } else {
     if (bullet) bullet.textContent = 'Erro';
-    if (periodoLabel) periodoLabel.textContent = 'Erro ao carregar sessões';
+    const msg = sessions && sessions.error ? sessions.error : 'Erro ao carregar sessões';
+    if (periodoLabel) {
+      periodoLabel.textContent = String(msg).slice(0, 220);
+      periodoLabel.title = String(msg);
+    }
   }
 }
 
@@ -675,8 +679,20 @@ function renderAgeGroups(data) {
 
 // --- Cargas ---
 async function safeGet(url) {
-  try { const r=await fetch(url); if(!r.ok) throw new Error(r.status); return await r.json(); }
-  catch(e) { return null; }
+  try {
+    const r = await fetch(url);
+    let body = null;
+    try { body = await r.json(); } catch(_) {}
+    if (!r.ok) {
+      const msg = body && body.error ? body.error : `HTTP ${r.status}`;
+      console.error(`[safeGet] ${url} -> ${msg}`);
+      return { error: msg };
+    }
+    return body;
+  } catch(e) {
+    console.error(`[safeGet] ${url} -> ${e.message}`);
+    return { error: e.message };
+  }
 }
 
 async function loadDemographics() {

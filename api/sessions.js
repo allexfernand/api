@@ -67,18 +67,10 @@ function jsonValueExpr(variablesColumn, keys) {
   return `COALESCE(${expressions.join(', ')})`;
 }
 
-function buildFilters({ meses, groupName, company, typeFilter, hasSessionDate }) {
+function buildFilters({ meses, typeFilter, hasSessionDate }) {
   const conditions = [];
   if (meses.length > 0 && hasSessionDate) {
     conditions.push(`DATE_FORMAT(session_at, 'yyyy-MM') IN (${meses.map((m) => `'${m}'`).join(',')})`);
-  }
-  if (groupName) {
-    const group = escape(groupName);
-    conditions.push(`UPPER(TRIM(economic_group)) = UPPER(TRIM('${group}'))`);
-  }
-  if (company) {
-    const escapedCompany = escape(company);
-    conditions.push(`UPPER(TRIM(company_name)) = UPPER(TRIM('${escapedCompany}'))`);
   }
   if (typeFilter === 'TITULAR') {
     conditions.push(`UPPER(TRIM(COALESCE(tipo_beneficiario, ''))) = 'TITULAR'`);
@@ -220,16 +212,41 @@ export default async function handler(req, res) {
     const beneficiaryTypeExpr = beneficiaryTypeColumn
       ? `CAST(b.${quoteIdent(beneficiaryTypeColumn)} AS STRING)`
       : `CAST(NULL AS STRING)`;
+
+    const orgConditions = [];
+    if (groupName) {
+      const g = escape(groupName);
+      orgConditions.push(`(UPPER(TRIM(o.name)) = UPPER(TRIM('${g}')) OR UPPER(TRIM(matriz.name)) = UPPER(TRIM('${g}')))`);
+    }
+    if (company) {
+      const c = escape(company);
+      orgConditions.push(`UPPER(TRIM(o.name)) = UPPER(TRIM('${c}'))`);
+    }
+    const hasOrgFilter = orgConditions.length > 0;
+
+    const filteredOrgsCte = hasOrgFilter ? `
+      filtered_orgs AS (
+        SELECT DISTINCT CAST(o.id AS STRING) AS organization_id
+        FROM ${ORGANIZATIONS_TABLE} o
+        LEFT JOIN ${ORGANIZATIONS_TABLE} matriz ON matriz.id = o.matriz_id
+        WHERE ${orgConditions.join(' AND ')}
+      ),` : '';
+
+    const beneficiariesOrgFilter = hasOrgFilter
+      ? `AND ${beneficiaryOrgExpr} IN (SELECT organization_id FROM filtered_orgs)`
+      : '';
+
+    const beneficiariesJoinKind = hasOrgFilter ? 'INNER JOIN' : 'LEFT JOIN';
+
     const whereClause = buildFilters({
       meses,
-      groupName,
-      company,
       typeFilter,
       hasSessionDate: Boolean(sessionDateColumn),
     });
 
     const rows = await runQuery(wh.id, `
-      WITH sessions AS (
+      WITH ${filteredOrgsCte}
+      sessions AS (
         SELECT
           ROW_NUMBER() OVER (ORDER BY ${sessionAtExpr}, ${inputCpfExpr}, ${variables}) AS session_row_id,
           ${sessionAtExpr} AS session_at,
@@ -251,27 +268,17 @@ export default async function handler(req, res) {
           ${beneficiaryCpfExpr} AS cpf
         FROM ${BENEFICIARIES_TABLE} b
         WHERE ${beneficiaryOrgExpr} IS NOT NULL
-      ),
-      organizations_resolved AS (
-        SELECT
-          CAST(o.id AS STRING) AS organization_id,
-          CAST(o.name AS STRING) AS company_name,
-          CAST(COALESCE(matriz.name, o.name) AS STRING) AS economic_group
-        FROM ${ORGANIZATIONS_TABLE} o
-        LEFT JOIN ${ORGANIZATIONS_TABLE} matriz ON matriz.id = o.matriz_id
+          ${beneficiariesOrgFilter}
       ),
       base AS (
         SELECT
           s.session_row_id,
           s.session_at,
           b.organization_id,
-          b.tipo_beneficiario,
-          org.company_name,
-          org.economic_group
+          b.tipo_beneficiario
         FROM sessions s
         LEFT JOIN users_by_cpf u ON u.cpf = s.cpf_holder
-        LEFT JOIN beneficiaries_resolved b ON ${beneficiaryJoinParts.join(' OR ')}
-        LEFT JOIN organizations_resolved org ON org.organization_id = b.organization_id
+        ${beneficiariesJoinKind} beneficiaries_resolved b ON ${beneficiaryJoinParts.join(' OR ')}
       )
       SELECT COUNT(DISTINCT session_row_id) AS total_sessoes
       FROM base
