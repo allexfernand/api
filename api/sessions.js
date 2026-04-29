@@ -67,15 +67,10 @@ function jsonValueExpr(variablesColumn, keys) {
   return `COALESCE(${expressions.join(', ')})`;
 }
 
-function buildFilters({ meses, typeFilter, hasSessionDate }) {
+function buildFilters({ meses, hasSessionDate }) {
   const conditions = [];
   if (meses.length > 0 && hasSessionDate) {
     conditions.push(`DATE_FORMAT(session_at, 'yyyy-MM') IN (${meses.map((m) => `'${m}'`).join(',')})`);
-  }
-  if (typeFilter === 'TITULAR') {
-    conditions.push(`UPPER(TRIM(COALESCE(tipo_beneficiario, ''))) = 'TITULAR'`);
-  } else if (typeFilter === 'DEPENDENTE') {
-    conditions.push(`UPPER(TRIM(COALESCE(tipo_beneficiario, ''))) != 'TITULAR'`);
   }
   return conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 }
@@ -213,40 +208,38 @@ export default async function handler(req, res) {
       ? `CAST(b.${quoteIdent(beneficiaryTypeColumn)} AS STRING)`
       : `CAST(NULL AS STRING)`;
 
-    const orgConditions = [];
+    const beneficiaryOrgIdent = `b.${quoteIdent(beneficiaryOrgColumn)}`;
+    const beneficiaryConditions = [`${beneficiaryOrgExpr} IS NOT NULL`];
     if (groupName) {
       const g = escape(groupName);
-      orgConditions.push(`(UPPER(TRIM(o.name)) = UPPER(TRIM('${g}')) OR UPPER(TRIM(matriz.name)) = UPPER(TRIM('${g}')))`);
+      beneficiaryConditions.push(`${beneficiaryOrgIdent} IN (
+        SELECT id FROM ${ORGANIZATIONS_TABLE} WHERE name = '${g}'
+        UNION
+        SELECT id FROM ${ORGANIZATIONS_TABLE}
+        WHERE matriz_id = (SELECT id FROM ${ORGANIZATIONS_TABLE} WHERE name = '${g}' LIMIT 1)
+      )`);
     }
     if (company) {
       const c = escape(company);
-      orgConditions.push(`UPPER(TRIM(o.name)) = UPPER(TRIM('${c}'))`);
+      beneficiaryConditions.push(`${beneficiaryOrgIdent} IN (
+        SELECT id FROM ${ORGANIZATIONS_TABLE} WHERE name = '${c}'
+      )`);
     }
-    const hasOrgFilter = orgConditions.length > 0;
-
-    const filteredOrgsCte = hasOrgFilter ? `
-      filtered_orgs AS (
-        SELECT DISTINCT CAST(o.id AS STRING) AS organization_id
-        FROM ${ORGANIZATIONS_TABLE} o
-        LEFT JOIN ${ORGANIZATIONS_TABLE} matriz ON matriz.id = o.matriz_id
-        WHERE ${orgConditions.join(' AND ')}
-      ),` : '';
-
-    const beneficiariesOrgFilter = hasOrgFilter
-      ? `AND ${beneficiaryOrgExpr} IN (SELECT organization_id FROM filtered_orgs)`
-      : '';
-
-    const beneficiariesJoinKind = hasOrgFilter ? 'INNER JOIN' : 'LEFT JOIN';
+    if (typeFilter === 'TITULAR' && beneficiaryTypeColumn) {
+      beneficiaryConditions.push(`UPPER(TRIM(COALESCE(CAST(b.${quoteIdent(beneficiaryTypeColumn)} AS STRING), ''))) = 'TITULAR'`);
+    } else if (typeFilter === 'DEPENDENTE' && beneficiaryTypeColumn) {
+      beneficiaryConditions.push(`UPPER(TRIM(COALESCE(CAST(b.${quoteIdent(beneficiaryTypeColumn)} AS STRING), ''))) != 'TITULAR'`);
+    }
+    const hasBeneficiariesFilter = Boolean(groupName || company || typeFilter);
+    const beneficiariesJoinKind = hasBeneficiariesFilter ? 'INNER JOIN' : 'LEFT JOIN';
 
     const whereClause = buildFilters({
       meses,
-      typeFilter,
       hasSessionDate: Boolean(sessionDateColumn),
     });
 
     const rows = await runQuery(wh.id, `
-      WITH ${filteredOrgsCte}
-      sessions AS (
+      WITH sessions AS (
         SELECT
           ROW_NUMBER() OVER (ORDER BY ${sessionAtExpr}, ${inputCpfExpr}, ${variables}) AS session_row_id,
           ${sessionAtExpr} AS session_at,
@@ -267,8 +260,7 @@ export default async function handler(req, res) {
           ${beneficiaryUserIdExpr} AS user_id,
           ${beneficiaryCpfExpr} AS cpf
         FROM ${BENEFICIARIES_TABLE} b
-        WHERE ${beneficiaryOrgExpr} IS NOT NULL
-          ${beneficiariesOrgFilter}
+        WHERE ${beneficiaryConditions.join(' AND ')}
       ),
       base AS (
         SELECT
