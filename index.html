@@ -824,7 +824,11 @@ async function loadSessionByCompany() {
   if (meta && data.mes) {
     const [y, mm] = String(data.mes).split('-');
     const monthLabel = (mN && mN[mm]) ? `${mN[mm]}/${y}` : data.mes;
-    meta.textContent = `Top empresas por sessões finalizadas · mês fixo: ${monthLabel}`;
+    const groupLabel = data.using_default_group
+      ? ` · grupo default: ${data.default_group}`
+      : (data.filters && data.filters.group_name ? ` · grupo: ${data.filters.group_name}` :
+         (data.filters && data.filters.company ? ` · empresa: ${data.filters.company}` : ''));
+    meta.textContent = `Top empresas por sessões finalizadas · mês fixo: ${monthLabel}${groupLabel}`;
   }
   renderSessionByCompany(data.items || []);
 }

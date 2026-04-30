@@ -132,8 +132,12 @@ export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   if (req.method === "OPTIONS") return res.status(200).end();
 
-  const groupName = req.query.group_name || null;
-  const company = req.query.company || null;
+  const DEFAULT_GROUP = 'AZUL LINHAS AEREAS BRASILEIRAS S.A.';
+  const requestedGroup = req.query.group_name || null;
+  const requestedCompany = req.query.company || null;
+  const usingDefaultGroup = !requestedGroup && !requestedCompany;
+  const groupName = usingDefaultGroup ? DEFAULT_GROUP : requestedGroup;
+  const company = requestedCompany;
   const typeFilter = req.query.type || null;
   const mes = /^\d{4}-\d{2}$/.test(req.query.mes || '') ? req.query.mes : previousMonth();
   const limit = Math.min(Math.max(parseInt(req.query.limit) || 50, 1), 200);
@@ -224,6 +228,8 @@ export default async function handler(req, res) {
     res.status(200).json({
       mes,
       filters: { group_name: groupName, company, type: typeFilter },
+      using_default_group: usingDefaultGroup,
+      default_group: usingDefaultGroup ? DEFAULT_GROUP : null,
       items,
       total_humano: totalHumano,
       total_ia: totalIa,

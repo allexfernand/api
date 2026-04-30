@@ -161,154 +161,33 @@ export default async function handler(req, res) {
   const useCompanyFilterSum = Boolean(groupName || company);
   const extraFilter = buildExtraFilter(groupName, company, typeFilter);
 
+  const SESSION_DATE_COLUMN = 'created_at';
+
+  const buildSessionDateFilter = (mesesArr) => mesesArr.length > 0
+    ? `DATE_FORMAT(try_cast(${quoteIdent(SESSION_DATE_COLUMN)} AS TIMESTAMP), 'yyyy-MM') IN (${mesesArr.map((m) => `'${m}'`).join(',')})`
+    : null;
+
+  const fallbackFinishersMonth = (() => {
+    const d = new Date();
+    d.setUTCDate(1);
+    const y = d.getUTCFullYear();
+    const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+    return `${y}-${m}`;
+  })();
+
   try {
     const { warehouses = [] } = await dbFetch("/api/2.0/sql/warehouses");
     const wh = warehouses.find((w) => w.state === "RUNNING") || warehouses[0];
     if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
 
-    const needsSessionColumns = meses.length > 0 || Boolean(groupName || company);
-    const [sessionColumns, beneficiaryViewColumns] = await Promise.all([
-      needsSessionColumns ? getColumns(wh.id, SESSION_TABLE) : Promise.resolve([]),
-      useCompanyFilterSum ? getColumns(wh.id, VW_BENEFICIARIOS) : Promise.resolve([]),
-    ]);
-    const sessionDateColumn = pickColumn(sessionColumns, [
-      'created_at',
-      'createdAt',
-      'creation_time',
-      'creationTime',
-      'created_time',
-      'createdTime',
-      'session_created_at',
-      'session_creation_time',
-      'started_at',
-      'start_time',
-      'startTime',
-      'last_message_at',
-      'lastMessageAt',
-      'last_interaction_at',
-      'lastInteractionAt',
-      'updated_at',
-      'timestamp',
-      'data_criacao',
-    ]);
-    const variablesColumn = pickColumn(sessionColumns, ['variables']);
-    const sessionOrgColumn = pickColumn(sessionColumns, [
-      'organization_id',
-      'organizationId',
-      'org_id',
-      'orgId',
-      'id_empresa',
-      'ID_EMPRESA',
-      'empresa_id',
-      'company_id',
-      'companyId',
-    ]);
-    const sessionCompanyColumn = pickColumn(sessionColumns, [
-      'company',
-      'company_name',
-      'companyName',
-      'nome_cliente',
-      'NOME_CLIENTE',
-      'organization',
-      'organization_name',
-      'organizationName',
-    ]);
-    const sessionGroupColumn = pickColumn(sessionColumns, [
-      'grupo_economico',
-      'economic_group',
-      'economicGroup',
-      'group_name',
-      'groupName',
-    ]);
-    const beneficiaryCpfColumn = pickColumn(beneficiaryViewColumns, [
-      'cpf',
-      'CPF',
-      'cpf_beneficiario',
-      'CPF_BENEFICIARIO',
-      'document',
-      'DOCUMENT',
-      'documento',
-      'DOCUMENTO',
-      'document_number',
-      'DOCUMENT_NUMBER',
-      'cpf_holder',
-      'CPF_HOLDER',
-    ]);
-    const sessionDateFilter = meses.length > 0 && sessionDateColumn
-      ? `DATE_FORMAT(try_cast(${quoteIdent(sessionDateColumn)} AS TIMESTAMP), 'yyyy-MM') IN (${meses.map((m) => `'${m}'`).join(',')})`
-      : null;
-    const fallbackFinishersMonth = (() => {
-      const d = new Date();
-      d.setUTCDate(1);
-      const y = d.getUTCFullYear();
-      const m = String(d.getUTCMonth() + 1).padStart(2, '0');
-      return `${y}-${m}`;
-    })();
+    const sessionDateFilter = buildSessionDateFilter(meses);
     const finishersDateFilter = sessionDateFilter
-      ? sessionDateFilter
-      : (sessionDateColumn
-          ? `DATE_FORMAT(try_cast(${quoteIdent(sessionDateColumn)} AS TIMESTAMP), 'yyyy-MM') = '${fallbackFinishersMonth}'`
-          : null);
-    const finishersUsingFallbackMonth = !sessionDateFilter && Boolean(finishersDateFilter);
-    const sessionOrgConditions = [];
-    if (groupName || company) {
-      const idsSubquery = orgIdsSubquery(groupName, company);
-      const namesSubquery = orgNamesSubquery(groupName, company);
-      if (sessionOrgColumn) {
-        sessionOrgConditions.push(`CAST(${quoteIdent(sessionOrgColumn)} AS STRING) IN ${idsSubquery}`);
-      }
-      if (sessionCompanyColumn) {
-        sessionOrgConditions.push(textInExpr(quoteIdent(sessionCompanyColumn), namesSubquery));
-      }
-      if (groupName && sessionGroupColumn) {
-        sessionOrgConditions.push(textEqualsExpr(quoteIdent(sessionGroupColumn), groupName));
-      }
-      if (variablesColumn) {
-        const variableOrgId = jsonValueExpr(variablesColumn, [
-          'organization_id',
-          'organizationId',
-          'org_id',
-          'orgId',
-          'id_empresa',
-          'ID_EMPRESA',
-          'empresa_id',
-          'company_id',
-          'companyId',
-        ]);
-        const variableCompany = jsonValueExpr(variablesColumn, [
-          'company',
-          'company_name',
-          'companyName',
-          'nome_cliente',
-          'NOME_CLIENTE',
-          'organization',
-          'organization_name',
-          'organizationName',
-        ]);
-        const variableGroup = jsonValueExpr(variablesColumn, [
-          'grupo_economico',
-          'economic_group',
-          'economicGroup',
-          'group_name',
-          'groupName',
-        ]);
-        sessionOrgConditions.push(`CAST(${variableOrgId} AS STRING) IN ${idsSubquery}`);
-        sessionOrgConditions.push(textInExpr(variableCompany, namesSubquery));
-        if (groupName) sessionOrgConditions.push(textEqualsExpr(variableGroup, groupName));
-      }
-    }
-    const sessionOrgFilter = sessionOrgConditions.length ? `(${sessionOrgConditions.join(' OR ')})` : null;
-    const sessionFilters = [sessionDateFilter, sessionOrgFilter].filter(Boolean);
-    const sessionWhere = sessionFilters.length ? `WHERE ${sessionFilters.join(' AND ')}` : '';
-    const sessionCpfFilterExpr = sessionCpfExpr(variablesColumn);
-    const sessionVariablesPreFilter = sessionVariablesPrefilter(variablesColumn);
-    const canFilterFinishersByBeneficiaryCpf = useCompanyFilterSum && Boolean(beneficiaryCpfColumn && sessionCpfFilterExpr);
-    const finishersFilterApplied = {
-      period: meses.length === 0 || Boolean(sessionDateColumn),
-      organization: !groupName && !company ? true : Boolean(canFilterFinishersByBeneficiaryCpf || sessionOrgFilter),
-      type: !typeFilter || canFilterFinishersByBeneficiaryCpf,
-    };
+      || `DATE_FORMAT(try_cast(${quoteIdent(SESSION_DATE_COLUMN)} AS TIMESTAMP), 'yyyy-MM') = '${fallbackFinishersMonth}'`;
+    const finishersUsingFallbackMonth = !sessionDateFilter;
 
+    // Card 1 — Total
+    // - Com filtro de grupo/empresa: soma beneficiários da view (rápido).
+    // - Sem filtro: COUNT direto no botmaker_session, opcionalmente filtrado por mês.
     const totalPromise = useCompanyFilterSum
       ? runQuery(wh.id, `
         SELECT
@@ -324,49 +203,17 @@ export default async function handler(req, res) {
         ${sessionDateFilter ? `WHERE ${sessionDateFilter}` : ''}
       `);
 
-    const finishersSessionFilters = [finishersDateFilter, sessionVariablesPreFilter].filter(Boolean);
-    const finishersSessionWhere = finishersSessionFilters.length ? `WHERE ${finishersSessionFilters.join(' AND ')}` : '';
-    const finishersPromise = canFilterFinishersByBeneficiaryCpf
-      ? runQuery(wh.id, `
-        WITH filtered_cpfs AS (
-          SELECT DISTINCT ${normalizeCpfExpr(`b.${quoteIdent(beneficiaryCpfColumn)}`)} AS cpf
-          FROM ${VW_BENEFICIARIOS} b
-          WHERE NOME_CLIENTE IS NOT NULL
-            ${extraFilter}
-            AND ${normalizeCpfExpr(`b.${quoteIdent(beneficiaryCpfColumn)}`)} IS NOT NULL
-        ),
-        sessions_filtered AS (
-          SELECT finished_by, ${quoteIdent(variablesColumn)} AS variables
-          FROM ${SESSION_TABLE}
-          ${finishersSessionWhere}
-        ),
-        sessions_resolved AS (
-          SELECT finished_by, ${sessionCpfFilterExpr} AS cpf
-          FROM sessions_filtered
-        )
-        SELECT /*+ BROADCAST(filtered_cpfs) */
-          CASE WHEN s.finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END AS tipo_atendimento,
-          COUNT(*) AS total_sessions
-        FROM sessions_resolved s
-        INNER JOIN filtered_cpfs fc ON fc.cpf = s.cpf
-        WHERE s.cpf IS NOT NULL
-        GROUP BY CASE WHEN s.finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END
-      `)
-      : runQuery(wh.id, `
-        SELECT
-          CASE
-            WHEN finished_by IS NOT NULL THEN 'Humano'
-            ELSE 'IA'
-          END AS tipo_atendimento,
-          COUNT(*) AS total_sessions
-        FROM ${SESSION_TABLE}
-        ${sessionWhere}
-        GROUP BY
-          CASE
-            WHEN finished_by IS NOT NULL THEN 'Humano'
-            ELSE 'IA'
-          END
-      `);
+    // Card 2 — Sessões finalizadas por (Humano vs IA)
+    // Agregação simples e rápida sobre botmaker_session, sempre com filtro de mês
+    // (default = mês corrente quando o usuário escolheu "todos os períodos").
+    const finishersPromise = runQuery(wh.id, `
+      SELECT
+        CASE WHEN finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END AS tipo_atendimento,
+        COUNT(*) AS total_sessions
+      FROM ${SESSION_TABLE}
+      WHERE ${finishersDateFilter}
+      GROUP BY CASE WHEN finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END
+    `);
 
     const [totalSettled, finishersSettled] = await Promise.allSettled([totalPromise, finishersPromise]);
     if (totalSettled.status !== 'fulfilled') {
@@ -380,37 +227,19 @@ export default async function handler(req, res) {
       ? (finishersSettled.reason instanceof Error ? finishersSettled.reason.message : String(finishersSettled.reason))
       : null;
     const finisherRows = finishersSettled.status === 'fulfilled' ? finishersSettled.value : [];
-    const rawFinishers = finisherRows.map((r) => ({
+    const finishers = finisherRows.map((r) => ({
       tipo: String(getCell(r[0]) || "—"),
       total: toInt(r[1]),
     }));
-    const rawFinishersTotal = rawFinishers.reduce((acc, item) => acc + item.total, 0);
-    const scaledFinishers = rawFinishersTotal > 0
-      ? rawFinishers.map((item) => ({
-          ...item,
-          total: Math.round((item.total / rawFinishersTotal) * total),
-          raw_total: item.total,
-        }))
-      : [];
-    if (scaledFinishers.length > 0) {
-      const allocated = scaledFinishers.slice(0, -1).reduce((acc, item) => acc + item.total, 0);
-      scaledFinishers[scaledFinishers.length - 1].total = Math.max(total - allocated, 0);
-    }
-    const finishers = useCompanyFilterSum && rawFinishersTotal > 0
-      ? scaledFinishers
-      : rawFinishers;
 
     res.status(200).json({
       total,
       empresas: toInt(row[1]),
       finishers,
-      finishers_raw_total: rawFinishersTotal,
-      finishers_scaled_to_total: useCompanyFilterSum && rawFinishersTotal > 0,
-      finishers_filter_applied: finishersFilterApplied,
       finishers_fallback_month: finishersUsingFallbackMonth ? fallbackFinishersMonth : null,
       finishers_error: finishersError,
       source: useCompanyFilterSum ? "company_filter_sum" : "botmaker_session",
-      period_filter_applied: useCompanyFilterSum ? false : meses.length === 0 || Boolean(sessionDateColumn),
+      period_filter_applied: meses.length > 0,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
