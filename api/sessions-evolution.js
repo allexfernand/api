@@ -186,64 +186,27 @@ export default async function handler(req, res) {
     const wh = warehouses.find((w) => w.state === "RUNNING") || warehouses[0];
     if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
 
-    let rows;
-    let mode = useCpfJoin ? "cpf_join" : "global";
-    if (useCpfJoin) {
-      const extraFilter = buildBeneficiaryFilter(groupName, company, typeFilter);
-      const beneficiaryColumns = await getColumns(wh.id, VW_BENEFICIARIOS);
-      const beneficiaryCpfColumn = pickBeneficiaryCpfColumn(beneficiaryColumns);
-      if (!beneficiaryCpfColumn) {
-        throw new Error(`Coluna de CPF/documento não encontrada em ${VW_BENEFICIARIOS}. Colunas disponíveis: ${beneficiaryColumns.slice(0, 80).join(', ')}`);
-      }
-      const cpfExpr = sessionCpfExpr();
-      const prefilter = variablesPrefilter();
-      const sql = `
-        WITH filtered_benef AS (
-          SELECT DISTINCT ${normalizeCpfExpr(`b.${quoteIdent(beneficiaryCpfColumn)}`)} AS cpf
-          FROM ${VW_BENEFICIARIOS} b
-          WHERE NOME_CLIENTE IS NOT NULL
-            ${extraFilter}
-            AND ${normalizeCpfExpr(`b.${quoteIdent(beneficiaryCpfColumn)}`)} IS NOT NULL
-        ),
-        sessions_filtered AS (
-          SELECT
-            DATE_FORMAT(try_cast(${quoteIdent(SESSION_DATE_COLUMN)} AS TIMESTAMP), 'yyyy-MM') AS mes,
-            finished_by,
-            ${quoteIdent(SESSION_VARIABLES_COLUMN)} AS ${quoteIdent(SESSION_VARIABLES_COLUMN)}
-          FROM ${SESSION_TABLE}
-          WHERE ${monthsSqlFilter}
-            AND ${prefilter}
-        ),
-        sessions_resolved AS (
-          SELECT mes, finished_by, ${cpfExpr} AS cpf
-          FROM sessions_filtered
-        )
-        SELECT /*+ BROADCAST(fb) */
-          s.mes AS mes,
-          CASE WHEN s.finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END AS tipo_atendimento,
-          COUNT(*) AS total
-        FROM sessions_resolved s
-        INNER JOIN filtered_benef fb ON fb.cpf = s.cpf
-        WHERE s.cpf IS NOT NULL
-        GROUP BY s.mes, CASE WHEN s.finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END
-        ORDER BY s.mes
-      `;
-      rows = await runQuery(wh.id, sql);
-    } else {
-      const sql = `
-        SELECT
-          DATE_FORMAT(try_cast(${quoteIdent(SESSION_DATE_COLUMN)} AS TIMESTAMP), 'yyyy-MM') AS mes,
-          CASE WHEN finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END AS tipo_atendimento,
-          COUNT(*) AS total
-        FROM ${SESSION_TABLE}
-        WHERE ${monthsSqlFilter}
-        GROUP BY
-          DATE_FORMAT(try_cast(${quoteIdent(SESSION_DATE_COLUMN)} AS TIMESTAMP), 'yyyy-MM'),
-          CASE WHEN finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END
-        ORDER BY mes
-      `;
-      rows = await runQuery(wh.id, sql);
+    const filters = [monthsSqlFilter];
+    if (groupName) {
+      filters.push(`UPPER(TRIM(${jsonValueExpr(SESSION_VARIABLES_COLUMN, ['nameEconomicGroup'])})) = UPPER(TRIM('${escape(groupName)}'))`);
     }
+    if (company) {
+      filters.push(`UPPER(TRIM(${jsonValueExpr(SESSION_VARIABLES_COLUMN, ['nameCompany', 'companyName', 'company', 'nome_cliente', 'NOME_CLIENTE'])})) = UPPER(TRIM('${escape(company)}'))`);
+    }
+    const where = `WHERE ${filters.join(' AND ')}`;
+    const mode = groupName || company ? "variables_json_filter" : "global";
+    const rows = await runQuery(wh.id, `
+      SELECT
+        DATE_FORMAT(try_cast(${quoteIdent(SESSION_DATE_COLUMN)} AS TIMESTAMP), 'yyyy-MM') AS mes,
+        CASE WHEN finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END AS tipo_atendimento,
+        COUNT(*) AS total
+      FROM ${SESSION_TABLE}
+      ${where}
+      GROUP BY
+        DATE_FORMAT(try_cast(${quoteIdent(SESSION_DATE_COLUMN)} AS TIMESTAMP), 'yyyy-MM'),
+        CASE WHEN finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END
+      ORDER BY mes
+    `);
 
     const byMesTipo = new Map(rows.map((r) => [
       `${String(getCell(r[0]) || '')}|${String(getCell(r[1]) || '').toUpperCase()}`,

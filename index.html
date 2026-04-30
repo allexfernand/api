@@ -754,7 +754,7 @@ async function loadSessionsEvolution() {
   }
 
   if (data && !data.error && modeLabel) {
-    if (data.mode === 'cpf_join') {
+    if (data.mode === 'cpf_join' || data.mode === 'variables_json_filter') {
       const filterParts = [];
       if (data.filters && data.filters.group_name) filterParts.push(`grupo: ${data.filters.group_name}`);
       if (data.filters && data.filters.company)    filterParts.push(`empresa: ${data.filters.company}`);
@@ -765,7 +765,7 @@ async function loadSessionsEvolution() {
     }
   }
   if (totalModeLabel) {
-    if (data.mode === 'cpf_join') {
+    if (data.mode === 'cpf_join' || data.mode === 'variables_json_filter') {
       const filterParts = [];
       if (data.filters && data.filters.group_name) filterParts.push(`grupo: ${data.filters.group_name}`);
       if (data.filters && data.filters.company) filterParts.push(`empresa: ${data.filters.company}`);

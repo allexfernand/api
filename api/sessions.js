@@ -233,8 +233,7 @@ export default async function handler(req, res) {
       `);
 
     // Card 2 — Sessões finalizadas por (Humano vs IA)
-    // Usa o mesmo período do Card 1. Se não houver período selecionado, usa o
-    // período completo. Quando houver filtros da tela, aplica via CPF.
+    // Mantido com a lógica anterior por CPF/beneficiário.
     const finishersPromise = useCompanyFilterSum
       ? (beneficiaryCpfColumn ? runQueryQuick(wh.id, `
         WITH filtered_cpfs AS (
