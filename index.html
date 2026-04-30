@@ -36,10 +36,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .fluid-grid>.card-box,.fluid-grid>.chart-card{margin-bottom:0}
 .sessions-summary-grid{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(320px,.85fr);gap:16px;align-items:stretch;margin-bottom:16px}
 .sessions-summary-grid>.card-box,.sessions-summary-grid>.chart-card{margin-bottom:0}
+.sessions-summary-grid>.card-box,.sessions-summary-grid>.chart-card{height:clamp(360px,40vw,460px);display:flex;flex-direction:column}
+.sessions-summary-grid .chart-wrap{height:auto;flex:1;min-height:0}
+.session-monthly-card{overflow:hidden}
+#session-monthly-content{flex:1;min-height:0;overflow:hidden;flex-direction:column}
 .table-scroll{width:100%;overflow-x:auto}
+.session-monthly-scroll{flex:1;min-height:0;overflow:auto}
 .session-monthly-filter-select{flex:1 1 260px;min-width:220px;max-width:420px}
 .session-monthly-table{width:100%;min-width:560px;border-collapse:collapse;font-size:12px}
-@media (max-width:980px){.sessions-summary-grid{grid-template-columns:1fr}.container{padding:16px}.card-box{padding:20px}.chart-card{padding:18px}.chart-wrap{height:300px}}
+@media (max-width:980px){.sessions-summary-grid{grid-template-columns:1fr}.sessions-summary-grid>.card-box,.sessions-summary-grid>.chart-card{height:auto;min-height:360px}.sessions-summary-grid .chart-wrap{height:300px;flex:none}.session-monthly-scroll{max-height:360px}.container{padding:16px}.card-box{padding:20px}.chart-card{padding:18px}.chart-wrap{height:300px}}
 @media (max-width:640px){.header,.tabs,.filterbar{padding-left:16px;padding-right:16px}.tabs{overflow-x:auto}.tab{white-space:nowrap}.chart-wrap{height:260px}.filter-select,.session-monthly-filter-select{width:100%;max-width:none;min-width:0}}
 .skeleton{background:linear-gradient(90deg,#f0f0ee 25%,#e8e8e6 50%,#f0f0ee 75%);background-size:200% 100%;animation:shimmer 1.5s infinite;border-radius:6px;height:100%}
 @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
@@ -348,7 +353,7 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
     </div>
 
     <div class="sessions-summary-grid">
-      <div class="card-box">
+      <div class="card-box session-monthly-card">
         <div class="section-title"><i class="fa-solid fa-table" style="margin-right:6px"></i>Resumo mensal de sessões</div>
         <div class="loading-box" id="session-monthly-loading">
           <button class="refresh-btn" onclick="loadSessionsMonthlySummary([...selectedMonths].sort())">Carregar resumo mensal</button>
@@ -360,7 +365,7 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
               <option value="">Todos os bot companies</option>
             </select>
           </div>
-          <div class="table-scroll">
+          <div class="table-scroll session-monthly-scroll">
             <table class="session-monthly-table">
               <thead>
                 <tr style="border-bottom:1px solid #e2e8f0;color:#64748b">
@@ -1139,7 +1144,7 @@ async function loadSessionsMonthlySummary(meses) {
   sessionsMonthlySummaryItems = data.items || [];
   renderSessionsMonthlySummary();
   if (loading) loading.style.display = 'none';
-  if (content) content.style.display = 'block';
+  if (content) content.style.display = 'flex';
 }
 
 // --- Evolução ---
