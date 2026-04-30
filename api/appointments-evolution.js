@@ -1,11 +1,11 @@
 // api/appointments-evolution.js
-// Evolução mensal de agendamentos na atendimento_gold_live.
+// Evolução mensal de agendamentos na atendimento_summarized_gold_live.
 
 const HOST  = process.env.DATABRICKS_HOST;
 const TOKEN = process.env.DATABRICKS_TOKEN;
 const HEADERS = { "Authorization": `Bearer ${TOKEN}`, "Content-Type": "application/json" };
 
-const APPOINTMENTS_TABLE = `sanus_databricks.sanus_prod.atendimento_gold_live`;
+const APPOINTMENTS_TABLE = `hive_metastore.sanus_prod.atendimento_summarized_gold_live`;
 const APPOINTMENTS_DATE_COLUMN = 'hora_criacao_atendimento';
 
 async function dbFetch(path, options = {}) {
@@ -68,6 +68,13 @@ function lastNMonthsList(n) {
   return out;
 }
 
+function nextMonth(month) {
+  const [year, mm] = month.split('-').map((value) => parseInt(value, 10));
+  const d = new Date(Date.UTC(year, mm - 1, 1));
+  d.setUTCMonth(d.getUTCMonth() + 1);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
@@ -78,9 +85,11 @@ export default async function handler(req, res) {
   const company = req.query.company || null;
   const meses = req.query.meses ? req.query.meses.split(',').filter((m) => /^\d{4}-\d{2}$/.test(m)) : [];
   const monthList = meses.length ? meses.sort() : lastNMonthsList(Math.min(Math.max(parseInt(req.query.months) || 12, 1), 24));
-  const monthInList = `(${monthList.map((m) => `'${m}'`).join(',')})`;
   const monthExpr = `DATE_FORMAT(${quoteIdent(APPOINTMENTS_DATE_COLUMN)}, 'yyyy-MM')`;
-  const assuntoNormalizedExpr = `UPPER(TRIM(REGEXP_REPLACE(TRANSLATE(COALESCE(CAST(assunto AS STRING), ''), 'ÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇáàâãäéèêëíìîïóòôõöúùûüç', 'AAAAAEEEEIIIIOOOOOUUUUCaaaaaeeeeiiiiooooouuuuc'), '[^A-Za-z0-9]+', ' ')))`;
+  const monthRangeFilter = monthList.map((month) => `(
+    ${quoteIdent(APPOINTMENTS_DATE_COLUMN)} >= '${month}-01'
+    AND ${quoteIdent(APPOINTMENTS_DATE_COLUMN)} < '${nextMonth(month)}-01'
+  )`).join(' OR ');
   const groupFilter = groupName
     ? `AND grupo_economico LIKE '%${escape(groupName)}'`
     : '';
@@ -113,25 +122,12 @@ export default async function handler(req, res) {
         ${monthExpr} AS mes,
         COUNT(*) AS total
       FROM ${APPOINTMENTS_TABLE}
-      WHERE motivo = 'Concluído com sucesso'
-        AND UPPER(TRIM(COALESCE(motivo, ''))) NOT IN (
+      WHERE (${monthRangeFilter})
+        AND UPPER(assunto) NOT IN (
           'ATENDIMENTO WHATSAPP',
           'ATENDIMENTO HUMANO',
-          'FORA DO HORARIO DE ATEDIMENTO'
+          'FORA DE HORÁRIO DE ATENDIMENTO'
         )
-        AND NOT (
-          ${assuntoNormalizedExpr} IN (
-            'ATENDIMENTO WHATSAPP',
-            'ATENDIMENTO HUMANO',
-            'FORA DE HORARIO DE ATENDIMENTO',
-            'FORA DO HORARIO DE ATEDIMENTO'
-          )
-          OR ${assuntoNormalizedExpr} LIKE '%ATENDIMENTO%WHATSAPP%'
-          OR ${assuntoNormalizedExpr} LIKE '%ATENDIMENTO%HUMANO%'
-          OR ${assuntoNormalizedExpr} LIKE '%FORA%HORARIO%ATENDIMENTO%'
-          OR ${assuntoNormalizedExpr} LIKE '%FORA%HORARIO%ATEDIMENTO%'
-        )
-        AND ${monthExpr} IN ${monthInList}
         ${groupFilter}
         ${companyFilter}
       GROUP BY ${monthExpr}
@@ -144,7 +140,7 @@ export default async function handler(req, res) {
     res.status(200).json({
       months: monthList,
       series,
-      source: "atendimento_gold_live.hora_criacao_atendimento",
+      source: "atendimento_summarized_gold_live.hora_criacao_atendimento",
       filters: { group_name: groupName, company },
       company_column: companyColumn,
       company_filter_applied: !company || Boolean(companyColumn),

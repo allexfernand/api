@@ -404,7 +404,7 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
     <div class="sessions-appointments-grid">
       <div class="chart-card">
         <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Sessões x agendamentos</h2>
-        <div style="font-size:11px;color:#94a3b8;margin-bottom:14px"><code>botmaker_session.creation_time</code> x <code>atendimento_gold_live.hora_criacao_atendimento</code> · mesmos períodos · <span id="s-attendance-mode">global</span></div>
+        <div style="font-size:11px;color:#94a3b8;margin-bottom:14px"><code>botmaker_session.creation_time</code> x <code>atendimento_summarized_gold_live.hora_criacao_atendimento</code> · mesmos períodos · <span id="s-attendance-mode">global</span></div>
         <div class="chart-wrap">
           <div class="skeleton" id="skel-s-attendance"></div>
           <canvas id="sessionsAttendanceChart" style="display:none"></canvas>
@@ -416,7 +416,7 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
         <div class="section-title"><i class="fa-solid fa-calendar-check" style="margin-right:6px"></i>Volumes de agendamentos</div>
         <div class="loading-box" id="appointments-volume-loading"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...</div>
         <div id="appointments-volume-content" style="display:none;flex:1;min-height:0;flex-direction:column">
-          <div style="font-size:11px;color:#94a3b8;margin-bottom:10px">Volume mensal · <code>atendimento_gold_live</code></div>
+          <div style="font-size:11px;color:#94a3b8;margin-bottom:10px">Volume mensal · <code>atendimento_summarized_gold_live</code></div>
           <div class="appointments-volume-scroll">
             <table class="appointments-volume-table">
               <thead>
