@@ -242,53 +242,15 @@ export default async function handler(req, res) {
       rows = await runQuery(wh.id, sql);
     }
 
-    let byMesTipo = new Map(rows.map((r) => [
+    const byMesTipo = new Map(rows.map((r) => [
       `${String(getCell(r[0]) || '')}|${String(getCell(r[1]) || '').toUpperCase()}`,
       toInt(r[2]),
     ]));
-    let series = monthList.map((m) => {
+    const series = monthList.map((m) => {
       const humano = byMesTipo.get(`${m}|HUMANO`) || 0;
       const ia = byMesTipo.get(`${m}|IA`) || 0;
       return { mes: m, humano, ia, total: humano + ia };
     });
-    const joinedTotal = series.reduce((acc, item) => acc + item.total, 0);
-
-    if (useCpfJoin && joinedTotal === 0) {
-      const extraFilter = buildBeneficiaryFilter(groupName, company, typeFilter);
-      const [fallbackRows, totalRows] = await Promise.all([
-        runQuery(wh.id, `
-          SELECT
-            DATE_FORMAT(try_cast(${quoteIdent(SESSION_DATE_COLUMN)} AS TIMESTAMP), 'yyyy-MM') AS mes,
-            CASE WHEN finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END AS tipo_atendimento,
-            COUNT(*) AS total
-          FROM ${SESSION_TABLE}
-          WHERE ${monthsSqlFilter}
-          GROUP BY
-            DATE_FORMAT(try_cast(${quoteIdent(SESSION_DATE_COLUMN)} AS TIMESTAMP), 'yyyy-MM'),
-            CASE WHEN finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END
-          ORDER BY mes
-        `),
-        runQuery(wh.id, `
-          SELECT COUNT(*) AS total
-          FROM ${VW_BENEFICIARIOS} b
-          WHERE NOME_CLIENTE IS NOT NULL
-            ${extraFilter}
-        `),
-      ]);
-      const filterTotal = toInt(totalRows[0]?.[0]);
-      const fallbackTotal = fallbackRows.reduce((acc, r) => acc + toInt(r[2]), 0);
-      const scale = filterTotal > 0 && fallbackTotal > 0 ? filterTotal / fallbackTotal : 0;
-      byMesTipo = new Map(fallbackRows.map((r) => [
-        `${String(getCell(r[0]) || '')}|${String(getCell(r[1]) || '').toUpperCase()}`,
-        Math.round(toInt(r[2]) * scale),
-      ]));
-      series = monthList.map((m) => {
-        const humano = byMesTipo.get(`${m}|HUMANO`) || 0;
-        const ia = byMesTipo.get(`${m}|IA`) || 0;
-        return { mes: m, humano, ia, total: humano + ia };
-      });
-      mode = "scaled_global_distribution";
-    }
 
     res.status(200).json({
       months,

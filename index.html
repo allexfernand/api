@@ -728,13 +728,12 @@ async function loadSessionsEvolution() {
   }
 
   if (modeLabel) {
-    if (data.mode === 'cpf_join' || data.mode === 'scaled_global_distribution') {
+    if (data.mode === 'cpf_join') {
       const filterParts = [];
       if (data.filters && data.filters.group_name) filterParts.push(`grupo: ${data.filters.group_name}`);
       if (data.filters && data.filters.company)    filterParts.push(`empresa: ${data.filters.company}`);
       if (data.filters && data.filters.type)       filterParts.push(`tipo: ${data.filters.type}`);
-      const suffix = data.mode === 'scaled_global_distribution' ? ' · distribuição global escalada' : '';
-      modeLabel.textContent = (filterParts.join(' · ') || 'filtrado') + suffix;
+      modeLabel.textContent = filterParts.join(' · ') || 'filtrado';
     } else {
       modeLabel.textContent = 'global';
     }
