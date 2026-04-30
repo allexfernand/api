@@ -129,6 +129,7 @@ export default async function handler(req, res) {
           'ATENDIMENTO HUMANO',
           'FORA DE HORÁRIO DE ATENDIMENTO'
         )
+        AND LOWER(COALESCE(CAST(assunto AS STRING), '')) NOT LIKE '%http%'
         ${groupFilter}
         ${companyFilter}
       GROUP BY ${monthExpr}
