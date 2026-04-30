@@ -292,6 +292,27 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
       </div>
     </div>
 
+    <div class="card-box">
+      <div class="section-title"><i class="fa-solid fa-stethoscope" style="margin-right:6px"></i>Tipos de consulta</div>
+      <div class="loading-box" id="agendamento-appointment-types-loading"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...</div>
+      <div id="agendamento-appointment-types-content" style="display:none">
+        <div style="font-size:11px;color:#94a3b8;margin-bottom:10px">Agrupamento por assunto/tipo de solicitação · <code>atendimento_summarized_gold_live</code></div>
+        <div class="table-scroll">
+          <table class="appointment-types-table">
+            <thead>
+              <tr style="border-bottom:1px solid #e2e8f0;color:#64748b">
+                <th style="text-align:left;padding:9px 10px;font-weight:600">Tipo</th>
+                <th style="text-align:right;padding:9px 10px;font-weight:600">Total</th>
+                <th style="text-align:right;padding:9px 10px;font-weight:600">%</th>
+              </tr>
+            </thead>
+            <tbody id="agendamento-appointment-types-tbody"></tbody>
+          </table>
+        </div>
+        <div style="font-size:11px;color:#94a3b8;margin-top:10px;text-align:right" id="agendamento-appointment-types-meta">—</div>
+      </div>
+    </div>
+
     <div style="text-align:center;padding:20px;color:#bbb;font-size:13px">Mais dados serão adicionados em breve.</div>
   </div>
 
@@ -692,6 +713,7 @@ async function loadAppointments() {
     safeGet('/api/appointments' + qs),
     safeGet('/api/solicitations' + qs),
   ]);
+  loadAppointmentTypes(meses, 'agendamento-appointment-types');
 
   if (appt && !appt.error) {
     document.getElementById('bullet-agend').textContent = fmt(appt.total);
@@ -932,11 +954,16 @@ function renderAppointmentsVolumeList(labels, values) {
   if (content) content.style.display = 'flex';
 }
 
-async function loadAppointmentTypes(monthValues) {
-  const loading = document.getElementById('appointment-types-loading');
-  const content = document.getElementById('appointment-types-content');
-  const tbody = document.getElementById('appointment-types-tbody');
-  const meta = document.getElementById('appointment-types-meta');
+async function loadAppointmentTypes(monthValues, idPrefix='appointment-types') {
+  const loading = document.getElementById(`${idPrefix}-loading`);
+  const content = document.getElementById(`${idPrefix}-content`);
+  const tbody = document.getElementById(`${idPrefix}-tbody`);
+  const meta = document.getElementById(`${idPrefix}-meta`);
+  if (loading) {
+    loading.style.display = 'block';
+    loading.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...';
+  }
+  if (content) content.style.display = 'none';
   const p = new URLSearchParams();
   if (monthValues && monthValues.length > 0) p.set('meses', monthValues.join(','));
   if (currentGroup) p.set('group_name', currentGroup);
