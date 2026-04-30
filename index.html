@@ -738,25 +738,20 @@ async function loadSessionsEvolution() {
   if (currentCompany) p.set('company', currentCompany);
   const qs = p.toString() ? '?' + p.toString() : '';
 
-  const [data, totalData] = await Promise.all([
-    safeGet('/api/sessions-evolution' + qs),
-    safeGet('/api/sessions-total-evolution' + qs),
-  ]);
+  const data = await safeGet('/api/sessions-evolution' + qs);
   if (!data || data.error) {
     if (errorBox) {
       errorBox.style.display = 'block';
       errorBox.textContent = (data && data.error) ? String(data.error).slice(0, 220) : 'Erro ao carregar evolução';
     }
-    if (skel) skel.style.display = 'none';
-  }
-  if (!totalData || totalData.error) {
     if (totalErrorBox) {
       totalErrorBox.style.display = 'block';
-      totalErrorBox.textContent = (totalData && totalData.error) ? String(totalData.error).slice(0, 220) : 'Erro ao carregar total de sessões';
+      totalErrorBox.textContent = (data && data.error) ? String(data.error).slice(0, 220) : 'Erro ao carregar total de sessões';
     }
+    if (skel) skel.style.display = 'none';
     if (totalSkel) totalSkel.style.display = 'none';
+    return;
   }
-  if ((!data || data.error) && (!totalData || totalData.error)) return;
 
   if (data && !data.error && modeLabel) {
     if (data.mode === 'cpf_join') {
@@ -770,10 +765,10 @@ async function loadSessionsEvolution() {
     }
   }
   if (totalModeLabel) {
-    if (totalData && totalData.mode === 'cpf_join_count_by_month') {
+    if (data.mode === 'cpf_join') {
       const filterParts = [];
-      if (totalData.filters && totalData.filters.group_name) filterParts.push(`grupo: ${totalData.filters.group_name}`);
-      if (totalData.filters && totalData.filters.company) filterParts.push(`empresa: ${totalData.filters.company}`);
+      if (data.filters && data.filters.group_name) filterParts.push(`grupo: ${data.filters.group_name}`);
+      if (data.filters && data.filters.company) filterParts.push(`empresa: ${data.filters.company}`);
       totalModeLabel.textContent = filterParts.join(' · ') || 'filtrado';
     } else {
       totalModeLabel.textContent = 'global';
@@ -857,24 +852,17 @@ async function loadSessionsEvolution() {
       },
     },
   });
-  const totalSeries = (totalData && !totalData.error ? totalData.series : []) || [];
-  const totalLabels = totalSeries.map((it) => {
-    const [y, mm] = String(it.mes).split('-');
-    return mN[mm] ? `${mN[mm]}/${y.slice(2)}` : it.mes;
-  });
-  const globalTotalValues = totalSeries.map((it) => Number(it.total) || 0);
-
   if (totalSkel) totalSkel.style.display = 'none';
-  if (totalCv && totalData && !totalData.error) totalCv.style.display = 'block';
+  if (totalCv) totalCv.style.display = 'block';
 
   if (sessionsTotalEvolChart) sessionsTotalEvolChart.destroy();
-  if (totalCv && totalData && !totalData.error) sessionsTotalEvolChart = new Chart(totalCv, {
+  if (totalCv) sessionsTotalEvolChart = new Chart(totalCv, {
     type: 'line',
     data: {
-      labels: totalLabels,
+      labels,
       datasets: [{
         label: 'Total',
-        data: globalTotalValues,
+        data: totalValues,
         borderColor: '#0f766e',
         backgroundColor: 'rgba(15,118,110,0.08)',
         borderWidth: 2,
