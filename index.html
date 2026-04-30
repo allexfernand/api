@@ -577,9 +577,15 @@ async function loadSessions() {
   if (sessions && !sessions.error) {
     if (bullet) bullet.textContent = fmt(sessions.total);
     const empresas = sessions.empresas || 0;
-    let label = `Soma de beneficiários · ${fmt(empresas)} ${empresas === 1 ? 'empresa' : 'empresas'}`;
-    if (currentCompany) label = `Beneficiários da empresa selecionada`;
-    else if (currentGroup) label = `Soma dos beneficiários do grupo · ${fmt(empresas)} ${empresas === 1 ? 'empresa' : 'empresas'}`;
+    let label = 'botmaker_session · todos os períodos';
+    if (sessions.source === 'company_filter_sum') {
+      label = `Soma do filtro de empresas · ${fmt(empresas)} ${empresas === 1 ? 'empresa' : 'empresas'}`;
+      if (currentCompany) label = 'Valor do filtro da empresa selecionada';
+      else if (currentGroup) label = `Soma dos valores do filtro Empresa · ${fmt(empresas)} ${empresas === 1 ? 'empresa' : 'empresas'}`;
+    } else {
+      if (meses.length === 1) { const [y,mm] = meses[0].split('-'); label = `botmaker_session · ${mN[mm]}/${y}`; }
+      else if (meses.length > 1) label = `botmaker_session · ${meses.length} meses selecionados`;
+    }
     if (periodoLabel) {
       periodoLabel.textContent = label;
       periodoLabel.title = label;

@@ -33,6 +33,7 @@ const getCell = (cell) => {
 };
 const toInt = (v) => { const n = parseInt(getCell(v)); return Number.isFinite(n) ? n : 0; };
 
+const SESSION_TABLE = `hive_metastore.sanus_prod.botmaker_session`;
 const VW_BENEFICIARIOS = `sanus_databricks.sanus_prod.vw_beneficiarios`;
 const ORGANIZATIONS_TABLE = `sanus_databricks.sanus_prod.organizations`;
 
@@ -68,6 +69,7 @@ export default async function handler(req, res) {
   const groupName = req.query.group_name || null;
   const company = req.query.company || null;
   const typeFilter = req.query.type || null;
+  const useCompanyFilterSum = Boolean(groupName || company);
   const extraFilter = buildExtraFilter(groupName, company, typeFilter);
 
   try {
@@ -75,20 +77,26 @@ export default async function handler(req, res) {
     const wh = warehouses.find((w) => w.state === "RUNNING") || warehouses[0];
     if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
 
-    const rows = await runQuery(wh.id, `
-      SELECT
-        COUNT(*) AS total,
-        COUNT(DISTINCT NOME_CLIENTE) AS empresas
-      FROM ${VW_BENEFICIARIOS} b
-      WHERE NOME_CLIENTE IS NOT NULL
-        ${extraFilter}
-    `);
+    const rows = useCompanyFilterSum
+      ? await runQuery(wh.id, `
+        SELECT
+          COUNT(*) AS total,
+          COUNT(DISTINCT NOME_CLIENTE) AS empresas
+        FROM ${VW_BENEFICIARIOS} b
+        WHERE NOME_CLIENTE IS NOT NULL
+          ${extraFilter}
+      `)
+      : await runQuery(wh.id, `
+        SELECT COUNT(*) AS total, 0 AS empresas
+        FROM ${SESSION_TABLE}
+      `);
 
     const row = rows[0] || [];
     res.status(200).json({
       total: toInt(row[0]),
       empresas: toInt(row[1]),
-      period_filter_applied: false,
+      source: useCompanyFilterSum ? "company_filter_sum" : "botmaker_session",
+      period_filter_applied: useCompanyFilterSum ? false : true,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
