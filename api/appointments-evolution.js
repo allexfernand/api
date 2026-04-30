@@ -91,6 +91,8 @@ export default async function handler(req, res) {
     ${quoteIdent(APPOINTMENTS_DATE_COLUMN)} >= '${month}-01'
     AND ${quoteIdent(APPOINTMENTS_DATE_COLUMN)} < '${nextMonth(month)}-01'
   )`).join(' OR ');
+  const assuntoTextExpr = `UPPER(COALESCE(CAST(assunto AS STRING), ''))`;
+  const assuntoNormalizedExpr = `UPPER(TRIM(REGEXP_REPLACE(COALESCE(CAST(assunto AS STRING), ''), '[^A-Za-z0-9]+', ' ')))`;
   const groupFilter = groupName
     ? `AND grupo_economico LIKE '%${escape(groupName)}'`
     : '';
@@ -130,7 +132,8 @@ export default async function handler(req, res) {
           'FORA DE HORÁRIO DE ATENDIMENTO'
         )
         AND LOWER(COALESCE(CAST(assunto AS STRING), '')) NOT LIKE '%http%'
-        AND UPPER(COALESCE(CAST(assunto AS STRING), '')) NOT LIKE '%ATENDIMENTO HUMANO%'
+        AND ${assuntoTextExpr} NOT LIKE '%ATENDIMENTO HUMANO%'
+        AND ${assuntoNormalizedExpr} NOT LIKE '%ATENDIMENTO%HUMANO%'
         ${groupFilter}
         ${companyFilter}
       GROUP BY ${monthExpr}
