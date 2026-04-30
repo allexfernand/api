@@ -639,6 +639,7 @@ function renderSessionFinishers(items, filterApplied, opts) {
       const monthLabel = mN[mm] ? `${mN[mm]}/${y}` : opts.fallbackMonth;
       messages.push(`Considerando apenas ${monthLabel} (selecione um período para alterar)`);
     }
+    if (opts.fallbackDistribution) messages.push('Distribuição global escalada para o total filtrado');
     note.style.display = messages.length ? 'block' : 'none';
     note.innerHTML = messages.join(' · ');
   }
@@ -688,6 +689,7 @@ async function loadSessions() {
     renderSessionFinishers(sessions.finishers || [], sessions.finishers_filter_applied, {
       error: sessions.finishers_error,
       fallbackMonth: sessions.finishers_fallback_month,
+      fallbackDistribution: sessions.finishers_used_fallback_distribution,
     });
   } else {
     if (bullet) bullet.textContent = 'Erro';
@@ -726,12 +728,13 @@ async function loadSessionsEvolution() {
   }
 
   if (modeLabel) {
-    if (data.mode === 'cpf_join') {
+    if (data.mode === 'cpf_join' || data.mode === 'scaled_global_distribution') {
       const filterParts = [];
       if (data.filters && data.filters.group_name) filterParts.push(`grupo: ${data.filters.group_name}`);
       if (data.filters && data.filters.company)    filterParts.push(`empresa: ${data.filters.company}`);
       if (data.filters && data.filters.type)       filterParts.push(`tipo: ${data.filters.type}`);
-      modeLabel.textContent = filterParts.join(' · ') || 'filtrado';
+      const suffix = data.mode === 'scaled_global_distribution' ? ' · distribuição global escalada' : '';
+      modeLabel.textContent = (filterParts.join(' · ') || 'filtrado') + suffix;
     } else {
       modeLabel.textContent = 'global';
     }
@@ -744,6 +747,7 @@ async function loadSessionsEvolution() {
   });
   const humanoValues = series.map((it) => Number(it.humano) || 0);
   const iaValues = series.map((it) => Number(it.ia) || 0);
+  const totalValues = series.map((it) => Number(it.total) || ((Number(it.humano) || 0) + (Number(it.ia) || 0)));
 
   if (skel) skel.style.display = 'none';
   if (cv) cv.style.display = 'block';
@@ -754,6 +758,17 @@ async function loadSessionsEvolution() {
     data: {
       labels,
       datasets: [
+        {
+          label: 'Total',
+          data: totalValues,
+          borderColor: '#0f766e',
+          backgroundColor: 'rgba(15,118,110,0.08)',
+          borderWidth: 2,
+          pointRadius: 3,
+          pointBackgroundColor: '#0f766e',
+          fill: false,
+          tension: 0.35,
+        },
         {
           label: 'Humano',
           data: humanoValues,

@@ -278,15 +278,36 @@ export default async function handler(req, res) {
     const row = rows[0] || [];
     const total = toInt(row[0]);
 
-    const finishersError = finishersSettled.status === 'rejected'
+    let finishersError = finishersSettled.status === 'rejected'
       ? (finishersSettled.reason instanceof Error ? finishersSettled.reason.message : String(finishersSettled.reason))
       : null;
     const finisherRows = finishersSettled.status === 'fulfilled' ? finishersSettled.value : [];
-    const rawFinishers = finisherRows.map((r) => ({
+    let rawFinishers = finisherRows.map((r) => ({
       tipo: String(getCell(r[0]) || "—"),
       total: toInt(r[1]),
     }));
-    const rawFinishersTotal = rawFinishers.reduce((acc, item) => acc + item.total, 0);
+    let rawFinishersTotal = rawFinishers.reduce((acc, item) => acc + item.total, 0);
+    let finishersUsedFallbackDistribution = false;
+    if (useCompanyFilterSum && rawFinishersTotal === 0 && !finishersError) {
+      try {
+        const fallbackRows = await runQueryQuick(wh.id, `
+          SELECT
+            CASE WHEN finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END AS tipo_atendimento,
+            COUNT(*) AS total_sessions
+          FROM ${SESSION_TABLE}
+          ${finishersDateFilter ? `WHERE ${finishersDateFilter}` : ''}
+          GROUP BY CASE WHEN finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END
+        `);
+        rawFinishers = fallbackRows.map((r) => ({
+          tipo: String(getCell(r[0]) || "—"),
+          total: toInt(r[1]),
+        }));
+        rawFinishersTotal = rawFinishers.reduce((acc, item) => acc + item.total, 0);
+        finishersUsedFallbackDistribution = rawFinishersTotal > 0;
+      } catch (err) {
+        finishersError = err instanceof Error ? err.message : String(err);
+      }
+    }
     const scaledFinishers = rawFinishersTotal > 0
       ? rawFinishers.map((item) => ({
           ...item,
@@ -308,6 +329,7 @@ export default async function handler(req, res) {
       finishers,
       finishers_raw_total: rawFinishersTotal,
       finishers_scaled_to_total: useCompanyFilterSum && rawFinishersTotal > 0,
+      finishers_used_fallback_distribution: finishersUsedFallbackDistribution,
       finishers_filter_applied: { period: true, organization: true, type: true },
       finishers_fallback_month: null,
       finishers_error: finishersError,
