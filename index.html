@@ -576,20 +576,10 @@ async function loadSessions() {
   const sessions = await safeGet('/api/sessions' + qs);
   if (sessions && !sessions.error) {
     if (bullet) bullet.textContent = fmt(sessions.total);
-    let label = 'botmaker_session · todos os períodos';
-    if (meses.length === 1) { const [y,mm] = meses[0].split('-'); label = `botmaker_session · ${mN[mm]}/${y}`; }
-    else if (meses.length > 1) label = `botmaker_session · ${meses.length} meses selecionados`;
-    if (sessions.period_filter_applied === false) label = 'botmaker_session · período não aplicado';
-    if (sessions.debug) {
-      const d = sessions.debug;
-      const cols = (d.session_columns || []).join(',');
-      const vars = (d.sample_variables || '').slice(0, 200);
-      label += ` · diag: orgs=${fmt(d.orgs_in_filter)} · benef=${fmt(d.beneficiaries_in_filter)} · benef c/cpf=${fmt(d.beneficiaries_in_filter_with_cpf)}`;
-      console.log('[sessions debug]', d);
-      console.log('[sessions debug] session_columns:', d.session_columns);
-      console.log('[sessions debug] sample_variables:', d.sample_variables);
-      label += ` · cols=[${cols}] · vars=${vars}`;
-    }
+    const empresas = sessions.empresas || 0;
+    let label = `Soma de beneficiários · ${fmt(empresas)} ${empresas === 1 ? 'empresa' : 'empresas'}`;
+    if (currentCompany) label = `Beneficiários da empresa selecionada`;
+    else if (currentGroup) label = `Soma dos beneficiários do grupo · ${fmt(empresas)} ${empresas === 1 ? 'empresa' : 'empresas'}`;
     if (periodoLabel) {
       periodoLabel.textContent = label;
       periodoLabel.title = label;
