@@ -54,6 +54,49 @@ async function getColumns(warehouseId, tableName) {
     .filter((column) => column && !column.startsWith('#'));
 }
 
+function jsonValueExpr(variablesColumn, keys) {
+  const variables = `CAST(${quoteIdent(variablesColumn)} AS STRING)`;
+  const expressions = keys.flatMap((key) => [
+    `NULLIF(TRIM(get_json_object(${variables}, '$.${key}')), '')`,
+    `NULLIF(TRIM(get_json_object(${variables}, '$.${key}.value')), '')`,
+  ]);
+  return `COALESCE(${expressions.join(', ')})`;
+}
+
+function orgIdsSubquery(groupName, company) {
+  if (company) {
+    return `(SELECT CAST(id AS STRING) FROM ${ORGANIZATIONS_TABLE} WHERE name = '${escape(company)}')`;
+  }
+  const g = escape(groupName);
+  return `(
+    SELECT CAST(id AS STRING) FROM ${ORGANIZATIONS_TABLE} WHERE name = '${g}'
+    UNION
+    SELECT CAST(id AS STRING) FROM ${ORGANIZATIONS_TABLE}
+    WHERE matriz_id = (SELECT id FROM ${ORGANIZATIONS_TABLE} WHERE name = '${g}' LIMIT 1)
+  )`;
+}
+
+function orgNamesSubquery(groupName, company) {
+  if (company) {
+    return `(SELECT UPPER(TRIM(name)) FROM ${ORGANIZATIONS_TABLE} WHERE name = '${escape(company)}')`;
+  }
+  const g = escape(groupName);
+  return `(
+    SELECT UPPER(TRIM(name)) FROM ${ORGANIZATIONS_TABLE} WHERE name = '${g}'
+    UNION
+    SELECT UPPER(TRIM(name)) FROM ${ORGANIZATIONS_TABLE}
+    WHERE matriz_id = (SELECT id FROM ${ORGANIZATIONS_TABLE} WHERE name = '${g}' LIMIT 1)
+  )`;
+}
+
+function textEqualsExpr(expr, value) {
+  return `UPPER(TRIM(CAST(${expr} AS STRING))) = UPPER(TRIM('${escape(value)}'))`;
+}
+
+function textInExpr(expr, subquery) {
+  return `UPPER(TRIM(CAST(${expr} AS STRING))) IN ${subquery}`;
+}
+
 function buildExtraFilter(groupName, company, typeFilter) {
   const conditions = [];
   if (groupName) {
@@ -117,6 +160,7 @@ export default async function handler(req, res) {
       'timestamp',
       'data_criacao',
     ]);
+    const variablesColumn = pickColumn(sessionColumns, ['variables']);
     const sessionOrgColumn = pickColumn(sessionColumns, [
       'organization_id',
       'organizationId',
@@ -128,22 +172,79 @@ export default async function handler(req, res) {
       'company_id',
       'companyId',
     ]);
+    const sessionCompanyColumn = pickColumn(sessionColumns, [
+      'company',
+      'company_name',
+      'companyName',
+      'nome_cliente',
+      'NOME_CLIENTE',
+      'organization',
+      'organization_name',
+      'organizationName',
+    ]);
+    const sessionGroupColumn = pickColumn(sessionColumns, [
+      'grupo_economico',
+      'economic_group',
+      'economicGroup',
+      'group_name',
+      'groupName',
+    ]);
     const sessionDateFilter = meses.length > 0 && sessionDateColumn
       ? `DATE_FORMAT(try_cast(${quoteIdent(sessionDateColumn)} AS TIMESTAMP), 'yyyy-MM') IN (${meses.map((m) => `'${m}'`).join(',')})`
       : null;
-    const sessionOrgFilter = (groupName || company) && sessionOrgColumn
-      ? `CAST(${quoteIdent(sessionOrgColumn)} AS STRING) IN (
-        SELECT CAST(id AS STRING)
-        FROM ${ORGANIZATIONS_TABLE}
-        WHERE ${company ? `name = '${escape(company)}'` : `name = '${escape(groupName)}'
-           OR matriz_id = (SELECT id FROM ${ORGANIZATIONS_TABLE} WHERE name = '${escape(groupName)}' LIMIT 1)`}
-      )`
-      : null;
+    const sessionOrgConditions = [];
+    if (groupName || company) {
+      const idsSubquery = orgIdsSubquery(groupName, company);
+      const namesSubquery = orgNamesSubquery(groupName, company);
+      if (sessionOrgColumn) {
+        sessionOrgConditions.push(`CAST(${quoteIdent(sessionOrgColumn)} AS STRING) IN ${idsSubquery}`);
+      }
+      if (sessionCompanyColumn) {
+        sessionOrgConditions.push(textInExpr(quoteIdent(sessionCompanyColumn), namesSubquery));
+      }
+      if (groupName && sessionGroupColumn) {
+        sessionOrgConditions.push(textEqualsExpr(quoteIdent(sessionGroupColumn), groupName));
+      }
+      if (variablesColumn) {
+        const variableOrgId = jsonValueExpr(variablesColumn, [
+          'organization_id',
+          'organizationId',
+          'org_id',
+          'orgId',
+          'id_empresa',
+          'ID_EMPRESA',
+          'empresa_id',
+          'company_id',
+          'companyId',
+        ]);
+        const variableCompany = jsonValueExpr(variablesColumn, [
+          'company',
+          'company_name',
+          'companyName',
+          'nome_cliente',
+          'NOME_CLIENTE',
+          'organization',
+          'organization_name',
+          'organizationName',
+        ]);
+        const variableGroup = jsonValueExpr(variablesColumn, [
+          'grupo_economico',
+          'economic_group',
+          'economicGroup',
+          'group_name',
+          'groupName',
+        ]);
+        sessionOrgConditions.push(`CAST(${variableOrgId} AS STRING) IN ${idsSubquery}`);
+        sessionOrgConditions.push(textInExpr(variableCompany, namesSubquery));
+        if (groupName) sessionOrgConditions.push(textEqualsExpr(variableGroup, groupName));
+      }
+    }
+    const sessionOrgFilter = sessionOrgConditions.length ? `(${sessionOrgConditions.join(' OR ')})` : null;
     const sessionFilters = [sessionDateFilter, sessionOrgFilter].filter(Boolean);
     const sessionWhere = sessionFilters.length ? `WHERE ${sessionFilters.join(' AND ')}` : '';
     const finishersFilterApplied = {
       period: meses.length === 0 || Boolean(sessionDateColumn),
-      organization: !groupName && !company ? true : Boolean(sessionOrgColumn),
+      organization: !groupName && !company ? true : Boolean(sessionOrgFilter),
       type: !typeFilter,
     };
 
