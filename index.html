@@ -738,22 +738,27 @@ async function loadSessionsEvolution() {
   if (currentCompany) p.set('company', currentCompany);
   const qs = p.toString() ? '?' + p.toString() : '';
 
-  const data = await safeGet('/api/sessions-evolution' + qs);
+  const [data, totalData] = await Promise.all([
+    safeGet('/api/sessions-evolution' + qs),
+    safeGet('/api/sessions-evolution'),
+  ]);
   if (!data || data.error) {
     if (errorBox) {
       errorBox.style.display = 'block';
       errorBox.textContent = (data && data.error) ? String(data.error).slice(0, 220) : 'Erro ao carregar evolução';
     }
+    if (skel) skel.style.display = 'none';
+  }
+  if (!totalData || totalData.error) {
     if (totalErrorBox) {
       totalErrorBox.style.display = 'block';
-      totalErrorBox.textContent = (data && data.error) ? String(data.error).slice(0, 220) : 'Erro ao carregar total de sessões';
+      totalErrorBox.textContent = (totalData && totalData.error) ? String(totalData.error).slice(0, 220) : 'Erro ao carregar total de sessões';
     }
-    if (skel) skel.style.display = 'none';
     if (totalSkel) totalSkel.style.display = 'none';
-    return;
   }
+  if ((!data || data.error) && (!totalData || totalData.error)) return;
 
-  if (modeLabel) {
+  if (data && !data.error && modeLabel) {
     if (data.mode === 'cpf_join') {
       const filterParts = [];
       if (data.filters && data.filters.group_name) filterParts.push(`grupo: ${data.filters.group_name}`);
@@ -764,9 +769,9 @@ async function loadSessionsEvolution() {
       modeLabel.textContent = 'global';
     }
   }
-  if (totalModeLabel) totalModeLabel.textContent = modeLabel ? modeLabel.textContent : (data.mode === 'cpf_join' ? 'filtrado' : 'global');
+  if (totalModeLabel) totalModeLabel.textContent = 'global';
 
-  const series = (data.series || []);
+  const series = (data && !data.error ? data.series : []) || [];
   const labels = series.map((it) => {
     const [y, mm] = String(it.mes).split('-');
     return mN[mm] ? `${mN[mm]}/${y.slice(2)}` : it.mes;
@@ -776,12 +781,10 @@ async function loadSessionsEvolution() {
   const totalValues = series.map((it) => Number(it.total) || ((Number(it.humano) || 0) + (Number(it.ia) || 0)));
 
   if (skel) skel.style.display = 'none';
-  if (cv) cv.style.display = 'block';
-  if (totalSkel) totalSkel.style.display = 'none';
-  if (totalCv) totalCv.style.display = 'block';
+  if (cv && data && !data.error) cv.style.display = 'block';
 
   if (sessionsEvolChart) sessionsEvolChart.destroy();
-  sessionsEvolChart = new Chart(cv, {
+  if (cv && data && !data.error) sessionsEvolChart = new Chart(cv, {
     type: 'line',
     data: {
       labels,
@@ -845,14 +848,24 @@ async function loadSessionsEvolution() {
       },
     },
   });
+  const totalSeries = (totalData && !totalData.error ? totalData.series : []) || [];
+  const totalLabels = totalSeries.map((it) => {
+    const [y, mm] = String(it.mes).split('-');
+    return mN[mm] ? `${mN[mm]}/${y.slice(2)}` : it.mes;
+  });
+  const globalTotalValues = totalSeries.map((it) => Number(it.total) || ((Number(it.humano) || 0) + (Number(it.ia) || 0)));
+
+  if (totalSkel) totalSkel.style.display = 'none';
+  if (totalCv && totalData && !totalData.error) totalCv.style.display = 'block';
+
   if (sessionsTotalEvolChart) sessionsTotalEvolChart.destroy();
-  sessionsTotalEvolChart = new Chart(totalCv, {
+  if (totalCv && totalData && !totalData.error) sessionsTotalEvolChart = new Chart(totalCv, {
     type: 'line',
     data: {
-      labels,
+      labels: totalLabels,
       datasets: [{
         label: 'Total',
-        data: totalValues,
+        data: globalTotalValues,
         borderColor: '#0f766e',
         backgroundColor: 'rgba(15,118,110,0.08)',
         borderWidth: 2,
