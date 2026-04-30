@@ -43,6 +43,22 @@ const getCell = (cell) => {
 };
 const toInt = (v) => { const n = parseInt(getCell(v)); return Number.isFinite(n) ? n : 0; };
 
+function pickColumn(columns, candidates) {
+  const byLower = new Map(columns.map((column) => [column.toLowerCase(), column]));
+  for (const candidate of candidates) {
+    const column = byLower.get(candidate.toLowerCase());
+    if (column) return column;
+  }
+  return null;
+}
+
+async function getColumns(warehouseId, tableName) {
+  const rows = await runQuery(warehouseId, `DESCRIBE TABLE ${tableName}`);
+  return rows
+    .map((row) => String(getCell(row[0]) || '').trim())
+    .filter((column) => column && !column.startsWith('#'));
+}
+
 function jsonValueExpr(variablesColumn, keys) {
   const variables = `CAST(${quoteIdent(variablesColumn)} AS STRING)`;
   const expressions = keys.flatMap((key) => [
@@ -124,65 +140,25 @@ export default async function handler(req, res) {
     const wh = warehouses.find((w) => w.state === "RUNNING") || warehouses[0];
     if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
 
-    let rows;
-    if (hasOrgFilter) {
-      const sessionOrgFilters = [];
-      if (groupName) {
-        const g = escape(groupName);
-        sessionOrgFilters.push(`(
-          s.economic_group IN (SELECT economic_group FROM filtered_orgs)
-          OR (
-            s.variables_text LIKE '%nameEconomicGroup%'
-            AND UPPER(s.variables_text) LIKE UPPER('%${g}%')
-          )
-        )`);
-      }
-      if (company) {
-        const c = escape(company);
-        sessionOrgFilters.push(`(
-          s.company_name IN (SELECT company_name FROM filtered_orgs)
-          OR s.company_name IN (SELECT beneficiary_company_name FROM filtered_orgs)
-          OR (
-            (s.variables_text LIKE '%nameCompany%' OR s.variables_text LIKE '%companyName%' OR s.variables_text LIKE '%company%')
-            AND UPPER(s.variables_text) LIKE UPPER('%${c}%')
-          )
-        )`);
-      }
-      const sessionOrgWhere = sessionOrgFilters.length ? `WHERE ${sessionOrgFilters.join(' AND ')}` : '';
-      rows = await runQuery(wh.id, `
-        WITH filtered_orgs AS (
-          SELECT DISTINCT
-            UPPER(TRIM(COALESCE(matriz.name, o.name))) AS economic_group,
-            UPPER(TRIM(o.name)) AS company_name,
-            UPPER(TRIM(b.NOME_CLIENTE)) AS beneficiary_company_name
-          FROM ${VW_BENEFICIARIOS} b
-          INNER JOIN ${ORGANIZATIONS_TABLE} o ON CAST(b.ID_EMPRESA AS STRING) = CAST(o.id AS STRING)
-          LEFT JOIN ${ORGANIZATIONS_TABLE} matriz ON CAST(o.matriz_id AS STRING) = CAST(matriz.id AS STRING)
-          WHERE b.NOME_CLIENTE IS NOT NULL
-            ${buildOrgFilter(groupName, company)}
-        ),
-        sessions_resolved AS (
-          SELECT
-            ${monthExpr} AS mes,
-            finished_by,
-            UPPER(TRIM(${economicGroupExpr()})) AS economic_group,
-            UPPER(TRIM(${companyNameExpr()})) AS company_name,
-            CAST(${quoteIdent(SESSION_VARIABLES_COLUMN)} AS STRING) AS variables_text
-          FROM ${SESSION_TABLE}
-          WHERE ${monthExpr} IN ${monthInList}
-        )
-        SELECT
-          s.mes,
-          COUNT(*) AS total_sessions,
-          SUM(CASE WHEN s.finished_by IS NOT NULL THEN 1 ELSE 0 END) AS humano,
-          SUM(CASE WHEN s.finished_by IS NULL THEN 1 ELSE 0 END) AS ia
-        FROM sessions_resolved s
-        ${sessionOrgWhere}
-        GROUP BY s.mes
-        ORDER BY s.mes
-      `);
-    } else {
-      rows = await runQuery(wh.id, `
+    const sessionColumns = hasOrgFilter ? await getColumns(wh.id, SESSION_TABLE) : [];
+    const botCompanyColumn = hasOrgFilter ? pickColumn(sessionColumns, [
+      'bot_company',
+      'botCompany',
+      'bot company',
+      'botcompany',
+      'bot_company_name',
+      'botCompanyName',
+    ]) : null;
+    if (hasOrgFilter && !botCompanyColumn) {
+      throw new Error(`Coluna bot_company não encontrada em ${SESSION_TABLE}. Colunas disponíveis: ${sessionColumns.slice(0, 80).join(', ')}`);
+    }
+
+    const filterValues = [company, groupName].filter(Boolean).map((value) => `'${escape(value)}'`);
+    const botCompanyFilter = hasOrgFilter
+      ? `AND UPPER(TRIM(CAST(${quoteIdent(botCompanyColumn)} AS STRING))) IN (${filterValues.map((value) => `UPPER(TRIM(${value}))`).join(',')})`
+      : '';
+
+    const rows = await runQuery(wh.id, `
         SELECT
           ${monthExpr} AS mes,
           COUNT(*) AS total_sessions,
@@ -190,10 +166,10 @@ export default async function handler(req, res) {
           SUM(CASE WHEN finished_by IS NULL THEN 1 ELSE 0 END) AS ia
         FROM ${SESSION_TABLE}
         WHERE ${monthExpr} IN ${monthInList}
+          ${botCompanyFilter}
         GROUP BY ${monthExpr}
         ORDER BY mes
       `);
-    }
 
     const byMes = new Map(rows.map((r) => [
       String(getCell(r[0]) || ''),
@@ -207,8 +183,9 @@ export default async function handler(req, res) {
     res.status(200).json({
       items,
       filters: { group_name: groupName, company },
-      source: "vw_beneficiarios.ID_EMPRESA -> organizations.matriz_id + botmaker_session.variables",
-      mode: hasOrgFilter ? "organization_matrix_filter" : "global",
+      source: "botmaker_session.bot_company",
+      mode: hasOrgFilter ? "bot_company_filter" : "global",
+      bot_company_column: botCompanyColumn,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

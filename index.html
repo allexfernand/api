@@ -967,7 +967,7 @@ async function loadSessionsMonthlySummary(meses) {
     const parts = [];
     if (data.filters && data.filters.group_name) parts.push(`grupo: ${escapeHtml(data.filters.group_name)}`);
     if (data.filters && data.filters.company) parts.push(`empresa: ${escapeHtml(data.filters.company)}`);
-    meta.innerHTML = `${items.length} meses · ${parts.length ? parts.join(' · ') : 'global'} · <code>vw_beneficiarios.ID_EMPRESA → organizations.matriz_id</code>`;
+    meta.innerHTML = `${items.length} meses · ${parts.length ? parts.join(' · ') : 'global'} · <code>botmaker_session.bot_company</code>`;
   }
   if (loading) loading.style.display = 'none';
   if (content) content.style.display = 'block';
