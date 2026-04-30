@@ -110,9 +110,9 @@ export default async function handler(req, res) {
 
     const sessionColumns = await getColumns(wh.id, SESSION_TABLE);
     const botCompanyColumn = pickColumn(sessionColumns, [
+      'bot company',
       'bot_company',
       'botCompany',
-      'bot company',
       'botcompany',
       'bot_company_name',
       'botCompanyName',
