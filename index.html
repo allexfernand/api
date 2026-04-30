@@ -923,9 +923,16 @@ async function renderSessionsAttendanceChart(labels, monthValues, sessionValues,
     modeLabel.textContent = `${modeLabel.textContent} · filtro empresa não aplicado em agendamentos`;
   }
 
-  const appointmentsByMonth = Object.fromEntries((appointmentsData.series || []).map((it) => [it.mes, Number(it.total) || 0]));
+  const appointmentsSeries = appointmentsData.series || [];
+  const appointmentsByMonth = Object.fromEntries(appointmentsSeries.map((it) => [it.mes, Number(it.total) || 0]));
   const appointmentValues = monthValues.map((mes) => appointmentsByMonth[mes] || 0);
-  renderAppointmentsVolumeList(labels, appointmentValues);
+  const appointmentMonths = (appointmentsData.months && appointmentsData.months.length) ? appointmentsData.months : monthValues;
+  const appointmentLabels = appointmentMonths.map((mes) => {
+    const [y, mm] = String(mes).split('-');
+    return mN[mm] ? `${mN[mm]}/${y.slice(2)}` : mes;
+  });
+  const appointmentVolumeValues = appointmentMonths.map((mes) => appointmentsByMonth[mes] || 0);
+  renderAppointmentsVolumeList(appointmentLabels, appointmentVolumeValues);
 
   if (sessionsAttendanceChart) sessionsAttendanceChart.destroy();
   if (skel) skel.style.display = 'none';
