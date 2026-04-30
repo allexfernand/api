@@ -1,5 +1,5 @@
 // api/sessions-evolution.js
-// Evolução mensal de sessões (últimos 12 meses).
+// Evolução mensal de sessões finalizadas por Humano e IA (últimos 12 meses).
 // - Sem filtro de grupo/empresa: COUNT(*) GROUP BY mês — query rápida.
 // - Com filtro: JOIN via CPF (vw_beneficiarios x botmaker_session.variables)
 //   com prefiltro de variáveis + BROADCAST + chaves JSON enxutas para tentar
@@ -155,22 +155,24 @@ export default async function handler(req, res) {
         sessions_filtered AS (
           SELECT
             DATE_FORMAT(try_cast(${quoteIdent(SESSION_DATE_COLUMN)} AS TIMESTAMP), 'yyyy-MM') AS mes,
+            finished_by,
             ${quoteIdent(SESSION_VARIABLES_COLUMN)} AS ${quoteIdent(SESSION_VARIABLES_COLUMN)}
           FROM ${SESSION_TABLE}
           WHERE ${monthsSqlFilter}
             AND ${prefilter}
         ),
         sessions_resolved AS (
-          SELECT mes, ${cpfExpr} AS cpf
+          SELECT mes, finished_by, ${cpfExpr} AS cpf
           FROM sessions_filtered
         )
         SELECT /*+ BROADCAST(fb) */
           s.mes AS mes,
+          CASE WHEN s.finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END AS tipo_atendimento,
           COUNT(*) AS total
         FROM sessions_resolved s
         INNER JOIN filtered_benef fb ON fb.cpf = s.cpf
         WHERE s.cpf IS NOT NULL
-        GROUP BY s.mes
+        GROUP BY s.mes, CASE WHEN s.finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END
         ORDER BY s.mes
       `;
       rows = await runQuery(wh.id, sql);
@@ -178,17 +180,27 @@ export default async function handler(req, res) {
       const sql = `
         SELECT
           DATE_FORMAT(try_cast(${quoteIdent(SESSION_DATE_COLUMN)} AS TIMESTAMP), 'yyyy-MM') AS mes,
+          CASE WHEN finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END AS tipo_atendimento,
           COUNT(*) AS total
         FROM ${SESSION_TABLE}
         WHERE ${monthsSqlFilter}
-        GROUP BY DATE_FORMAT(try_cast(${quoteIdent(SESSION_DATE_COLUMN)} AS TIMESTAMP), 'yyyy-MM')
+        GROUP BY
+          DATE_FORMAT(try_cast(${quoteIdent(SESSION_DATE_COLUMN)} AS TIMESTAMP), 'yyyy-MM'),
+          CASE WHEN finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END
         ORDER BY mes
       `;
       rows = await runQuery(wh.id, sql);
     }
 
-    const byMes = Object.fromEntries(rows.map((r) => [String(getCell(r[0]) || ''), toInt(r[1])]));
-    const series = monthList.map((m) => ({ mes: m, total: byMes[m] || 0 }));
+    const byMesTipo = new Map(rows.map((r) => [
+      `${String(getCell(r[0]) || '')}|${String(getCell(r[1]) || '').toUpperCase()}`,
+      toInt(r[2]),
+    ]));
+    const series = monthList.map((m) => {
+      const humano = byMesTipo.get(`${m}|HUMANO`) || 0;
+      const ia = byMesTipo.get(`${m}|IA`) || 0;
+      return { mes: m, humano, ia, total: humano + ia };
+    });
 
     res.status(200).json({
       months,
