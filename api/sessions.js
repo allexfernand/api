@@ -360,16 +360,34 @@ export default async function handler(req, res) {
       `);
 
     const [rows, finisherRows] = await Promise.all([totalPromise, finishersPromise]);
-    const finishers = finisherRows.map((r) => ({
+    const row = rows[0] || [];
+    const total = toInt(row[0]);
+    const rawFinishers = finisherRows.map((r) => ({
       tipo: String(getCell(r[0]) || "—"),
       total: toInt(r[1]),
     }));
+    const rawFinishersTotal = rawFinishers.reduce((acc, item) => acc + item.total, 0);
+    const scaledFinishers = rawFinishersTotal > 0
+      ? rawFinishers.map((item) => ({
+          ...item,
+          total: Math.round((item.total / rawFinishersTotal) * total),
+          raw_total: item.total,
+        }))
+      : [];
+    if (scaledFinishers.length > 0) {
+      const allocated = scaledFinishers.slice(0, -1).reduce((acc, item) => acc + item.total, 0);
+      scaledFinishers[scaledFinishers.length - 1].total = Math.max(total - allocated, 0);
+    }
+    const finishers = useCompanyFilterSum && rawFinishersTotal > 0
+      ? scaledFinishers
+      : rawFinishers;
 
-    const row = rows[0] || [];
     res.status(200).json({
-      total: toInt(row[0]),
+      total,
       empresas: toInt(row[1]),
       finishers,
+      finishers_raw_total: rawFinishersTotal,
+      finishers_scaled_to_total: useCompanyFilterSum && rawFinishersTotal > 0,
       finishers_filter_applied: finishersFilterApplied,
       source: useCompanyFilterSum ? "company_filter_sum" : "botmaker_session",
       period_filter_applied: useCompanyFilterSum ? false : meses.length === 0 || Boolean(sessionDateColumn),
