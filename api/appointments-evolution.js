@@ -118,13 +118,10 @@ export default async function handler(req, res) {
           'ATENDIMENTO HUMANO',
           'FORA DO HORARIO DE ATEDIMENTO'
         )
-        AND NOT (
-          UPPER(REGEXP_REPLACE(COALESCE(assunto, ''), '[^A-Za-z0-9]+', ' ')) LIKE '%ATENDIMENTO%WHATSAPP%'
-          OR UPPER(REGEXP_REPLACE(COALESCE(assunto, ''), '[^A-Za-z0-9]+', ' ')) LIKE '%ATENDIMENTO%HUMANO%'
-          OR UPPER(REGEXP_REPLACE(COALESCE(assunto, ''), '[^A-Za-z0-9]+', ' ')) LIKE '%FORA%HORARIO%ATENDIMENTO%'
-          OR UPPER(REGEXP_REPLACE(COALESCE(assunto, ''), '[^A-Za-z0-9]+', ' ')) LIKE '%FORA%HORARIO%ATEDIMENTO%'
-          OR UPPER(COALESCE(assunto, '')) LIKE '%FORA%HORÁRIO%ATENDIMENTO%'
-          OR UPPER(COALESCE(assunto, '')) LIKE '%FORA%HORÁRIO%ATEDIMENTO%'
+        AND UPPER(assunto) NOT IN (
+          'ATENDIMENTO WHATSAPP',
+          'ATENDIMENTO HUMANO',
+          'FORA DE HORÁRIO DE ATENDIMENTO'
         )
         AND ${monthExpr} IN ${monthInList}
         ${groupFilter}
