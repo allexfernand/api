@@ -112,44 +112,19 @@ function jsonValueExpr(variablesColumn, keys) {
 }
 
 function sessionCpfExpr() {
-  const variables = `CAST(${quoteIdent(SESSION_VARIABLES_COLUMN)} AS STRING)`;
   const jsonCpf = jsonValueExpr(SESSION_VARIABLES_COLUMN, [
-    'inputcpfholder',
-    'inputCpfHolder',
-    'input_cpf_holder',
-    'inputCpf',
-    'input_cpf',
-    'cpf_holder',
-    'cpfHolder',
-    'cpf',
-    'CPF',
-    'document',
-    'documento',
-    'document_number',
-    'documentNumber',
-    'cpf_beneficiario',
-    'cpfBeneficiario',
+    'inputcpfholder', 'cpf_holder', 'cpf',
   ]);
-  const regexCpf = `NULLIF(regexp_extract(${variables}, '([0-9]{3}[. -]?[0-9]{3}[. -]?[0-9]{3}[. -]?[0-9]{2})', 1), '')`;
-  return normalizeCpfExpr(`COALESCE(${jsonCpf}, ${regexCpf})`);
+  return normalizeCpfExpr(jsonCpf);
 }
 
 function variablesPrefilter() {
   const v = `CAST(${quoteIdent(SESSION_VARIABLES_COLUMN)} AS STRING)`;
   return `${v} IS NOT NULL AND (
     ${v} LIKE '%inputcpfholder%' OR
-    ${v} LIKE '%inputCpfHolder%' OR
-    ${v} LIKE '%input_cpf_holder%' OR
-    ${v} LIKE '%inputCpf%' OR
-    ${v} LIKE '%input_cpf%' OR
     ${v} LIKE '%cpf_holder%' OR
-    ${v} LIKE '%cpfHolder%' OR
     ${v} LIKE '%"cpf"%' OR
-    ${v} LIKE '%"CPF"%' OR
-    ${v} LIKE '%document%' OR
-    ${v} LIKE '%documento%' OR
-    ${v} LIKE '%cpf_beneficiario%' OR
-    ${v} RLIKE '[0-9]{3}[. -]?[0-9]{3}[. -]?[0-9]{3}[. -]?[0-9]{2}'
+    ${v} LIKE '%"CPF"%'
   )`;
 }
 
