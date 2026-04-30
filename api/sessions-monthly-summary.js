@@ -124,8 +124,32 @@ export default async function handler(req, res) {
     const wh = warehouses.find((w) => w.state === "RUNNING") || warehouses[0];
     if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
 
-    const rows = hasOrgFilter
-      ? await runQuery(wh.id, `
+    let rows;
+    if (hasOrgFilter) {
+      const sessionOrgFilters = [];
+      if (groupName) {
+        const g = escape(groupName);
+        sessionOrgFilters.push(`(
+          s.economic_group IN (SELECT economic_group FROM filtered_orgs)
+          OR (
+            s.variables_text LIKE '%nameEconomicGroup%'
+            AND UPPER(s.variables_text) LIKE UPPER('%${g}%')
+          )
+        )`);
+      }
+      if (company) {
+        const c = escape(company);
+        sessionOrgFilters.push(`(
+          s.company_name IN (SELECT company_name FROM filtered_orgs)
+          OR s.company_name IN (SELECT beneficiary_company_name FROM filtered_orgs)
+          OR (
+            (s.variables_text LIKE '%nameCompany%' OR s.variables_text LIKE '%companyName%' OR s.variables_text LIKE '%company%')
+            AND UPPER(s.variables_text) LIKE UPPER('%${c}%')
+          )
+        )`);
+      }
+      const sessionOrgWhere = sessionOrgFilters.length ? `WHERE ${sessionOrgFilters.join(' AND ')}` : '';
+      rows = await runQuery(wh.id, `
         WITH filtered_orgs AS (
           SELECT DISTINCT
             UPPER(TRIM(COALESCE(matriz.name, o.name))) AS economic_group,
@@ -142,7 +166,8 @@ export default async function handler(req, res) {
             ${monthExpr} AS mes,
             finished_by,
             UPPER(TRIM(${economicGroupExpr()})) AS economic_group,
-            UPPER(TRIM(${companyNameExpr()})) AS company_name
+            UPPER(TRIM(${companyNameExpr()})) AS company_name,
+            CAST(${quoteIdent(SESSION_VARIABLES_COLUMN)} AS STRING) AS variables_text
           FROM ${SESSION_TABLE}
           WHERE ${monthExpr} IN ${monthInList}
         )
@@ -152,17 +177,12 @@ export default async function handler(req, res) {
           SUM(CASE WHEN s.finished_by IS NOT NULL THEN 1 ELSE 0 END) AS humano,
           SUM(CASE WHEN s.finished_by IS NULL THEN 1 ELSE 0 END) AS ia
         FROM sessions_resolved s
-        WHERE EXISTS (
-          SELECT 1
-          FROM filtered_orgs fo
-          WHERE s.economic_group = fo.economic_group
-             OR s.company_name = fo.company_name
-             OR s.company_name = fo.beneficiary_company_name
-        )
+        ${sessionOrgWhere}
         GROUP BY s.mes
         ORDER BY s.mes
-      `)
-      : await runQuery(wh.id, `
+      `);
+    } else {
+      rows = await runQuery(wh.id, `
         SELECT
           ${monthExpr} AS mes,
           COUNT(*) AS total_sessions,
@@ -173,6 +193,7 @@ export default async function handler(req, res) {
         GROUP BY ${monthExpr}
         ORDER BY mes
       `);
+    }
 
     const byMes = new Map(rows.map((r) => [
       String(getCell(r[0]) || ''),
