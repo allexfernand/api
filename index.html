@@ -397,8 +397,8 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
     </div>
 
     <div class="chart-card">
-      <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Sessões x atendimento</h2>
-      <div style="font-size:11px;color:#94a3b8;margin-bottom:14px"><code>botmaker_session.creation_time</code> · últimos 12 meses · <span id="s-attendance-mode">global</span></div>
+      <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Sessões x agendamentos</h2>
+      <div style="font-size:11px;color:#94a3b8;margin-bottom:14px"><code>botmaker_session.creation_time</code> x <code>atendimento_gold_live.hora_criacao_atendimento</code> · mesmos períodos · <span id="s-attendance-mode">global</span></div>
       <div class="chart-wrap">
         <div class="skeleton" id="skel-s-attendance"></div>
         <canvas id="sessionsAttendanceChart" style="display:none"></canvas>
@@ -822,15 +822,16 @@ function showSessionsAttendanceError(data) {
   const errorBox = document.getElementById('s-attendance-error');
   if (errorBox) {
     errorBox.style.display = 'block';
-    errorBox.textContent = (data && data.error) ? String(data.error).slice(0, 220) : 'Erro ao carregar sessões x atendimento';
+    errorBox.textContent = (data && data.error) ? String(data.error).slice(0, 220) : 'Erro ao carregar sessões x agendamentos';
   }
   if (skel) skel.style.display = 'none';
 }
 
-function renderSessionsAttendanceChart(labels, totalValues, humanoValues, data) {
+async function renderSessionsAttendanceChart(labels, monthValues, sessionValues, data) {
   const skel = document.getElementById('skel-s-attendance');
   const cv = document.getElementById('sessionsAttendanceChart');
   const modeLabel = document.getElementById('s-attendance-mode');
+  if (!cv) return;
   if (modeLabel) {
     if (data.mode === 'cpf_join' || data.mode === 'variables_json_filter') {
       const filterParts = [];
@@ -841,10 +842,25 @@ function renderSessionsAttendanceChart(labels, totalValues, humanoValues, data) 
       modeLabel.textContent = 'global';
     }
   }
-  if (skel) skel.style.display = 'none';
-  if (cv) cv.style.display = 'block';
+  const p = new URLSearchParams();
+  if (monthValues && monthValues.length > 0) p.set('meses', monthValues.join(','));
+  if (currentGroup) p.set('group_name', currentGroup);
+  if (currentCompany) p.set('company', currentCompany);
+  const appointmentsData = await safeGet('/api/appointments-evolution' + (p.toString() ? '?' + p.toString() : ''));
+  if (!appointmentsData || appointmentsData.error) {
+    showSessionsAttendanceError(appointmentsData);
+    return;
+  }
+  if (modeLabel && currentCompany && appointmentsData.company_filter_applied === false) {
+    modeLabel.textContent = `${modeLabel.textContent} · filtro empresa não aplicado em agendamentos`;
+  }
+
+  const appointmentsByMonth = Object.fromEntries((appointmentsData.series || []).map((it) => [it.mes, Number(it.total) || 0]));
+  const appointmentValues = monthValues.map((mes) => appointmentsByMonth[mes] || 0);
 
   if (sessionsAttendanceChart) sessionsAttendanceChart.destroy();
+  if (skel) skel.style.display = 'none';
+  cv.style.display = 'block';
   if (cv) sessionsAttendanceChart = new Chart(cv, {
     type: 'line',
     data: {
@@ -852,7 +868,7 @@ function renderSessionsAttendanceChart(labels, totalValues, humanoValues, data) 
       datasets: [
         {
           label: 'Sessões',
-          data: totalValues,
+          data: sessionValues,
           borderColor: '#0f766e',
           backgroundColor: 'rgba(15,118,110,0.08)',
           borderWidth: 2,
@@ -862,8 +878,8 @@ function renderSessionsAttendanceChart(labels, totalValues, humanoValues, data) 
           tension: 0.35,
         },
         {
-          label: 'Atendimento humano',
-          data: humanoValues,
+          label: 'Agendamentos',
+          data: appointmentValues,
           borderColor: '#6366f1',
           backgroundColor: 'rgba(99,102,241,0.08)',
           borderWidth: 2,
@@ -882,7 +898,7 @@ function renderSessionsAttendanceChart(labels, totalValues, humanoValues, data) 
         tooltip: {
           backgroundColor: '#1e293b', borderColor: '#334155', borderWidth: 1,
           titleColor: '#94a3b8', bodyColor: '#f1f5f9',
-          callbacks: { label: c => `${c.dataset.label}: ${fmt(c.parsed.y)} sessões` },
+          callbacks: { label: c => `${c.dataset.label}: ${fmt(c.parsed.y)}` },
         },
       },
       scales: {
@@ -1082,7 +1098,7 @@ async function loadSessionsEvolution() {
     },
   });
 
-  renderSessionsAttendanceChart(labels, totalValues, humanoValues, data);
+  await renderSessionsAttendanceChart(labels, series.map((it) => it.mes), totalValues, data);
 }
 
 function getSessionMonthlyBotCompany(item) {
