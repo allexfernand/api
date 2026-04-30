@@ -111,6 +111,32 @@ function jsonValueExpr(variablesColumn, keys) {
   return `COALESCE(${expressions.join(', ')})`;
 }
 
+function sessionVariableTextExpr() {
+  return `CAST(${quoteIdent(SESSION_VARIABLES_COLUMN)} AS STRING)`;
+}
+
+function economicGroupExpr() {
+  const variables = sessionVariableTextExpr();
+  return `COALESCE(
+    ${jsonValueExpr(SESSION_VARIABLES_COLUMN, ['nameEconomicGroup'])},
+    NULLIF(TRIM(regexp_extract(${variables}, '"nameEconomicGroup"\\\\s*:\\\\s*"([^"]+)"', 1)), ''),
+    NULLIF(TRIM(regexp_extract(${variables}, '"nameEconomicGroup"\\\\s*:\\\\s*\\\\{[^}]*"value"\\\\s*:\\\\s*"([^"]+)"', 1)), '')
+  )`;
+}
+
+function companyNameExpr() {
+  const variables = sessionVariableTextExpr();
+  return `COALESCE(
+    ${jsonValueExpr(SESSION_VARIABLES_COLUMN, ['nameCompany', 'companyName', 'company', 'nome_cliente', 'NOME_CLIENTE'])},
+    NULLIF(TRIM(regexp_extract(${variables}, '"nameCompany"\\\\s*:\\\\s*"([^"]+)"', 1)), ''),
+    NULLIF(TRIM(regexp_extract(${variables}, '"nameCompany"\\\\s*:\\\\s*\\\\{[^}]*"value"\\\\s*:\\\\s*"([^"]+)"', 1)), '')
+  )`;
+}
+
+function textEqualsExpr(expr, value) {
+  return `UPPER(TRIM(${expr})) = UPPER(TRIM('${escape(value)}'))`;
+}
+
 function sessionCpfExpr() {
   const jsonCpf = jsonValueExpr(SESSION_VARIABLES_COLUMN, [
     'inputcpfholder', 'cpf_holder', 'cpf',
@@ -188,10 +214,24 @@ export default async function handler(req, res) {
 
     const filters = [monthsSqlFilter];
     if (groupName) {
-      filters.push(`UPPER(TRIM(${jsonValueExpr(SESSION_VARIABLES_COLUMN, ['nameEconomicGroup'])})) = UPPER(TRIM('${escape(groupName)}'))`);
+      const variables = sessionVariableTextExpr();
+      filters.push(`(
+        ${textEqualsExpr(economicGroupExpr(), groupName)}
+        OR (
+          ${variables} LIKE '%nameEconomicGroup%'
+          AND UPPER(${variables}) LIKE UPPER('%${escape(groupName)}%')
+        )
+      )`);
     }
     if (company) {
-      filters.push(`UPPER(TRIM(${jsonValueExpr(SESSION_VARIABLES_COLUMN, ['nameCompany', 'companyName', 'company', 'nome_cliente', 'NOME_CLIENTE'])})) = UPPER(TRIM('${escape(company)}'))`);
+      const variables = sessionVariableTextExpr();
+      filters.push(`(
+        ${textEqualsExpr(companyNameExpr(), company)}
+        OR (
+          (${variables} LIKE '%nameCompany%' OR ${variables} LIKE '%companyName%' OR ${variables} LIKE '%company%')
+          AND UPPER(${variables}) LIKE UPPER('%${escape(company)}%')
+        )
+      )`);
     }
     const where = `WHERE ${filters.join(' AND ')}`;
     const mode = groupName || company ? "variables_json_filter" : "global";
