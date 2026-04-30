@@ -396,6 +396,16 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
       </div>
     </div>
 
+    <div class="chart-card">
+      <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Sessões x atendimento</h2>
+      <div style="font-size:11px;color:#94a3b8;margin-bottom:14px"><code>botmaker_session.creation_time</code> · últimos 12 meses · <span id="s-attendance-mode">global</span></div>
+      <div class="chart-wrap">
+        <div class="skeleton" id="skel-s-attendance"></div>
+        <canvas id="sessionsAttendanceChart" style="display:none"></canvas>
+      </div>
+      <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="s-attendance-error"></div>
+    </div>
+
     <div style="text-align:center;padding:20px;color:#bbb;font-size:13px">Mais dados serão adicionados em breve.</div>
   </div>
 
@@ -408,7 +418,7 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
 const fmt = n => Number(n).toLocaleString('pt-BR');
 const mN = {'01':'Jan','02':'Fev','03':'Mar','04':'Abr','05':'Mai','06':'Jun','07':'Jul','08':'Ago','09':'Set','10':'Out','11':'Nov','12':'Dez'};
 
-let usersData = [], companiesData = [], eChart, agegroupChart, sessionsEvolChart, sessionsTotalEvolChart, sessionMonthlyEvolutionChart;
+let usersData = [], companiesData = [], eChart, agegroupChart, sessionsEvolChart, sessionsTotalEvolChart, sessionMonthlyEvolutionChart, sessionsAttendanceChart;
 let currentGroup = '', currentType = '', currentCompany = '';
 let selectedMonths = new Set();
 let sessionsMonthlySummaryData = null, sessionsMonthlySummaryItems = [], selectedSessionMonthlyBotCompanies = [];
@@ -798,6 +808,98 @@ async function loadSessions() {
   }
 }
 
+function setSessionsAttendanceLoading() {
+  const skel = document.getElementById('skel-s-attendance');
+  const cv = document.getElementById('sessionsAttendanceChart');
+  const errorBox = document.getElementById('s-attendance-error');
+  if (skel) skel.style.display = 'block';
+  if (cv) cv.style.display = 'none';
+  if (errorBox) { errorBox.style.display = 'none'; errorBox.textContent = ''; }
+}
+
+function showSessionsAttendanceError(data) {
+  const skel = document.getElementById('skel-s-attendance');
+  const errorBox = document.getElementById('s-attendance-error');
+  if (errorBox) {
+    errorBox.style.display = 'block';
+    errorBox.textContent = (data && data.error) ? String(data.error).slice(0, 220) : 'Erro ao carregar sessões x atendimento';
+  }
+  if (skel) skel.style.display = 'none';
+}
+
+function renderSessionsAttendanceChart(labels, totalValues, humanoValues, data) {
+  const skel = document.getElementById('skel-s-attendance');
+  const cv = document.getElementById('sessionsAttendanceChart');
+  const modeLabel = document.getElementById('s-attendance-mode');
+  if (modeLabel) {
+    if (data.mode === 'cpf_join' || data.mode === 'variables_json_filter') {
+      const filterParts = [];
+      if (data.filters && data.filters.group_name) filterParts.push(`grupo: ${data.filters.group_name}`);
+      if (data.filters && data.filters.company) filterParts.push(`empresa: ${data.filters.company}`);
+      modeLabel.textContent = filterParts.join(' · ') || 'filtrado';
+    } else {
+      modeLabel.textContent = 'global';
+    }
+  }
+  if (skel) skel.style.display = 'none';
+  if (cv) cv.style.display = 'block';
+
+  if (sessionsAttendanceChart) sessionsAttendanceChart.destroy();
+  if (cv) sessionsAttendanceChart = new Chart(cv, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Sessões',
+          data: totalValues,
+          borderColor: '#0f766e',
+          backgroundColor: 'rgba(15,118,110,0.08)',
+          borderWidth: 2,
+          pointRadius: 3,
+          pointBackgroundColor: '#0f766e',
+          fill: false,
+          tension: 0.35,
+        },
+        {
+          label: 'Atendimento humano',
+          data: humanoValues,
+          borderColor: '#6366f1',
+          backgroundColor: 'rgba(99,102,241,0.08)',
+          borderWidth: 2,
+          pointRadius: 3,
+          pointBackgroundColor: '#6366f1',
+          fill: false,
+          tension: 0.35,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: true, position: 'top', align: 'end', labels: { boxWidth: 10, boxHeight: 10, color: '#64748b', font: { size: 11 } } },
+        tooltip: {
+          backgroundColor: '#1e293b', borderColor: '#334155', borderWidth: 1,
+          titleColor: '#94a3b8', bodyColor: '#f1f5f9',
+          callbacks: { label: c => `${c.dataset.label}: ${fmt(c.parsed.y)} sessões` },
+        },
+      },
+      scales: {
+        x: {
+          ticks: { font: { size: 10 }, color: '#94a3b8', maxRotation: 45, autoSkip: true, maxTicksLimit: 14 },
+          grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false },
+        },
+        y: {
+          beginAtZero: true,
+          ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => fmt(v) },
+          grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false },
+        },
+      },
+    },
+  });
+}
+
 async function loadSessionsEvolution() {
   const skel = document.getElementById('skel-s-evol');
   const cv = document.getElementById('sessionsEvolChart');
@@ -813,6 +915,7 @@ async function loadSessionsEvolution() {
   if (totalSkel) totalSkel.style.display = 'block';
   if (totalCv) totalCv.style.display = 'none';
   if (totalErrorBox) { totalErrorBox.style.display = 'none'; totalErrorBox.textContent = ''; }
+  setSessionsAttendanceLoading();
 
   const p = new URLSearchParams();
   if (currentGroup)   p.set('group_name', currentGroup);
@@ -829,6 +932,7 @@ async function loadSessionsEvolution() {
       totalErrorBox.style.display = 'block';
       totalErrorBox.textContent = (data && data.error) ? String(data.error).slice(0, 220) : 'Erro ao carregar total de sessões';
     }
+    showSessionsAttendanceError(data);
     if (skel) skel.style.display = 'none';
     if (totalSkel) totalSkel.style.display = 'none';
     return;
@@ -977,6 +1081,8 @@ async function loadSessionsEvolution() {
       },
     },
   });
+
+  renderSessionsAttendanceChart(labels, totalValues, humanoValues, data);
 }
 
 function getSessionMonthlyBotCompany(item) {
