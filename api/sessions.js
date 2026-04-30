@@ -74,24 +74,21 @@ function jsonValueExpr(variablesColumn, keys) {
 
 function sessionCpfExpr(variablesColumn) {
   if (!variablesColumn) return null;
-  const variables = `CAST(${quoteIdent(variablesColumn)} AS STRING)`;
   const jsonCpf = jsonValueExpr(variablesColumn, [
-    'inputcpfholder',
-    'inputCpfHolder',
-    'input_cpf_holder',
-    'cpf_holder',
-    'cpfHolder',
-    'cpf',
-    'CPF',
-    'document',
-    'documento',
-    'document_number',
-    'documentNumber',
-    'cpf_beneficiario',
-    'cpfBeneficiario',
+    'inputcpfholder', 'cpf_holder', 'cpf',
   ]);
-  const regexCpf = `NULLIF(regexp_extract(${variables}, '([0-9]{3}[. -]?[0-9]{3}[. -]?[0-9]{3}[. -]?[0-9]{2})', 1), '')`;
-  return normalizeCpfExpr(`COALESCE(${jsonCpf}, ${regexCpf})`);
+  return normalizeCpfExpr(jsonCpf);
+}
+
+function sessionVariablesPrefilter(variablesColumn) {
+  if (!variablesColumn) return null;
+  const v = `CAST(${quoteIdent(variablesColumn)} AS STRING)`;
+  return `${v} IS NOT NULL AND (
+    ${v} LIKE '%inputcpfholder%' OR
+    ${v} LIKE '%cpf_holder%' OR
+    ${v} LIKE '%"cpf"%' OR
+    ${v} LIKE '%"CPF"%'
+  )`;
 }
 
 function orgIdsSubquery(groupName, company) {
@@ -291,6 +288,7 @@ export default async function handler(req, res) {
     const sessionFilters = [sessionDateFilter, sessionOrgFilter].filter(Boolean);
     const sessionWhere = sessionFilters.length ? `WHERE ${sessionFilters.join(' AND ')}` : '';
     const sessionCpfFilterExpr = sessionCpfExpr(variablesColumn);
+    const sessionVariablesPreFilter = sessionVariablesPrefilter(variablesColumn);
     const canFilterFinishersByBeneficiaryCpf = useCompanyFilterSum && Boolean(beneficiaryCpfColumn && sessionCpfFilterExpr);
     const finishersFilterApplied = {
       period: meses.length === 0 || Boolean(sessionDateColumn),
@@ -313,6 +311,8 @@ export default async function handler(req, res) {
         ${sessionDateFilter ? `WHERE ${sessionDateFilter}` : ''}
       `);
 
+    const finishersSessionFilters = [sessionDateFilter, sessionVariablesPreFilter].filter(Boolean);
+    const finishersSessionWhere = finishersSessionFilters.length ? `WHERE ${finishersSessionFilters.join(' AND ')}` : '';
     const finishersPromise = canFilterFinishersByBeneficiaryCpf
       ? runQuery(wh.id, `
         WITH filtered_cpfs AS (
@@ -322,12 +322,14 @@ export default async function handler(req, res) {
             ${extraFilter}
             AND ${normalizeCpfExpr(`b.${quoteIdent(beneficiaryCpfColumn)}`)} IS NOT NULL
         ),
-        sessions_resolved AS (
-          SELECT
-            finished_by,
-            ${sessionCpfFilterExpr} AS cpf
+        sessions_filtered AS (
+          SELECT finished_by, ${quoteIdent(variablesColumn)} AS variables
           FROM ${SESSION_TABLE}
-          ${sessionDateFilter ? `WHERE ${sessionDateFilter}` : ''}
+          ${finishersSessionWhere}
+        ),
+        sessions_resolved AS (
+          SELECT finished_by, ${sessionCpfFilterExpr} AS cpf
+          FROM sessions_filtered
         )
         SELECT /*+ BROADCAST(filtered_cpfs) */
           CASE WHEN s.finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END AS tipo_atendimento,
