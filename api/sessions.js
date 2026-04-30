@@ -237,6 +237,19 @@ export default async function handler(req, res) {
     const sessionDateFilter = meses.length > 0 && sessionDateColumn
       ? `DATE_FORMAT(try_cast(${quoteIdent(sessionDateColumn)} AS TIMESTAMP), 'yyyy-MM') IN (${meses.map((m) => `'${m}'`).join(',')})`
       : null;
+    const fallbackFinishersMonth = (() => {
+      const d = new Date();
+      d.setUTCDate(1);
+      const y = d.getUTCFullYear();
+      const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+      return `${y}-${m}`;
+    })();
+    const finishersDateFilter = sessionDateFilter
+      ? sessionDateFilter
+      : (sessionDateColumn
+          ? `DATE_FORMAT(try_cast(${quoteIdent(sessionDateColumn)} AS TIMESTAMP), 'yyyy-MM') = '${fallbackFinishersMonth}'`
+          : null);
+    const finishersUsingFallbackMonth = !sessionDateFilter && Boolean(finishersDateFilter);
     const sessionOrgConditions = [];
     if (groupName || company) {
       const idsSubquery = orgIdsSubquery(groupName, company);
@@ -311,7 +324,7 @@ export default async function handler(req, res) {
         ${sessionDateFilter ? `WHERE ${sessionDateFilter}` : ''}
       `);
 
-    const finishersSessionFilters = [sessionDateFilter, sessionVariablesPreFilter].filter(Boolean);
+    const finishersSessionFilters = [finishersDateFilter, sessionVariablesPreFilter].filter(Boolean);
     const finishersSessionWhere = finishersSessionFilters.length ? `WHERE ${finishersSessionFilters.join(' AND ')}` : '';
     const finishersPromise = canFilterFinishersByBeneficiaryCpf
       ? runQuery(wh.id, `
@@ -355,9 +368,18 @@ export default async function handler(req, res) {
           END
       `);
 
-    const [rows, finisherRows] = await Promise.all([totalPromise, finishersPromise]);
+    const [totalSettled, finishersSettled] = await Promise.allSettled([totalPromise, finishersPromise]);
+    if (totalSettled.status !== 'fulfilled') {
+      throw totalSettled.reason instanceof Error ? totalSettled.reason : new Error(String(totalSettled.reason));
+    }
+    const rows = totalSettled.value;
     const row = rows[0] || [];
     const total = toInt(row[0]);
+
+    const finishersError = finishersSettled.status === 'rejected'
+      ? (finishersSettled.reason instanceof Error ? finishersSettled.reason.message : String(finishersSettled.reason))
+      : null;
+    const finisherRows = finishersSettled.status === 'fulfilled' ? finishersSettled.value : [];
     const rawFinishers = finisherRows.map((r) => ({
       tipo: String(getCell(r[0]) || "—"),
       total: toInt(r[1]),
@@ -385,6 +407,8 @@ export default async function handler(req, res) {
       finishers_raw_total: rawFinishersTotal,
       finishers_scaled_to_total: useCompanyFilterSum && rawFinishersTotal > 0,
       finishers_filter_applied: finishersFilterApplied,
+      finishers_fallback_month: finishersUsingFallbackMonth ? fallbackFinishersMonth : null,
+      finishers_error: finishersError,
       source: useCompanyFilterSum ? "company_filter_sum" : "botmaker_session",
       period_filter_applied: useCompanyFilterSum ? false : meses.length === 0 || Boolean(sessionDateColumn),
     });

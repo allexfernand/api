@@ -606,10 +606,19 @@ async function loadAppointments() {
 }
 
 // --- Sessões ---
-function renderSessionFinishers(items, filterApplied) {
+function renderSessionFinishers(items, filterApplied, opts) {
   const loading = document.getElementById('session-finishers-loading');
   const content = document.getElementById('session-finishers-content');
   const note = document.getElementById('s-fin-filter-note');
+  opts = opts || {};
+  if (opts.error) {
+    if (loading) {
+      loading.style.display = 'block';
+      loading.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>Erro ao carregar finalizações: ' + String(opts.error).slice(0, 200);
+    }
+    if (content) content.style.display = 'none';
+    return;
+  }
   const byTipo = Object.fromEntries((items || []).map(it => [String(it.tipo || '').toUpperCase(), Number(it.total) || 0]));
   const humano = byTipo.HUMANO || 0;
   const ia = byTipo.IA || 0;
@@ -629,12 +638,17 @@ function renderSessionFinishers(items, filterApplied) {
   if (barHumano) barHumano.style.width = width(humano);
   if (barIa) barIa.style.width = width(ia);
   if (note) {
-    const missing = [];
-    if (filterApplied && filterApplied.period === false) missing.push('período');
-    if (filterApplied && filterApplied.organization === false) missing.push('grupo/empresa');
-    if (filterApplied && filterApplied.type === false) missing.push('tipo beneficiário');
-    note.style.display = missing.length ? 'block' : 'none';
-    note.textContent = missing.length ? `Filtro não aplicado neste quadro: ${missing.join(', ')}` : '';
+    const messages = [];
+    if (filterApplied && filterApplied.period === false) messages.push('Filtro não aplicado: período');
+    if (filterApplied && filterApplied.organization === false) messages.push('Filtro não aplicado: grupo/empresa');
+    if (filterApplied && filterApplied.type === false) messages.push('Filtro não aplicado: tipo beneficiário');
+    if (opts.fallbackMonth) {
+      const [y, mm] = String(opts.fallbackMonth).split('-');
+      const monthLabel = mN[mm] ? `${mN[mm]}/${y}` : opts.fallbackMonth;
+      messages.push(`Considerando apenas ${monthLabel} (selecione um período para alterar)`);
+    }
+    note.style.display = messages.length ? 'block' : 'none';
+    note.innerHTML = messages.join(' · ');
   }
   if (loading) loading.style.display = 'none';
   if (content) content.style.display = 'block';
@@ -768,7 +782,10 @@ async function loadSessions() {
       periodoLabel.textContent = label;
       periodoLabel.title = label;
     }
-    renderSessionFinishers(sessions.finishers || [], sessions.finishers_filter_applied);
+    renderSessionFinishers(sessions.finishers || [], sessions.finishers_filter_applied, {
+      error: sessions.finishers_error,
+      fallbackMonth: sessions.finishers_fallback_month,
+    });
   } else {
     if (bullet) bullet.textContent = 'Erro';
     const msg = sessions && sessions.error ? sessions.error : 'Erro ao carregar sessões';
