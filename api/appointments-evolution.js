@@ -80,6 +80,7 @@ export default async function handler(req, res) {
   const monthList = meses.length ? meses.sort() : lastNMonthsList(Math.min(Math.max(parseInt(req.query.months) || 12, 1), 24));
   const monthInList = `(${monthList.map((m) => `'${m}'`).join(',')})`;
   const monthExpr = `DATE_FORMAT(${quoteIdent(APPOINTMENTS_DATE_COLUMN)}, 'yyyy-MM')`;
+  const assuntoNormalizedExpr = `UPPER(TRIM(REGEXP_REPLACE(TRANSLATE(COALESCE(CAST(assunto AS STRING), ''), 'ÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇáàâãäéèêëíìîïóòôõöúùûüç', 'AAAAAEEEEIIIIOOOOOUUUUCaaaaaeeeeiiiiooooouuuuc'), '[^A-Za-z0-9]+', ' ')))`;
   const groupFilter = groupName
     ? `AND grupo_economico LIKE '%${escape(groupName)}'`
     : '';
@@ -118,10 +119,17 @@ export default async function handler(req, res) {
           'ATENDIMENTO HUMANO',
           'FORA DO HORARIO DE ATEDIMENTO'
         )
-        AND UPPER(assunto) NOT IN (
-          'ATENDIMENTO WHATSAPP',
-          'ATENDIMENTO HUMANO',
-          'FORA DE HORÁRIO DE ATENDIMENTO'
+        AND NOT (
+          ${assuntoNormalizedExpr} IN (
+            'ATENDIMENTO WHATSAPP',
+            'ATENDIMENTO HUMANO',
+            'FORA DE HORARIO DE ATENDIMENTO',
+            'FORA DO HORARIO DE ATEDIMENTO'
+          )
+          OR ${assuntoNormalizedExpr} LIKE '%ATENDIMENTO%WHATSAPP%'
+          OR ${assuntoNormalizedExpr} LIKE '%ATENDIMENTO%HUMANO%'
+          OR ${assuntoNormalizedExpr} LIKE '%FORA%HORARIO%ATENDIMENTO%'
+          OR ${assuntoNormalizedExpr} LIKE '%FORA%HORARIO%ATEDIMENTO%'
         )
         AND ${monthExpr} IN ${monthInList}
         ${groupFilter}
