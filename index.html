@@ -740,7 +740,7 @@ async function loadSessionsEvolution() {
 
   const [data, totalData] = await Promise.all([
     safeGet('/api/sessions-evolution' + qs),
-    safeGet('/api/sessions-total-evolution'),
+    safeGet('/api/sessions-total-evolution' + qs),
   ]);
   if (!data || data.error) {
     if (errorBox) {
@@ -769,7 +769,16 @@ async function loadSessionsEvolution() {
       modeLabel.textContent = 'global';
     }
   }
-  if (totalModeLabel) totalModeLabel.textContent = 'global';
+  if (totalModeLabel) {
+    if (totalData && totalData.mode === 'cpf_join_count_by_month') {
+      const filterParts = [];
+      if (totalData.filters && totalData.filters.group_name) filterParts.push(`grupo: ${totalData.filters.group_name}`);
+      if (totalData.filters && totalData.filters.company) filterParts.push(`empresa: ${totalData.filters.company}`);
+      totalModeLabel.textContent = filterParts.join(' · ') || 'filtrado';
+    } else {
+      totalModeLabel.textContent = 'global';
+    }
+  }
 
   const series = (data && !data.error ? data.series : []) || [];
   const labels = series.map((it) => {
