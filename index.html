@@ -28,10 +28,19 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .filter-select:disabled{background:#f8fafc;color:#cbd5e1;cursor:not-allowed}
 .clear-btn{font-size:12px;padding:5px 10px;border-radius:6px;border:1px solid #ddd;background:#f5f5f5;color:#666;cursor:pointer}
 .container{padding:20px 28px;max-width:1280px;margin:0 auto}
-.card-box{background:#fff;border-radius:12px;border:1px solid #e8e8e8;padding:24px 28px;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+.card-box{background:#fff;border-radius:12px;border:1px solid #e8e8e8;padding:24px 28px;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.06);min-width:0}
 .section-title{font-size:11px;font-weight:600;color:#94a3b8;text-transform:uppercase;letter-spacing:.8px;margin-bottom:20px}
-.chart-card{background:#fff;border-radius:12px;border:1px solid #e8e8e8;padding:20px 24px;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.06)}
-.chart-wrap{position:relative;width:100%;height:280px}
+.chart-card{background:#fff;border-radius:12px;border:1px solid #e8e8e8;padding:20px 24px;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.06);min-width:0}
+.chart-wrap{position:relative;width:100%;height:clamp(260px,32vw,360px)}
+.fluid-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:16px;align-items:stretch;margin-bottom:16px}
+.fluid-grid>.card-box,.fluid-grid>.chart-card{margin-bottom:0}
+.sessions-summary-grid{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(320px,.85fr);gap:16px;align-items:stretch;margin-bottom:16px}
+.sessions-summary-grid>.card-box,.sessions-summary-grid>.chart-card{margin-bottom:0}
+.table-scroll{width:100%;overflow-x:auto}
+.session-monthly-filter-select{flex:1 1 260px;min-width:220px;max-width:420px}
+.session-monthly-table{width:100%;min-width:560px;border-collapse:collapse;font-size:12px}
+@media (max-width:980px){.sessions-summary-grid{grid-template-columns:1fr}.container{padding:16px}.card-box{padding:20px}.chart-card{padding:18px}.chart-wrap{height:300px}}
+@media (max-width:640px){.header,.tabs,.filterbar{padding-left:16px;padding-right:16px}.tabs{overflow-x:auto}.tab{white-space:nowrap}.chart-wrap{height:260px}.filter-select,.session-monthly-filter-select{width:100%;max-width:none;min-width:0}}
 .skeleton{background:linear-gradient(90deg,#f0f0ee 25%,#e8e8e6 50%,#f0f0ee 75%);background-size:200% 100%;animation:shimmer 1.5s infinite;border-radius:6px;height:100%}
 @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
 .tab-content{display:none}.tab-content.active{display:block}
@@ -316,64 +325,70 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
       </div>
     </div>
 
-    <div class="chart-card">
-      <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Evolução mensal de finalizações</h2>
-      <div style="font-size:11px;color:#94a3b8;margin-bottom:14px"><code>botmaker_session.creation_time</code> · últimos 12 meses · <span id="s-evol-mode">global</span></div>
-      <div class="chart-wrap">
-        <div class="skeleton" id="skel-s-evol"></div>
-        <canvas id="sessionsEvolChart" style="display:none"></canvas>
-      </div>
-      <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="s-evol-error"></div>
-    </div>
-
-    <div class="chart-card">
-      <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Evolução mensal do total de sessões</h2>
-      <div style="font-size:11px;color:#94a3b8;margin-bottom:14px"><code>botmaker_session.creation_time</code> · últimos 12 meses · <span id="s-total-evol-mode">global</span></div>
-      <div class="chart-wrap">
-        <div class="skeleton" id="skel-s-total-evol"></div>
-        <canvas id="sessionsTotalEvolChart" style="display:none"></canvas>
-      </div>
-      <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="s-total-evol-error"></div>
-    </div>
-
-    <div class="card-box">
-      <div class="section-title"><i class="fa-solid fa-table" style="margin-right:6px"></i>Resumo mensal de sessões</div>
-      <div class="loading-box" id="session-monthly-loading">
-        <button class="refresh-btn" onclick="loadSessionsMonthlySummary([...selectedMonths].sort())">Carregar resumo mensal</button>
-      </div>
-      <div id="session-monthly-content" style="display:none;overflow-x:auto">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
-          <label for="session-monthly-bot-company-filter" style="font-size:12px;color:#64748b;font-weight:600">Filtrar bot company</label>
-          <select class="filter-select" id="session-monthly-bot-company-filter" onchange="onSessionMonthlyBotCompanyChange(this.value)" style="min-width:260px;max-width:420px">
-            <option value="">Todos os bot companies</option>
-          </select>
+    <div class="fluid-grid">
+      <div class="chart-card">
+        <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Evolução mensal de finalizações</h2>
+        <div style="font-size:11px;color:#94a3b8;margin-bottom:14px"><code>botmaker_session.creation_time</code> · últimos 12 meses · <span id="s-evol-mode">global</span></div>
+        <div class="chart-wrap">
+          <div class="skeleton" id="skel-s-evol"></div>
+          <canvas id="sessionsEvolChart" style="display:none"></canvas>
         </div>
-        <table style="width:100%;border-collapse:collapse;font-size:12px">
-          <thead>
-            <tr style="border-bottom:1px solid #e2e8f0;color:#64748b">
-              <th style="text-align:left;padding:9px 10px;font-weight:600">Mês</th>
-              <th style="text-align:left;padding:9px 10px;font-weight:600">Bot company</th>
-              <th style="text-align:right;padding:9px 10px;font-weight:600">Total Sessions</th>
-              <th style="text-align:right;padding:9px 10px;font-weight:600">Humano</th>
-              <th style="text-align:right;padding:9px 10px;font-weight:600">IA</th>
-            </tr>
-          </thead>
-          <tbody id="session-monthly-tbody"></tbody>
-        </table>
-        <div style="font-size:11px;color:#94a3b8;margin-top:10px;text-align:right" id="session-monthly-meta">—</div>
+        <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="s-evol-error"></div>
+      </div>
+
+      <div class="chart-card">
+        <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Evolução mensal do total de sessões</h2>
+        <div style="font-size:11px;color:#94a3b8;margin-bottom:14px"><code>botmaker_session.creation_time</code> · últimos 12 meses · <span id="s-total-evol-mode">global</span></div>
+        <div class="chart-wrap">
+          <div class="skeleton" id="skel-s-total-evol"></div>
+          <canvas id="sessionsTotalEvolChart" style="display:none"></canvas>
+        </div>
+        <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="s-total-evol-error"></div>
       </div>
     </div>
 
-    <div class="chart-card">
-      <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Evolução mensal por bot company</h2>
-      <div style="font-size:11px;color:#94a3b8;margin-bottom:14px"><code>botmaker_session.bot_company</code> · últimos 12 meses · <span id="session-monthly-evol-mode">carregue o resumo mensal</span></div>
-      <div class="chart-wrap">
-        <div class="loading-box" id="session-monthly-evol-loading">
-          Use o botão <strong>Carregar resumo mensal</strong> no quadro acima.
+    <div class="sessions-summary-grid">
+      <div class="card-box">
+        <div class="section-title"><i class="fa-solid fa-table" style="margin-right:6px"></i>Resumo mensal de sessões</div>
+        <div class="loading-box" id="session-monthly-loading">
+          <button class="refresh-btn" onclick="loadSessionsMonthlySummary([...selectedMonths].sort())">Carregar resumo mensal</button>
         </div>
-        <canvas id="sessionMonthlyEvolutionChart" style="display:none"></canvas>
+        <div id="session-monthly-content" style="display:none">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+            <label for="session-monthly-bot-company-filter" style="font-size:12px;color:#64748b;font-weight:600">Filtrar bot company</label>
+            <select class="filter-select session-monthly-filter-select" id="session-monthly-bot-company-filter" onchange="onSessionMonthlyBotCompanyChange(this.value)">
+              <option value="">Todos os bot companies</option>
+            </select>
+          </div>
+          <div class="table-scroll">
+            <table class="session-monthly-table">
+              <thead>
+                <tr style="border-bottom:1px solid #e2e8f0;color:#64748b">
+                  <th style="text-align:left;padding:9px 10px;font-weight:600">Mês</th>
+                  <th style="text-align:left;padding:9px 10px;font-weight:600">Bot company</th>
+                  <th style="text-align:right;padding:9px 10px;font-weight:600">Total Sessions</th>
+                  <th style="text-align:right;padding:9px 10px;font-weight:600">Humano</th>
+                  <th style="text-align:right;padding:9px 10px;font-weight:600">IA</th>
+                </tr>
+              </thead>
+              <tbody id="session-monthly-tbody"></tbody>
+            </table>
+          </div>
+          <div style="font-size:11px;color:#94a3b8;margin-top:10px;text-align:right" id="session-monthly-meta">—</div>
+        </div>
       </div>
-      <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="session-monthly-evol-error"></div>
+
+      <div class="chart-card">
+        <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Evolução mensal por bot company</h2>
+        <div style="font-size:11px;color:#94a3b8;margin-bottom:14px"><code>botmaker_session.bot_company</code> · últimos 12 meses · <span id="session-monthly-evol-mode">carregue o resumo mensal</span></div>
+        <div class="chart-wrap">
+          <div class="loading-box" id="session-monthly-evol-loading">
+            Use o botão <strong>Carregar resumo mensal</strong> no quadro acima.
+          </div>
+          <canvas id="sessionMonthlyEvolutionChart" style="display:none"></canvas>
+        </div>
+        <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="session-monthly-evol-error"></div>
+      </div>
     </div>
 
     <div style="text-align:center;padding:20px;color:#bbb;font-size:13px">Mais dados serão adicionados em breve.</div>
