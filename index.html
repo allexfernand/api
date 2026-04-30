@@ -364,6 +364,18 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
       </div>
     </div>
 
+    <div class="chart-card">
+      <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Evolução mensal por bot company</h2>
+      <div style="font-size:11px;color:#94a3b8;margin-bottom:14px"><code>botmaker_session.bot_company</code> · últimos 12 meses · <span id="session-monthly-evol-mode">carregue o resumo mensal</span></div>
+      <div class="chart-wrap">
+        <div class="loading-box" id="session-monthly-evol-loading">
+          Use o botão <strong>Carregar resumo mensal</strong> no quadro acima.
+        </div>
+        <canvas id="sessionMonthlyEvolutionChart" style="display:none"></canvas>
+      </div>
+      <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="session-monthly-evol-error"></div>
+    </div>
+
     <div style="text-align:center;padding:20px;color:#bbb;font-size:13px">Mais dados serão adicionados em breve.</div>
   </div>
 
@@ -376,7 +388,7 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
 const fmt = n => Number(n).toLocaleString('pt-BR');
 const mN = {'01':'Jan','02':'Fev','03':'Mar','04':'Abr','05':'Mai','06':'Jun','07':'Jul','08':'Ago','09':'Set','10':'Out','11':'Nov','12':'Dez'};
 
-let usersData = [], companiesData = [], eChart, agegroupChart, sessionsEvolChart, sessionsTotalEvolChart;
+let usersData = [], companiesData = [], eChart, agegroupChart, sessionsEvolChart, sessionsTotalEvolChart, sessionMonthlyEvolutionChart;
 let currentGroup = '', currentType = '', currentCompany = '';
 let selectedMonths = new Set();
 let sessionsMonthlySummaryData = null, sessionsMonthlySummaryItems = [], selectedSessionMonthlyBotCompany = '';
@@ -705,10 +717,23 @@ async function loadSessions() {
   if (finishersContent) finishersContent.style.display = 'none';
   const monthlyLoading = document.getElementById('session-monthly-loading');
   const monthlyContent = document.getElementById('session-monthly-content');
+  const monthlyEvolLoading = document.getElementById('session-monthly-evol-loading');
+  const monthlyEvolCanvas = document.getElementById('sessionMonthlyEvolutionChart');
+  const monthlyEvolMode = document.getElementById('session-monthly-evol-mode');
   if (monthlyContent) monthlyContent.style.display = 'none';
   if (monthlyLoading) {
     monthlyLoading.style.display = 'block';
     monthlyLoading.innerHTML = '<button class="refresh-btn" onclick="loadSessionsMonthlySummary([...selectedMonths].sort())">Carregar resumo mensal</button>';
+  }
+  if (monthlyEvolCanvas) monthlyEvolCanvas.style.display = 'none';
+  if (monthlyEvolLoading) {
+    monthlyEvolLoading.style.display = 'block';
+    monthlyEvolLoading.innerHTML = 'Use o botão <strong>Carregar resumo mensal</strong> no quadro acima.';
+  }
+  if (monthlyEvolMode) monthlyEvolMode.textContent = 'carregue o resumo mensal';
+  if (sessionMonthlyEvolutionChart) {
+    sessionMonthlyEvolutionChart.destroy();
+    sessionMonthlyEvolutionChart = null;
   }
 
   const meses = [...selectedMonths].sort();
@@ -938,6 +963,72 @@ function getSessionMonthlyBotCompany(item) {
   return item && item.bot_company ? String(item.bot_company) : 'Sem bot company';
 }
 
+function renderSessionMonthlyEvolution(items, data) {
+  const loading = document.getElementById('session-monthly-evol-loading');
+  const cv = document.getElementById('sessionMonthlyEvolutionChart');
+  const mode = document.getElementById('session-monthly-evol-mode');
+  const error = document.getElementById('session-monthly-evol-error');
+  if (error) { error.style.display = 'none'; error.textContent = ''; }
+  if (!cv) return;
+
+  const months = (data && data.months && data.months.length)
+    ? data.months
+    : [...new Set((items || []).map((it) => it.mes).filter(Boolean))].sort();
+  const byMonth = new Map(months.map((mes) => [mes, { total_sessions: 0, humano: 0, ia: 0 }]));
+  (items || []).forEach((it) => {
+    const mes = it.mes;
+    if (!byMonth.has(mes)) byMonth.set(mes, { total_sessions: 0, humano: 0, ia: 0 });
+    const acc = byMonth.get(mes);
+    acc.total_sessions += Number(it.total_sessions) || 0;
+    acc.humano += Number(it.humano) || 0;
+    acc.ia += Number(it.ia) || 0;
+  });
+
+  const orderedMonths = [...byMonth.keys()].sort();
+  const labels = orderedMonths.map((mes) => {
+    const [y, mm] = String(mes).split('-');
+    return mN[mm] ? `${mN[mm]}/${y.slice(2)}` : mes;
+  });
+  const totalValues = orderedMonths.map((mes) => byMonth.get(mes).total_sessions);
+  const humanoValues = orderedMonths.map((mes) => byMonth.get(mes).humano);
+  const iaValues = orderedMonths.map((mes) => byMonth.get(mes).ia);
+
+  if (mode) {
+    const parts = [];
+    if (data && data.filters && data.filters.group_name) parts.push(`grupo: ${data.filters.group_name}`);
+    if (data && data.filters && data.filters.company) parts.push(`empresa: ${data.filters.company}`);
+    if (selectedSessionMonthlyBotCompany) parts.push(`bot company: ${selectedSessionMonthlyBotCompany}`);
+    mode.textContent = parts.length ? parts.join(' · ') : 'todos os bot companies';
+  }
+
+  if (loading) loading.style.display = 'none';
+  cv.style.display = 'block';
+  if (sessionMonthlyEvolutionChart) sessionMonthlyEvolutionChart.destroy();
+  sessionMonthlyEvolutionChart = new Chart(cv, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Total Sessions', data: totalValues, borderColor: '#0f766e', backgroundColor: 'rgba(15,118,110,0.08)', borderWidth: 2, pointRadius: 3, pointBackgroundColor: '#0f766e', fill: false, tension: 0.35 },
+        { label: 'Humano', data: humanoValues, borderColor: '#6366f1', backgroundColor: 'rgba(99,102,241,0.08)', borderWidth: 2, pointRadius: 3, pointBackgroundColor: '#6366f1', fill: false, tension: 0.35 },
+        { label: 'IA', data: iaValues, borderColor: '#14b8a6', backgroundColor: 'rgba(20,184,166,0.08)', borderWidth: 2, pointRadius: 3, pointBackgroundColor: '#14b8a6', fill: false, tension: 0.35 },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: true, position: 'top', align: 'end', labels: { boxWidth: 10, boxHeight: 10, color: '#64748b', font: { size: 11 } } },
+        tooltip: { backgroundColor: '#1e293b', borderColor: '#334155', borderWidth: 1, titleColor: '#94a3b8', bodyColor: '#f1f5f9', callbacks: { label: c => `${c.dataset.label}: ${fmt(c.parsed.y)} sessões` } },
+      },
+      scales: {
+        x: { ticks: { font: { size: 10 }, color: '#94a3b8', maxRotation: 45, autoSkip: true, maxTicksLimit: 14 }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } },
+        y: { beginAtZero: true, ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => fmt(v) }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } },
+      },
+    },
+  });
+}
+
 function renderSessionsMonthlySummary() {
   const tbody = document.getElementById('session-monthly-tbody');
   const meta = document.getElementById('session-monthly-meta');
@@ -999,6 +1090,7 @@ function renderSessionsMonthlySummary() {
     const botCompanyColumn = data.bot_company_column ? `botmaker_session.${escapeHtml(data.bot_company_column)}` : 'botmaker_session.bot_company';
     meta.innerHTML = `${items.length} linhas · ${monthCount} meses · ${parts.length ? parts.join(' · ') : 'global'} · <code>${botCompanyColumn}</code>`;
   }
+  renderSessionMonthlyEvolution(items, data);
 }
 
 function onSessionMonthlyBotCompanyChange(value) {
