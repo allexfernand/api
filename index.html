@@ -316,6 +316,22 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
       </div>
     </div>
 
+    <div class="card-box">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+        <div class="section-title" style="margin-bottom:0"><i class="fa-solid fa-chart-column" style="margin-right:6px"></i>Humano vs IA por empresa</div>
+        <div style="display:flex;gap:14px;font-size:11px;color:#64748b">
+          <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#6366f1;margin-right:4px"></span>Humano</span>
+          <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#14b8a6;margin-right:4px"></span>IA</span>
+        </div>
+      </div>
+      <div class="loading-box" id="session-bycompany-loading"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...</div>
+      <div id="session-bycompany-content" style="display:none">
+        <div id="session-bycompany-wrap" style="position:relative;width:100%;height:380px"><canvas id="sessionByCompanyChart"></canvas></div>
+        <div style="font-size:11px;color:#94a3b8;margin-top:10px;text-align:right">Top empresas por sessões finalizadas · <code>botmaker_session.finished_by</code></div>
+      </div>
+      <div class="loading-box" id="session-bycompany-empty" style="display:none">Sem dados para o filtro selecionado.</div>
+    </div>
+
     <div style="text-align:center;padding:20px;color:#bbb;font-size:13px">Mais dados serão adicionados em breve.</div>
   </div>
 
@@ -328,7 +344,7 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
 const fmt = n => Number(n).toLocaleString('pt-BR');
 const mN = {'01':'Jan','02':'Fev','03':'Mar','04':'Abr','05':'Mai','06':'Jun','07':'Jul','08':'Ago','09':'Set','10':'Out','11':'Nov','12':'Dez'};
 
-let usersData = [], companiesData = [], eChart, agegroupChart;
+let usersData = [], companiesData = [], eChart, agegroupChart, sessionByCompanyChart;
 let currentGroup = '', currentType = '', currentCompany = '';
 let selectedMonths = new Set();
 
@@ -622,17 +638,106 @@ function renderSessionFinishers(items, filterApplied) {
   if (content) content.style.display = 'block';
 }
 
+function renderSessionByCompany(items) {
+  const loading = document.getElementById('session-bycompany-loading');
+  const content = document.getElementById('session-bycompany-content');
+  const empty = document.getElementById('session-bycompany-empty');
+  const wrap = document.getElementById('session-bycompany-wrap');
+  const data = (items || [])
+    .filter(it => (Number(it.humano) || 0) + (Number(it.ia) || 0) > 0)
+    .map(it => ({
+      empresa: String(it.empresa || '—').trim() || '—',
+      humano: Number(it.humano) || 0,
+      ia: Number(it.ia) || 0,
+      total: (Number(it.humano) || 0) + (Number(it.ia) || 0),
+    }))
+    .sort((a, b) => b.total - a.total);
+
+  if (loading) loading.style.display = 'none';
+
+  if (data.length === 0) {
+    if (content) content.style.display = 'none';
+    if (empty) empty.style.display = 'block';
+    if (sessionByCompanyChart) { sessionByCompanyChart.destroy(); sessionByCompanyChart = null; }
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+  if (content) content.style.display = 'block';
+
+  const labels = data.map(d => d.empresa);
+  const humano = data.map(d => d.humano);
+  const ia = data.map(d => d.ia);
+
+  if (wrap) wrap.style.height = Math.max(220, Math.min(900, 36 * data.length + 40)) + 'px';
+
+  if (sessionByCompanyChart) sessionByCompanyChart.destroy();
+  const ctx = document.getElementById('sessionByCompanyChart');
+  if (!ctx) return;
+  sessionByCompanyChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Humano', data: humano, backgroundColor: '#6366f1', borderRadius: 4, borderSkipped: false, barPercentage: 0.85, categoryPercentage: 0.7 },
+        { label: 'IA',     data: ia,     backgroundColor: '#14b8a6', borderRadius: 4, borderSkipped: false, barPercentage: 0.85, categoryPercentage: 0.7 },
+      ],
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#1e293b', borderColor: '#334155', borderWidth: 1,
+          titleColor: '#94a3b8', bodyColor: '#f1f5f9',
+          callbacks: {
+            label: c => `${c.dataset.label}: ${fmt(c.parsed.x)} sessões`,
+            footer: items => {
+              const i = items[0]?.dataIndex ?? -1;
+              if (i < 0) return '';
+              return `Total: ${fmt(data[i].total)} sessões`;
+            },
+          },
+        },
+      },
+      scales: {
+        x: {
+          stacked: true, beginAtZero: true,
+          ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => fmt(v) },
+          grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false },
+        },
+        y: {
+          stacked: true,
+          ticks: { font: { size: 11 }, color: '#475569', autoSkip: false,
+            callback: function(v) { const lbl = this.getLabelForValue(v); return lbl.length > 28 ? lbl.slice(0, 27) + '…' : lbl; } },
+          grid: { display: false }, border: { display: false },
+        },
+      },
+    },
+  });
+}
+
 async function loadSessions() {
   const bullet = document.getElementById('bullet-sessoes');
   const periodoLabel = document.getElementById('bullet-sessoes-periodo');
   const finishersLoading = document.getElementById('session-finishers-loading');
   const finishersContent = document.getElementById('session-finishers-content');
+  const byCompanyLoading = document.getElementById('session-bycompany-loading');
+  const byCompanyContent = document.getElementById('session-bycompany-content');
+  const byCompanyEmpty = document.getElementById('session-bycompany-empty');
   if (bullet) bullet.textContent = '…';
   if (finishersLoading) {
     finishersLoading.style.display = 'block';
     finishersLoading.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...';
   }
   if (finishersContent) finishersContent.style.display = 'none';
+  if (byCompanyLoading) {
+    byCompanyLoading.style.display = 'block';
+    byCompanyLoading.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...';
+  }
+  if (byCompanyContent) byCompanyContent.style.display = 'none';
+  if (byCompanyEmpty) byCompanyEmpty.style.display = 'none';
 
   const meses = [...selectedMonths].sort();
   const p = new URLSearchParams();
@@ -660,6 +765,7 @@ async function loadSessions() {
       periodoLabel.title = label;
     }
     renderSessionFinishers(sessions.finishers || [], sessions.finishers_filter_applied);
+    renderSessionByCompany(sessions.by_company || []);
   } else {
     if (bullet) bullet.textContent = 'Erro';
     const msg = sessions && sessions.error ? sessions.error : 'Erro ao carregar sessões';
@@ -668,6 +774,7 @@ async function loadSessions() {
       periodoLabel.title = String(msg);
     }
     if (finishersLoading) finishersLoading.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>Erro ao carregar finalizações';
+    if (byCompanyLoading) byCompanyLoading.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>Erro ao carregar empresas';
   }
 }
 

@@ -359,12 +359,49 @@ export default async function handler(req, res) {
           END
       `);
 
-    const [rows, finisherRows] = await Promise.all([totalPromise, finishersPromise]);
+    const byCompanyPromise = beneficiaryCpfColumn && sessionCpfFilterExpr
+      ? runQuery(wh.id, `
+        WITH filtered_benef AS (
+          SELECT DISTINCT
+            b.NOME_CLIENTE AS empresa,
+            ${normalizeCpfExpr(`b.${quoteIdent(beneficiaryCpfColumn)}`)} AS cpf
+          FROM ${VW_BENEFICIARIOS} b
+          WHERE NOME_CLIENTE IS NOT NULL
+            ${extraFilter}
+            AND ${normalizeCpfExpr(`b.${quoteIdent(beneficiaryCpfColumn)}`)} IS NOT NULL
+        ),
+        sessions_resolved AS (
+          SELECT
+            finished_by,
+            ${sessionCpfFilterExpr} AS cpf
+          FROM ${SESSION_TABLE}
+          ${sessionDateFilter ? `WHERE ${sessionDateFilter}` : ''}
+        )
+        SELECT
+          fb.empresa AS empresa,
+          SUM(CASE WHEN s.finished_by IS NOT NULL THEN 1 ELSE 0 END) AS humano,
+          SUM(CASE WHEN s.finished_by IS NULL THEN 1 ELSE 0 END) AS ia,
+          COUNT(*) AS total
+        FROM sessions_resolved s
+        INNER JOIN filtered_benef fb ON fb.cpf = s.cpf
+        GROUP BY fb.empresa
+        ORDER BY total DESC
+        LIMIT 50
+      `)
+      : Promise.resolve(null);
+
+    const [rows, finisherRows, byCompanyRows] = await Promise.all([totalPromise, finishersPromise, byCompanyPromise]);
     const row = rows[0] || [];
     const total = toInt(row[0]);
     const rawFinishers = finisherRows.map((r) => ({
       tipo: String(getCell(r[0]) || "—"),
       total: toInt(r[1]),
+    }));
+    const byCompany = (byCompanyRows || []).map((r) => ({
+      empresa: String(getCell(r[0]) || "—").trim(),
+      humano: toInt(r[1]),
+      ia: toInt(r[2]),
+      total: toInt(r[3]),
     }));
     const rawFinishersTotal = rawFinishers.reduce((acc, item) => acc + item.total, 0);
     const scaledFinishers = rawFinishersTotal > 0
@@ -389,6 +426,7 @@ export default async function handler(req, res) {
       finishers_raw_total: rawFinishersTotal,
       finishers_scaled_to_total: useCompanyFilterSum && rawFinishersTotal > 0,
       finishers_filter_applied: finishersFilterApplied,
+      by_company: byCompany,
       source: useCompanyFilterSum ? "company_filter_sum" : "botmaker_session",
       period_filter_applied: useCompanyFilterSum ? false : meses.length === 0 || Boolean(sessionDateColumn),
     });
