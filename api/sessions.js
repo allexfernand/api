@@ -261,9 +261,6 @@ export default async function handler(req, res) {
       `);
 
     const wantDebug = req.query.debug === '1' || hasBeneficiariesFilter;
-    const beneficiaryRawCpfExpr = beneficiaryCpfColumn
-      ? `CAST(b.${quoteIdent(beneficiaryCpfColumn)} AS STRING)`
-      : `CAST(NULL AS STRING)`;
     const debugQueryPromise = wantDebug && orgFilterSubqueries.length > 0
       ? runQuery(wh.id, `
         SELECT
@@ -273,20 +270,7 @@ export default async function handler(req, res) {
             WHERE ${beneficiaryConditions.join(' AND ')}
               AND ${beneficiaryCpfExpr} IS NOT NULL
           ) AS beneficiaries_in_filter_with_cpf,
-          (SELECT ${beneficiaryCpfExpr} FROM ${BENEFICIARIES_TABLE} b
-            WHERE ${beneficiaryConditions.join(' AND ')}
-              AND ${beneficiaryCpfExpr} IS NOT NULL
-            LIMIT 1
-          ) AS sample_benef_cpf_norm,
-          (SELECT ${beneficiaryRawCpfExpr} FROM ${BENEFICIARIES_TABLE} b
-            WHERE ${beneficiaryConditions.join(' AND ')}
-              AND ${beneficiaryRawCpfExpr} IS NOT NULL
-            LIMIT 1
-          ) AS sample_benef_cpf_raw,
-          (SELECT ${inputCpfExpr} FROM ${SESSION_TABLE}
-            WHERE ${inputCpfExpr} IS NOT NULL
-            LIMIT 1
-          ) AS sample_sess_cpf
+          (SELECT SUBSTRING(${variables}, 1, 600) FROM ${SESSION_TABLE} WHERE ${variables} IS NOT NULL LIMIT 1) AS sample_variables
       `)
       : Promise.resolve(null);
 
@@ -301,15 +285,10 @@ export default async function handler(req, res) {
           orgs_in_filter: toInt(debugRows[0][0]),
           beneficiaries_in_filter: toInt(debugRows[0][1]),
           beneficiaries_in_filter_with_cpf: toInt(debugRows[0][2]),
-          sample_benef_cpf_norm: getStr(debugRows[0][3]),
-          sample_benef_cpf_raw: getStr(debugRows[0][4]),
-          sample_sess_cpf: getStr(debugRows[0][5]),
+          sample_variables: getStr(debugRows[0][3]),
+          session_columns: columns,
         }
       : null;
-    if (debug) {
-      debug.sample_benef_cpf_len = debug.sample_benef_cpf_norm ? debug.sample_benef_cpf_norm.length : 0;
-      debug.sample_sess_cpf_len = debug.sample_sess_cpf ? debug.sample_sess_cpf.length : 0;
-    }
 
     res.status(200).json({
       total: toInt(rows[0]?.[0]),

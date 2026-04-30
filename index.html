@@ -582,7 +582,13 @@ async function loadSessions() {
     if (sessions.period_filter_applied === false) label = 'botmaker_session · período não aplicado';
     if (sessions.debug) {
       const d = sessions.debug;
-      label += ` · diag: orgs=${fmt(d.orgs_in_filter)} · benef=${fmt(d.beneficiaries_in_filter)} · benef c/cpf=${fmt(d.beneficiaries_in_filter_with_cpf)} · match cpf=${fmt(d.sessions_matched_by_cpf)} · match user=${fmt(d.sessions_matched_by_user_id)} · benef cpf="${d.sample_benef_cpf_norm||''}"(len ${d.sample_benef_cpf_len}) · sess cpf="${d.sample_sess_cpf||''}"(len ${d.sample_sess_cpf_len}) · benef raw="${d.sample_benef_cpf_raw||''}"`;
+      const cols = (d.session_columns || []).join(',');
+      const vars = (d.sample_variables || '').slice(0, 200);
+      label += ` · diag: orgs=${fmt(d.orgs_in_filter)} · benef=${fmt(d.beneficiaries_in_filter)} · benef c/cpf=${fmt(d.beneficiaries_in_filter_with_cpf)}`;
+      console.log('[sessions debug]', d);
+      console.log('[sessions debug] session_columns:', d.session_columns);
+      console.log('[sessions debug] sample_variables:', d.sample_variables);
+      label += ` · cols=[${cols}] · vars=${vars}`;
     }
     if (periodoLabel) {
       periodoLabel.textContent = label;
