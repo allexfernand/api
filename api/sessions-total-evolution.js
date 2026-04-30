@@ -108,16 +108,44 @@ function jsonValueExpr(variablesColumn, keys) {
 }
 
 function sessionCpfExpr() {
-  return normalizeCpfExpr(jsonValueExpr(SESSION_VARIABLES_COLUMN, ['inputcpfholder', 'cpf_holder', 'cpf']));
+  const variables = `CAST(${quoteIdent(SESSION_VARIABLES_COLUMN)} AS STRING)`;
+  const jsonCpf = jsonValueExpr(SESSION_VARIABLES_COLUMN, [
+    'inputcpfholder',
+    'inputCpfHolder',
+    'input_cpf_holder',
+    'inputCpf',
+    'input_cpf',
+    'cpf_holder',
+    'cpfHolder',
+    'cpf',
+    'CPF',
+    'document',
+    'documento',
+    'document_number',
+    'documentNumber',
+    'cpf_beneficiario',
+    'cpfBeneficiario',
+  ]);
+  const regexCpf = `NULLIF(regexp_extract(${variables}, '([0-9]{3}[. -]?[0-9]{3}[. -]?[0-9]{3}[. -]?[0-9]{2})', 1), '')`;
+  return normalizeCpfExpr(`COALESCE(${jsonCpf}, ${regexCpf})`);
 }
 
 function variablesPrefilter() {
   const v = `CAST(${quoteIdent(SESSION_VARIABLES_COLUMN)} AS STRING)`;
   return `${v} IS NOT NULL AND (
     ${v} LIKE '%inputcpfholder%' OR
+    ${v} LIKE '%inputCpfHolder%' OR
+    ${v} LIKE '%input_cpf_holder%' OR
+    ${v} LIKE '%inputCpf%' OR
+    ${v} LIKE '%input_cpf%' OR
     ${v} LIKE '%cpf_holder%' OR
+    ${v} LIKE '%cpfHolder%' OR
     ${v} LIKE '%"cpf"%' OR
-    ${v} LIKE '%"CPF"%'
+    ${v} LIKE '%"CPF"%' OR
+    ${v} LIKE '%document%' OR
+    ${v} LIKE '%documento%' OR
+    ${v} LIKE '%cpf_beneficiario%' OR
+    ${v} RLIKE '[0-9]{3}[. -]?[0-9]{3}[. -]?[0-9]{3}[. -]?[0-9]{2}'
   )`;
 }
 
@@ -173,9 +201,10 @@ export default async function handler(req, res) {
     if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
 
     let rows;
+    let beneficiaryCpfColumn = null;
     if (useCpfJoin) {
       const beneficiaryColumns = await getColumns(wh.id, VW_BENEFICIARIOS);
-      const beneficiaryCpfColumn = pickBeneficiaryCpfColumn(beneficiaryColumns);
+      beneficiaryCpfColumn = pickBeneficiaryCpfColumn(beneficiaryColumns);
       if (!beneficiaryCpfColumn) {
         throw new Error(`Coluna de CPF/documento não encontrada em ${VW_BENEFICIARIOS}. Colunas disponíveis: ${beneficiaryColumns.slice(0, 80).join(', ')}`);
       }
@@ -225,6 +254,7 @@ export default async function handler(req, res) {
 
     const byMes = Object.fromEntries(rows.map((r) => [String(getCell(r[0]) || ''), toInt(r[1])]));
     const series = monthList.map((m) => ({ mes: m, total: byMes[m] || 0 }));
+    const matchedTotal = series.reduce((acc, item) => acc + item.total, 0);
 
     res.status(200).json({
       months,
@@ -232,6 +262,8 @@ export default async function handler(req, res) {
       source: "botmaker_session.creation_time",
       mode: useCpfJoin ? "cpf_join_count_by_month" : "global_count_by_month",
       filters: { group_name: groupName, company },
+      cpf_column: beneficiaryCpfColumn,
+      matched_total: matchedTotal,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
