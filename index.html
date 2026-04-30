@@ -336,6 +336,25 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
       <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="s-total-evol-error"></div>
     </div>
 
+    <div class="card-box">
+      <div class="section-title"><i class="fa-solid fa-table" style="margin-right:6px"></i>Resumo mensal de sessões</div>
+      <div class="loading-box" id="session-monthly-loading"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...</div>
+      <div id="session-monthly-content" style="display:none;overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead>
+            <tr style="border-bottom:1px solid #e2e8f0;color:#64748b">
+              <th style="text-align:left;padding:9px 10px;font-weight:600">Mês</th>
+              <th style="text-align:right;padding:9px 10px;font-weight:600">Total Sessions</th>
+              <th style="text-align:right;padding:9px 10px;font-weight:600">Humano</th>
+              <th style="text-align:right;padding:9px 10px;font-weight:600">IA</th>
+            </tr>
+          </thead>
+          <tbody id="session-monthly-tbody"></tbody>
+        </table>
+        <div style="font-size:11px;color:#94a3b8;margin-top:10px;text-align:right" id="session-monthly-meta">—</div>
+      </div>
+    </div>
+
     <div style="text-align:center;padding:20px;color:#bbb;font-size:13px">Mais dados serão adicionados em breve.</div>
   </div>
 
@@ -683,6 +702,7 @@ async function loadSessions() {
   const qs = p.toString() ? '?' + p.toString() : '';
 
   loadSessionsEvolution();
+  loadSessionsMonthlySummary(meses);
 
   const sessions = await safeGet('/api/sessions' + qs);
   if (sessions && !sessions.error) {
@@ -896,6 +916,53 @@ async function loadSessionsEvolution() {
       },
     },
   });
+}
+
+async function loadSessionsMonthlySummary(meses) {
+  const loading = document.getElementById('session-monthly-loading');
+  const content = document.getElementById('session-monthly-content');
+  const tbody = document.getElementById('session-monthly-tbody');
+  const meta = document.getElementById('session-monthly-meta');
+  if (loading) {
+    loading.style.display = 'block';
+    loading.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...';
+  }
+  if (content) content.style.display = 'none';
+
+  const p = new URLSearchParams();
+  if (Array.isArray(meses) && meses.length > 0) p.set('meses', meses.join(','));
+  if (currentGroup) p.set('group_name', currentGroup);
+  if (currentCompany) p.set('company', currentCompany);
+  const qs = p.toString() ? '?' + p.toString() : '';
+
+  const data = await safeGet('/api/sessions-monthly-summary' + qs);
+  if (!data || data.error) {
+    if (loading) loading.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>' +
+      (data && data.error ? String(data.error).slice(0, 220) : 'Erro ao carregar resumo mensal');
+    return;
+  }
+
+  const items = data.items || [];
+  if (tbody) {
+    tbody.innerHTML = items.map((it) => {
+      const [y, mm] = String(it.mes || '').split('-');
+      const mesLabel = mN[mm] ? `${mN[mm]}/${y}` : (it.mes || '—');
+      return `<tr style="border-bottom:1px solid #f1f5f9">
+        <td style="padding:9px 10px;color:#334155;font-weight:500">${mesLabel}</td>
+        <td style="padding:9px 10px;text-align:right;font-weight:700;color:#0f766e">${fmt(Number(it.total_sessions) || 0)}</td>
+        <td style="padding:9px 10px;text-align:right;color:#6366f1;font-weight:600">${fmt(Number(it.humano) || 0)}</td>
+        <td style="padding:9px 10px;text-align:right;color:#0f766e;font-weight:600">${fmt(Number(it.ia) || 0)}</td>
+      </tr>`;
+    }).join('');
+  }
+  if (meta) {
+    const parts = [];
+    if (data.filters && data.filters.group_name) parts.push(`grupo: ${escapeHtml(data.filters.group_name)}`);
+    if (data.filters && data.filters.company) parts.push(`empresa: ${escapeHtml(data.filters.company)}`);
+    meta.innerHTML = `${items.length} meses · ${parts.length ? parts.join(' · ') : 'global'} · <code>vw_beneficiarios.ID_EMPRESA → organizations.matriz_id</code>`;
+  }
+  if (loading) loading.style.display = 'none';
+  if (content) content.style.display = 'block';
 }
 
 // --- Evolução ---
