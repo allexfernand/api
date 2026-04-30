@@ -313,12 +313,10 @@ export default async function handler(req, res) {
         ${sessionDateFilter ? `WHERE ${sessionDateFilter}` : ''}
       `);
 
-    const combinedPromise = canFilterFinishersByBeneficiaryCpf
+    const finishersPromise = canFilterFinishersByBeneficiaryCpf
       ? runQuery(wh.id, `
-        WITH filtered_benef AS (
-          SELECT DISTINCT
-            b.NOME_CLIENTE AS empresa,
-            ${normalizeCpfExpr(`b.${quoteIdent(beneficiaryCpfColumn)}`)} AS cpf
+        WITH filtered_cpfs AS (
+          SELECT DISTINCT ${normalizeCpfExpr(`b.${quoteIdent(beneficiaryCpfColumn)}`)} AS cpf
           FROM ${VW_BENEFICIARIOS} b
           WHERE NOME_CLIENTE IS NOT NULL
             ${extraFilter}
@@ -331,19 +329,14 @@ export default async function handler(req, res) {
           FROM ${SESSION_TABLE}
           ${sessionDateFilter ? `WHERE ${sessionDateFilter}` : ''}
         )
-        SELECT /*+ BROADCAST(fb) */
-          fb.empresa AS empresa,
-          SUM(CASE WHEN s.finished_by IS NOT NULL THEN 1 ELSE 0 END) AS humano,
-          SUM(CASE WHEN s.finished_by IS NULL     THEN 1 ELSE 0 END) AS ia
+        SELECT /*+ BROADCAST(filtered_cpfs) */
+          CASE WHEN s.finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END AS tipo_atendimento,
+          COUNT(*) AS total_sessions
         FROM sessions_resolved s
-        INNER JOIN filtered_benef fb ON fb.cpf = s.cpf
+        INNER JOIN filtered_cpfs fc ON fc.cpf = s.cpf
         WHERE s.cpf IS NOT NULL
-        GROUP BY fb.empresa
+        GROUP BY CASE WHEN s.finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END
       `)
-      : null;
-
-    const finishersFallbackPromise = canFilterFinishersByBeneficiaryCpf
-      ? null
       : runQuery(wh.id, `
         SELECT
           CASE
@@ -360,43 +353,13 @@ export default async function handler(req, res) {
           END
       `);
 
-    const [rows, combinedRows, finishersFallbackRows] = await Promise.all([
-      totalPromise,
-      combinedPromise || Promise.resolve(null),
-      finishersFallbackPromise || Promise.resolve(null),
-    ]);
+    const [rows, finisherRows] = await Promise.all([totalPromise, finishersPromise]);
     const row = rows[0] || [];
     const total = toInt(row[0]);
-
-    const byCompany = (combinedRows || [])
-      .map((r) => {
-        const humano = toInt(r[1]);
-        const ia = toInt(r[2]);
-        return {
-          empresa: String(getCell(r[0]) || "—").trim(),
-          humano,
-          ia,
-          total: humano + ia,
-        };
-      })
-      .filter((it) => it.total > 0)
-      .sort((a, b) => b.total - a.total)
-      .slice(0, 50);
-
-    let rawFinishers;
-    if (combinedRows) {
-      const sumHumano = (combinedRows || []).reduce((acc, r) => acc + toInt(r[1]), 0);
-      const sumIa = (combinedRows || []).reduce((acc, r) => acc + toInt(r[2]), 0);
-      rawFinishers = [
-        { tipo: "Humano", total: sumHumano },
-        { tipo: "IA", total: sumIa },
-      ].filter((it) => it.total > 0);
-    } else {
-      rawFinishers = (finishersFallbackRows || []).map((r) => ({
-        tipo: String(getCell(r[0]) || "—"),
-        total: toInt(r[1]),
-      }));
-    }
+    const rawFinishers = finisherRows.map((r) => ({
+      tipo: String(getCell(r[0]) || "—"),
+      total: toInt(r[1]),
+    }));
     const rawFinishersTotal = rawFinishers.reduce((acc, item) => acc + item.total, 0);
     const scaledFinishers = rawFinishersTotal > 0
       ? rawFinishers.map((item) => ({
@@ -420,7 +383,6 @@ export default async function handler(req, res) {
       finishers_raw_total: rawFinishersTotal,
       finishers_scaled_to_total: useCompanyFilterSum && rawFinishersTotal > 0,
       finishers_filter_applied: finishersFilterApplied,
-      by_company: byCompany,
       source: useCompanyFilterSum ? "company_filter_sum" : "botmaker_session",
       period_filter_applied: useCompanyFilterSum ? false : meses.length === 0 || Boolean(sessionDateColumn),
     });
