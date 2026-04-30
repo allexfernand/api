@@ -77,8 +77,8 @@ export default async function handler(req, res) {
     const wh = warehouses.find((w) => w.state === "RUNNING") || warehouses[0];
     if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
 
-    const rows = useCompanyFilterSum
-      ? await runQuery(wh.id, `
+    const totalPromise = useCompanyFilterSum
+      ? runQuery(wh.id, `
         SELECT
           COUNT(*) AS total,
           COUNT(DISTINCT NOME_CLIENTE) AS empresas
@@ -86,15 +86,37 @@ export default async function handler(req, res) {
         WHERE NOME_CLIENTE IS NOT NULL
           ${extraFilter}
       `)
-      : await runQuery(wh.id, `
+      : runQuery(wh.id, `
         SELECT COUNT(*) AS total, 0 AS empresas
         FROM ${SESSION_TABLE}
       `);
+
+    const finishersPromise = runQuery(wh.id, `
+      SELECT
+        CASE
+          WHEN finished_by IS NOT NULL THEN 'Humano'
+          ELSE 'IA'
+        END AS tipo_atendimento,
+        COUNT(*) AS total_sessions
+      FROM ${SESSION_TABLE}
+      GROUP BY
+        CASE
+          WHEN finished_by IS NOT NULL THEN 'Humano'
+          ELSE 'IA'
+        END
+    `);
+
+    const [rows, finisherRows] = await Promise.all([totalPromise, finishersPromise]);
+    const finishers = finisherRows.map((r) => ({
+      tipo: String(getCell(r[0]) || "—"),
+      total: toInt(r[1]),
+    }));
 
     const row = rows[0] || [];
     res.status(200).json({
       total: toInt(row[0]),
       empresas: toInt(row[1]),
+      finishers,
       source: useCompanyFilterSum ? "company_filter_sum" : "botmaker_session",
       period_filter_applied: useCompanyFilterSum ? false : true,
     });
