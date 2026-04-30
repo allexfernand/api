@@ -161,7 +161,7 @@ export default async function handler(req, res) {
   const useCompanyFilterSum = Boolean(groupName || company);
   const extraFilter = buildExtraFilter(groupName, company, typeFilter);
 
-  const SESSION_DATE_COLUMN = 'created_at';
+  const SESSION_DATE_COLUMN = 'creation_time';
 
   const buildSessionDateFilter = (mesesArr) => mesesArr.length > 0
     ? `DATE_FORMAT(try_cast(${quoteIdent(SESSION_DATE_COLUMN)} AS TIMESTAMP), 'yyyy-MM') IN (${mesesArr.map((m) => `'${m}'`).join(',')})`

@@ -14,7 +14,7 @@ const SESSION_TABLE       = `hive_metastore.sanus_prod.botmaker_session`;
 const VW_BENEFICIARIOS    = `sanus_databricks.sanus_prod.vw_beneficiarios`;
 const ORGANIZATIONS_TABLE = `sanus_databricks.sanus_prod.organizations`;
 
-const SESSION_DATE_COLUMN = 'created_at';
+const SESSION_DATE_COLUMN = 'creation_time';
 const SESSION_VARIABLES_COLUMN = 'variables';
 const BENEF_CPF_COLUMN = 'CPF';
 
@@ -195,7 +195,7 @@ export default async function handler(req, res) {
       series,
       filters: { group_name: groupName, company, type: typeFilter },
       mode: useCpfJoin ? "cpf_join" : "global",
-      source: "botmaker_session.created_at",
+      source: "botmaker_session.creation_time",
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
