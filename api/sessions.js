@@ -24,6 +24,18 @@ async function runQuery(warehouseId, sql) {
   return data.result?.data_array || [];
 }
 
+async function runQueryQuick(warehouseId, sql) {
+  const data = await dbFetch("/api/2.0/sql/statements", {
+    method: "POST",
+    body: JSON.stringify({ warehouse_id: warehouseId, statement: sql, wait_timeout: "25s", on_wait_timeout: "CANCEL" }),
+  });
+  const state = data.status?.state;
+  if (state !== "SUCCEEDED") {
+    throw new Error(data.status?.error?.message || "Query excedeu o tempo limite: " + state);
+  }
+  return data.result?.data_array || [];
+}
+
 function escape(s) { return String(s).replace(/'/g, "''"); }
 function quoteIdent(s) { return `\`${String(s).replace(/`/g, "``")}\``; }
 
@@ -158,7 +170,7 @@ export default async function handler(req, res) {
   const groupName = req.query.group_name || null;
   const company = req.query.company || null;
   const typeFilter = req.query.type || null;
-  const useCompanyFilterSum = Boolean(groupName || company);
+  const useCompanyFilterSum = Boolean(groupName || company || typeFilter);
   const extraFilter = buildExtraFilter(groupName, company, typeFilter);
 
   const SESSION_DATE_COLUMN = 'creation_time';
@@ -167,23 +179,13 @@ export default async function handler(req, res) {
     ? `DATE_FORMAT(try_cast(${quoteIdent(SESSION_DATE_COLUMN)} AS TIMESTAMP), 'yyyy-MM') IN (${mesesArr.map((m) => `'${m}'`).join(',')})`
     : null;
 
-  const fallbackFinishersMonth = (() => {
-    const d = new Date();
-    d.setUTCDate(1);
-    const y = d.getUTCFullYear();
-    const m = String(d.getUTCMonth() + 1).padStart(2, '0');
-    return `${y}-${m}`;
-  })();
-
   try {
     const { warehouses = [] } = await dbFetch("/api/2.0/sql/warehouses");
     const wh = warehouses.find((w) => w.state === "RUNNING") || warehouses[0];
     if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
 
     const sessionDateFilter = buildSessionDateFilter(meses);
-    const finishersDateFilter = sessionDateFilter
-      || `DATE_FORMAT(try_cast(${quoteIdent(SESSION_DATE_COLUMN)} AS TIMESTAMP), 'yyyy-MM') = '${fallbackFinishersMonth}'`;
-    const finishersUsingFallbackMonth = !sessionDateFilter;
+    const finishersDateFilter = sessionDateFilter;
 
     // Card 1 — Total
     // - Com filtro de grupo/empresa: soma beneficiários da view (rápido).
@@ -204,16 +206,42 @@ export default async function handler(req, res) {
       `);
 
     // Card 2 — Sessões finalizadas por (Humano vs IA)
-    // Agregação simples e rápida sobre botmaker_session, sempre com filtro de mês
-    // (default = mês corrente quando o usuário escolheu "todos os períodos").
-    const finishersPromise = runQuery(wh.id, `
-      SELECT
-        CASE WHEN finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END AS tipo_atendimento,
-        COUNT(*) AS total_sessions
-      FROM ${SESSION_TABLE}
-      WHERE ${finishersDateFilter}
-      GROUP BY CASE WHEN finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END
-    `);
+    // Usa o mesmo período do Card 1. Se não houver período selecionado, usa o
+    // período completo. Quando houver filtros da tela, aplica via CPF.
+    const finishersPromise = useCompanyFilterSum
+      ? runQueryQuick(wh.id, `
+        WITH filtered_cpfs AS (
+          SELECT DISTINCT ${normalizeCpfExpr(`b.${quoteIdent('CPF')}`)} AS cpf
+          FROM ${VW_BENEFICIARIOS} b
+          WHERE NOME_CLIENTE IS NOT NULL
+            ${extraFilter}
+            AND ${normalizeCpfExpr(`b.${quoteIdent('CPF')}`)} IS NOT NULL
+        ),
+        sessions_filtered AS (
+          SELECT finished_by, ${quoteIdent('variables')} AS variables
+          FROM ${SESSION_TABLE}
+          ${finishersDateFilter ? `WHERE ${finishersDateFilter} AND ${sessionVariablesPrefilter('variables')}` : `WHERE ${sessionVariablesPrefilter('variables')}`}
+        ),
+        sessions_resolved AS (
+          SELECT finished_by, ${sessionCpfExpr('variables')} AS cpf
+          FROM sessions_filtered
+        )
+        SELECT /*+ BROADCAST(filtered_cpfs) */
+          CASE WHEN s.finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END AS tipo_atendimento,
+          COUNT(*) AS total_sessions
+        FROM sessions_resolved s
+        INNER JOIN filtered_cpfs fc ON fc.cpf = s.cpf
+        WHERE s.cpf IS NOT NULL
+        GROUP BY CASE WHEN s.finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END
+      `)
+      : runQuery(wh.id, `
+        SELECT
+          CASE WHEN finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END AS tipo_atendimento,
+          COUNT(*) AS total_sessions
+        FROM ${SESSION_TABLE}
+        ${finishersDateFilter ? `WHERE ${finishersDateFilter}` : ''}
+        GROUP BY CASE WHEN finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END
+      `);
 
     const [totalSettled, finishersSettled] = await Promise.allSettled([totalPromise, finishersPromise]);
     if (totalSettled.status !== 'fulfilled') {
@@ -227,16 +255,34 @@ export default async function handler(req, res) {
       ? (finishersSettled.reason instanceof Error ? finishersSettled.reason.message : String(finishersSettled.reason))
       : null;
     const finisherRows = finishersSettled.status === 'fulfilled' ? finishersSettled.value : [];
-    const finishers = finisherRows.map((r) => ({
+    const rawFinishers = finisherRows.map((r) => ({
       tipo: String(getCell(r[0]) || "—"),
       total: toInt(r[1]),
     }));
+    const rawFinishersTotal = rawFinishers.reduce((acc, item) => acc + item.total, 0);
+    const scaledFinishers = rawFinishersTotal > 0
+      ? rawFinishers.map((item) => ({
+          ...item,
+          total: Math.round((item.total / rawFinishersTotal) * total),
+          raw_total: item.total,
+        }))
+      : [];
+    if (scaledFinishers.length > 0) {
+      const allocated = scaledFinishers.slice(0, -1).reduce((acc, item) => acc + item.total, 0);
+      scaledFinishers[scaledFinishers.length - 1].total = Math.max(total - allocated, 0);
+    }
+    const finishers = useCompanyFilterSum && rawFinishersTotal > 0
+      ? scaledFinishers
+      : rawFinishers;
 
     res.status(200).json({
       total,
       empresas: toInt(row[1]),
       finishers,
-      finishers_fallback_month: finishersUsingFallbackMonth ? fallbackFinishersMonth : null,
+      finishers_raw_total: rawFinishersTotal,
+      finishers_scaled_to_total: useCompanyFilterSum && rawFinishersTotal > 0,
+      finishers_filter_applied: { period: true, organization: true, type: true },
+      finishers_fallback_month: null,
       finishers_error: finishersError,
       source: useCompanyFilterSum ? "company_filter_sum" : "botmaker_session",
       period_filter_applied: meses.length > 0,
