@@ -361,9 +361,9 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
         <div id="session-monthly-content" style="display:none">
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
             <label for="session-monthly-bot-company-filter" style="font-size:12px;color:#64748b;font-weight:600">Filtrar bot company</label>
-            <select class="filter-select session-monthly-filter-select" id="session-monthly-bot-company-filter" onchange="onSessionMonthlyBotCompanyChange(this.value)">
-              <option value="">Todos os bot companies</option>
-            </select>
+            <select class="filter-select session-monthly-filter-select" id="session-monthly-bot-company-filter" multiple size="4" onchange="onSessionMonthlyBotCompanyChange(this)"></select>
+            <button class="clear-btn" onclick="clearSessionMonthlyBotCompanyFilter()">Limpar</button>
+            <span style="font-size:11px;color:#94a3b8">Use Cmd/Ctrl para selecionar mais de um</span>
           </div>
           <div class="table-scroll session-monthly-scroll">
             <table class="session-monthly-table">
@@ -411,7 +411,7 @@ const mN = {'01':'Jan','02':'Fev','03':'Mar','04':'Abr','05':'Mai','06':'Jun','0
 let usersData = [], companiesData = [], eChart, agegroupChart, sessionsEvolChart, sessionsTotalEvolChart, sessionMonthlyEvolutionChart;
 let currentGroup = '', currentType = '', currentCompany = '';
 let selectedMonths = new Set();
-let sessionsMonthlySummaryData = null, sessionsMonthlySummaryItems = [], selectedSessionMonthlyBotCompany = '';
+let sessionsMonthlySummaryData = null, sessionsMonthlySummaryItems = [], selectedSessionMonthlyBotCompanies = [];
 
 // --- Tabs ---
 document.querySelectorAll('.tab').forEach(t => {
@@ -983,6 +983,12 @@ function getSessionMonthlyBotCompany(item) {
   return item && item.bot_company ? String(item.bot_company) : 'Sem bot company';
 }
 
+function sessionMonthlyBotCompanyLabel(values) {
+  if (!values || values.length === 0) return 'todos os bot companies';
+  if (values.length === 1) return values[0];
+  return `${values.length} bot companies selecionados`;
+}
+
 function renderSessionMonthlyEvolution(items, data) {
   const loading = document.getElementById('session-monthly-evol-loading');
   const cv = document.getElementById('sessionMonthlyEvolutionChart');
@@ -1017,7 +1023,7 @@ function renderSessionMonthlyEvolution(items, data) {
     const parts = [];
     if (data && data.filters && data.filters.group_name) parts.push(`grupo: ${data.filters.group_name}`);
     if (data && data.filters && data.filters.company) parts.push(`empresa: ${data.filters.company}`);
-    if (selectedSessionMonthlyBotCompany) parts.push(`bot company: ${selectedSessionMonthlyBotCompany}`);
+    if (selectedSessionMonthlyBotCompanies.length) parts.push(`bot company: ${sessionMonthlyBotCompanyLabel(selectedSessionMonthlyBotCompanies)}`);
     mode.textContent = parts.length ? parts.join(' · ') : 'todos os bot companies';
   }
 
@@ -1057,21 +1063,21 @@ function renderSessionsMonthlySummary() {
   const sourceItems = sessionsMonthlySummaryItems || [];
   const botCompanies = [...new Set(sourceItems.map(getSessionMonthlyBotCompany))]
     .sort((a, b) => a.localeCompare(b, 'pt-BR', {sensitivity:'base'}));
+  const availableBotCompanies = new Set(botCompanies);
+  selectedSessionMonthlyBotCompanies = selectedSessionMonthlyBotCompanies
+    .filter((botCompany) => availableBotCompanies.has(botCompany));
 
-  if (selectedSessionMonthlyBotCompany && !botCompanies.includes(selectedSessionMonthlyBotCompany)) {
-    selectedSessionMonthlyBotCompany = '';
-  }
   if (botCompanyFilter) {
-    botCompanyFilter.innerHTML = '<option value="">Todos os bot companies</option>' +
-      botCompanies.map((botCompany) =>
-        `<option value="${escapeAttr(botCompany)}">${escapeHtml(botCompany)}</option>`
-      ).join('');
-    botCompanyFilter.value = selectedSessionMonthlyBotCompany;
+    botCompanyFilter.innerHTML = botCompanies.map((botCompany) => {
+      const selected = selectedSessionMonthlyBotCompanies.includes(botCompany) ? ' selected' : '';
+      return `<option value="${escapeAttr(botCompany)}"${selected}>${escapeHtml(botCompany)}</option>`;
+    }).join('');
     botCompanyFilter.disabled = botCompanies.length === 0;
   }
 
-  const items = selectedSessionMonthlyBotCompany
-    ? sourceItems.filter((it) => getSessionMonthlyBotCompany(it) === selectedSessionMonthlyBotCompany)
+  const selectedBotCompanySet = new Set(selectedSessionMonthlyBotCompanies);
+  const items = selectedBotCompanySet.size
+    ? sourceItems.filter((it) => selectedBotCompanySet.has(getSessionMonthlyBotCompany(it)))
     : sourceItems;
 
   if (tbody) {
@@ -1105,7 +1111,7 @@ function renderSessionsMonthlySummary() {
     const parts = [];
     if (data.filters && data.filters.group_name) parts.push(`grupo: ${escapeHtml(data.filters.group_name)}`);
     if (data.filters && data.filters.company) parts.push(`empresa: ${escapeHtml(data.filters.company)}`);
-    if (selectedSessionMonthlyBotCompany) parts.push(`bot company: ${escapeHtml(selectedSessionMonthlyBotCompany)}`);
+    if (selectedSessionMonthlyBotCompanies.length) parts.push(`bot company: ${escapeHtml(sessionMonthlyBotCompanyLabel(selectedSessionMonthlyBotCompanies))}`);
     const monthCount = new Set(items.map((it) => it.mes).filter(Boolean)).size || ((data.months || []).length);
     const botCompanyColumn = data.bot_company_column ? `botmaker_session.${escapeHtml(data.bot_company_column)}` : 'botmaker_session.bot_company';
     meta.innerHTML = `${items.length} linhas · ${monthCount} meses · ${parts.length ? parts.join(' · ') : 'global'} · <code>${botCompanyColumn}</code>`;
@@ -1113,8 +1119,13 @@ function renderSessionsMonthlySummary() {
   renderSessionMonthlyEvolution(items, data);
 }
 
-function onSessionMonthlyBotCompanyChange(value) {
-  selectedSessionMonthlyBotCompany = value || '';
+function onSessionMonthlyBotCompanyChange(selectEl) {
+  selectedSessionMonthlyBotCompanies = Array.from(selectEl.selectedOptions).map((option) => option.value);
+  renderSessionsMonthlySummary();
+}
+
+function clearSessionMonthlyBotCompanyFilter() {
+  selectedSessionMonthlyBotCompanies = [];
   renderSessionsMonthlySummary();
 }
 
