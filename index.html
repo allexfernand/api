@@ -964,7 +964,7 @@ function renderSessionsMonthlySummary() {
     : sourceItems;
 
   if (tbody) {
-    tbody.innerHTML = items.length ? items.map((it) => {
+    const rowsHtml = items.map((it) => {
       const [y, mm] = String(it.mes || '').split('-');
       const mesLabel = mN[mm] ? `${mN[mm]}/${y}` : (it.mes || '—');
       const botCompany = getSessionMonthlyBotCompany(it);
@@ -975,7 +975,20 @@ function renderSessionsMonthlySummary() {
         <td style="padding:9px 10px;text-align:right;color:#6366f1;font-weight:600">${fmt(Number(it.humano) || 0)}</td>
         <td style="padding:9px 10px;text-align:right;color:#0f766e;font-weight:600">${fmt(Number(it.ia) || 0)}</td>
       </tr>`;
-    }).join('') : '<tr><td colspan="5" style="padding:14px 10px;text-align:center;color:#94a3b8">Nenhuma sessão encontrada para o período/filtro.</td></tr>';
+    }).join('');
+    const totals = items.reduce((acc, it) => {
+      acc.total_sessions += Number(it.total_sessions) || 0;
+      acc.humano += Number(it.humano) || 0;
+      acc.ia += Number(it.ia) || 0;
+      return acc;
+    }, { total_sessions: 0, humano: 0, ia: 0 });
+    const totalHtml = `<tr style="border-top:2px solid #e2e8f0;background:#f8fafc">
+        <td colspan="2" style="padding:10px;color:#334155;font-weight:700">Total exibido</td>
+        <td style="padding:10px;text-align:right;font-weight:800;color:#0f766e">${fmt(totals.total_sessions)}</td>
+        <td style="padding:10px;text-align:right;color:#6366f1;font-weight:800">${fmt(totals.humano)}</td>
+        <td style="padding:10px;text-align:right;color:#0f766e;font-weight:800">${fmt(totals.ia)}</td>
+      </tr>`;
+    tbody.innerHTML = items.length ? rowsHtml + totalHtml : '<tr><td colspan="5" style="padding:14px 10px;text-align:center;color:#94a3b8">Nenhuma sessão encontrada para o período/filtro.</td></tr>';
   }
   if (meta) {
     const parts = [];
