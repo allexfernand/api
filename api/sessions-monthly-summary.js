@@ -1,16 +1,14 @@
 // api/sessions-monthly-summary.js
-// Tabela mensal: Mes, Total Sessions, Humano, IA.
-// Filtros por grupo/empresa usam vw_beneficiarios + organizations para resolver matriz_id.
+// Tabela mensal: Mes, Bot company, Total Sessions, Humano, IA.
+// Dados baseados diretamente em botmaker_session, segregados pela coluna bot_company.
 
 const HOST  = process.env.DATABRICKS_HOST;
 const TOKEN = process.env.DATABRICKS_TOKEN;
 const HEADERS = { "Authorization": `Bearer ${TOKEN}`, "Content-Type": "application/json" };
 
 const SESSION_TABLE = `hive_metastore.sanus_prod.botmaker_session`;
-const VW_BENEFICIARIOS = `sanus_databricks.sanus_prod.vw_beneficiarios`;
 const ORGANIZATIONS_TABLE = `sanus_databricks.sanus_prod.organizations`;
 const SESSION_DATE_COLUMN = 'creation_time';
-const SESSION_VARIABLES_COLUMN = 'variables';
 
 async function dbFetch(path, options = {}) {
   const res = await fetch(`${HOST}${path}`, { ...options, headers: { ...HEADERS, ...(options.headers || {}) } });
@@ -59,37 +57,6 @@ async function getColumns(warehouseId, tableName) {
     .filter((column) => column && !column.startsWith('#'));
 }
 
-function jsonValueExpr(variablesColumn, keys) {
-  const variables = `CAST(${quoteIdent(variablesColumn)} AS STRING)`;
-  const expressions = keys.flatMap((key) => [
-    `NULLIF(TRIM(get_json_object(${variables}, '$.${key}')), '')`,
-    `NULLIF(TRIM(get_json_object(${variables}, '$.${key}.value')), '')`,
-  ]);
-  return `COALESCE(${expressions.join(', ')})`;
-}
-
-function sessionTextExpr() {
-  return `CAST(${quoteIdent(SESSION_VARIABLES_COLUMN)} AS STRING)`;
-}
-
-function economicGroupExpr() {
-  const variables = sessionTextExpr();
-  return `COALESCE(
-    ${jsonValueExpr(SESSION_VARIABLES_COLUMN, ['nameEconomicGroup'])},
-    NULLIF(TRIM(regexp_extract(${variables}, '"nameEconomicGroup"\\\\s*:\\\\s*"([^"]+)"', 1)), ''),
-    NULLIF(TRIM(regexp_extract(${variables}, '"nameEconomicGroup"\\\\s*:\\\\s*\\\\{[^}]*"value"\\\\s*:\\\\s*"([^"]+)"', 1)), '')
-  )`;
-}
-
-function companyNameExpr() {
-  const variables = sessionTextExpr();
-  return `COALESCE(
-    ${jsonValueExpr(SESSION_VARIABLES_COLUMN, ['nameCompany', 'companyName', 'company', 'nome_cliente', 'NOME_CLIENTE'])},
-    NULLIF(TRIM(regexp_extract(${variables}, '"nameCompany"\\\\s*:\\\\s*"([^"]+)"', 1)), ''),
-    NULLIF(TRIM(regexp_extract(${variables}, '"nameCompany"\\\\s*:\\\\s*\\\\{[^}]*"value"\\\\s*:\\\\s*"([^"]+)"', 1)), '')
-  )`;
-}
-
 function lastNMonthsList(n) {
   const out = [];
   const d = new Date();
@@ -104,21 +71,22 @@ function lastNMonthsList(n) {
   return out;
 }
 
-function buildOrgFilter(groupName, company) {
-  const conditions = [];
-  if (groupName) {
-    const g = escape(groupName);
-    conditions.push(`(
-      o.name = '${g}'
-      OR matriz.name = '${g}'
-      OR o.matriz_id = (SELECT id FROM ${ORGANIZATIONS_TABLE} WHERE name = '${g}' LIMIT 1)
-    )`);
-  }
+function orgNamesSubquery(groupName, company) {
   if (company) {
-    const c = escape(company);
-    conditions.push(`(o.name = '${c}' OR b.NOME_CLIENTE = '${c}')`);
+    return `(SELECT UPPER(TRIM(name)) FROM ${ORGANIZATIONS_TABLE} WHERE name = '${escape(company)}')`;
   }
-  return conditions.length ? `AND ${conditions.join(' AND ')}` : '';
+  const g = escape(groupName);
+  return `(
+    SELECT UPPER(TRIM(name)) FROM ${ORGANIZATIONS_TABLE} WHERE name = '${g}'
+    UNION
+    SELECT UPPER(TRIM(name)) FROM ${ORGANIZATIONS_TABLE}
+    WHERE matriz_id = (SELECT id FROM ${ORGANIZATIONS_TABLE} WHERE name = '${g}' LIMIT 1)
+  )`;
+}
+
+function buildBotCompanyFilter(botCompanyColumn, groupName, company) {
+  if (!groupName && !company) return '';
+  return `AND UPPER(TRIM(CAST(${quoteIdent(botCompanyColumn)} AS STRING))) IN ${orgNamesSubquery(groupName, company)}`;
 }
 
 export default async function handler(req, res) {
@@ -140,48 +108,47 @@ export default async function handler(req, res) {
     const wh = warehouses.find((w) => w.state === "RUNNING") || warehouses[0];
     if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
 
-    const sessionColumns = hasOrgFilter ? await getColumns(wh.id, SESSION_TABLE) : [];
-    const botCompanyColumn = hasOrgFilter ? pickColumn(sessionColumns, [
+    const sessionColumns = await getColumns(wh.id, SESSION_TABLE);
+    const botCompanyColumn = pickColumn(sessionColumns, [
       'bot_company',
       'botCompany',
       'bot company',
       'botcompany',
       'bot_company_name',
       'botCompanyName',
-    ]) : null;
-    if (hasOrgFilter && !botCompanyColumn) {
+    ]);
+    if (!botCompanyColumn) {
       throw new Error(`Coluna bot_company não encontrada em ${SESSION_TABLE}. Colunas disponíveis: ${sessionColumns.slice(0, 80).join(', ')}`);
     }
 
-    const filterValues = [company, groupName].filter(Boolean).map((value) => `'${escape(value)}'`);
-    const botCompanyFilter = hasOrgFilter
-      ? `AND UPPER(TRIM(CAST(${quoteIdent(botCompanyColumn)} AS STRING))) IN (${filterValues.map((value) => `UPPER(TRIM(${value}))`).join(',')})`
-      : '';
+    const botCompanyExpr = `COALESCE(NULLIF(TRIM(CAST(${quoteIdent(botCompanyColumn)} AS STRING)), ''), 'Sem bot company')`;
+    const botCompanyFilter = buildBotCompanyFilter(botCompanyColumn, groupName, company);
 
     const rows = await runQuery(wh.id, `
         SELECT
           ${monthExpr} AS mes,
+          ${botCompanyExpr} AS bot_company,
           COUNT(*) AS total_sessions,
           SUM(CASE WHEN finished_by IS NOT NULL THEN 1 ELSE 0 END) AS humano,
           SUM(CASE WHEN finished_by IS NULL THEN 1 ELSE 0 END) AS ia
         FROM ${SESSION_TABLE}
         WHERE ${monthExpr} IN ${monthInList}
           ${botCompanyFilter}
-        GROUP BY ${monthExpr}
-        ORDER BY mes
+        GROUP BY ${monthExpr}, ${botCompanyExpr}
+        ORDER BY mes, bot_company
       `);
 
-    const byMes = new Map(rows.map((r) => [
-      String(getCell(r[0]) || ''),
-      { total_sessions: toInt(r[1]), humano: toInt(r[2]), ia: toInt(r[3]) },
-    ]));
-    const items = monthList.map((mes) => {
-      const item = byMes.get(mes) || { total_sessions: 0, humano: 0, ia: 0 };
-      return { mes, ...item };
-    });
+    const items = rows.map((r) => ({
+      mes: String(getCell(r[0]) || ''),
+      bot_company: String(getCell(r[1]) || 'Sem bot company'),
+      total_sessions: toInt(r[2]),
+      humano: toInt(r[3]),
+      ia: toInt(r[4]),
+    }));
 
     res.status(200).json({
       items,
+      months: monthList,
       filters: { group_name: groupName, company },
       source: "botmaker_session.bot_company",
       mode: hasOrgFilter ? "bot_company_filter" : "global",
