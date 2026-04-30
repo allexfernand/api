@@ -342,6 +342,12 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
         <button class="refresh-btn" onclick="loadSessionsMonthlySummary([...selectedMonths].sort())">Carregar resumo mensal</button>
       </div>
       <div id="session-monthly-content" style="display:none;overflow-x:auto">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+          <label for="session-monthly-bot-company-filter" style="font-size:12px;color:#64748b;font-weight:600">Filtrar bot company</label>
+          <select class="filter-select" id="session-monthly-bot-company-filter" onchange="onSessionMonthlyBotCompanyChange(this.value)" style="min-width:260px;max-width:420px">
+            <option value="">Todos os bot companies</option>
+          </select>
+        </div>
         <table style="width:100%;border-collapse:collapse;font-size:12px">
           <thead>
             <tr style="border-bottom:1px solid #e2e8f0;color:#64748b">
@@ -373,6 +379,7 @@ const mN = {'01':'Jan','02':'Fev','03':'Mar','04':'Abr','05':'Mai','06':'Jun','0
 let usersData = [], companiesData = [], eChart, agegroupChart, sessionsEvolChart, sessionsTotalEvolChart;
 let currentGroup = '', currentType = '', currentCompany = '';
 let selectedMonths = new Set();
+let sessionsMonthlySummaryData = null, sessionsMonthlySummaryItems = [], selectedSessionMonthlyBotCompany = '';
 
 // --- Tabs ---
 document.querySelectorAll('.tab').forEach(t => {
@@ -927,11 +934,68 @@ async function loadSessionsEvolution() {
   });
 }
 
+function getSessionMonthlyBotCompany(item) {
+  return item && item.bot_company ? String(item.bot_company) : 'Sem bot company';
+}
+
+function renderSessionsMonthlySummary() {
+  const tbody = document.getElementById('session-monthly-tbody');
+  const meta = document.getElementById('session-monthly-meta');
+  const botCompanyFilter = document.getElementById('session-monthly-bot-company-filter');
+  const data = sessionsMonthlySummaryData || {};
+  const sourceItems = sessionsMonthlySummaryItems || [];
+  const botCompanies = [...new Set(sourceItems.map(getSessionMonthlyBotCompany))]
+    .sort((a, b) => a.localeCompare(b, 'pt-BR', {sensitivity:'base'}));
+
+  if (selectedSessionMonthlyBotCompany && !botCompanies.includes(selectedSessionMonthlyBotCompany)) {
+    selectedSessionMonthlyBotCompany = '';
+  }
+  if (botCompanyFilter) {
+    botCompanyFilter.innerHTML = '<option value="">Todos os bot companies</option>' +
+      botCompanies.map((botCompany) =>
+        `<option value="${escapeAttr(botCompany)}">${escapeHtml(botCompany)}</option>`
+      ).join('');
+    botCompanyFilter.value = selectedSessionMonthlyBotCompany;
+    botCompanyFilter.disabled = botCompanies.length === 0;
+  }
+
+  const items = selectedSessionMonthlyBotCompany
+    ? sourceItems.filter((it) => getSessionMonthlyBotCompany(it) === selectedSessionMonthlyBotCompany)
+    : sourceItems;
+
+  if (tbody) {
+    tbody.innerHTML = items.length ? items.map((it) => {
+      const [y, mm] = String(it.mes || '').split('-');
+      const mesLabel = mN[mm] ? `${mN[mm]}/${y}` : (it.mes || '—');
+      const botCompany = getSessionMonthlyBotCompany(it);
+      return `<tr style="border-bottom:1px solid #f1f5f9">
+        <td style="padding:9px 10px;color:#334155;font-weight:500">${mesLabel}</td>
+        <td style="padding:9px 10px;color:#334155;font-weight:500">${escapeHtml(botCompany)}</td>
+        <td style="padding:9px 10px;text-align:right;font-weight:700;color:#0f766e">${fmt(Number(it.total_sessions) || 0)}</td>
+        <td style="padding:9px 10px;text-align:right;color:#6366f1;font-weight:600">${fmt(Number(it.humano) || 0)}</td>
+        <td style="padding:9px 10px;text-align:right;color:#0f766e;font-weight:600">${fmt(Number(it.ia) || 0)}</td>
+      </tr>`;
+    }).join('') : '<tr><td colspan="5" style="padding:14px 10px;text-align:center;color:#94a3b8">Nenhuma sessão encontrada para o período/filtro.</td></tr>';
+  }
+  if (meta) {
+    const parts = [];
+    if (data.filters && data.filters.group_name) parts.push(`grupo: ${escapeHtml(data.filters.group_name)}`);
+    if (data.filters && data.filters.company) parts.push(`empresa: ${escapeHtml(data.filters.company)}`);
+    if (selectedSessionMonthlyBotCompany) parts.push(`bot company: ${escapeHtml(selectedSessionMonthlyBotCompany)}`);
+    const monthCount = new Set(items.map((it) => it.mes).filter(Boolean)).size || ((data.months || []).length);
+    const botCompanyColumn = data.bot_company_column ? `botmaker_session.${escapeHtml(data.bot_company_column)}` : 'botmaker_session.bot_company';
+    meta.innerHTML = `${items.length} linhas · ${monthCount} meses · ${parts.length ? parts.join(' · ') : 'global'} · <code>${botCompanyColumn}</code>`;
+  }
+}
+
+function onSessionMonthlyBotCompanyChange(value) {
+  selectedSessionMonthlyBotCompany = value || '';
+  renderSessionsMonthlySummary();
+}
+
 async function loadSessionsMonthlySummary(meses) {
   const loading = document.getElementById('session-monthly-loading');
   const content = document.getElementById('session-monthly-content');
-  const tbody = document.getElementById('session-monthly-tbody');
-  const meta = document.getElementById('session-monthly-meta');
   if (loading) {
     loading.style.display = 'block';
     loading.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...';
@@ -951,29 +1015,9 @@ async function loadSessionsMonthlySummary(meses) {
     return;
   }
 
-  const items = data.items || [];
-  if (tbody) {
-    tbody.innerHTML = items.length ? items.map((it) => {
-      const [y, mm] = String(it.mes || '').split('-');
-      const mesLabel = mN[mm] ? `${mN[mm]}/${y}` : (it.mes || '—');
-      const botCompany = it.bot_company || 'Sem bot company';
-      return `<tr style="border-bottom:1px solid #f1f5f9">
-        <td style="padding:9px 10px;color:#334155;font-weight:500">${mesLabel}</td>
-        <td style="padding:9px 10px;color:#334155;font-weight:500">${escapeHtml(botCompany)}</td>
-        <td style="padding:9px 10px;text-align:right;font-weight:700;color:#0f766e">${fmt(Number(it.total_sessions) || 0)}</td>
-        <td style="padding:9px 10px;text-align:right;color:#6366f1;font-weight:600">${fmt(Number(it.humano) || 0)}</td>
-        <td style="padding:9px 10px;text-align:right;color:#0f766e;font-weight:600">${fmt(Number(it.ia) || 0)}</td>
-      </tr>`;
-    }).join('') : '<tr><td colspan="5" style="padding:14px 10px;text-align:center;color:#94a3b8">Nenhuma sessão encontrada para o período/filtro.</td></tr>';
-  }
-  if (meta) {
-    const parts = [];
-    if (data.filters && data.filters.group_name) parts.push(`grupo: ${escapeHtml(data.filters.group_name)}`);
-    if (data.filters && data.filters.company) parts.push(`empresa: ${escapeHtml(data.filters.company)}`);
-    const monthCount = new Set(items.map((it) => it.mes).filter(Boolean)).size || ((data.months || []).length);
-    const botCompanyColumn = data.bot_company_column ? `botmaker_session.${escapeHtml(data.bot_company_column)}` : 'botmaker_session.bot_company';
-    meta.innerHTML = `${items.length} linhas · ${monthCount} meses · ${parts.length ? parts.join(' · ') : 'global'} · <code>${botCompanyColumn}</code>`;
-  }
+  sessionsMonthlySummaryData = data;
+  sessionsMonthlySummaryItems = data.items || [];
+  renderSessionsMonthlySummary();
   if (loading) loading.style.display = 'none';
   if (content) content.style.display = 'block';
 }
