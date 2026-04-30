@@ -186,6 +186,33 @@ export default async function handler(req, res) {
 
     const sessionDateFilter = buildSessionDateFilter(meses);
     const finishersDateFilter = sessionDateFilter;
+    const beneficiaryColumns = useCompanyFilterSum ? await getColumns(wh.id, VW_BENEFICIARIOS) : [];
+    const beneficiaryCpfColumn = pickColumn(beneficiaryColumns, [
+      'cpf',
+      'CPF',
+      'nr_cpf',
+      'NR_CPF',
+      'num_cpf',
+      'NUM_CPF',
+      'cpf_beneficiario',
+      'CPF_BENEFICIARIO',
+      'cpf_benef',
+      'CPF_BENEF',
+      'cpf_titular',
+      'CPF_TITULAR',
+      'cpf_holder',
+      'CPF_HOLDER',
+      'document',
+      'DOCUMENT',
+      'documento',
+      'DOCUMENTO',
+      'document_number',
+      'DOCUMENT_NUMBER',
+      'numero_documento',
+      'NUMERO_DOCUMENTO',
+      'nro_documento',
+      'NRO_DOCUMENTO',
+    ]);
 
     // Card 1 — Total
     // - Com filtro de grupo/empresa: soma beneficiários da view (rápido).
@@ -209,13 +236,13 @@ export default async function handler(req, res) {
     // Usa o mesmo período do Card 1. Se não houver período selecionado, usa o
     // período completo. Quando houver filtros da tela, aplica via CPF.
     const finishersPromise = useCompanyFilterSum
-      ? runQueryQuick(wh.id, `
+      ? (beneficiaryCpfColumn ? runQueryQuick(wh.id, `
         WITH filtered_cpfs AS (
-          SELECT DISTINCT ${normalizeCpfExpr(`b.${quoteIdent('CPF')}`)} AS cpf
+          SELECT DISTINCT ${normalizeCpfExpr(`b.${quoteIdent(beneficiaryCpfColumn)}`)} AS cpf
           FROM ${VW_BENEFICIARIOS} b
           WHERE NOME_CLIENTE IS NOT NULL
             ${extraFilter}
-            AND ${normalizeCpfExpr(`b.${quoteIdent('CPF')}`)} IS NOT NULL
+            AND ${normalizeCpfExpr(`b.${quoteIdent(beneficiaryCpfColumn)}`)} IS NOT NULL
         ),
         sessions_filtered AS (
           SELECT finished_by, ${quoteIdent('variables')} AS variables
@@ -233,7 +260,7 @@ export default async function handler(req, res) {
         INNER JOIN filtered_cpfs fc ON fc.cpf = s.cpf
         WHERE s.cpf IS NOT NULL
         GROUP BY CASE WHEN s.finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END
-      `)
+      `) : Promise.reject(new Error(`Coluna de CPF/documento não encontrada em ${VW_BENEFICIARIOS}. Colunas disponíveis: ${beneficiaryColumns.slice(0, 80).join(', ')}`)))
       : runQuery(wh.id, `
         SELECT
           CASE WHEN finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END AS tipo_atendimento,

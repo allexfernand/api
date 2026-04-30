@@ -16,7 +16,6 @@ const ORGANIZATIONS_TABLE = `sanus_databricks.sanus_prod.organizations`;
 
 const SESSION_DATE_COLUMN = 'creation_time';
 const SESSION_VARIABLES_COLUMN = 'variables';
-const BENEF_CPF_COLUMN = 'CPF';
 
 async function dbFetch(path, options = {}) {
   const res = await fetch(`${HOST}${path}`, { ...options, headers: { ...HEADERS, ...(options.headers || {}) } });
@@ -48,6 +47,51 @@ const getCell = (cell) => {
   return cell;
 };
 const toInt = (v) => { const n = parseInt(getCell(v)); return Number.isFinite(n) ? n : 0; };
+
+function pickColumn(columns, candidates) {
+  const byLower = new Map(columns.map((column) => [column.toLowerCase(), column]));
+  for (const candidate of candidates) {
+    const column = byLower.get(candidate.toLowerCase());
+    if (column) return column;
+  }
+  return null;
+}
+
+async function getColumns(warehouseId, tableName) {
+  const rows = await runQuery(warehouseId, `DESCRIBE TABLE ${tableName}`);
+  return rows
+    .map((row) => String(getCell(row[0]) || '').trim())
+    .filter((column) => column && !column.startsWith('#'));
+}
+
+function pickBeneficiaryCpfColumn(columns) {
+  return pickColumn(columns, [
+    'cpf',
+    'CPF',
+    'nr_cpf',
+    'NR_CPF',
+    'num_cpf',
+    'NUM_CPF',
+    'cpf_beneficiario',
+    'CPF_BENEFICIARIO',
+    'cpf_benef',
+    'CPF_BENEF',
+    'cpf_titular',
+    'CPF_TITULAR',
+    'cpf_holder',
+    'CPF_HOLDER',
+    'document',
+    'DOCUMENT',
+    'documento',
+    'DOCUMENTO',
+    'document_number',
+    'DOCUMENT_NUMBER',
+    'numero_documento',
+    'NUMERO_DOCUMENTO',
+    'nro_documento',
+    'NRO_DOCUMENTO',
+  ]);
+}
 
 function normalizeCpfExpr(expr) {
   const digits = `NULLIF(regexp_replace(TRIM(CAST(${expr} AS STRING)), '[^0-9]', ''), '')`;
@@ -142,15 +186,20 @@ export default async function handler(req, res) {
     let rows;
     if (useCpfJoin) {
       const extraFilter = buildBeneficiaryFilter(groupName, company, typeFilter);
+      const beneficiaryColumns = await getColumns(wh.id, VW_BENEFICIARIOS);
+      const beneficiaryCpfColumn = pickBeneficiaryCpfColumn(beneficiaryColumns);
+      if (!beneficiaryCpfColumn) {
+        throw new Error(`Coluna de CPF/documento não encontrada em ${VW_BENEFICIARIOS}. Colunas disponíveis: ${beneficiaryColumns.slice(0, 80).join(', ')}`);
+      }
       const cpfExpr = sessionCpfExpr();
       const prefilter = variablesPrefilter();
       const sql = `
         WITH filtered_benef AS (
-          SELECT DISTINCT ${normalizeCpfExpr(`b.${quoteIdent(BENEF_CPF_COLUMN)}`)} AS cpf
+          SELECT DISTINCT ${normalizeCpfExpr(`b.${quoteIdent(beneficiaryCpfColumn)}`)} AS cpf
           FROM ${VW_BENEFICIARIOS} b
           WHERE NOME_CLIENTE IS NOT NULL
             ${extraFilter}
-            AND ${normalizeCpfExpr(`b.${quoteIdent(BENEF_CPF_COLUMN)}`)} IS NOT NULL
+            AND ${normalizeCpfExpr(`b.${quoteIdent(beneficiaryCpfColumn)}`)} IS NOT NULL
         ),
         sessions_filtered AS (
           SELECT
