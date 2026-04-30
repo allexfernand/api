@@ -740,7 +740,7 @@ async function loadSessionsEvolution() {
 
   const [data, totalData] = await Promise.all([
     safeGet('/api/sessions-evolution' + qs),
-    safeGet('/api/sessions-evolution'),
+    safeGet('/api/sessions-total-evolution'),
   ]);
   if (!data || data.error) {
     if (errorBox) {
@@ -853,7 +853,7 @@ async function loadSessionsEvolution() {
     const [y, mm] = String(it.mes).split('-');
     return mN[mm] ? `${mN[mm]}/${y.slice(2)}` : it.mes;
   });
-  const globalTotalValues = totalSeries.map((it) => Number(it.total) || ((Number(it.humano) || 0) + (Number(it.ia) || 0)));
+  const globalTotalValues = totalSeries.map((it) => Number(it.total) || 0);
 
   if (totalSkel) totalSkel.style.display = 'none';
   if (totalCv && totalData && !totalData.error) totalCv.style.display = 'block';
