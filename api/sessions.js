@@ -34,6 +34,15 @@ const getCell = (cell) => {
 };
 const toInt = (v) => { const n = parseInt(getCell(v)); return Number.isFinite(n) ? n : 0; };
 
+function normalizeCpfExpr(expr) {
+  const digits = `NULLIF(regexp_replace(TRIM(CAST(${expr} AS STRING)), '[^0-9]', ''), '')`;
+  return `CASE
+    WHEN ${digits} IS NULL THEN NULL
+    WHEN LENGTH(${digits}) < 11 THEN LPAD(${digits}, 11, '0')
+    ELSE ${digits}
+  END`;
+}
+
 const SESSION_TABLE = `hive_metastore.sanus_prod.botmaker_session`;
 const VW_BENEFICIARIOS = `sanus_databricks.sanus_prod.vw_beneficiarios`;
 const ORGANIZATIONS_TABLE = `sanus_databricks.sanus_prod.organizations`;
@@ -61,6 +70,28 @@ function jsonValueExpr(variablesColumn, keys) {
     `NULLIF(TRIM(get_json_object(${variables}, '$.${key}.value')), '')`,
   ]);
   return `COALESCE(${expressions.join(', ')})`;
+}
+
+function sessionCpfExpr(variablesColumn) {
+  if (!variablesColumn) return null;
+  const variables = `CAST(${quoteIdent(variablesColumn)} AS STRING)`;
+  const jsonCpf = jsonValueExpr(variablesColumn, [
+    'inputcpfholder',
+    'inputCpfHolder',
+    'input_cpf_holder',
+    'cpf_holder',
+    'cpfHolder',
+    'cpf',
+    'CPF',
+    'document',
+    'documento',
+    'document_number',
+    'documentNumber',
+    'cpf_beneficiario',
+    'cpfBeneficiario',
+  ]);
+  const regexCpf = `NULLIF(regexp_extract(${variables}, '([0-9]{3}[. -]?[0-9]{3}[. -]?[0-9]{3}[. -]?[0-9]{2})', 1), '')`;
+  return normalizeCpfExpr(`COALESCE(${jsonCpf}, ${regexCpf})`);
 }
 
 function orgIdsSubquery(groupName, company) {
@@ -139,7 +170,10 @@ export default async function handler(req, res) {
     if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
 
     const needsSessionColumns = meses.length > 0 || Boolean(groupName || company);
-    const sessionColumns = needsSessionColumns ? await getColumns(wh.id, SESSION_TABLE) : [];
+    const [sessionColumns, beneficiaryViewColumns] = await Promise.all([
+      needsSessionColumns ? getColumns(wh.id, SESSION_TABLE) : Promise.resolve([]),
+      useCompanyFilterSum ? getColumns(wh.id, VW_BENEFICIARIOS) : Promise.resolve([]),
+    ]);
     const sessionDateColumn = pickColumn(sessionColumns, [
       'created_at',
       'createdAt',
@@ -188,6 +222,20 @@ export default async function handler(req, res) {
       'economicGroup',
       'group_name',
       'groupName',
+    ]);
+    const beneficiaryCpfColumn = pickColumn(beneficiaryViewColumns, [
+      'cpf',
+      'CPF',
+      'cpf_beneficiario',
+      'CPF_BENEFICIARIO',
+      'document',
+      'DOCUMENT',
+      'documento',
+      'DOCUMENTO',
+      'document_number',
+      'DOCUMENT_NUMBER',
+      'cpf_holder',
+      'CPF_HOLDER',
     ]);
     const sessionDateFilter = meses.length > 0 && sessionDateColumn
       ? `DATE_FORMAT(try_cast(${quoteIdent(sessionDateColumn)} AS TIMESTAMP), 'yyyy-MM') IN (${meses.map((m) => `'${m}'`).join(',')})`
@@ -242,10 +290,12 @@ export default async function handler(req, res) {
     const sessionOrgFilter = sessionOrgConditions.length ? `(${sessionOrgConditions.join(' OR ')})` : null;
     const sessionFilters = [sessionDateFilter, sessionOrgFilter].filter(Boolean);
     const sessionWhere = sessionFilters.length ? `WHERE ${sessionFilters.join(' AND ')}` : '';
+    const sessionCpfFilterExpr = sessionCpfExpr(variablesColumn);
+    const canFilterFinishersByBeneficiaryCpf = useCompanyFilterSum && Boolean(beneficiaryCpfColumn && sessionCpfFilterExpr);
     const finishersFilterApplied = {
       period: meses.length === 0 || Boolean(sessionDateColumn),
-      organization: !groupName && !company ? true : Boolean(sessionOrgFilter),
-      type: !typeFilter,
+      organization: !groupName && !company ? true : Boolean(canFilterFinishersByBeneficiaryCpf || sessionOrgFilter),
+      type: !typeFilter || canFilterFinishersByBeneficiaryCpf,
     };
 
     const totalPromise = useCompanyFilterSum
@@ -263,21 +313,51 @@ export default async function handler(req, res) {
         ${sessionDateFilter ? `WHERE ${sessionDateFilter}` : ''}
       `);
 
-    const finishersPromise = runQuery(wh.id, `
-      SELECT
-        CASE
-          WHEN finished_by IS NOT NULL THEN 'Humano'
-          ELSE 'IA'
-        END AS tipo_atendimento,
-        COUNT(*) AS total_sessions
-      FROM ${SESSION_TABLE}
-      ${sessionWhere}
-      GROUP BY
-        CASE
-          WHEN finished_by IS NOT NULL THEN 'Humano'
-          ELSE 'IA'
-        END
-    `);
+    const finishersPromise = canFilterFinishersByBeneficiaryCpf
+      ? runQuery(wh.id, `
+        WITH filtered_cpfs AS (
+          SELECT DISTINCT ${normalizeCpfExpr(`b.${quoteIdent(beneficiaryCpfColumn)}`)} AS cpf
+          FROM ${VW_BENEFICIARIOS} b
+          WHERE NOME_CLIENTE IS NOT NULL
+            ${extraFilter}
+            AND ${normalizeCpfExpr(`b.${quoteIdent(beneficiaryCpfColumn)}`)} IS NOT NULL
+        ),
+        sessions_resolved AS (
+          SELECT
+            finished_by,
+            ${sessionCpfFilterExpr} AS cpf
+          FROM ${SESSION_TABLE}
+          ${sessionDateFilter ? `WHERE ${sessionDateFilter}` : ''}
+        )
+        SELECT
+          CASE
+            WHEN finished_by IS NOT NULL THEN 'Humano'
+            ELSE 'IA'
+          END AS tipo_atendimento,
+          COUNT(*) AS total_sessions
+        FROM sessions_resolved
+        WHERE cpf IN (SELECT cpf FROM filtered_cpfs)
+        GROUP BY
+          CASE
+            WHEN finished_by IS NOT NULL THEN 'Humano'
+            ELSE 'IA'
+          END
+      `)
+      : runQuery(wh.id, `
+        SELECT
+          CASE
+            WHEN finished_by IS NOT NULL THEN 'Humano'
+            ELSE 'IA'
+          END AS tipo_atendimento,
+          COUNT(*) AS total_sessions
+        FROM ${SESSION_TABLE}
+        ${sessionWhere}
+        GROUP BY
+          CASE
+            WHEN finished_by IS NOT NULL THEN 'Humano'
+            ELSE 'IA'
+          END
+      `);
 
     const [rows, finisherRows] = await Promise.all([totalPromise, finishersPromise]);
     const finishers = finisherRows.map((r) => ({
