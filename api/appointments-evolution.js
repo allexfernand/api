@@ -113,6 +113,11 @@ export default async function handler(req, res) {
         COUNT(*) AS total
       FROM ${APPOINTMENTS_TABLE}
       WHERE motivo = 'Concluído com sucesso'
+        AND UPPER(TRIM(COALESCE(motivo, ''))) NOT IN (
+          'ATENDIMENTO WHATSAPP',
+          'ATENDIMENTO HUMANO',
+          'FORA DO HORARIO DE ATEDIMENTO'
+        )
         AND ${monthExpr} IN ${monthInList}
         ${groupFilter}
         ${companyFilter}
