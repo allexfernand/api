@@ -2,6 +2,8 @@
 const HOST  = process.env.DATABRICKS_HOST;
 const TOKEN = process.env.DATABRICKS_TOKEN;
 const HEADERS = { "Authorization": `Bearer ${TOKEN}`, "Content-Type": "application/json" };
+const APPOINTMENTS_TABLE = `hive_metastore.sanus_prod.atendimento_summarized_gold_live`;
+const APPOINTMENTS_DATE_COLUMN = 'hora_criacao_atendimento';
 
 async function dbFetch(path, options = {}) {
   const res = await fetch(`${HOST}${path}`, { ...options, headers: { ...HEADERS, ...(options.headers || {}) } });
@@ -30,6 +32,29 @@ const getCell = (cell) => {
   return cell;
 };
 const toInt = (v) => { const n = parseInt(getCell(v)); return Number.isFinite(n) ? n : 0; };
+const escape = (s) => String(s).replace(/'/g, "''");
+const quoteIdent = (s) => `\`${String(s).replace(/`/g, "``")}\``;
+
+function lastNMonthsList(n) {
+  const out = [];
+  const d = new Date();
+  d.setUTCDate(1);
+  for (let i = n - 1; i >= 0; i--) {
+    const dd = new Date(d);
+    dd.setUTCMonth(d.getUTCMonth() - i);
+    const y = dd.getUTCFullYear();
+    const m = String(dd.getUTCMonth() + 1).padStart(2, '0');
+    out.push(`${y}-${m}`);
+  }
+  return out;
+}
+
+function nextMonth(month) {
+  const [year, mm] = month.split('-').map((value) => parseInt(value, 10));
+  const d = new Date(Date.UTC(year, mm - 1, 1));
+  d.setUTCMonth(d.getUTCMonth() + 1);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+}
 
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -39,13 +64,14 @@ export default async function handler(req, res) {
 
   const meses     = req.query.meses ? req.query.meses.split(',').filter(m => /^\d{4}-\d{2}$/.test(m)) : [];
   const groupName = req.query.group_name || null;
-
-  const periodoFilter = meses.length > 0
-    ? `AND DATE_FORMAT(hora_criacao_atendimento, 'yyyy-MM') IN (${meses.map(m => `'${m}'`).join(',')})`
-    : '';
+  const monthList = meses.length ? meses.sort() : lastNMonthsList(Math.min(Math.max(parseInt(req.query.months) || 12, 1), 24));
+  const monthRangeFilter = monthList.map((month) => `(
+    ${quoteIdent(APPOINTMENTS_DATE_COLUMN)} >= '${month}-01'
+    AND ${quoteIdent(APPOINTMENTS_DATE_COLUMN)} < '${nextMonth(month)}-01'
+  )`).join(' OR ');
 
   const groupFilter = groupName
-    ? `AND grupo_economico LIKE '%${groupName.replace(/'/g, "''")}'`
+    ? `AND grupo_economico LIKE '%${escape(groupName)}'`
     : '';
 
   try {
@@ -55,13 +81,30 @@ export default async function handler(req, res) {
 
     const rows = await runQuery(wh.id, `
       SELECT COUNT(*) AS total_tickets
-      FROM hive_metastore.sanus_prod.atendimento_gold_live
-      WHERE motivo = 'Concluído com sucesso'
-        ${periodoFilter}
+      FROM ${APPOINTMENTS_TABLE}
+      WHERE (${monthRangeFilter})
+        AND UPPER(assunto) NOT IN (
+          'ATENDIMENTO WHATSAPP',
+          'ATENDIMENTO HUMANO',
+          'FORA DE HORÁRIO DE ATENDIMENTO'
+        )
+        AND LOWER(COALESCE(CAST(assunto AS STRING), '')) NOT LIKE '%http%'
+        AND UPPER(COALESCE(CAST(assunto AS STRING), '')) NOT LIKE '%ATENDIMENTO HUMANO%'
+        AND UPPER(TRIM(REGEXP_REPLACE(COALESCE(CAST(assunto AS STRING), ''), '[^A-Za-z0-9]+', ' '))) NOT LIKE '%ATENDIMENTO%HUMANO%'
+        AND NOT (
+          assunto RLIKE '^[A-Z][a-z]+ [A-Z]'
+          OR assunto RLIKE '^[A-Z][A-Z]+ [A-Z]'
+          OR assunto RLIKE '^ [A-Z]'
+        )
         ${groupFilter}
     `);
 
-    res.status(200).json({ total: toInt(rows[0]?.[0]) });
+    res.status(200).json({
+      total: toInt(rows[0]?.[0]),
+      months: monthList,
+      source: "atendimento_summarized_gold_live",
+      filters: { group_name: groupName },
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
