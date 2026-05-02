@@ -1641,12 +1641,14 @@ async function renderSessionsAttendanceChart(labels, monthValues, sessionValues,
 
   if (sessionsAttendanceChart) sessionsAttendanceChart.destroy();
   if (skel) skel.style.display = 'none';
-  if (modeLabel && averageRatio !== null) {
-    const ratioLabel = averageRatio.toFixed(1).replace('.', ',');
+  if (modeLabel && (averageRatio !== null || averageBeneficiaryRatio !== null)) {
+    const ratioLabel = averageRatio !== null
+      ? ` · média ${averageRatio.toFixed(1).replace('.', ',')} sessões/agendamento`
+      : '';
     const beneficiaryLabel = averageBeneficiaryRatio !== null
       ? ` · ${averageBeneficiaryRatio.toFixed(1).replace('.', ',')} sessões/100 beneficiários`
       : '';
-    modeLabel.textContent = `${modeLabel.textContent} · média ${ratioLabel} sessões/agendamento${beneficiaryLabel}`;
+    modeLabel.textContent = `${modeLabel.textContent}${ratioLabel}${beneficiaryLabel}`;
   }
   cv.style.display = 'block';
   if (cv) sessionsAttendanceChart = new Chart(cv, {
@@ -1716,11 +1718,11 @@ async function renderSessionsAttendanceChart(labels, monthValues, sessionValues,
           titleColor: '#94a3b8', bodyColor: '#f1f5f9',
           callbacks: {
             label: c => {
-              if (c.dataset.yAxisID === 'ratio') {
-                return `${c.dataset.label}: ${Number(c.parsed.y).toFixed(1).replace('.', ',')} sessões/agendamento`;
-              }
               if (c.dataset.label === 'Sessões por 100 beneficiários') {
                 return `${c.dataset.label}: ${Number(c.parsed.y).toFixed(1).replace('.', ',')}`;
+              }
+              if (c.dataset.yAxisID === 'ratio') {
+                return `${c.dataset.label}: ${Number(c.parsed.y).toFixed(1).replace('.', ',')} sessões/agendamento`;
               }
               return `${c.dataset.label}: ${fmt(c.parsed.y)}`;
             },
