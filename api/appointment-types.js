@@ -78,6 +78,7 @@ export default async function handler(req, res) {
     : '';
 
   const typeExpr = `CASE
+    WHEN UPPER(assunto) LIKE '%DASA%' THEN 'Exames - DASA'
     WHEN UPPER(assunto) LIKE '%CONEXA%' AND UPPER(assunto) LIKE '%PA%' THEN 'Conexa PA'
     WHEN UPPER(assunto) LIKE '%CONEXA%' THEN 'Conexa Eletiva'
     WHEN tipo_solicitacao = 'Médico' THEN 'Consultas'
