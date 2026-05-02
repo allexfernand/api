@@ -723,7 +723,31 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
     </div>
 
     <div class="card-box">
-      <div class="section-title"><i class="fa-solid fa-stethoscope" style="margin-right:6px"></i>Tipos de consulta</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+        <div class="section-title" style="margin-bottom:0"><i class="fa-solid fa-stethoscope" style="margin-right:6px"></i>Tipos de consulta</div>
+        <div style="position:relative">
+          <button id="appointment-types-periodo-btn" onclick="toggleAppointmentTypesPeriodoDropdown()" style="font-size:12px;padding:5px 12px;border-radius:6px;border:1px solid #ddd;background:#fff;color:#333;cursor:pointer;min-width:200px;text-align:left;display:flex;align-items:center;justify-content:space-between;gap:8px">
+            <span id="appointment-types-periodo-label">(Todos os meses)</span>
+            <i class="fa-solid fa-chevron-down" style="font-size:10px;color:#94a3b8"></i>
+          </button>
+          <div id="appointment-types-periodo-dropdown" style="display:none;position:absolute;top:36px;right:0;background:#fff;border:1px solid #e2e8f0;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.1);z-index:999;min-width:280px;padding:8px">
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 8px 8px;border-bottom:1px solid #f1f5f9;margin-bottom:6px">
+              <span style="font-size:11px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.5px">Últimos 12 meses</span>
+              <div style="display:flex;gap:8px">
+                <button onclick="selectAllAppointmentTypesPeriodo()" style="font-size:11px;color:#6366f1;background:none;border:none;cursor:pointer;font-weight:600">Selecionar tudo</button>
+                <button onclick="clearAppointmentTypesPeriodo()" style="font-size:11px;color:#94a3b8;background:none;border:none;cursor:pointer">Limpar</button>
+              </div>
+            </div>
+            <div id="appointment-types-periodo-options" style="max-height:240px;overflow-y:auto;display:grid;grid-template-columns:1fr 1fr;gap:2px"></div>
+            <div style="border-top:1px solid #f1f5f9;margin-top:6px;padding-top:6px">
+              <label style="display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:6px;cursor:pointer;font-size:12px;color:#6366f1;font-weight:600">
+                <input type="checkbox" id="appointment-types-cb-tudo" style="accent-color:#6366f1" onchange="onAppointmentTypesTudoChange(this)"/>
+                Tudo (sem filtro de período)
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
       <div class="loading-box" id="appointment-types-loading"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...</div>
       <div id="appointment-types-content" style="display:none">
         <div style="font-size:11px;color:#94a3b8;margin-bottom:10px">Agrupamento por assunto/tipo de solicitação · <code>atendimento_summarized_gold_live</code></div>
@@ -887,6 +911,8 @@ const mN = {'01':'Jan','02':'Fev','03':'Mar','04':'Abr','05':'Mai','06':'Jun','0
 let usersData = [], companiesData = [], eChart, agegroupChart, sessionsEvolChart, sessionsTotalEvolChart, sessionMonthlyEvolutionChart, sessionsAttendanceChart;
 let currentGroup = '', currentType = '', currentCompany = '';
 let selectedMonths = new Set();
+let selectedAppointmentTypeMonths = new Set();
+let appointmentTypesBaseMonths = [];
 let sessionsMonthlySummaryData = null, sessionsMonthlySummaryItems = [], selectedSessionMonthlyBotCompanies = [];
 let qualityData = null, selectedQualityKey = null;
 
@@ -1099,6 +1125,102 @@ function updatePeriodoLabel() {
   lbl.textContent = `${selectedMonths.size} meses selecionados`;
 }
 
+function buildAppointmentTypesPeriodoOptions() {
+  const container = document.getElementById('appointment-types-periodo-options');
+  if (!container || container.children.length > 0) return;
+  const now = new Date();
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const val = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    const mm = String(d.getMonth()+1).padStart(2,'0');
+    const lbl = `${mN[mm]}/${d.getFullYear()}`;
+    const item = document.createElement('label');
+    item.style.cssText = 'display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:6px;cursor:pointer;font-size:12px;color:#334155';
+    item.onmouseover = () => item.style.background = '#f8fafc';
+    item.onmouseout = () => item.style.background = '';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.value = val;
+    cb.style.accentColor = '#6366f1';
+    cb.addEventListener('change', () => {
+      document.getElementById('appointment-types-cb-tudo').checked = false;
+      if (cb.checked) selectedAppointmentTypeMonths.add(val);
+      else selectedAppointmentTypeMonths.delete(val);
+      updateAppointmentTypesPeriodoLabel();
+      loadSessionAppointmentTypes();
+    });
+    item.appendChild(cb);
+    item.appendChild(document.createTextNode(lbl));
+    container.appendChild(item);
+  }
+}
+
+function toggleAppointmentTypesPeriodoDropdown() {
+  buildAppointmentTypesPeriodoOptions();
+  const dd = document.getElementById('appointment-types-periodo-dropdown');
+  if (dd) dd.style.display = dd.style.display === 'none' ? 'block' : 'none';
+}
+
+document.addEventListener('click', e => {
+  const btn = document.getElementById('appointment-types-periodo-btn');
+  const dd = document.getElementById('appointment-types-periodo-dropdown');
+  if (dd && btn && !btn.contains(e.target) && !dd.contains(e.target)) dd.style.display = 'none';
+});
+
+function selectAllAppointmentTypesPeriodo() {
+  buildAppointmentTypesPeriodoOptions();
+  const cbTudo = document.getElementById('appointment-types-cb-tudo');
+  if (cbTudo) cbTudo.checked = false;
+  document.querySelectorAll('#appointment-types-periodo-options input[type=checkbox]').forEach(cb => {
+    cb.checked = true;
+    selectedAppointmentTypeMonths.add(cb.value);
+  });
+  updateAppointmentTypesPeriodoLabel();
+  loadSessionAppointmentTypes();
+}
+
+function clearAppointmentTypesPeriodo(reload=true) {
+  const cbTudo = document.getElementById('appointment-types-cb-tudo');
+  if (cbTudo) cbTudo.checked = false;
+  document.querySelectorAll('#appointment-types-periodo-options input[type=checkbox]').forEach(cb => { cb.checked = false; });
+  selectedAppointmentTypeMonths.clear();
+  updateAppointmentTypesPeriodoLabel();
+  if (reload) loadSessionAppointmentTypes();
+}
+
+function onAppointmentTypesTudoChange(el) {
+  if (el.checked) {
+    document.querySelectorAll('#appointment-types-periodo-options input[type=checkbox]').forEach(cb => { cb.checked = false; });
+    selectedAppointmentTypeMonths.clear();
+    document.getElementById('appointment-types-periodo-label').textContent = 'Tudo';
+    loadSessionAppointmentTypes();
+  } else {
+    updateAppointmentTypesPeriodoLabel();
+    loadSessionAppointmentTypes();
+  }
+}
+
+function updateAppointmentTypesPeriodoLabel() {
+  const lbl = document.getElementById('appointment-types-periodo-label');
+  if (!lbl) return;
+  if (selectedAppointmentTypeMonths.size === 0) { lbl.textContent = '(Todos os meses)'; return; }
+  if (selectedAppointmentTypeMonths.size === 1) {
+    const [val] = selectedAppointmentTypeMonths;
+    const [y, mm] = val.split('-');
+    lbl.textContent = `${mN[mm]}/${y}`;
+    return;
+  }
+  lbl.textContent = `${selectedAppointmentTypeMonths.size} meses selecionados`;
+}
+
+function loadSessionAppointmentTypes() {
+  if (getActiveTab() !== 'sessoes') return;
+  const months = selectedAppointmentTypeMonths.size
+    ? [...selectedAppointmentTypeMonths].sort()
+    : appointmentTypesBaseMonths;
+  return loadAppointmentTypes(months, 'appointment-types');
+}
+
 // --- Agendamentos ---
 async function loadAppointments() {
   document.getElementById('bullet-agend').textContent = '…';
@@ -1207,6 +1329,7 @@ function renderSessionFinishers(items, filterApplied, opts) {
 }
 
 async function loadSessions() {
+  buildAppointmentTypesPeriodoOptions();
   const bullet = document.getElementById('bullet-sessoes');
   const periodoLabel = document.getElementById('bullet-sessoes-periodo');
   const finishersLoading = document.getElementById('session-finishers-loading');
@@ -1674,8 +1797,9 @@ async function loadSessionsEvolution() {
     },
   });
 
-  await renderSessionsAttendanceChart(labels, series.map((it) => it.mes), totalValues, data);
-  await loadAppointmentTypes(series.map((it) => it.mes));
+  appointmentTypesBaseMonths = series.map((it) => it.mes);
+  await renderSessionsAttendanceChart(labels, appointmentTypesBaseMonths, totalValues, data);
+  await loadSessionAppointmentTypes();
 }
 
 function getSessionMonthlyBotCompany(item) {
