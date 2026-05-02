@@ -1702,8 +1702,16 @@ async function loadSessionsDailyEvolution() {
     modeLabel.textContent = parts.join(' · ');
   }
 
+  const weekdayFmt = new Intl.DateTimeFormat('pt-BR', { weekday: 'short', timeZone: 'UTC' });
   const series = data.series || [];
-  const labels = series.map((it) => String(it.dia || '').slice(8, 10));
+  const labels = series.map((it) => {
+    const day = String(it.dia || '');
+    const date = new Date(`${day}T00:00:00Z`);
+    const weekday = Number.isNaN(date.getTime())
+      ? ''
+      : weekdayFmt.format(date).replace('.', '').replace(/^./, c => c.toUpperCase());
+    return [day.slice(8, 10), weekday];
+  });
   const totalValues = series.map((it) => Number(it.total) || 0);
   if (sessionsDailyChart) sessionsDailyChart.destroy();
   if (skel) skel.style.display = 'none';
@@ -1733,7 +1741,17 @@ async function loadSessionsDailyEvolution() {
           tooltip: {
             backgroundColor: '#1e293b', borderColor: '#334155', borderWidth: 1,
             titleColor: '#94a3b8', bodyColor: '#f1f5f9',
-            callbacks: { label: c => `${fmt(c.parsed.y)} sessões` },
+            callbacks: {
+              title: items => {
+                const idx = items[0]?.dataIndex ?? 0;
+                const raw = series[idx]?.dia;
+                if (!raw) return '';
+                const date = new Date(`${raw}T00:00:00Z`);
+                const weekday = Number.isNaN(date.getTime()) ? '' : weekdayFmt.format(date);
+                return `${raw.split('-').reverse().join('/')} · ${weekday}`;
+              },
+              label: c => `${fmt(c.parsed.y)} sessões`,
+            },
           },
         },
         scales: {
