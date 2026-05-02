@@ -50,8 +50,53 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .appointments-volume-scroll{flex:1;min-height:0;overflow:auto}
 .appointments-volume-table{width:100%;border-collapse:collapse;font-size:12px}
 .appointment-types-table{width:100%;border-collapse:collapse;font-size:12px}
+.quality-kpi-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-bottom:16px}
+.quality-kpi{background:#fff;border:1px solid #e8e8e8;border-radius:12px;padding:16px 18px;box-shadow:0 1px 4px rgba(0,0,0,.05)}
+.quality-kpi-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#94a3b8;margin-bottom:8px}
+.quality-kpi-value{font-size:28px;font-weight:800;line-height:1;color:#0b3b47;letter-spacing:-1px}
+.quality-kpi-note{font-size:11px;color:#94a3b8;margin-top:8px}
+.quality-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+.quality-main-grid{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:16px;align-items:start}
+.quality-pillar-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:0;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;background:#e2e8f0}
+.quality-pillar{background:#fff;padding:16px;text-align:center}
+.quality-pillar:not(:last-child){border-right:1px solid #e2e8f0}
+.quality-score{font-weight:800;color:#0b3b47}
+.quality-score.good{color:#0f8a6f}.quality-score.warn{color:#d97706}.quality-score.bad{color:#c53030}
+.quality-pillar-score{font-size:30px;line-height:1;margin-bottom:6px}
+.quality-pillar-name{font-size:12px;font-weight:600;color:#64748b;margin-bottom:10px}
+.quality-bar{height:6px;background:#f1f5f9;border-radius:999px;overflow:hidden}
+.quality-bar-fill{height:100%;border-radius:999px;background:#0f8a6f}
+.quality-bar-fill.warn{background:#d97706}.quality-bar-fill.bad{background:#c53030}
+.quality-dist-row{display:grid;grid-template-columns:110px minmax(0,1fr) 52px;gap:10px;align-items:center;margin-bottom:10px}
+.quality-dist-label{font-size:12px;font-weight:600;color:#64748b;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.quality-dist-track{height:20px;background:#f1f5f9;border-radius:5px;overflow:hidden;display:flex}
+.quality-dist-seg.s2{background:#0f8a6f}.quality-dist-seg.s1{background:#d97706}.quality-dist-seg.s0{background:#c53030}.quality-dist-seg.na{background:#cbd5e1}
+.quality-table{width:100%;border-collapse:collapse;font-size:12px}
+.quality-table th{text-align:left;padding:9px 10px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#94a3b8;border-bottom:1px solid #e2e8f0}
+.quality-table td{padding:10px;border-bottom:1px solid #f1f5f9;color:#334155}
+.quality-insight{background:linear-gradient(135deg,#0b3b47,#0f4d5c);color:#fff;border:none}
+.quality-insight.warning{background:linear-gradient(135deg,#2d0a3e,#4a1568)}
+.quality-insight .section-title{color:#7dd3c7;margin-bottom:10px}
+.quality-insight-title{font-size:17px;font-weight:800;margin-bottom:6px;letter-spacing:-.2px}
+.quality-insight-desc{font-size:13px;color:rgba(255,255,255,.82);line-height:1.45}
+.quality-list{display:flex;flex-direction:column;gap:4px}
+.quality-item{display:grid;grid-template-columns:46px minmax(0,1fr) auto auto;gap:12px;align-items:center;padding:12px;border-radius:10px;border:1px solid transparent;cursor:pointer}
+.quality-item:hover,.quality-item.active{background:#f8fafc;border-color:#e2e8f0}
+.quality-score-circle{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;font-size:13px;font-weight:800;background:#ecfdf5;color:#0f8a6f}
+.quality-score-circle.warn{background:#fef3c7;color:#b45309}.quality-score-circle.bad{background:#fee2e2;color:#b91c1c}
+.quality-item-title{font-size:13px;font-weight:700;color:#0f172a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.quality-item-meta{font-size:11px;color:#64748b;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.quality-pill{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;padding:4px 8px;border-radius:999px;background:#e6fffb;color:#0f766e;white-space:nowrap}
+.quality-detail-row{display:grid;grid-template-columns:48px minmax(0,1fr) 34px;gap:10px;align-items:start;padding:11px 0;border-bottom:1px solid #f1f5f9}
+.quality-detail-row:last-child{border-bottom:none}
+.quality-criterion-id{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;font-weight:700;color:#94a3b8;text-align:center}
+.quality-criterion-name{font-size:13px;font-weight:700;color:#0f172a;margin-bottom:2px}
+.quality-criterion-text{font-size:11.5px;color:#64748b;line-height:1.4}
+.quality-heat{width:32px;height:28px;border-radius:6px;display:grid;place-items:center;font-size:12px;font-weight:800;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:#f1f5f9;color:#94a3b8}
+.quality-heat.s2{background:#dcfce7;color:#15803d}.quality-heat.s1{background:#fef3c7;color:#b45309}.quality-heat.s0{background:#fee2e2;color:#b91c1c}
+@media (max-width:1100px){.quality-kpi-grid{grid-template-columns:repeat(3,1fr)}.quality-pillar-grid{grid-template-columns:repeat(3,1fr)}.quality-grid-2,.quality-main-grid{grid-template-columns:1fr}}
 @media (max-width:980px){.sessions-summary-grid,.sessions-appointments-grid{grid-template-columns:1fr}.sessions-summary-grid>.card-box,.sessions-summary-grid>.chart-card{height:auto;min-height:360px}.sessions-summary-grid .chart-wrap{height:300px;flex:none}.session-monthly-scroll{max-height:360px}.appointments-volume-scroll{max-height:320px}.container{padding:16px}.card-box{padding:20px}.chart-card{padding:18px}.chart-wrap{height:300px}}
-@media (max-width:640px){.header,.tabs,.filterbar{padding-left:16px;padding-right:16px}.tabs{overflow-x:auto}.tab{white-space:nowrap}.chart-wrap{height:260px}.filter-select,.session-monthly-filter-select{width:100%;max-width:none;min-width:0}}
+@media (max-width:640px){.header,.tabs,.filterbar{padding-left:16px;padding-right:16px}.tabs{overflow-x:auto}.tab{white-space:nowrap}.chart-wrap{height:260px}.filter-select,.session-monthly-filter-select{width:100%;max-width:none;min-width:0}.quality-kpi-grid{grid-template-columns:repeat(2,1fr)}.quality-item{grid-template-columns:46px minmax(0,1fr)}.quality-item>.quality-pill,.quality-item>span:last-child{display:none}}
 .skeleton{background:linear-gradient(90deg,#f0f0ee 25%,#e8e8e6 50%,#f0f0ee 75%);background-size:200% 100%;animation:shimmer 1.5s infinite;border-radius:6px;height:100%}
 @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
 .tab-content{display:none}.tab-content.active{display:block}
@@ -74,6 +119,8 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
   <div class="tab active" data-tab="demografica">Análise Demográfica</div>
   <div class="tab" data-tab="agendamentos">Agendamentos</div>
   <div class="tab" data-tab="sessoes">Sessões</div>
+  <div class="tab" data-tab="qualidade-estrategica">Qualidade · Estratégica</div>
+  <div class="tab" data-tab="qualidade-operacional">Qualidade · Operacional</div>
 </div>
 
 <div class="filterbar">
@@ -480,6 +527,135 @@ footer{text-align:center;padding:16px;font-size:10px;color:#ccc}
     <div style="text-align:center;padding:20px;color:#bbb;font-size:13px">Mais dados serão adicionados em breve.</div>
   </div>
 
+  <!-- Tab: Qualidade Estratégica -->
+  <div class="tab-content" id="tab-qualidade-estrategica">
+    <div class="card-box" style="display:flex;align-items:center;gap:20px;padding:20px 28px">
+      <div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#0b3b47,#4fc3b8);display:flex;align-items:center;justify-content:center">
+        <i class="fa-solid fa-shield-heart" style="font-size:20px;color:#fff"></i>
+      </div>
+      <div>
+        <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;margin-bottom:3px">Qualidade do Atendimento</div>
+        <div style="font-size:34px;font-weight:800;color:#0b3b47;letter-spacing:-1px;line-height:1" id="quality-head-score">—</div>
+        <div style="font-size:11px;color:#94a3b8;margin-top:3px" id="quality-head-period">Pipeline de avaliação · critérios silver</div>
+      </div>
+    </div>
+
+    <div class="quality-kpi-grid">
+      <div class="quality-kpi">
+        <div class="quality-kpi-label">Score geral</div>
+        <div class="quality-kpi-value" id="q-kpi-score">—</div>
+        <div class="quality-kpi-note">média dos critérios aplicáveis</div>
+      </div>
+      <div class="quality-kpi">
+        <div class="quality-kpi-label">Atendimentos avaliados</div>
+        <div class="quality-kpi-value" id="q-kpi-total">—</div>
+        <div class="quality-kpi-note" id="q-kpi-latest">último registro: —</div>
+      </div>
+      <div class="quality-kpi">
+        <div class="quality-kpi-label">Problema resolvido</div>
+        <div class="quality-kpi-value" id="q-kpi-resolved">—</div>
+        <div class="quality-kpi-note">quando disponível no summary</div>
+      </div>
+      <div class="quality-kpi">
+        <div class="quality-kpi-label">Critérios N/A</div>
+        <div class="quality-kpi-value" id="q-kpi-na">—</div>
+        <div class="quality-kpi-note">média do recorte atual</div>
+      </div>
+      <div class="quality-kpi">
+        <div class="quality-kpi-label">Pilar mais fraco</div>
+        <div class="quality-kpi-value" id="q-kpi-weak" style="font-size:18px;margin-top:6px">—</div>
+        <div class="quality-kpi-note">menor score por pilar</div>
+      </div>
+    </div>
+
+    <div class="card-box">
+      <div class="section-title"><i class="fa-solid fa-layer-group" style="margin-right:6px"></i>Performance por pilar</div>
+      <div class="loading-box" id="quality-strategic-loading"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando qualidade...</div>
+      <div id="quality-strategic-content" style="display:none">
+        <div class="quality-pillar-grid" id="quality-pillars"></div>
+      </div>
+    </div>
+
+    <div class="quality-grid-2">
+      <div class="card-box" style="margin-bottom:0">
+        <div class="section-title"><i class="fa-solid fa-chart-simple" style="margin-right:6px"></i>Distribuição por subcritério</div>
+        <div id="quality-criteria-dist"></div>
+        <div style="display:flex;gap:16px;margin-top:14px;padding-top:12px;border-top:1px solid #f1f5f9;font-size:11px;color:#64748b;flex-wrap:wrap">
+          <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#0f8a6f;margin-right:4px"></span>Nota 2</span>
+          <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#d97706;margin-right:4px"></span>Nota 1</span>
+          <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#c53030;margin-right:4px"></span>Nota 0</span>
+          <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#cbd5e1;margin-right:4px"></span>N/A</span>
+        </div>
+      </div>
+
+      <div class="card-box" style="margin-bottom:0">
+        <div class="section-title"><i class="fa-solid fa-ranking-star" style="margin-right:6px"></i>Ranking de colaboradores</div>
+        <div class="table-scroll">
+          <table class="quality-table">
+            <thead>
+              <tr><th>Colaborador</th><th style="text-align:right">Score</th><th style="text-align:right">Atend.</th></tr>
+            </thead>
+            <tbody id="quality-collab-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="quality-grid-2">
+      <div class="card-box" style="margin-bottom:0">
+        <div class="section-title"><i class="fa-solid fa-route" style="margin-right:6px"></i>Qualidade por linha de cuidado</div>
+        <div id="quality-care-lines"></div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div class="card-box quality-insight" style="margin-bottom:0">
+          <div class="section-title">Insight automático</div>
+          <div class="quality-insight-title" id="quality-insight-title">—</div>
+          <div class="quality-insight-desc" id="quality-insight-desc">—</div>
+        </div>
+        <div class="card-box quality-insight warning" style="margin-bottom:0">
+          <div class="section-title" style="color:#c084fc">Alerta de segurança</div>
+          <div class="quality-insight-title" id="quality-alert-title">—</div>
+          <div class="quality-insight-desc" id="quality-alert-desc">—</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab: Qualidade Operacional -->
+  <div class="tab-content" id="tab-qualidade-operacional">
+    <div class="card-box" style="display:flex;align-items:center;justify-content:space-between;gap:16px;padding:20px 28px;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:20px">
+        <div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#4fc3b8,#0f766e);display:flex;align-items:center;justify-content:center">
+          <i class="fa-solid fa-clipboard-check" style="font-size:20px;color:#fff"></i>
+        </div>
+        <div>
+          <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;margin-bottom:3px">Atendimentos Avaliados</div>
+          <div style="font-size:26px;font-weight:800;color:#0b3b47;letter-spacing:-.6px;line-height:1">Detalhamento por subcritério</div>
+          <div style="font-size:11px;color:#94a3b8;margin-top:5px" id="quality-operational-period">summary + criteria silver</div>
+        </div>
+      </div>
+      <input id="quality-search" type="text" placeholder="Buscar paciente, colaborador ou assunto..." oninput="renderQualityOperational()" style="font-size:12px;padding:8px 12px;border-radius:8px;border:1px solid #e2e8f0;outline:none;width:min(100%,320px);color:#334155"/>
+    </div>
+
+    <div class="quality-main-grid">
+      <div class="card-box">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px">
+          <div class="section-title" style="margin-bottom:0"><i class="fa-solid fa-list-ul" style="margin-right:6px"></i>Últimos atendimentos</div>
+          <span style="font-size:11px;color:#94a3b8" id="quality-operational-count">—</span>
+        </div>
+        <div class="loading-box" id="quality-operational-loading"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando atendimentos...</div>
+        <div class="quality-list" id="quality-items" style="display:none"></div>
+      </div>
+
+      <div class="card-box" id="quality-detail-card">
+        <div class="section-title"><i class="fa-solid fa-magnifying-glass-chart" style="margin-right:6px"></i>Detalhe do atendimento</div>
+        <div id="quality-detail">
+          <div style="text-align:center;padding:28px 12px;color:#94a3b8;font-size:13px">Selecione um atendimento para ver os critérios.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <footer>Dados ao vivo · Databricks SQL · <code>sanus_databricks.sanus_prod</code></footer>
@@ -493,6 +669,7 @@ let usersData = [], companiesData = [], eChart, agegroupChart, sessionsEvolChart
 let currentGroup = '', currentType = '', currentCompany = '';
 let selectedMonths = new Set();
 let sessionsMonthlySummaryData = null, sessionsMonthlySummaryItems = [], selectedSessionMonthlyBotCompanies = [];
+let qualityData = null, selectedQualityKey = null;
 
 // --- Tabs ---
 document.querySelectorAll('.tab').forEach(t => {
@@ -502,7 +679,7 @@ document.querySelectorAll('.tab').forEach(t => {
     t.classList.add('active');
     document.getElementById('tab-' + t.dataset.tab).classList.add('active');
     const activeTab = t.dataset.tab;
-    const hasPeriodo = activeTab === 'agendamentos' || activeTab === 'sessoes';
+    const hasPeriodo = activeTab === 'agendamentos' || activeTab === 'sessoes' || activeTab.startsWith('qualidade');
     document.getElementById('filter-periodo').style.display = hasPeriodo ? 'flex' : 'none';
     updateFilterVisibility();
     updateFilterInfo();
@@ -512,7 +689,8 @@ document.querySelectorAll('.tab').forEach(t => {
 
 function updateFilterVisibility() {
   const typeGroup = document.getElementById('filter-type-group');
-  if (typeGroup) typeGroup.style.display = getActiveTab() === 'sessoes' ? 'none' : 'flex';
+  const activeTab = getActiveTab();
+  if (typeGroup) typeGroup.style.display = (activeTab === 'sessoes' || activeTab.startsWith('qualidade')) ? 'none' : 'flex';
 }
 
 // --- Filtros ---
@@ -575,7 +753,8 @@ function updateFilterInfo() {
   const gSel = document.getElementById('group-select');
   if (currentGroup) parts.push(gSel.options[gSel.selectedIndex].text);
   if (currentCompany) parts.push(currentCompany);
-  if (currentType && getActiveTab() !== 'sessoes')  parts.push(currentType === 'TITULAR' ? 'Titular' : 'Dependente');
+  const activeTab = getActiveTab();
+  if (currentType && activeTab !== 'sessoes' && !activeTab.startsWith('qualidade')) parts.push(currentType === 'TITULAR' ? 'Titular' : 'Dependente');
   document.getElementById('filter-info').textContent = parts.length ? `Filtrando: ${parts.join(' · ')}` : '';
 }
 
@@ -595,7 +774,8 @@ function buildQS() {
   const p = new URLSearchParams();
   if (currentGroup)   p.set('group_name', currentGroup);
   if (currentCompany) p.set('company', currentCompany);
-  if (currentType && getActiveTab() !== 'sessoes') p.set('type', currentType);
+  const activeTab = getActiveTab();
+  if (currentType && activeTab !== 'sessoes' && !activeTab.startsWith('qualidade')) p.set('type', currentType);
   const s = p.toString();
   return s ? '?' + s : '';
 }
@@ -612,13 +792,14 @@ function getActiveTab() {
 
 function isPeriodFilteredTab() {
   const activeTab = getActiveTab();
-  return activeTab === 'agendamentos' || activeTab === 'sessoes';
+  return activeTab === 'agendamentos' || activeTab === 'sessoes' || activeTab.startsWith('qualidade');
 }
 
 function loadPeriodFilteredTab() {
   const activeTab = getActiveTab();
   if (activeTab === 'agendamentos') loadAppointments();
   else if (activeTab === 'sessoes') loadSessions();
+  else if (activeTab.startsWith('qualidade')) loadQuality();
 }
 
 // --- Período dropdown ---
@@ -1559,6 +1740,274 @@ async function safeGet(url) {
     console.error(`[safeGet] ${url} -> ${e.message}`);
     return { error: e.message };
   }
+}
+
+function setText(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = value;
+}
+
+function fmtPct(value, fallback='—') {
+  const n = Number(value);
+  return Number.isFinite(n) ? `${n.toFixed(1).replace('.', ',')}%` : fallback;
+}
+
+function qualityScoreClass(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 'warn';
+  if (n >= 80) return 'good';
+  if (n >= 60) return 'warn';
+  return 'bad';
+}
+
+function qualityPeriodLabel() {
+  const meses = [...selectedMonths].sort();
+  if (!meses.length) return 'últimos 30 dias';
+  if (meses.length === 1) {
+    const [y, mm] = meses[0].split('-');
+    return `${mN[mm]}/${y}`;
+  }
+  return `${meses.length} meses selecionados`;
+}
+
+function formatQualityDate(value) {
+  if (!value) return '—';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value).slice(0, 16);
+  return d.toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
+}
+
+function qualityInitials(name) {
+  return String(name || 'NA').split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join('').toUpperCase() || 'NA';
+}
+
+function escapeJs(s) {
+  return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, ' ');
+}
+
+async function loadQuality() {
+  setStatus('loading', '⏳ Carregando qualidade...');
+  const strategicLoading = document.getElementById('quality-strategic-loading');
+  const strategicContent = document.getElementById('quality-strategic-content');
+  const operationalLoading = document.getElementById('quality-operational-loading');
+  const operationalItems = document.getElementById('quality-items');
+  if (strategicLoading) {
+    strategicLoading.style.display = 'block';
+    strategicLoading.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando qualidade...';
+  }
+  if (strategicContent) strategicContent.style.display = 'none';
+  if (operationalLoading) {
+    operationalLoading.style.display = 'block';
+    operationalLoading.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando atendimentos...';
+  }
+  if (operationalItems) operationalItems.style.display = 'none';
+
+  const meses = [...selectedMonths].sort();
+  const p = new URLSearchParams();
+  if (meses.length > 0) p.set('meses', meses.join(','));
+  if (currentGroup) p.set('group_name', currentGroup);
+  if (currentCompany) p.set('company', currentCompany);
+  const data = await safeGet('/api/quality' + (p.toString() ? '?' + p.toString() : ''));
+
+  if (!data || data.error) {
+    const msg = data && data.error ? String(data.error).slice(0, 220) : 'Erro ao carregar qualidade';
+    if (strategicLoading) strategicLoading.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>' + msg;
+    if (operationalLoading) operationalLoading.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>' + msg;
+    setStatus('error', '✗ Erro qualidade');
+    return;
+  }
+
+  qualityData = data;
+  selectedQualityKey = null;
+  renderQualityStrategic();
+  renderQualityOperational();
+  setStatus('ok', '✓ Dados ao vivo');
+  document.getElementById('last-upd').textContent = 'Atualizado: ' + new Date().toLocaleTimeString('pt-BR');
+}
+
+function renderQualityStrategic() {
+  const strategic = qualityData?.strategic || {};
+  const kpis = strategic.kpis || {};
+  const score = Number(kpis.overall_score);
+  const scoreLabel = Number.isFinite(score) ? fmtPct(score) : '—';
+  const weak = kpis.weakest_pillar;
+  const period = qualityPeriodLabel();
+
+  setText('quality-head-score', scoreLabel);
+  setText('quality-head-period', `Pipeline de avaliação · ${period}`);
+  setText('q-kpi-score', scoreLabel);
+  setText('q-kpi-total', fmt(Number(kpis.evaluated) || 0));
+  setText('q-kpi-resolved', fmtPct(kpis.resolved_pct));
+  setText('q-kpi-na', fmtPct(kpis.na_pct));
+  setText('q-kpi-weak', weak ? `${weak.pillar_name} (${fmtPct(weak.score_pct)})` : '—');
+  setText('q-kpi-latest', `último registro: ${formatQualityDate(kpis.latest_at)}`);
+
+  const pillarsEl = document.getElementById('quality-pillars');
+  const pillars = strategic.pillars || [];
+  if (pillarsEl) {
+    pillarsEl.innerHTML = pillars.length ? pillars.map((pillar) => {
+      const pct = Number(pillar.score_pct) || 0;
+      const cls = qualityScoreClass(pct);
+      return `<div class="quality-pillar">
+        <div class="quality-pillar-score quality-score ${cls}">${fmtPct(pct)}</div>
+        <div class="quality-pillar-name">${escapeHtml(pillar.pillar_id)} · ${escapeHtml(pillar.pillar_name)}</div>
+        <div class="quality-bar"><div class="quality-bar-fill ${cls}" style="width:${Math.max(0, Math.min(100, pct))}%"></div></div>
+      </div>`;
+    }).join('') : '<div style="grid-column:1/-1;padding:20px;text-align:center;color:#94a3b8;background:#fff">Nenhum pilar encontrado no recorte.</div>';
+  }
+
+  const criteria = [...(strategic.criteria || [])]
+    .filter((item) => item.total > 0)
+    .sort((a, b) => (Number(a.score_pct) || 0) - (Number(b.score_pct) || 0))
+    .slice(0, 10);
+  const distEl = document.getElementById('quality-criteria-dist');
+  if (distEl) {
+    distEl.innerHTML = criteria.length ? criteria.map((item) => {
+      const pct = Number(item.score_pct) || 0;
+      const cls = qualityScoreClass(pct);
+      return `<div class="quality-dist-row">
+        <div class="quality-dist-label" title="${escapeAttr(item.criterion_id + ' ' + item.criterion_name)}">${escapeHtml(item.criterion_id)} ${escapeHtml(item.criterion_name)}</div>
+        <div class="quality-dist-track">
+          <div class="quality-dist-seg s2" style="width:${item.pct_2 || 0}%"></div>
+          <div class="quality-dist-seg s1" style="width:${item.pct_1 || 0}%"></div>
+          <div class="quality-dist-seg s0" style="width:${item.pct_0 || 0}%"></div>
+          <div class="quality-dist-seg na" style="width:${item.pct_na || 0}%"></div>
+        </div>
+        <div class="quality-score ${cls}" style="font-size:12px;text-align:right">${fmtPct(pct)}</div>
+      </div>`;
+    }).join('') : '<div class="loading-box">Nenhum subcritério encontrado.</div>';
+  }
+
+  const collabTbody = document.getElementById('quality-collab-tbody');
+  const collaborators = strategic.collaborators || [];
+  if (collabTbody) {
+    collabTbody.innerHTML = collaborators.length ? collaborators.map((item) => {
+      const scoreValue = Number(item.score_pct);
+      const cls = qualityScoreClass(scoreValue);
+      return `<tr>
+        <td><div style="display:flex;align-items:center;gap:8px"><span style="width:28px;height:28px;border-radius:50%;background:#e6fffb;color:#0f766e;display:grid;place-items:center;font-size:11px;font-weight:800">${escapeHtml(qualityInitials(item.name))}</span>${escapeHtml(item.name)}</div></td>
+        <td style="text-align:right"><span class="quality-score ${cls}">${fmtPct(scoreValue)}</span></td>
+        <td style="text-align:right;font-weight:700">${fmt(Number(item.total) || 0)}</td>
+      </tr>`;
+    }).join('') : '<tr><td colspan="3" style="text-align:center;color:#94a3b8;padding:16px">Ranking indisponível no schema atual.</td></tr>';
+  }
+
+  const careEl = document.getElementById('quality-care-lines');
+  const careLines = strategic.care_lines || [];
+  if (careEl) {
+    careEl.innerHTML = careLines.length ? careLines.map((item) => {
+      const pct = Number(item.score_pct) || 0;
+      const cls = qualityScoreClass(pct);
+      return `<div class="quality-dist-row">
+        <div class="quality-dist-label">${escapeHtml(item.name)}</div>
+        <div class="quality-bar"><div class="quality-bar-fill ${cls}" style="width:${Math.max(0, Math.min(100, pct))}%"></div></div>
+        <div class="quality-score ${cls}" style="font-size:12px;text-align:right">${fmtPct(pct)}</div>
+      </div>`;
+    }).join('') : '<div class="loading-box">Linha de cuidado indisponível no schema atual.</div>';
+  }
+
+  const insights = strategic.insights || [];
+  setText('quality-insight-title', insights[0]?.title || 'Sem insight disponível');
+  setText('quality-insight-desc', insights[0]?.description || 'Os dados do recorte atual não retornaram critérios suficientes.');
+  setText('quality-alert-title', insights[1]?.title || 'Sem alerta crítico');
+  setText('quality-alert-desc', insights[1]?.description || 'Não há sinal de segurança destacado no recorte atual.');
+
+  const loading = document.getElementById('quality-strategic-loading');
+  const content = document.getElementById('quality-strategic-content');
+  if (loading) loading.style.display = 'none';
+  if (content) content.style.display = 'block';
+}
+
+function renderQualityOperational() {
+  const itemsEl = document.getElementById('quality-items');
+  const loading = document.getElementById('quality-operational-loading');
+  const items = qualityData?.operational?.items || [];
+  const query = (document.getElementById('quality-search')?.value || '').trim().toLowerCase();
+  const filtered = query ? items.filter((item) => {
+    const haystack = [item.patient_name, item.collaborator_name, item.care_line, item.subject, item.summary_text].join(' ').toLowerCase();
+    return haystack.includes(query);
+  }) : items;
+
+  setText('quality-operational-count', `${fmt(filtered.length)} de ${fmt(items.length)} atendimentos`);
+  setText('quality-operational-period', `summary + criteria silver · ${qualityPeriodLabel()}`);
+
+  if (!selectedQualityKey || !filtered.some((item) => item.key === selectedQualityKey)) {
+    selectedQualityKey = filtered[0]?.key || null;
+  }
+
+  if (itemsEl) {
+    itemsEl.innerHTML = filtered.length ? filtered.map((item) => {
+      const score = Number(item.score_pct);
+      const cls = qualityScoreClass(score);
+      const scoreText = Number.isFinite(score) ? Math.round(score) : '—';
+      const status = item.resolved >= 0.5 ? 'Resolvido' : (item.status || 'Pendente');
+      const active = item.key === selectedQualityKey ? ' active' : '';
+      return `<div class="quality-item${active}" onclick="selectQualityItem('${escapeJs(item.key)}')">
+        <div class="quality-score-circle ${cls}">${scoreText}</div>
+        <div style="min-width:0">
+          <div class="quality-item-title">${escapeHtml(item.patient_name)} · ${escapeHtml(item.collaborator_name)}</div>
+          <div class="quality-item-meta">${escapeHtml(item.subject || item.summary_text || 'Sem resumo')} · ${formatQualityDate(item.created_at)}</div>
+        </div>
+        <span class="quality-pill">${escapeHtml(item.care_line || 'sem linha')}</span>
+        <span style="font-size:11px;color:#94a3b8;white-space:nowrap">${escapeHtml(status)}</span>
+      </div>`;
+    }).join('') : '<div class="loading-box">Nenhum atendimento encontrado no recorte.</div>';
+    itemsEl.style.display = 'flex';
+  }
+
+  if (loading) loading.style.display = 'none';
+  renderQualityDetail();
+}
+
+function selectQualityItem(key) {
+  selectedQualityKey = key;
+  renderQualityOperational();
+}
+
+function renderQualityDetail() {
+  const detail = document.getElementById('quality-detail');
+  const items = qualityData?.operational?.items || [];
+  const item = items.find((entry) => entry.key === selectedQualityKey);
+  if (!detail) return;
+  if (!item) {
+    detail.innerHTML = '<div style="text-align:center;padding:28px 12px;color:#94a3b8;font-size:13px">Selecione um atendimento para ver os critérios.</div>';
+    return;
+  }
+  const score = Number(item.score_pct);
+  const cls = qualityScoreClass(score);
+  const criteria = item.criteria || [];
+  const criteriaHtml = criteria.length ? criteria.map((criterion) => {
+    const scoreValue = criterion.score;
+    const heatClass = scoreValue === 2 ? 's2' : scoreValue === 1 ? 's1' : scoreValue === 0 ? 's0' : '';
+    const scoreLabel = scoreValue === null || scoreValue === undefined ? 'N/A' : scoreValue;
+    return `<div class="quality-detail-row">
+      <div class="quality-criterion-id">${escapeHtml(criterion.criterion_id)}</div>
+      <div>
+        <div class="quality-criterion-name">${escapeHtml(criterion.criterion_name)}</div>
+        <div class="quality-criterion-text">${escapeHtml(criterion.justification || 'Sem justificativa registrada.')}</div>
+        ${criterion.evidence ? `<div class="quality-criterion-text" style="font-style:italic;margin-top:3px">"${escapeHtml(criterion.evidence)}"</div>` : ''}
+      </div>
+      <div class="quality-heat ${heatClass}">${escapeHtml(scoreLabel)}</div>
+    </div>`;
+  }).join('') : '<div style="text-align:center;padding:18px 8px;color:#94a3b8;font-size:13px">Sem critérios vinculados a este atendimento.</div>';
+
+  detail.innerHTML = `<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px">
+      <div>
+        <div style="font-size:17px;font-weight:800;color:#0f172a;letter-spacing:-.2px">${escapeHtml(item.patient_name)}</div>
+        <div style="font-size:12px;color:#64748b;margin-top:3px">${escapeHtml(item.collaborator_name)} · ${formatQualityDate(item.created_at)}</div>
+      </div>
+      <div style="text-align:right">
+        <div class="quality-score ${cls}" style="font-size:28px;font-weight:800;line-height:1">${fmtPct(score)}</div>
+        <div style="font-size:11px;color:#94a3b8;margin-top:3px">${fmt(criteria.length)} critérios</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
+      <span class="quality-pill">${escapeHtml(item.care_line || 'sem linha')}</span>
+      ${item.subject ? `<span class="quality-pill" style="background:#f1f5f9;color:#64748b">${escapeHtml(item.subject)}</span>` : ''}
+    </div>
+    ${item.summary_text ? `<div style="font-size:12px;color:#475569;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;margin-bottom:14px">${escapeHtml(item.summary_text)}</div>` : ''}
+    <div style="font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">Avaliação por subcritério</div>
+    <div>${criteriaHtml}</div>`;
 }
 
 async function loadDemographics() {
