@@ -5,7 +5,7 @@ const HOST  = process.env.DATABRICKS_HOST;
 const TOKEN = process.env.DATABRICKS_TOKEN;
 const HEADERS = { "Authorization": `Bearer ${TOKEN}`, "Content-Type": "application/json" };
 
-const APPOINTMENTS_TABLE = `sanus_databricks.sanus_prod.atendimento_summarized_gold_live`;
+const APPOINTMENTS_TABLE = `hive_metastore.sanus_prod.atendimento_summarized_gold_live`;
 const APPOINTMENTS_DATE_COLUMN = 'hora_criacao_atendimento';
 
 async function dbFetch(path, options = {}) {
