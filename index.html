@@ -221,6 +221,10 @@ body {
 .appointments-volume-scroll{flex:1;min-height:0;overflow:auto}
 .appointments-volume-table{width:100%;border-collapse:collapse;font-size:12px}
 .appointment-types-table{width:100%;border-collapse:collapse;font-size:12px}
+.appointments-analysis-grid{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(320px,.75fr);gap:16px;align-items:stretch;margin-bottom:16px}
+.appointments-analysis-grid>.card-box,.appointments-analysis-grid>.chart-card{margin-bottom:0}
+.appointment-trend-meta{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.appointment-trend-pill{font-size:11px;font-weight:700;color:#4338ca;background:#eef2ff;border:1px solid #c7d2fe;border-radius:999px;padding:4px 10px}
 
 .quality-kpi-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-bottom:16px}
 .quality-kpi {
@@ -310,7 +314,7 @@ body {
   .quality-grid-2,.quality-main-grid{grid-template-columns:1fr}
 }
 @media (max-width:980px){
-  .sessions-summary-grid,.sessions-appointments-grid{grid-template-columns:1fr}
+  .appointments-analysis-grid,.sessions-summary-grid,.sessions-appointments-grid{grid-template-columns:1fr}
   .sessions-summary-grid>.card-box,.sessions-summary-grid>.chart-card{height:auto;min-height:360px}
   .sessions-summary-grid .chart-wrap{height:300px;flex:none}
   .session-monthly-scroll{max-height:360px}
@@ -555,24 +559,39 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
       </div>
     </div>
 
-    <div class="card-box">
-      <div class="section-title"><i class="fa-solid fa-stethoscope" style="margin-right:6px"></i>Tipos de consulta</div>
-      <div class="loading-box" id="agendamento-appointment-types-loading"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...</div>
-      <div id="agendamento-appointment-types-content" style="display:none">
-        <div style="font-size:11px;color:#94a3b8;margin-bottom:10px">Agrupamento por assunto/tipo de solicitação · <code>atendimento_summarized_gold_live</code></div>
-        <div class="table-scroll">
-          <table class="appointment-types-table">
-            <thead>
-              <tr style="border-bottom:1px solid #e2e8f0;color:#64748b">
-                <th style="text-align:left;padding:9px 10px;font-weight:600">Tipo</th>
-                <th style="text-align:right;padding:9px 10px;font-weight:600">Total</th>
-                <th style="text-align:right;padding:9px 10px;font-weight:600">%</th>
-              </tr>
-            </thead>
-            <tbody id="agendamento-appointment-types-tbody"></tbody>
-          </table>
+    <div class="appointments-analysis-grid">
+      <div class="chart-card">
+        <h2 style="font-size:13px;font-weight:700;color:#334155;margin-bottom:4px">Tipos de consulta por mês</h2>
+        <div class="appointment-trend-meta">
+          <div style="font-size:11px;color:#94a3b8">Mês atual + 3 meses anteriores · barras empilhadas</div>
+          <div class="appointment-trend-pill" id="appointment-types-trend-period">Últimos 4 meses</div>
         </div>
-        <div style="font-size:11px;color:#94a3b8;margin-top:10px;text-align:right" id="agendamento-appointment-types-meta">—</div>
+        <div class="chart-wrap" style="height:clamp(280px,34vw,380px)">
+          <div class="skeleton" id="skel-appointment-types-trend"></div>
+          <canvas id="appointmentTypesTrendChart" style="display:none"></canvas>
+        </div>
+        <div style="font-size:11px;color:#64748b;margin-top:10px;text-align:right" id="appointment-types-trend-meta">—</div>
+      </div>
+
+      <div class="card-box">
+        <div class="section-title"><i class="fa-solid fa-stethoscope" style="margin-right:6px"></i>Tipos de consulta</div>
+        <div class="loading-box" id="agendamento-appointment-types-loading"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...</div>
+        <div id="agendamento-appointment-types-content" style="display:none">
+          <div style="font-size:11px;color:#94a3b8;margin-bottom:10px">Agrupamento por assunto/tipo de solicitação · <code>atendimento_summarized_gold_live</code></div>
+          <div class="table-scroll">
+            <table class="appointment-types-table">
+              <thead>
+                <tr style="border-bottom:1px solid #e2e8f0;color:#64748b">
+                  <th style="text-align:left;padding:9px 10px;font-weight:600">Tipo</th>
+                  <th style="text-align:right;padding:9px 10px;font-weight:600">Total</th>
+                  <th style="text-align:right;padding:9px 10px;font-weight:600">%</th>
+                </tr>
+              </thead>
+              <tbody id="agendamento-appointment-types-tbody"></tbody>
+            </table>
+          </div>
+          <div style="font-size:11px;color:#94a3b8;margin-top:10px;text-align:right" id="agendamento-appointment-types-meta">—</div>
+        </div>
       </div>
     </div>
 
@@ -923,7 +942,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
 const fmt = n => Number(n).toLocaleString('pt-BR');
 const mN = {'01':'Jan','02':'Fev','03':'Mar','04':'Abr','05':'Mai','06':'Jun','07':'Jul','08':'Ago','09':'Set','10':'Out','11':'Nov','12':'Dez'};
 
-let usersData = [], companiesData = [], eChart, agegroupChart, sessionsEvolChart, sessionsTotalEvolChart, sessionMonthlyEvolutionChart, sessionsAttendanceChart, sessionsDailyChart;
+let usersData = [], companiesData = [], eChart, agegroupChart, appointmentTypesTrendChart, sessionsEvolChart, sessionsTotalEvolChart, sessionMonthlyEvolutionChart, sessionsAttendanceChart, sessionsDailyChart;
 let currentGroup = '', currentType = '', currentCompany = '';
 let selectedMonths = new Set();
 let selectedAppointmentTypeMonths = new Set();
@@ -1268,6 +1287,144 @@ function loadSessionAppointmentTypes() {
 }
 
 // --- Agendamentos ---
+function recentMonthValues(count) {
+  const now = new Date();
+  const months = [];
+  for (let i = count - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`);
+  }
+  return months;
+}
+
+function monthShortLabel(month) {
+  const [y, mm] = String(month).split('-');
+  return mN[mm] ? `${mN[mm]}/${String(y).slice(2)}` : month;
+}
+
+function appointmentTypeColor(type) {
+  const colors = {
+    'Consultas': '#2563eb',
+    'Exames': '#0f766e',
+    'Exames - DASA': '#7c3aed',
+    'Conexa PA': '#dc2626',
+    'Conexa Eletiva': '#ea580c',
+    'Odontologia': '#0891b2',
+    'Terapias': '#be185d',
+    'Outros': '#64748b',
+  };
+  return colors[type] || '#475569';
+}
+
+async function loadAppointmentTypesTrend() {
+  const skel = document.getElementById('skel-appointment-types-trend');
+  const cv = document.getElementById('appointmentTypesTrendChart');
+  const meta = document.getElementById('appointment-types-trend-meta');
+  const period = document.getElementById('appointment-types-trend-period');
+  if (!cv) return;
+  if (skel) {
+    skel.style.display = 'block';
+    skel.innerHTML = '';
+  }
+  cv.style.display = 'none';
+  if (meta) meta.textContent = 'Carregando composição mensal...';
+
+  const months = recentMonthValues(4);
+  const p = new URLSearchParams();
+  p.set('meses', months.join(','));
+  p.set('group_by', 'month');
+  if (currentGroup) p.set('group_name', currentGroup);
+
+  const data = await safeGet('/api/appointment-types?' + p.toString());
+  if (!data || data.error) {
+    if (skel) {
+      skel.style.display = 'block';
+      skel.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>Erro ao carregar evolução por tipo';
+    }
+    if (meta) meta.textContent = '';
+    return;
+  }
+
+  const items = data.items || [];
+  const totalsByType = {};
+  const valuesByKey = {};
+  items.forEach((item) => {
+    const mes = String(item.mes || '');
+    const tipo = String(item.tipo || 'Outros');
+    const total = Number(item.total) || 0;
+    totalsByType[tipo] = (totalsByType[tipo] || 0) + total;
+    valuesByKey[`${mes}|${tipo}`] = total;
+  });
+  const types = Object.keys(totalsByType).sort((a, b) => totalsByType[b] - totalsByType[a]);
+  const datasets = types.map((type) => ({
+    label: type,
+    data: months.map((month) => valuesByKey[`${month}|${type}`] || 0),
+    backgroundColor: appointmentTypeColor(type),
+    borderColor: '#ffffff',
+    borderWidth: 1,
+    borderRadius: 5,
+    borderSkipped: false,
+    barPercentage: 0.72,
+    categoryPercentage: 0.64,
+  }));
+  const total = Object.values(totalsByType).reduce((acc, value) => acc + value, 0);
+  if (period) period.textContent = `${monthShortLabel(months[0])} a ${monthShortLabel(months[months.length - 1])}`;
+  if (meta) meta.textContent = `${fmt(total)} agendamentos · ${types.length || 0} tipos · mesma regra de Tipos de consulta`;
+
+  if (appointmentTypesTrendChart) appointmentTypesTrendChart.destroy();
+  if (skel) skel.style.display = 'none';
+  cv.style.display = 'block';
+  appointmentTypesTrendChart = new Chart(cv, {
+    type: 'bar',
+    data: {
+      labels: months.map(monthShortLabel),
+      datasets,
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          display: true,
+          position: 'top',
+          align: 'end',
+          labels: { boxWidth: 10, boxHeight: 10, color: '#475569', font: { size: 11 } },
+        },
+        tooltip: {
+          backgroundColor: '#1e293b',
+          borderColor: '#334155',
+          borderWidth: 1,
+          titleColor: '#cbd5e1',
+          bodyColor: '#f8fafc',
+          callbacks: {
+            label: c => `${c.dataset.label}: ${fmt(c.parsed.y)}`,
+            footer: (items) => {
+              const totalMes = items.reduce((acc, item) => acc + (Number(item.parsed.y) || 0), 0);
+              return `Total do mês: ${fmt(totalMes)}`;
+            },
+          },
+        },
+      },
+      scales: {
+        x: {
+          stacked: true,
+          ticks: { color: '#64748b', font: { size: 11, weight: '600' } },
+          grid: { display: false },
+          border: { display: false },
+        },
+        y: {
+          stacked: true,
+          beginAtZero: true,
+          ticks: { color: '#94a3b8', font: { size: 10 }, callback: v => fmt(v) },
+          grid: { color: 'rgba(148,163,184,0.18)' },
+          border: { display: false },
+        },
+      },
+    },
+  });
+}
+
 async function loadAppointments() {
   document.getElementById('bullet-agend').textContent = '…';
   const meses = [...selectedMonths].sort();
@@ -1279,6 +1436,7 @@ async function loadAppointments() {
 
   const appt = await safeGet('/api/appointments' + qs);
   loadAppointmentTypes(meses, 'agendamento-appointment-types');
+  loadAppointmentTypesTrend();
 
   if (appt && !appt.error) {
     document.getElementById('bullet-agend').textContent = fmt(appt.total);

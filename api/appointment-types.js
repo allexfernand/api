@@ -68,6 +68,7 @@ export default async function handler(req, res) {
 
   const groupName = req.query.group_name || null;
   const meses = req.query.meses ? req.query.meses.split(',').filter((m) => /^\d{4}-\d{2}$/.test(m)) : [];
+  const groupByMonth = req.query.group_by === 'month';
   const monthList = meses.length ? meses.sort() : lastNMonthsList(Math.min(Math.max(parseInt(req.query.months) || 12, 1), 24));
   const monthRangeFilter = monthList.map((month) => `(
     ${quoteIdent(APPOINTMENTS_DATE_COLUMN)} >= '${month}-01'
@@ -101,8 +102,10 @@ export default async function handler(req, res) {
     const wh = warehouses.find((w) => w.state === "RUNNING") || warehouses[0];
     if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
 
+    const monthExpr = `DATE_FORMAT(${quoteIdent(APPOINTMENTS_DATE_COLUMN)}, 'yyyy-MM')`;
     const rows = await runQuery(wh.id, `
       SELECT
+        ${groupByMonth ? `${monthExpr} AS mes,` : ''}
         ${typeExpr} AS tipo_agrupado,
         COUNT(*) AS total
       FROM ${APPOINTMENTS_TABLE}
@@ -121,9 +124,23 @@ export default async function handler(req, res) {
           OR assunto RLIKE '^ [A-Z]'
         )
         ${groupFilter}
-      GROUP BY ${typeExpr}
-      ORDER BY total DESC
+      GROUP BY ${groupByMonth ? `${monthExpr}, ` : ''}${typeExpr}
+      ORDER BY ${groupByMonth ? 'mes ASC, ' : ''}total DESC
     `);
+
+    if (groupByMonth) {
+      res.status(200).json({
+        items: rows.map((row) => ({
+          mes: String(getCell(row[0]) || ''),
+          tipo: String(getCell(row[1]) || 'Outros'),
+          total: toInt(row[2]),
+        })),
+        months: monthList,
+        source: "atendimento_summarized_gold_live",
+        filters: { group_name: groupName },
+      });
+      return;
+    }
 
     const total = rows.reduce((acc, row) => acc + toInt(row[1]), 0);
     const items = rows.map((row) => {
