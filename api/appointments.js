@@ -55,7 +55,7 @@ export default async function handler(req, res) {
 
     const rows = await runQuery(wh.id, `
       SELECT COUNT(*) AS total_tickets
-      FROM sanus_databricks.sanus_prod.atendimento_gold_live
+      FROM hive_metastore.sanus_prod.atendimento_gold_live
       WHERE motivo = 'Concluído com sucesso'
         ${periodoFilter}
         ${groupFilter}
