@@ -767,6 +767,24 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
       </div>
     </div>
 
+    <div class="chart-card">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap">
+        <div>
+          <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Evolução diária do total de sessões</h2>
+          <div style="font-size:11px;color:#94a3b8"><code>botmaker_session.creation_time</code> · dias do mês · <span id="s-daily-mode">mês atual</span></div>
+        </div>
+        <div class="filter-group">
+          <label for="sessions-daily-month-select">📅 Mês</label>
+          <select class="filter-select" id="sessions-daily-month-select" onchange="onSessionsDailyMonthChange(this.value)" style="min-width:160px"></select>
+        </div>
+      </div>
+      <div class="chart-wrap">
+        <div class="skeleton" id="skel-s-daily"></div>
+        <canvas id="sessionsDailyChart" style="display:none"></canvas>
+      </div>
+      <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="s-daily-error"></div>
+    </div>
+
     <div style="text-align:center;padding:20px;color:#bbb;font-size:13px">Mais dados serão adicionados em breve.</div>
   </div>
 
@@ -908,11 +926,12 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
 const fmt = n => Number(n).toLocaleString('pt-BR');
 const mN = {'01':'Jan','02':'Fev','03':'Mar','04':'Abr','05':'Mai','06':'Jun','07':'Jul','08':'Ago','09':'Set','10':'Out','11':'Nov','12':'Dez'};
 
-let usersData = [], companiesData = [], eChart, agegroupChart, sessionsEvolChart, sessionsTotalEvolChart, sessionMonthlyEvolutionChart, sessionsAttendanceChart;
+let usersData = [], companiesData = [], eChart, agegroupChart, sessionsEvolChart, sessionsTotalEvolChart, sessionMonthlyEvolutionChart, sessionsAttendanceChart, sessionsDailyChart;
 let currentGroup = '', currentType = '', currentCompany = '';
 let selectedMonths = new Set();
 let selectedAppointmentTypeMonths = new Set();
 let appointmentTypesBaseMonths = [];
+let selectedSessionsDailyMonth = currentMonthValue();
 let sessionsMonthlySummaryData = null, sessionsMonthlySummaryItems = [], selectedSessionMonthlyBotCompanies = [];
 let qualityData = null, selectedQualityKey = null;
 
@@ -1213,6 +1232,36 @@ function updateAppointmentTypesPeriodoLabel() {
   lbl.textContent = `${selectedAppointmentTypeMonths.size} meses selecionados`;
 }
 
+function currentMonthValue() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+}
+
+function buildSessionsDailyMonthOptions() {
+  const select = document.getElementById('sessions-daily-month-select');
+  if (!select) return;
+  const now = new Date();
+  const options = [];
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const val = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    const mm = String(d.getMonth()+1).padStart(2,'0');
+    options.push({ value: val, label: `${mN[mm]}/${d.getFullYear()}` });
+  }
+  if (!options.some((option) => option.value === selectedSessionsDailyMonth)) {
+    selectedSessionsDailyMonth = options[0]?.value || currentMonthValue();
+  }
+  select.innerHTML = options.map((option) => {
+    const selected = option.value === selectedSessionsDailyMonth ? ' selected' : '';
+    return `<option value="${option.value}"${selected}>${option.label}</option>`;
+  }).join('');
+}
+
+function onSessionsDailyMonthChange(value) {
+  selectedSessionsDailyMonth = value || currentMonthValue();
+  loadSessionsDailyEvolution();
+}
+
 function loadSessionAppointmentTypes() {
   if (getActiveTab() !== 'sessoes') return;
   const months = selectedAppointmentTypeMonths.size
@@ -1330,6 +1379,7 @@ function renderSessionFinishers(items, filterApplied, opts) {
 
 async function loadSessions() {
   buildAppointmentTypesPeriodoOptions();
+  buildSessionsDailyMonthOptions();
   const bullet = document.getElementById('bullet-sessoes');
   const periodoLabel = document.getElementById('bullet-sessoes-periodo');
   const finishersLoading = document.getElementById('session-finishers-loading');
@@ -1369,6 +1419,7 @@ async function loadSessions() {
   const qs = p.toString() ? '?' + p.toString() : '';
 
   loadSessionsEvolution();
+  loadSessionsDailyEvolution();
 
   const sessions = await safeGet('/api/sessions' + qs);
   if (sessions && !sessions.error) {
@@ -1613,6 +1664,92 @@ async function renderSessionsAttendanceChart(labels, monthValues, sessionValues,
       },
     },
   });
+}
+
+async function loadSessionsDailyEvolution() {
+  buildSessionsDailyMonthOptions();
+  const skel = document.getElementById('skel-s-daily');
+  const cv = document.getElementById('sessionsDailyChart');
+  const errorBox = document.getElementById('s-daily-error');
+  const modeLabel = document.getElementById('s-daily-mode');
+  if (skel) skel.style.display = 'block';
+  if (cv) cv.style.display = 'none';
+  if (errorBox) { errorBox.style.display = 'none'; errorBox.textContent = ''; }
+
+  const p = new URLSearchParams();
+  p.set('granularity', 'day');
+  p.set('mes', selectedSessionsDailyMonth || currentMonthValue());
+  if (currentGroup) p.set('group_name', currentGroup);
+  if (currentCompany) p.set('company', currentCompany);
+  const data = await safeGet('/api/sessions-evolution?' + p.toString());
+  if (!data || data.error) {
+    if (errorBox) {
+      errorBox.style.display = 'block';
+      errorBox.textContent = data && data.error ? String(data.error).slice(0, 220) : 'Erro ao carregar evolução diária';
+    }
+    if (skel) skel.style.display = 'none';
+    return;
+  }
+
+  const month = data.month || selectedSessionsDailyMonth;
+  const [year, mm] = String(month).split('-');
+  if (modeLabel) {
+    const parts = [mN[mm] ? `${mN[mm]}/${year}` : month];
+    if (data.mode === 'variables_json_filter') {
+      if (data.filters && data.filters.group_name) parts.push(`grupo: ${data.filters.group_name}`);
+      if (data.filters && data.filters.company) parts.push(`empresa: ${data.filters.company}`);
+    }
+    modeLabel.textContent = parts.join(' · ');
+  }
+
+  const series = data.series || [];
+  const labels = series.map((it) => String(it.dia || '').slice(8, 10));
+  const totalValues = series.map((it) => Number(it.total) || 0);
+  if (sessionsDailyChart) sessionsDailyChart.destroy();
+  if (skel) skel.style.display = 'none';
+  if (cv) {
+    cv.style.display = 'block';
+    sessionsDailyChart = new Chart(cv, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          label: 'Sessões',
+          data: totalValues,
+          borderColor: '#0f766e',
+          backgroundColor: 'rgba(15,118,110,0.08)',
+          borderWidth: 2,
+          pointRadius: 3,
+          pointBackgroundColor: '#0f766e',
+          fill: true,
+          tension: 0.35,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: '#1e293b', borderColor: '#334155', borderWidth: 1,
+            titleColor: '#94a3b8', bodyColor: '#f1f5f9',
+            callbacks: { label: c => `${fmt(c.parsed.y)} sessões` },
+          },
+        },
+        scales: {
+          x: {
+            ticks: { font: { size: 10 }, color: '#94a3b8', maxRotation: 0, autoSkip: true, maxTicksLimit: 16 },
+            grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false },
+          },
+          y: {
+            beginAtZero: true,
+            ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => fmt(v) },
+            grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false },
+          },
+        },
+      },
+    });
+  }
 }
 
 async function loadSessionsEvolution() {

@@ -191,6 +191,13 @@ function lastNMonthsList(n) {
   return out;
 }
 
+function nextMonth(month) {
+  const [year, mm] = month.split('-').map((value) => parseInt(value, 10));
+  const d = new Date(Date.UTC(year, mm - 1, 1));
+  d.setUTCMonth(d.getUTCMonth() + 1);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
@@ -200,19 +207,24 @@ export default async function handler(req, res) {
   const groupName = req.query.group_name || null;
   const company = req.query.company || null;
   const typeFilter = req.query.type || null;
+  const granularity = req.query.granularity || 'month';
+  const dayMonth = req.query.mes && /^\d{4}-\d{2}$/.test(req.query.mes) ? req.query.mes : null;
   const months = Math.min(Math.max(parseInt(req.query.months) || 12, 1), 24);
   const useCpfJoin = Boolean(groupName || company || typeFilter);
 
   const monthList = lastNMonthsList(months);
   const monthInList = `(${monthList.map((m) => `'${m}'`).join(',')})`;
   const monthsSqlFilter = `DATE_FORMAT(try_cast(${quoteIdent(SESSION_DATE_COLUMN)} AS TIMESTAMP), 'yyyy-MM') IN ${monthInList}`;
+  const selectedDayMonth = dayMonth || monthList[monthList.length - 1];
+  const daySqlFilter = `try_cast(${quoteIdent(SESSION_DATE_COLUMN)} AS TIMESTAMP) >= '${selectedDayMonth}-01'
+    AND try_cast(${quoteIdent(SESSION_DATE_COLUMN)} AS TIMESTAMP) < '${nextMonth(selectedDayMonth)}-01'`;
 
   try {
     const { warehouses = [] } = await dbFetch("/api/2.0/sql/warehouses");
     const wh = warehouses.find((w) => w.state === "RUNNING") || warehouses[0];
     if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
 
-    const filters = [monthsSqlFilter];
+    const filters = [granularity === 'day' ? daySqlFilter : monthsSqlFilter];
     if (groupName) {
       const variables = sessionVariableTextExpr();
       filters.push(`(
@@ -235,6 +247,46 @@ export default async function handler(req, res) {
     }
     const where = `WHERE ${filters.join(' AND ')}`;
     const mode = groupName || company ? "variables_json_filter" : "global";
+    if (granularity === 'day') {
+      const rows = await runQuery(wh.id, `
+        SELECT
+          DATE_FORMAT(try_cast(${quoteIdent(SESSION_DATE_COLUMN)} AS TIMESTAMP), 'yyyy-MM-dd') AS dia,
+          CASE WHEN finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END AS tipo_atendimento,
+          COUNT(*) AS total
+        FROM ${SESSION_TABLE}
+        ${where}
+        GROUP BY
+          DATE_FORMAT(try_cast(${quoteIdent(SESSION_DATE_COLUMN)} AS TIMESTAMP), 'yyyy-MM-dd'),
+          CASE WHEN finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END
+        ORDER BY dia
+      `);
+
+      const byDiaTipo = new Map(rows.map((r) => [
+        `${String(getCell(r[0]) || '')}|${String(getCell(r[1]) || '').toUpperCase()}`,
+        toInt(r[2]),
+      ]));
+      const days = [];
+      const start = new Date(`${selectedDayMonth}-01T00:00:00Z`);
+      const end = new Date(`${nextMonth(selectedDayMonth)}-01T00:00:00Z`);
+      for (const d = new Date(start); d < end; d.setUTCDate(d.getUTCDate() + 1)) {
+        days.push(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`);
+      }
+      const series = days.map((day) => {
+        const humano = byDiaTipo.get(`${day}|HUMANO`) || 0;
+        const ia = byDiaTipo.get(`${day}|IA`) || 0;
+        return { dia: day, humano, ia, total: humano + ia };
+      });
+
+      return res.status(200).json({
+        granularity: "day",
+        month: selectedDayMonth,
+        series,
+        filters: { group_name: groupName, company, type: typeFilter },
+        mode,
+        source: "botmaker_session.creation_time",
+      });
+    }
+
     const rows = await runQuery(wh.id, `
       SELECT
         DATE_FORMAT(try_cast(${quoteIdent(SESSION_DATE_COLUMN)} AS TIMESTAMP), 'yyyy-MM') AS mes,
