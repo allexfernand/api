@@ -134,6 +134,11 @@ export default async function handler(req, res) {
         AND LOWER(COALESCE(CAST(assunto AS STRING), '')) NOT LIKE '%http%'
         AND ${assuntoTextExpr} NOT LIKE '%ATENDIMENTO HUMANO%'
         AND ${assuntoNormalizedExpr} NOT LIKE '%ATENDIMENTO%HUMANO%'
+        AND NOT (
+          assunto RLIKE '^[A-Z][a-z]+ [A-Z]'
+          OR assunto RLIKE '^[A-Z][A-Z]+ [A-Z]'
+          OR assunto RLIKE '^ [A-Z]'
+        )
         ${groupFilter}
         ${companyFilter}
       GROUP BY ${monthExpr}

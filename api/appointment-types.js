@@ -115,6 +115,11 @@ export default async function handler(req, res) {
         AND LOWER(COALESCE(CAST(assunto AS STRING), '')) NOT LIKE '%http%'
         AND UPPER(COALESCE(CAST(assunto AS STRING), '')) NOT LIKE '%ATENDIMENTO HUMANO%'
         AND UPPER(TRIM(REGEXP_REPLACE(COALESCE(CAST(assunto AS STRING), ''), '[^A-Za-z0-9]+', ' '))) NOT LIKE '%ATENDIMENTO%HUMANO%'
+        AND NOT (
+          assunto RLIKE '^[A-Z][a-z]+ [A-Z]'
+          OR assunto RLIKE '^[A-Z][A-Z]+ [A-Z]'
+          OR assunto RLIKE '^ [A-Z]'
+        )
         ${groupFilter}
       GROUP BY ${typeExpr}
       ORDER BY total DESC
