@@ -1609,6 +1609,7 @@ async function renderSessionsAttendanceChart(labels, monthValues, sessionValues,
     showSessionsAttendanceError(appointmentsData);
     return;
   }
+  const demographicsData = await safeGet('/api/demographics' + buildQS());
   if (modeLabel && currentCompany && appointmentsData.company_filter_applied === false) {
     modeLabel.textContent = `${modeLabel.textContent} · filtro empresa não aplicado em agendamentos`;
   }
@@ -1623,6 +1624,13 @@ async function renderSessionsAttendanceChart(labels, monthValues, sessionValues,
   const totalSessions = sessionValues.reduce((acc, value) => acc + (Number(value) || 0), 0);
   const totalAppointments = appointmentValues.reduce((acc, value) => acc + (Number(value) || 0), 0);
   const averageRatio = totalAppointments > 0 ? totalSessions / totalAppointments : null;
+  const totalBeneficiaries = demographicsData && !demographicsData.error
+    ? Number(demographicsData.total_beneficiarios ?? demographicsData.total_vidas) || 0
+    : 0;
+  const beneficiaryRatioValues = sessionValues.map((sessions) => (
+    totalBeneficiaries > 0 ? Number((((Number(sessions) || 0) / totalBeneficiaries) * 100).toFixed(2)) : null
+  ));
+  const averageBeneficiaryRatio = totalBeneficiaries > 0 ? (totalSessions / totalBeneficiaries) * 100 : null;
   const appointmentMonths = (appointmentsData.months && appointmentsData.months.length) ? appointmentsData.months : monthValues;
   const appointmentLabels = appointmentMonths.map((mes) => {
     const [y, mm] = String(mes).split('-');
@@ -1635,7 +1643,10 @@ async function renderSessionsAttendanceChart(labels, monthValues, sessionValues,
   if (skel) skel.style.display = 'none';
   if (modeLabel && averageRatio !== null) {
     const ratioLabel = averageRatio.toFixed(1).replace('.', ',');
-    modeLabel.textContent = `${modeLabel.textContent} · média ${ratioLabel} sessões/agendamento`;
+    const beneficiaryLabel = averageBeneficiaryRatio !== null
+      ? ` · ${averageBeneficiaryRatio.toFixed(1).replace('.', ',')} sessões/100 beneficiários`
+      : '';
+    modeLabel.textContent = `${modeLabel.textContent} · média ${ratioLabel} sessões/agendamento${beneficiaryLabel}`;
   }
   cv.style.display = 'block';
   if (cv) sessionsAttendanceChart = new Chart(cv, {
@@ -1680,6 +1691,19 @@ async function renderSessionsAttendanceChart(labels, monthValues, sessionValues,
           tension: 0.35,
           yAxisID: 'ratio',
         },
+        {
+          label: 'Sessões por 100 beneficiários',
+          data: beneficiaryRatioValues,
+          borderColor: '#8b5cf6',
+          backgroundColor: 'rgba(139,92,246,0.08)',
+          borderWidth: 2,
+          borderDash: [2, 4],
+          pointRadius: 2,
+          pointBackgroundColor: '#8b5cf6',
+          fill: false,
+          tension: 0.35,
+          yAxisID: 'ratio',
+        },
       ],
     },
     options: {
@@ -1694,6 +1718,9 @@ async function renderSessionsAttendanceChart(labels, monthValues, sessionValues,
             label: c => {
               if (c.dataset.yAxisID === 'ratio') {
                 return `${c.dataset.label}: ${Number(c.parsed.y).toFixed(1).replace('.', ',')} sessões/agendamento`;
+              }
+              if (c.dataset.label === 'Sessões por 100 beneficiários') {
+                return `${c.dataset.label}: ${Number(c.parsed.y).toFixed(1).replace('.', ',')}`;
               }
               return `${c.dataset.label}: ${fmt(c.parsed.y)}`;
             },
@@ -1713,7 +1740,7 @@ async function renderSessionsAttendanceChart(labels, monthValues, sessionValues,
         ratio: {
           position: 'right',
           beginAtZero: true,
-          ticks: { font: { size: 10 }, color: '#f59e0b', callback: v => Number(v).toFixed(1).replace('.', ',') + 'x' },
+          ticks: { font: { size: 10 }, color: '#f59e0b', callback: v => Number(v).toFixed(1).replace('.', ',') },
           grid: { drawOnChartArea: false },
           border: { display: false },
         },
