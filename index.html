@@ -1616,6 +1616,13 @@ async function renderSessionsAttendanceChart(labels, monthValues, sessionValues,
   const appointmentsSeries = appointmentsData.series || [];
   const appointmentsByMonth = Object.fromEntries(appointmentsSeries.map((it) => [it.mes, Number(it.total) || 0]));
   const appointmentValues = monthValues.map((mes) => appointmentsByMonth[mes] || 0);
+  const ratioValues = sessionValues.map((sessions, idx) => {
+    const appointments = Number(appointmentValues[idx]) || 0;
+    return appointments > 0 ? Number(((Number(sessions) || 0) / appointments).toFixed(2)) : null;
+  });
+  const totalSessions = sessionValues.reduce((acc, value) => acc + (Number(value) || 0), 0);
+  const totalAppointments = appointmentValues.reduce((acc, value) => acc + (Number(value) || 0), 0);
+  const averageRatio = totalAppointments > 0 ? totalSessions / totalAppointments : null;
   const appointmentMonths = (appointmentsData.months && appointmentsData.months.length) ? appointmentsData.months : monthValues;
   const appointmentLabels = appointmentMonths.map((mes) => {
     const [y, mm] = String(mes).split('-');
@@ -1626,6 +1633,10 @@ async function renderSessionsAttendanceChart(labels, monthValues, sessionValues,
 
   if (sessionsAttendanceChart) sessionsAttendanceChart.destroy();
   if (skel) skel.style.display = 'none';
+  if (modeLabel && averageRatio !== null) {
+    const ratioLabel = averageRatio.toFixed(1).replace('.', ',');
+    modeLabel.textContent = `${modeLabel.textContent} · média ${ratioLabel} sessões/agendamento`;
+  }
   cv.style.display = 'block';
   if (cv) sessionsAttendanceChart = new Chart(cv, {
     type: 'line',
@@ -1642,6 +1653,7 @@ async function renderSessionsAttendanceChart(labels, monthValues, sessionValues,
           pointBackgroundColor: '#0f766e',
           fill: false,
           tension: 0.35,
+          yAxisID: 'y',
         },
         {
           label: 'Agendamentos',
@@ -1653,6 +1665,20 @@ async function renderSessionsAttendanceChart(labels, monthValues, sessionValues,
           pointBackgroundColor: '#6366f1',
           fill: false,
           tension: 0.35,
+          yAxisID: 'y',
+        },
+        {
+          label: 'Sessões por agendamento',
+          data: ratioValues,
+          borderColor: '#f59e0b',
+          backgroundColor: 'rgba(245,158,11,0.08)',
+          borderWidth: 2,
+          borderDash: [6, 5],
+          pointRadius: 2,
+          pointBackgroundColor: '#f59e0b',
+          fill: false,
+          tension: 0.35,
+          yAxisID: 'ratio',
         },
       ],
     },
@@ -1664,7 +1690,14 @@ async function renderSessionsAttendanceChart(labels, monthValues, sessionValues,
         tooltip: {
           backgroundColor: '#1e293b', borderColor: '#334155', borderWidth: 1,
           titleColor: '#94a3b8', bodyColor: '#f1f5f9',
-          callbacks: { label: c => `${c.dataset.label}: ${fmt(c.parsed.y)}` },
+          callbacks: {
+            label: c => {
+              if (c.dataset.yAxisID === 'ratio') {
+                return `${c.dataset.label}: ${Number(c.parsed.y).toFixed(1).replace('.', ',')} sessões/agendamento`;
+              }
+              return `${c.dataset.label}: ${fmt(c.parsed.y)}`;
+            },
+          },
         },
       },
       scales: {
@@ -1676,6 +1709,13 @@ async function renderSessionsAttendanceChart(labels, monthValues, sessionValues,
           beginAtZero: true,
           ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => fmt(v) },
           grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false },
+        },
+        ratio: {
+          position: 'right',
+          beginAtZero: true,
+          ticks: { font: { size: 10 }, color: '#f59e0b', callback: v => Number(v).toFixed(1).replace('.', ',') + 'x' },
+          grid: { drawOnChartArea: false },
+          border: { display: false },
         },
       },
     },
