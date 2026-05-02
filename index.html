@@ -167,6 +167,22 @@ body {
   transition: box-shadow var(--t) var(--ease), transform var(--t) var(--ease);
 }
 .card-box:hover{box-shadow:var(--shadow-md)}
+.card-box[data-qtag],.chart-card[data-qtag]{position:relative}
+.card-box[data-qtag]::before,.chart-card[data-qtag]::before{
+  content:attr(data-qtag);
+  position:absolute;
+  top:10px;
+  right:12px;
+  background:#e6fffb;
+  color:#0f766e;
+  border:1px solid #99f6e4;
+  border-radius:999px;
+  padding:2px 7px;
+  font-size:10px;
+  font-weight:800;
+  letter-spacing:.3px;
+  z-index:2;
+}
 
 .section-title{font-size:11px;font-weight:600;color:var(--text-faint);text-transform:uppercase;letter-spacing:.8px;margin-bottom:20px}
 
@@ -584,7 +600,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
 
   <!-- Tab: Sessões -->
   <div class="tab-content" id="tab-sessoes">
-    <div class="card-box" style="display:flex;align-items:center;gap:20px;padding:20px 28px">
+    <div class="card-box" data-qtag="#Q1" style="display:flex;align-items:center;gap:20px;padding:20px 28px">
       <div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#14b8a6,#0f766e);display:flex;align-items:center;justify-content:center">
         <i class="fa-solid fa-comments" style="font-size:20px;color:#fff"></i>
       </div>
@@ -595,7 +611,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
       </div>
     </div>
 
-    <div class="card-box">
+    <div class="card-box" data-qtag="#Q2">
       <div class="section-title"><i class="fa-solid fa-headset" style="margin-right:6px"></i>Sessões finalizadas por</div>
       <div class="loading-box" id="session-finishers-loading"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...</div>
       <div id="session-finishers-content" style="display:none">
@@ -624,7 +640,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
     </div>
 
     <div class="fluid-grid">
-      <div class="chart-card">
+      <div class="chart-card" data-qtag="#Q3">
         <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Evolução mensal de finalizações</h2>
         <div style="font-size:11px;color:#94a3b8;margin-bottom:14px"><code>botmaker_session.creation_time</code> · últimos 12 meses · <span id="s-evol-mode">global</span></div>
         <div class="chart-wrap">
@@ -635,7 +651,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
       </div>
 
       <div style="display:flex;flex-direction:column;gap:16px">
-        <div class="chart-card" style="margin-bottom:0">
+        <div class="chart-card" data-qtag="#Q4" style="margin-bottom:0">
           <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Evolução mensal do total de sessões</h2>
           <div style="font-size:11px;color:#94a3b8;margin-bottom:14px"><code>botmaker_session.creation_time</code> · últimos 12 meses · <span id="s-total-evol-mode">global</span></div>
           <div class="chart-wrap">
@@ -645,7 +661,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
           <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="s-total-evol-error"></div>
         </div>
 
-        <div class="chart-card" style="margin-bottom:0">
+        <div class="chart-card" data-qtag="#Q10" style="margin-bottom:0">
           <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap">
             <div>
               <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Evolução diária do total de sessões</h2>
@@ -666,7 +682,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
     </div>
 
     <div class="sessions-summary-grid">
-      <div class="card-box session-monthly-card">
+      <div class="card-box session-monthly-card" data-qtag="#Q5">
         <div class="section-title"><i class="fa-solid fa-table" style="margin-right:6px"></i>Resumo mensal de sessões</div>
         <div class="loading-box" id="session-monthly-loading">
           <button class="refresh-btn" onclick="loadSessionsMonthlySummary([...selectedMonths].sort())">Carregar resumo mensal</button>
@@ -696,7 +712,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
         </div>
       </div>
 
-      <div class="chart-card">
+      <div class="chart-card" data-qtag="#Q6">
         <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Evolução mensal por bot company</h2>
         <div style="font-size:11px;color:#94a3b8;margin-bottom:14px"><code>botmaker_session.bot_company</code> · últimos 12 meses · <span id="session-monthly-evol-mode">carregue o resumo mensal</span></div>
         <div class="chart-wrap">
@@ -710,7 +726,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
     </div>
 
     <div class="sessions-appointments-grid">
-      <div class="chart-card">
+      <div class="chart-card" data-qtag="#Q8">
         <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Sessões x agendamentos</h2>
         <div style="font-size:11px;color:#94a3b8;margin-bottom:14px"><code>botmaker_session.creation_time</code> x <code>atendimento_summarized_gold_live.hora_criacao_atendimento</code> · mesmos períodos · <span id="s-attendance-mode">global</span></div>
         <div class="chart-wrap">
@@ -720,7 +736,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
         <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="s-attendance-error"></div>
       </div>
 
-      <div class="card-box appointments-volume-card">
+      <div class="card-box appointments-volume-card" data-qtag="#Q7">
         <div class="section-title"><i class="fa-solid fa-calendar-check" style="margin-right:6px"></i>Volumes de agendamentos</div>
         <div class="loading-box" id="appointments-volume-loading"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...</div>
         <div id="appointments-volume-content" style="display:none;flex:1;min-height:0;flex-direction:column">
@@ -742,7 +758,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
       </div>
     </div>
 
-    <div class="card-box">
+    <div class="card-box" data-qtag="#Q9">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap">
         <div class="section-title" style="margin-bottom:0"><i class="fa-solid fa-stethoscope" style="margin-right:6px"></i>Tipos de consulta</div>
         <div style="position:relative">
