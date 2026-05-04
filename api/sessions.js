@@ -69,6 +69,9 @@ export default async function handler(req, res) {
   const meses = req.query.meses ? req.query.meses.split(',').filter((m) => /^\d{4}-\d{2}$/.test(m)) : [];
   const groupName = req.query.group_name || null;
   const company = req.query.company || null;
+  const typificationFinisher = ['humano', 'ia'].includes(String(req.query.typification_finisher || '').toLowerCase())
+    ? String(req.query.typification_finisher).toLowerCase()
+    : '';
 
   const SESSION_DATE_COLUMN = 'creation_time';
 
@@ -82,7 +85,6 @@ export default async function handler(req, res) {
     if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
 
     const sessionDateFilter = buildSessionDateFilter(meses);
-    const typificationExpr = sessionTypificationExpr('variables');
     const aliasedTypificationExpr = sessionTypificationExpr('variables', 's');
     const companySessionsDateFilter = meses.length > 0
       ? `DATE_FORMAT(try_cast(s.${quoteIdent(SESSION_DATE_COLUMN)} AS TIMESTAMP), 'yyyy-MM') IN (${meses.map((m) => `'${m}'`).join(',')})`
@@ -95,6 +97,9 @@ export default async function handler(req, res) {
     const companySessionsSource = companySessionsMode === "company"
       ? "botmaker_session.organization_id + organizations.id/name"
       : "botmaker_session.economic_group_name";
+    const typificationFinisherFilter = typificationFinisher === 'humano'
+      ? 's.finished_by IS NOT NULL'
+      : (typificationFinisher === 'ia' ? 's.finished_by IS NULL' : null);
 
     const economicGroupTotalPromise = companySessionsMode === "company"
       ? runQuery(wh.id, `
@@ -181,17 +186,18 @@ export default async function handler(req, res) {
         WHERE o.${quoteIdent('name')} IS NOT NULL
           AND TRIM(CAST(o.${quoteIdent('name')} AS STRING)) != ''
           ${companySessionsWhere ? `AND ${companySessionsWhere}` : ''}
+          ${typificationFinisherFilter ? `AND ${typificationFinisherFilter}` : ''}
         GROUP BY ${aliasedTypificationExpr}
         ORDER BY total_sessions DESC
         LIMIT 30
       `)
       : runQuery(wh.id, `
         SELECT
-          ${typificationExpr} AS tipificacao,
+          ${aliasedTypificationExpr} AS tipificacao,
           COUNT(*) AS total_sessions
-        FROM ${SESSION_TABLE}
-        ${sessionDateFilter ? `WHERE ${sessionDateFilter}` : ''}
-        GROUP BY ${typificationExpr}
+        FROM ${SESSION_TABLE} s
+        ${[companySessionsDateFilter, typificationFinisherFilter].filter(Boolean).length ? `WHERE ${[companySessionsDateFilter, typificationFinisherFilter].filter(Boolean).join(' AND ')}` : ''}
+        GROUP BY ${aliasedTypificationExpr}
         ORDER BY total_sessions DESC
         LIMIT 30
       `);
@@ -252,7 +258,8 @@ export default async function handler(req, res) {
       economic_group_finishers_filter_applied: { period: true, organization: true },
       typifications,
       typifications_error: typificationsError,
-      typifications_filter_applied: { period: true, organization: true, type: true },
+      typifications_finisher: typificationFinisher,
+      typifications_filter_applied: { period: true, organization: true, finisher: Boolean(typificationFinisher) },
       period_filter_applied: meses.length > 0,
     });
   } catch (err) {

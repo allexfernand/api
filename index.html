@@ -714,7 +714,14 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
     </div>
 
     <div class="card-box" data-qtag="#Q11">
-      <div class="section-title"><i class="fa-solid fa-tags" style="margin-right:6px"></i>Tipos de encerramento de conversas</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+        <div class="section-title" style="margin-bottom:0"><i class="fa-solid fa-tags" style="margin-right:6px"></i>Tipos de encerramento de conversas</div>
+        <select class="filter-select" id="session-typification-finisher-select" onchange="onSessionTypificationFinisherChange(this.value)" style="min-width:160px">
+          <option value="">(Humano + IA)</option>
+          <option value="humano">Humano</option>
+          <option value="ia">IA</option>
+        </select>
+      </div>
       <div class="loading-box" id="session-typifications-loading"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...</div>
       <div id="session-typifications-content" style="display:none">
         <div style="font-size:11px;color:#94a3b8;margin-bottom:14px"><code>botmaker_session.variables['typification']</code> · respeita os filtros da aba</div>
@@ -1144,6 +1151,7 @@ let selectedMonths = new Set();
 let selectedAppointmentTypeMonths = new Set();
 let appointmentTypesBaseMonths = [];
 let selectedSessionsDailyMonth = currentMonthValue();
+let selectedSessionTypificationFinisher = '';
 let sessionsMonthlySummaryData = null, sessionsMonthlySummaryItems = [], selectedSessionMonthlyBotCompanies = [];
 let qualityData = null, selectedQualityKey = null;
 
@@ -1236,8 +1244,11 @@ function updateFilterInfo() {
 
 function clearFilters() {
   currentGroup = ''; currentType = ''; currentCompany = '';
+  selectedSessionTypificationFinisher = '';
   document.getElementById('group-select').value = '';
   document.getElementById('type-select').value  = '';
+  const typificationFinisherSelect = document.getElementById('session-typification-finisher-select');
+  if (typificationFinisherSelect) typificationFinisherSelect.value = '';
   document.getElementById('company-select').innerHTML = '<option value="">(Selecione um grupo primeiro)</option>';
   document.getElementById('company-select').disabled = true;
   document.getElementById('filter-info').textContent = '';
@@ -1812,6 +1823,11 @@ function renderSessionCompanies(items, opts) {
   if (wrap) wrap.style.display = 'block';
 }
 
+function onSessionTypificationFinisherChange(value) {
+  selectedSessionTypificationFinisher = value || '';
+  loadSessions();
+}
+
 function renderSessionTypifications(items, opts) {
   const loading = document.getElementById('session-typifications-loading');
   const content = document.getElementById('session-typifications-content');
@@ -1848,6 +1864,8 @@ function renderSessionTypifications(items, opts) {
   if (note) {
     const messages = [];
     if (currentGroup || currentCompany) messages.push('Filtro global aplicado via organization_id/organizations');
+    if (selectedSessionTypificationFinisher === 'humano') messages.push('finalizadas por Humano');
+    else if (selectedSessionTypificationFinisher === 'ia') messages.push('finalizadas por IA');
     note.style.display = messages.length ? 'block' : 'none';
     note.textContent = messages.join(' · ');
   }
@@ -1908,6 +1926,7 @@ async function loadSessions() {
   if (meses.length > 0)  p.set('meses', meses.join(','));
   if (currentGroup)      p.set('group_name', currentGroup);
   if (currentCompany)    p.set('company', currentCompany);
+  if (selectedSessionTypificationFinisher) p.set('typification_finisher', selectedSessionTypificationFinisher);
   const qs = p.toString() ? '?' + p.toString() : '';
 
   loadSessionsEvolution();
