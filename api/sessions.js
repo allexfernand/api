@@ -60,6 +60,18 @@ function orgIdsSubquery(groupName, company) {
   )`;
 }
 
+function lastNMonthsList(n) {
+  const out = [];
+  const d = new Date();
+  d.setUTCDate(1);
+  for (let i = n - 1; i >= 0; i--) {
+    const dd = new Date(d);
+    dd.setUTCMonth(d.getUTCMonth() - i);
+    out.push(`${dd.getUTCFullYear()}-${String(dd.getUTCMonth() + 1).padStart(2, '0')}`);
+  }
+  return out;
+}
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
@@ -100,6 +112,14 @@ export default async function handler(req, res) {
     const typificationFinisherFilter = typificationFinisher === 'humano'
       ? 's.finished_by IS NOT NULL'
       : (typificationFinisher === 'ia' ? 's.finished_by IS NULL' : null);
+    const topGroupMonths = meses.length ? [...meses].sort() : lastNMonthsList(12);
+    const topGroupDateFilter = `DATE_FORMAT(try_cast(s.${quoteIdent(SESSION_DATE_COLUMN)} AS TIMESTAMP), 'yyyy-MM') IN (${topGroupMonths.map((m) => `'${m}'`).join(',')})`;
+    const topGroupWhere = [topGroupDateFilter, companySessionsOrgFilter].filter(Boolean).join(' AND ');
+    const topGroupFromSql = companySessionsOrgFilter
+      ? `${SESSION_TABLE} s
+        INNER JOIN ${ORGANIZATIONS_TABLE} o
+          ON CAST(s.${quoteIdent('organization_id')} AS STRING) = CAST(o.${quoteIdent('id')} AS STRING)`
+      : `${SESSION_TABLE} s`;
 
     const economicGroupTotalPromise = companySessionsMode === "company"
       ? runQuery(wh.id, `
@@ -202,11 +222,42 @@ export default async function handler(req, res) {
         LIMIT 30
       `);
 
-    const [typificationsSettled, economicGroupFinishersSettled, economicGroupTotalSettled, companySessionsSettled] = await Promise.allSettled([
+    const topGroupsEvolutionPromise = runQuery(wh.id, `
+      WITH scoped_sessions AS (
+        SELECT
+          DATE_FORMAT(try_cast(s.${quoteIdent(SESSION_DATE_COLUMN)} AS TIMESTAMP), 'yyyy-MM') AS mes,
+          CASE
+            WHEN s.${quoteIdent('economic_group_name')} IS NULL
+              OR TRIM(CAST(s.${quoteIdent('economic_group_name')} AS STRING)) = ''
+            THEN 'Nulos'
+            ELSE TRIM(CAST(s.${quoteIdent('economic_group_name')} AS STRING))
+          END AS grupo
+        FROM ${topGroupFromSql}
+        WHERE ${topGroupWhere}
+      ),
+      top_groups AS (
+        SELECT grupo, COUNT(*) AS total_sessions
+        FROM scoped_sessions
+        GROUP BY grupo
+        ORDER BY total_sessions DESC
+        LIMIT 5
+      )
+      SELECT
+        s.mes,
+        s.grupo,
+        COUNT(*) AS total_sessions
+      FROM scoped_sessions s
+      INNER JOIN top_groups tg ON tg.grupo = s.grupo
+      GROUP BY s.mes, s.grupo
+      ORDER BY s.mes, total_sessions DESC
+    `);
+
+    const [typificationsSettled, economicGroupFinishersSettled, economicGroupTotalSettled, companySessionsSettled, topGroupsEvolutionSettled] = await Promise.allSettled([
       typificationsPromise,
       economicGroupFinishersPromise,
       economicGroupTotalPromise,
       companySessionsPromise,
+      topGroupsEvolutionPromise,
     ]);
 
     const typificationsError = typificationsSettled.status === 'rejected'
@@ -245,6 +296,17 @@ export default async function handler(req, res) {
     const companySessionsTotal = companySessions.reduce((acc, item) => acc + (Number(item.total) || 0), 0);
     const economicGroupTotal = companySessionsSettled.status === 'fulfilled' ? companySessionsTotal : economicGroupTotalFallback;
     const economicGroupTotalError = companySessionsError || (companySessionsSettled.status === 'fulfilled' ? null : economicGroupTotalQueryError);
+    const topGroupsEvolutionError = topGroupsEvolutionSettled.status === 'rejected'
+      ? (topGroupsEvolutionSettled.reason instanceof Error ? topGroupsEvolutionSettled.reason.message : String(topGroupsEvolutionSettled.reason))
+      : null;
+    const topGroupsEvolutionRows = topGroupsEvolutionSettled.status === 'fulfilled'
+      ? topGroupsEvolutionSettled.value.map((r) => ({
+          mes: String(getCell(r[0]) || ''),
+          grupo: String(getCell(r[1]) || 'Nulos'),
+          total: toInt(r[2]),
+        }))
+      : [];
+    const topGroups = [...new Set(topGroupsEvolutionRows.map((row) => row.grupo))];
 
     res.status(200).json({
       economic_group_total: economicGroupTotal,
@@ -260,6 +322,13 @@ export default async function handler(req, res) {
       typifications_error: typificationsError,
       typifications_finisher: typificationFinisher,
       typifications_filter_applied: { period: true, organization: true, finisher: Boolean(typificationFinisher) },
+      top_groups_evolution: {
+        months: topGroupMonths,
+        groups: topGroups,
+        series: topGroupsEvolutionRows,
+        error: topGroupsEvolutionError,
+        source: "botmaker_session.economic_group_name",
+      },
       period_filter_applied: meses.length > 0,
     });
   } catch (err) {

@@ -713,6 +713,16 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
       </div>
     </div>
 
+    <div class="chart-card" data-qtag="#Q15">
+      <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Evolução de sessões · top 5 grupos econômicos</h2>
+      <div style="font-size:11px;color:#94a3b8;margin-bottom:14px"><code>botmaker_session.economic_group_name</code> · <span id="s-top-groups-mode">últimos 12 meses</span></div>
+      <div class="chart-wrap">
+        <div class="skeleton" id="skel-s-top-groups"></div>
+        <canvas id="sessionsTopGroupsChart" style="display:none"></canvas>
+      </div>
+      <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="s-top-groups-error"></div>
+    </div>
+
     <div class="card-box" data-qtag="#Q11">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap">
         <div class="section-title" style="margin-bottom:0"><i class="fa-solid fa-tags" style="margin-right:6px"></i>Tipos de encerramento de conversas</div>
@@ -1145,7 +1155,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
 const fmt = n => Number(n).toLocaleString('pt-BR');
 const mN = {'01':'Jan','02':'Fev','03':'Mar','04':'Abr','05':'Mai','06':'Jun','07':'Jul','08':'Ago','09':'Set','10':'Out','11':'Nov','12':'Dez'};
 
-let usersData = [], companiesData = [], sessionCompaniesData = [], eChart, agegroupChart, appointmentTypesTrendChart, petitCareLinesChart, sessionsEvolChart, sessionsTotalEvolChart, sessionMonthlyEvolutionChart, sessionsAttendanceChart, sessionsDailyChart;
+let usersData = [], companiesData = [], sessionCompaniesData = [], eChart, agegroupChart, appointmentTypesTrendChart, petitCareLinesChart, sessionsEvolChart, sessionsTotalEvolChart, sessionMonthlyEvolutionChart, sessionsAttendanceChart, sessionsDailyChart, sessionsTopGroupsChart;
 let currentGroup = '', currentType = '', currentCompany = '';
 let selectedMonths = new Set();
 let selectedAppointmentTypeMonths = new Set();
@@ -1823,6 +1833,106 @@ function renderSessionCompanies(items, opts) {
   if (wrap) wrap.style.display = 'block';
 }
 
+function renderSessionsTopGroupsEvolution(data) {
+  const skel = document.getElementById('skel-s-top-groups');
+  const cv = document.getElementById('sessionsTopGroupsChart');
+  const mode = document.getElementById('s-top-groups-mode');
+  const errorBox = document.getElementById('s-top-groups-error');
+  if (!cv) return;
+
+  if (sessionsTopGroupsChart) {
+    sessionsTopGroupsChart.destroy();
+    sessionsTopGroupsChart = null;
+  }
+
+  if (errorBox) {
+    errorBox.style.display = 'none';
+    errorBox.textContent = '';
+  }
+
+  if (!data || data.error) {
+    if (skel) {
+      skel.style.display = 'block';
+      skel.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>Erro ao carregar evolução por grupo econômico';
+    }
+    if (errorBox && data?.error) {
+      errorBox.style.display = 'block';
+      errorBox.textContent = String(data.error).slice(0, 220);
+    }
+    cv.style.display = 'none';
+    return;
+  }
+
+  const months = Array.isArray(data.months) ? data.months : [];
+  const series = Array.isArray(data.series) ? data.series : [];
+  const totalsByGroup = series.reduce((acc, item) => {
+    const group = item.grupo || 'Nulos';
+    acc[group] = (acc[group] || 0) + (Number(item.total) || 0);
+    return acc;
+  }, {});
+  const groups = Object.keys(totalsByGroup).sort((a, b) => totalsByGroup[b] - totalsByGroup[a]).slice(0, 5);
+  const labels = months.map(monthShortLabel);
+  const colors = ['#0f766e', '#2563eb', '#7c3aed', '#f97316', '#db2777'];
+  const datasets = groups.map((group, index) => ({
+    label: group,
+    data: months.map((month) => {
+      const found = series.find((item) => item.mes === month && item.grupo === group);
+      return found ? Number(found.total) || 0 : 0;
+    }),
+    borderColor: colors[index % colors.length],
+    backgroundColor: colors[index % colors.length] + '22',
+    borderWidth: 2,
+    pointRadius: 3,
+    pointHoverRadius: 5,
+    tension: 0.32,
+    fill: false,
+  }));
+
+  if (mode) {
+    const parts = [];
+    parts.push(selectedMonths.size ? `${selectedMonths.size} meses selecionados` : 'últimos 12 meses');
+    if (currentGroup) parts.push(`grupo: ${currentGroup}`);
+    if (currentCompany) parts.push(`empresa: ${currentCompany}`);
+    mode.textContent = parts.join(' · ');
+  }
+
+  if (!datasets.length) {
+    if (skel) {
+      skel.style.display = 'block';
+      skel.innerHTML = 'Sem sessões por grupo econômico para o filtro atual.';
+    }
+    cv.style.display = 'none';
+    return;
+  }
+
+  if (skel) skel.style.display = 'none';
+  cv.style.display = 'block';
+  sessionsTopGroupsChart = new Chart(cv, {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'bottom', labels: { boxWidth: 10, usePointStyle: true, font: { size: 10 }, color: '#64748b' } },
+        tooltip: {
+          backgroundColor: '#1e293b',
+          borderColor: '#334155',
+          borderWidth: 1,
+          titleColor: '#cbd5e1',
+          bodyColor: '#f8fafc',
+          callbacks: { label: c => `${c.dataset.label}: ${fmt(c.parsed.y)} sessões` },
+        },
+      },
+      scales: {
+        x: { ticks: { font: { size: 10 }, color: '#94a3b8' }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } },
+        y: { beginAtZero: true, ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => fmt(v) }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } },
+      },
+    },
+  });
+}
+
 function onSessionTypificationFinisherChange(value) {
   selectedSessionTypificationFinisher = value || '';
   loadSessions();
@@ -1884,6 +1994,9 @@ async function loadSessions() {
   const sessionCompaniesWrap = document.getElementById('session-companies-wrap');
   const typificationsLoading = document.getElementById('session-typifications-loading');
   const typificationsContent = document.getElementById('session-typifications-content');
+  const topGroupsSkel = document.getElementById('skel-s-top-groups');
+  const topGroupsCanvas = document.getElementById('sessionsTopGroupsChart');
+  const topGroupsError = document.getElementById('s-top-groups-error');
   if (economicGroupBullet) economicGroupBullet.textContent = '…';
   if (economicFinishersLoading) {
     economicFinishersLoading.style.display = 'block';
@@ -1900,6 +2013,15 @@ async function loadSessions() {
     typificationsLoading.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...';
   }
   if (typificationsContent) typificationsContent.style.display = 'none';
+  if (topGroupsSkel) {
+    topGroupsSkel.style.display = 'block';
+    topGroupsSkel.innerHTML = '';
+  }
+  if (topGroupsCanvas) topGroupsCanvas.style.display = 'none';
+  if (topGroupsError) {
+    topGroupsError.style.display = 'none';
+    topGroupsError.textContent = '';
+  }
   const monthlyLoading = document.getElementById('session-monthly-loading');
   const monthlyContent = document.getElementById('session-monthly-content');
   const monthlyEvolLoading = document.getElementById('session-monthly-evol-loading');
@@ -1957,6 +2079,7 @@ async function loadSessions() {
     renderSessionTypifications(sessions.typifications || [], {
       error: sessions.typifications_error,
     });
+    renderSessionsTopGroupsEvolution(sessions.top_groups_evolution);
   } else {
     if (economicGroupBullet) economicGroupBullet.textContent = 'Erro';
     const msg = sessions && sessions.error ? sessions.error : 'Erro ao carregar sessões';
@@ -1967,6 +2090,7 @@ async function loadSessions() {
     if (economicFinishersLoading) economicFinishersLoading.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>Erro ao carregar finalizações por grupo';
     if (sessionCompaniesLoading) sessionCompaniesLoading.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>Erro ao carregar sessões por empresa';
     if (typificationsLoading) typificationsLoading.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>Erro ao carregar encerramentos';
+    if (topGroupsSkel) topGroupsSkel.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>Erro ao carregar evolução por grupo econômico';
   }
 }
 
