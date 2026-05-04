@@ -92,6 +92,10 @@ function sessionCpfExpr(variablesColumn) {
   return normalizeCpfExpr(jsonCpf);
 }
 
+function sessionTypificationExpr(variablesColumn) {
+  return `NULLIF(TRIM(CAST(${quoteIdent(variablesColumn)}['typification'] AS STRING)), '')`;
+}
+
 function sessionVariablesPrefilter(variablesColumn) {
   if (!variablesColumn) return null;
   const v = `CAST(${quoteIdent(variablesColumn)} AS STRING)`;
@@ -186,6 +190,7 @@ export default async function handler(req, res) {
 
     const sessionDateFilter = buildSessionDateFilter(meses);
     const finishersDateFilter = sessionDateFilter;
+    const typificationExpr = sessionTypificationExpr('variables');
     const beneficiaryColumns = useCompanyFilterSum ? await getColumns(wh.id, VW_BENEFICIARIOS) : [];
     const beneficiaryCpfColumn = pickColumn(beneficiaryColumns, [
       'cpf',
@@ -269,7 +274,47 @@ export default async function handler(req, res) {
         GROUP BY CASE WHEN finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END
       `);
 
-    const [totalSettled, finishersSettled] = await Promise.allSettled([totalPromise, finishersPromise]);
+    const typificationsPromise = useCompanyFilterSum
+      ? (beneficiaryCpfColumn ? runQueryQuick(wh.id, `
+        WITH filtered_cpfs AS (
+          SELECT DISTINCT ${normalizeCpfExpr(`b.${quoteIdent(beneficiaryCpfColumn)}`)} AS cpf
+          FROM ${VW_BENEFICIARIOS} b
+          WHERE NOME_CLIENTE IS NOT NULL
+            ${extraFilter}
+            AND ${normalizeCpfExpr(`b.${quoteIdent(beneficiaryCpfColumn)}`)} IS NOT NULL
+        ),
+        sessions_filtered AS (
+          SELECT ${typificationExpr} AS tipificacao, ${quoteIdent('variables')} AS variables
+          FROM ${SESSION_TABLE}
+          WHERE ${sessionDateFilter ? `${sessionDateFilter} AND ` : ''}${typificationExpr} IS NOT NULL
+            AND ${sessionVariablesPrefilter('variables')}
+        ),
+        sessions_resolved AS (
+          SELECT tipificacao, ${sessionCpfExpr('variables')} AS cpf
+          FROM sessions_filtered
+        )
+        SELECT /*+ BROADCAST(filtered_cpfs) */
+          s.tipificacao,
+          COUNT(*) AS total_sessions
+        FROM sessions_resolved s
+        INNER JOIN filtered_cpfs fc ON fc.cpf = s.cpf
+        WHERE s.cpf IS NOT NULL
+        GROUP BY s.tipificacao
+        ORDER BY total_sessions DESC
+        LIMIT 30
+      `) : Promise.reject(new Error(`Coluna de CPF/documento não encontrada em ${VW_BENEFICIARIOS}. Colunas disponíveis: ${beneficiaryColumns.slice(0, 80).join(', ')}`)))
+      : runQuery(wh.id, `
+        SELECT
+          ${typificationExpr} AS tipificacao,
+          COUNT(*) AS total_sessions
+        FROM ${SESSION_TABLE}
+        WHERE ${sessionDateFilter ? `${sessionDateFilter} AND ` : ''}${typificationExpr} IS NOT NULL
+        GROUP BY ${typificationExpr}
+        ORDER BY total_sessions DESC
+        LIMIT 30
+      `);
+
+    const [totalSettled, finishersSettled, typificationsSettled] = await Promise.allSettled([totalPromise, finishersPromise, typificationsPromise]);
     if (totalSettled.status !== 'fulfilled') {
       throw totalSettled.reason instanceof Error ? totalSettled.reason : new Error(String(totalSettled.reason));
     }
@@ -321,11 +366,23 @@ export default async function handler(req, res) {
     const finishers = useCompanyFilterSum && rawFinishersTotal > 0
       ? scaledFinishers
       : rawFinishers;
+    const typificationsError = typificationsSettled.status === 'rejected'
+      ? (typificationsSettled.reason instanceof Error ? typificationsSettled.reason.message : String(typificationsSettled.reason))
+      : null;
+    const typifications = typificationsSettled.status === 'fulfilled'
+      ? typificationsSettled.value.map((r) => ({
+          tipo: String(getCell(r[0]) || "—"),
+          total: toInt(r[1]),
+        }))
+      : [];
 
     res.status(200).json({
       total,
       empresas: toInt(row[1]),
       finishers,
+      typifications,
+      typifications_error: typificationsError,
+      typifications_filter_applied: { period: true, organization: true, type: true },
       finishers_raw_total: rawFinishersTotal,
       finishers_scaled_to_total: useCompanyFilterSum && rawFinishersTotal > 0,
       finishers_used_fallback_distribution: finishersUsedFallbackDistribution,
