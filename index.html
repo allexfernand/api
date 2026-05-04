@@ -1865,12 +1865,8 @@ function renderSessionsTopGroupsEvolution(data) {
 
   const months = Array.isArray(data.months) ? data.months : [];
   const series = Array.isArray(data.series) ? data.series : [];
-  const totalsByGroup = series.reduce((acc, item) => {
-    const group = item.grupo || 'Nulos';
-    acc[group] = (acc[group] || 0) + (Number(item.total) || 0);
-    return acc;
-  }, {});
-  const groups = Object.keys(totalsByGroup).sort((a, b) => totalsByGroup[b] - totalsByGroup[a]).slice(0, 5);
+  const groupsFromApi = Array.isArray(data.groups) ? data.groups.filter(Boolean) : [];
+  const groups = groupsFromApi.length ? groupsFromApi.slice(0, 5) : [...new Set(series.map((item) => item.grupo).filter(Boolean))].slice(0, 5);
   const labels = months.map(monthShortLabel);
   const colors = ['#0f766e', '#2563eb', '#7c3aed', '#f97316', '#db2777'];
   const datasets = groups.map((group, index) => ({
@@ -1891,6 +1887,8 @@ function renderSessionsTopGroupsEvolution(data) {
   if (mode) {
     const parts = [];
     parts.push(selectedMonths.size ? `${selectedMonths.size} meses selecionados` : 'últimos 12 meses');
+    parts.push('top 5 pelo mês mais recente');
+    parts.push('sem nulos');
     if (currentGroup) parts.push(`grupo: ${currentGroup}`);
     if (currentCompany) parts.push(`empresa: ${currentCompany}`);
     mode.textContent = parts.join(' · ');

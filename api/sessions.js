@@ -114,7 +114,9 @@ export default async function handler(req, res) {
       : (typificationFinisher === 'ia' ? 's.finished_by IS NULL' : null);
     const topGroupMonths = meses.length ? [...meses].sort() : lastNMonthsList(12);
     const topGroupDateFilter = `DATE_FORMAT(try_cast(s.${quoteIdent(SESSION_DATE_COLUMN)} AS TIMESTAMP), 'yyyy-MM') IN (${topGroupMonths.map((m) => `'${m}'`).join(',')})`;
-    const topGroupWhere = [topGroupDateFilter, companySessionsOrgFilter].filter(Boolean).join(' AND ');
+    const topGroupNameExpr = `TRIM(CAST(s.${quoteIdent('economic_group_name')} AS STRING))`;
+    const topGroupValidFilter = `s.${quoteIdent('economic_group_name')} IS NOT NULL AND ${topGroupNameExpr} != ''`;
+    const topGroupWhere = [topGroupDateFilter, companySessionsOrgFilter, topGroupValidFilter].filter(Boolean).join(' AND ');
     const topGroupFromSql = companySessionsOrgFilter
       ? `${SESSION_TABLE} s
         INNER JOIN ${ORGANIZATIONS_TABLE} o
@@ -226,30 +228,33 @@ export default async function handler(req, res) {
       WITH scoped_sessions AS (
         SELECT
           DATE_FORMAT(try_cast(s.${quoteIdent(SESSION_DATE_COLUMN)} AS TIMESTAMP), 'yyyy-MM') AS mes,
-          CASE
-            WHEN s.${quoteIdent('economic_group_name')} IS NULL
-              OR TRIM(CAST(s.${quoteIdent('economic_group_name')} AS STRING)) = ''
-            THEN 'Nulos'
-            ELSE TRIM(CAST(s.${quoteIdent('economic_group_name')} AS STRING))
-          END AS grupo
+          ${topGroupNameExpr} AS grupo
         FROM ${topGroupFromSql}
         WHERE ${topGroupWhere}
       ),
-      top_groups AS (
-        SELECT grupo, COUNT(*) AS total_sessions
+      latest_month AS (
+        SELECT MAX(mes) AS mes
         FROM scoped_sessions
-        GROUP BY grupo
-        ORDER BY total_sessions DESC
+      ),
+      top_groups AS (
+        SELECT
+          ss.grupo,
+          COUNT(*) AS current_sessions
+        FROM scoped_sessions ss
+        INNER JOIN latest_month lm ON lm.mes = ss.mes
+        GROUP BY ss.grupo
+        ORDER BY current_sessions DESC
         LIMIT 5
       )
       SELECT
         s.mes,
         s.grupo,
-        COUNT(*) AS total_sessions
+        COUNT(*) AS total_sessions,
+        tg.current_sessions
       FROM scoped_sessions s
       INNER JOIN top_groups tg ON tg.grupo = s.grupo
-      GROUP BY s.mes, s.grupo
-      ORDER BY s.mes, total_sessions DESC
+      GROUP BY s.mes, s.grupo, tg.current_sessions
+      ORDER BY tg.current_sessions DESC, s.grupo, s.mes
     `);
 
     const [typificationsSettled, economicGroupFinishersSettled, economicGroupTotalSettled, companySessionsSettled, topGroupsEvolutionSettled] = await Promise.allSettled([
@@ -302,8 +307,9 @@ export default async function handler(req, res) {
     const topGroupsEvolutionRows = topGroupsEvolutionSettled.status === 'fulfilled'
       ? topGroupsEvolutionSettled.value.map((r) => ({
           mes: String(getCell(r[0]) || ''),
-          grupo: String(getCell(r[1]) || 'Nulos'),
+          grupo: String(getCell(r[1]) || ''),
           total: toInt(r[2]),
+          current_total: toInt(r[3]),
         }))
       : [];
     const topGroups = [...new Set(topGroupsEvolutionRows.map((row) => row.grupo))];
@@ -328,6 +334,7 @@ export default async function handler(req, res) {
         series: topGroupsEvolutionRows,
         error: topGroupsEvolutionError,
         source: "botmaker_session.economic_group_name",
+        ranking: "top_5_latest_month_non_null",
       },
       period_filter_applied: meses.length > 0,
     });
