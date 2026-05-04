@@ -204,10 +204,10 @@ export default async function handler(req, res) {
     const companySessionsDateFilter = meses.length > 0
       ? `DATE_FORMAT(try_cast(s.${quoteIdent(SESSION_DATE_COLUMN)} AS TIMESTAMP), 'yyyy-MM') IN (${meses.map((m) => `'${m}'`).join(',')})`
       : null;
-    const companySessionsEconomicGroupFilter = finisherGroupName
-      ? `UPPER(TRIM(CAST(s.${quoteIdent('economic_group_name')} AS STRING))) = UPPER(TRIM('${escape(finisherGroupName)}'))`
-      : null;
-    const companySessionsWhere = [companySessionsDateFilter, companySessionsEconomicGroupFilter].filter(Boolean).join(' AND ');
+    const companySessionsOrgFilter = company
+      ? `CAST(o.${quoteIdent('id')} AS STRING) IN ${orgIdsSubquery(null, company)}`
+      : (groupName ? `CAST(o.${quoteIdent('id')} AS STRING) IN ${orgIdsSubquery(groupName, null)}` : null);
+    const companySessionsWhere = [companySessionsDateFilter, companySessionsOrgFilter].filter(Boolean).join(' AND ');
     const beneficiaryColumns = useCompanyFilterSum ? await getColumns(wh.id, VW_BENEFICIARIOS) : [];
     const beneficiaryCpfColumn = pickColumn(beneficiaryColumns, [
       'cpf',
@@ -399,7 +399,7 @@ export default async function handler(req, res) {
       economic_group_total_error: economicGroupTotalError,
       company_sessions: companySessions,
       company_sessions_error: companySessionsError,
-      company_sessions_source: "botmaker_session.organization_id + organizations.name",
+      company_sessions_source: "botmaker_session.organization_id + organizations.id/name",
       economic_group_options: economicGroupOptions,
       economic_group_finishers: economicGroupFinishers,
       economic_group_finishers_error: economicGroupFinishersError,

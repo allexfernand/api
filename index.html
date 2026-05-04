@@ -709,12 +709,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
       <div class="card-box appointments-volume-card" data-qtag="#Q14">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap">
           <div class="section-title" style="margin-bottom:0"><i class="fa-solid fa-building" style="margin-right:6px"></i>Sessões por empresa</div>
-          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-            <input type="text" id="session-company-search" placeholder="Buscar..." oninput="filterSessionCompanies()" style="font-size:12px;padding:5px 10px;border-radius:8px;border:1px solid #e2e8f0;outline:none;width:140px;color:#334155"/>
-            <select class="filter-select" id="session-companies-eg-group-select" onchange="onSessionFinisherEconomicGroupChange(this.value)" style="min-width:220px;max-width:320px">
-              <option value="">(Todos os grupos econômicos)</option>
-            </select>
-          </div>
+          <input type="text" id="session-company-search" placeholder="Buscar..." oninput="filterSessionCompanies()" style="font-size:12px;padding:5px 10px;border-radius:8px;border:1px solid #e2e8f0;outline:none;width:140px;color:#334155"/>
         </div>
         <div class="loading-box" id="session-companies-loading"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...</div>
         <div id="session-companies-wrap" class="appointments-volume-scroll" style="display:none;max-height:300px">
@@ -1780,7 +1775,6 @@ function renderSessionFinisherGroupFilters(options) {
   const selects = [
     document.getElementById('session-total-eg-group-select'),
     document.getElementById('session-finisher-eg-group-select'),
-    document.getElementById('session-companies-eg-group-select'),
   ].filter(Boolean);
   if (!selects.length) return;
   const normalized = [];
@@ -1804,7 +1798,7 @@ function renderSessionFinisherGroupFilters(options) {
 
 function onSessionFinisherEconomicGroupChange(value) {
   selectedSessionFinisherEconomicGroup = value || '';
-  document.querySelectorAll('#session-total-eg-group-select,#session-finisher-eg-group-select,#session-companies-eg-group-select').forEach((select) => {
+  document.querySelectorAll('#session-total-eg-group-select,#session-finisher-eg-group-select').forEach((select) => {
     if (select.value !== selectedSessionFinisherEconomicGroup) select.value = selectedSessionFinisherEconomicGroup;
   });
   loadSessions();
@@ -1855,9 +1849,8 @@ function renderSessionCompanies(items, opts) {
   filterSessionCompanies();
   if (note) {
     const messages = [];
-    if (selectedSessionFinisherEconomicGroup) messages.push(`grupo: ${selectedSessionFinisherEconomicGroup}`);
-    else if (currentGroup) messages.push(`grupo: ${currentGroup}`);
-    if (currentCompany) messages.push('filtro de empresa global não aplicado nesta tabela');
+    if (currentGroup) messages.push(`grupo: ${currentGroup}`);
+    if (currentCompany) messages.push(`empresa: ${currentCompany}`);
     if (opts.source) messages.push(opts.source);
     note.style.display = messages.length ? 'block' : 'none';
     note.textContent = messages.join(' · ');
