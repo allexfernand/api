@@ -232,6 +232,36 @@ body {
 .session-typification-bar{height:100%;background:linear-gradient(90deg,#14b8a6,#0f766e);border-radius:999px;min-width:3px}
 .session-typification-value{text-align:right;font-size:12px;font-weight:800;color:#0f766e}
 
+.petit-hero{background:linear-gradient(135deg,#063f4a,#0f766e);color:#fff;border:none;overflow:hidden;position:relative}
+.petit-hero::after{content:"";position:absolute;right:-80px;top:-80px;width:220px;height:220px;border-radius:50%;background:rgba(255,255,255,.08)}
+.petit-hero-content{position:relative;z-index:1;display:flex;align-items:center;justify-content:space-between;gap:24px;flex-wrap:wrap}
+.petit-eyebrow{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.8px;color:#99f6e4;margin-bottom:8px}
+.petit-title{font-size:30px;font-weight:800;letter-spacing:-.8px;line-height:1.05;margin-bottom:8px}
+.petit-subtitle{font-size:13px;line-height:1.5;color:rgba(255,255,255,.78);max-width:680px}
+.petit-period-pill{font-size:12px;font-weight:800;color:#0f4d5c;background:#ccfbf1;border:1px solid rgba(255,255,255,.28);border-radius:999px;padding:8px 12px;white-space:nowrap}
+.petit-kpi-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:16px}
+.petit-kpi{background:#fff;border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow-sm);padding:18px}
+.petit-kpi-icon{width:36px;height:36px;border-radius:10px;background:#e6fffb;color:#0f766e;display:grid;place-items:center;margin-bottom:12px}
+.petit-kpi-label{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:#94a3b8;margin-bottom:8px}
+.petit-kpi-value{font-size:30px;font-weight:800;color:#0f172a;letter-spacing:-.8px;line-height:1}
+.petit-kpi-note{font-size:11px;color:#94a3b8;margin-top:8px}
+.petit-grid-2{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(320px,.75fr);gap:16px;margin-bottom:16px}
+.petit-grid-3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-bottom:16px}
+.petit-card-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:16px}
+.petit-chip{font-size:11px;font-weight:800;color:#0f766e;background:#e6fffb;border:1px solid #99f6e4;border-radius:999px;padding:4px 10px;white-space:nowrap}
+.petit-dist-list{display:grid;gap:12px}
+.petit-dist-row{display:grid;grid-template-columns:minmax(120px,1fr) minmax(140px,1.6fr) 52px;gap:10px;align-items:center}
+.petit-dist-label{font-size:12px;font-weight:700;color:#334155;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.petit-dist-track{height:10px;background:#f1f5f9;border-radius:999px;overflow:hidden}
+.petit-dist-bar{height:100%;border-radius:999px;background:#0f766e;min-width:3px}
+.petit-dist-value{font-size:12px;font-weight:800;color:#0f766e;text-align:right}
+.petit-placeholder{border:1px dashed #cbd5e1;background:#f8fafc;border-radius:var(--radius-sm);padding:16px;color:#64748b;font-size:12px;line-height:1.5}
+.petit-metric-stack{display:grid;gap:12px}
+.petit-metric{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px;border:1px solid var(--border);border-radius:var(--radius-sm);background:#fff}
+.petit-metric strong{font-size:24px;color:#0f766e;letter-spacing:-.5px}
+.petit-metric span{font-size:12px;color:#64748b;font-weight:700}
+.petit-footnote{font-size:11px;color:#94a3b8;line-height:1.5;margin-top:8px}
+
 .quality-kpi-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-bottom:16px}
 .quality-kpi {
   background: var(--surface);
@@ -321,6 +351,8 @@ body {
 }
 @media (max-width:980px){
   .appointments-analysis-grid,.sessions-summary-grid,.sessions-appointments-grid{grid-template-columns:1fr}
+  .petit-kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .petit-grid-2,.petit-grid-3{grid-template-columns:1fr}
   .sessions-summary-grid>.card-box,.sessions-summary-grid>.chart-card{height:auto;min-height:360px}
   .sessions-summary-grid .chart-wrap{height:300px;flex:none}
   .session-monthly-scroll{max-height:360px}
@@ -335,6 +367,10 @@ body {
   .tabs{overflow-x:auto}
   .tab{white-space:nowrap}
   .chart-wrap{height:260px}
+  .petit-kpi-grid{grid-template-columns:1fr}
+  .petit-title{font-size:24px}
+  .petit-dist-row{grid-template-columns:1fr 52px;gap:8px}
+  .petit-dist-track{grid-column:1 / -1;grid-row:2}
   .session-typification-row{grid-template-columns:1fr 72px;gap:8px}
   .session-typification-track{grid-column:1 / -1;grid-row:2}
   .filter-select,.session-monthly-filter-select{width:100%;max-width:none;min-width:0}
@@ -366,6 +402,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
   <div class="tab active" data-tab="demografica">Análise Demográfica</div>
   <div class="tab" data-tab="agendamentos">Agendamentos</div>
   <div class="tab" data-tab="sessoes">Sessões</div>
+  <div class="tab" data-tab="petit-comite">Petit Comitê</div>
   <div class="tab" data-tab="qualidade-estrategica">Qualidade · Estratégica</div>
   <div class="tab" data-tab="qualidade-operacional">Qualidade · Operacional</div>
 </div>
@@ -823,6 +860,117 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
     <div style="text-align:center;padding:20px;color:#bbb;font-size:13px">Mais dados serão adicionados em breve.</div>
   </div>
 
+  <!-- Tab: Petit Comitê -->
+  <div class="tab-content" id="tab-petit-comite">
+    <div class="card-box petit-hero">
+      <div class="petit-hero-content">
+        <div>
+          <div class="petit-eyebrow">Resumo executivo</div>
+          <div class="petit-title">Petit Comitê</div>
+          <div class="petit-subtitle">Visão sintética de usabilidade, linhas de cuidado, solicitações e oportunidades de atuação. Estrutura baseada no material do comitê, adaptada ao design system do dashboard.</div>
+        </div>
+        <div class="petit-period-pill" id="petit-period">Período: DD/MM/2026 a DD/MM/2026</div>
+      </div>
+    </div>
+
+    <div class="petit-kpi-grid">
+      <div class="petit-kpi">
+        <div class="petit-kpi-icon"><i class="fa-solid fa-headset"></i></div>
+        <div class="petit-kpi-label">Atendimentos</div>
+        <div class="petit-kpi-value">—</div>
+        <div class="petit-kpi-note">números gerais no mês · a conectar</div>
+      </div>
+      <div class="petit-kpi">
+        <div class="petit-kpi-icon"><i class="fa-solid fa-user-group"></i></div>
+        <div class="petit-kpi-label">Usuários</div>
+        <div class="petit-kpi-value">—</div>
+        <div class="petit-kpi-note">usuários únicos no recorte · a conectar</div>
+      </div>
+      <div class="petit-kpi">
+        <div class="petit-kpi-icon"><i class="fa-solid fa-calendar-check"></i></div>
+        <div class="petit-kpi-label">Agendamentos</div>
+        <div class="petit-kpi-value">—</div>
+        <div class="petit-kpi-note">solicitações concluídas · a conectar</div>
+      </div>
+      <div class="petit-kpi">
+        <div class="petit-kpi-icon"><i class="fa-solid fa-chart-line"></i></div>
+        <div class="petit-kpi-label">Usuários que falaram no mês</div>
+        <div class="petit-kpi-value">30%</div>
+        <div class="petit-kpi-note">referência do modelo do comitê</div>
+      </div>
+    </div>
+
+    <div class="petit-grid-2">
+      <div class="chart-card">
+        <div class="petit-card-header">
+          <div>
+            <h2 style="font-size:13px;font-weight:700;color:#334155;margin-bottom:4px">Evolução trimestral das linhas de cuidado</h2>
+            <div style="font-size:11px;color:#94a3b8">Saudável, situacional, gestantes e crônicos · JAN/26 a MAR/26</div>
+          </div>
+          <span class="petit-chip">Linhas de cuidado</span>
+        </div>
+        <div class="chart-wrap" style="height:340px">
+          <canvas id="petitCareLinesChart"></canvas>
+        </div>
+      </div>
+
+      <div class="card-box">
+        <div class="section-title"><i class="fa-solid fa-gauge-high" style="margin-right:6px"></i>Indicadores de usabilidade</div>
+        <div class="petit-metric-stack">
+          <div class="petit-metric"><span>% de usuários que falaram com a Sanus no mês</span><strong>30%</strong></div>
+          <div class="petit-metric"><span>% de usuários que falaram nos últimos 6 meses</span><strong>30%</strong></div>
+          <div class="petit-metric"><span>% de titulares que falaram nos últimos 6 meses</span><strong>30%</strong></div>
+        </div>
+        <div class="petit-placeholder" style="margin-top:16px">
+          Consultas evitadas com fornecimento de encaminhamento médico: <strong>—</strong><br/>
+          Agendamentos com especialidades complexas*: <strong>—</strong>
+        </div>
+        <div class="petit-footnote">*A conversão para linhas de cuidado pode acontecer baseada nas queixas apresentadas, justificativa dos agendamentos, investigação de saúde ou autodeclaração do usuário.</div>
+      </div>
+    </div>
+
+    <div class="petit-grid-3">
+      <div class="card-box">
+        <div class="section-title"><i class="fa-solid fa-vial" style="margin-right:6px"></i>Principais exames solicitados</div>
+        <div style="font-size:11px;color:#94a3b8;margin-bottom:14px">N = 417 agendamentos</div>
+        <div class="petit-dist-list">
+          <div class="petit-dist-row"><div class="petit-dist-label">Ultrassom</div><div class="petit-dist-track"><div class="petit-dist-bar" style="width:60.2%;background:#0f766e"></div></div><div class="petit-dist-value">60,2%</div></div>
+          <div class="petit-dist-row"><div class="petit-dist-label">Ressonância</div><div class="petit-dist-track"><div class="petit-dist-bar" style="width:34.8%;background:#2563eb"></div></div><div class="petit-dist-value">34,8%</div></div>
+          <div class="petit-dist-row"><div class="petit-dist-label">Eletrocardiograma</div><div class="petit-dist-track"><div class="petit-dist-bar" style="width:2.6%;background:#7c3aed"></div></div><div class="petit-dist-value">2,6%</div></div>
+          <div class="petit-dist-row"><div class="petit-dist-label">Terapias</div><div class="petit-dist-track"><div class="petit-dist-bar" style="width:2.4%;background:#be185d"></div></div><div class="petit-dist-value">2,4%</div></div>
+        </div>
+      </div>
+
+      <div class="card-box">
+        <div class="section-title"><i class="fa-solid fa-list-check" style="margin-right:6px"></i>Distribuição das solicitações</div>
+        <div style="font-size:11px;color:#94a3b8;margin-bottom:14px">N = 417 agendamentos</div>
+        <div class="petit-dist-list">
+          <div class="petit-dist-row"><div class="petit-dist-label">Consultas médicas</div><div class="petit-dist-track"><div class="petit-dist-bar" style="width:60.2%;background:#2563eb"></div></div><div class="petit-dist-value">60,2%</div></div>
+          <div class="petit-dist-row"><div class="petit-dist-label">Exames</div><div class="petit-dist-track"><div class="petit-dist-bar" style="width:34.8%;background:#0f766e"></div></div><div class="petit-dist-value">34,8%</div></div>
+          <div class="petit-dist-row"><div class="petit-dist-label">Odontologia</div><div class="petit-dist-track"><div class="petit-dist-bar" style="width:2.6%;background:#0891b2"></div></div><div class="petit-dist-value">2,6%</div></div>
+          <div class="petit-dist-row"><div class="petit-dist-label">Terapias</div><div class="petit-dist-track"><div class="petit-dist-bar" style="width:2.4%;background:#be185d"></div></div><div class="petit-dist-value">2,4%</div></div>
+        </div>
+      </div>
+
+      <div class="card-box">
+        <div class="section-title"><i class="fa-solid fa-user-doctor" style="margin-right:6px"></i>Principais especialidades solicitadas</div>
+        <div class="petit-dist-list">
+          <div class="petit-dist-row"><div class="petit-dist-label">Clínico geral</div><div class="petit-dist-track"><div class="petit-dist-bar" style="width:25%;background:#0f766e"></div></div><div class="petit-dist-value">25%</div></div>
+          <div class="petit-dist-row"><div class="petit-dist-label">Cardiologia</div><div class="petit-dist-track"><div class="petit-dist-bar" style="width:25%;background:#2563eb"></div></div><div class="petit-dist-value">25%</div></div>
+          <div class="petit-dist-row"><div class="petit-dist-label">Dermatologia</div><div class="petit-dist-track"><div class="petit-dist-bar" style="width:25%;background:#7c3aed"></div></div><div class="petit-dist-value">25%</div></div>
+          <div class="petit-dist-row"><div class="petit-dist-label">Psiquiatria</div><div class="petit-dist-track"><div class="petit-dist-bar" style="width:25%;background:#be185d"></div></div><div class="petit-dist-value">25%</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card-box">
+      <div class="section-title"><i class="fa-solid fa-chart-column" style="margin-right:6px"></i>Comparativo mensal de atendimentos</div>
+      <div class="petit-placeholder">
+        Estrutura prevista no material: usuários, agendamentos e atendimentos por mês. Os valores do PDF estão como `XXX`, então este bloco fica sinalizado para conexão com a fonte oficial antes de exibir números reais.
+      </div>
+    </div>
+  </div>
+
   <!-- Tab: Qualidade Estratégica -->
   <div class="tab-content" id="tab-qualidade-estrategica">
     <div class="card-box" style="display:flex;align-items:center;gap:20px;padding:20px 28px">
@@ -961,7 +1109,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
 const fmt = n => Number(n).toLocaleString('pt-BR');
 const mN = {'01':'Jan','02':'Fev','03':'Mar','04':'Abr','05':'Mai','06':'Jun','07':'Jul','08':'Ago','09':'Set','10':'Out','11':'Nov','12':'Dez'};
 
-let usersData = [], companiesData = [], eChart, agegroupChart, appointmentTypesTrendChart, sessionsEvolChart, sessionsTotalEvolChart, sessionMonthlyEvolutionChart, sessionsAttendanceChart, sessionsDailyChart;
+let usersData = [], companiesData = [], eChart, agegroupChart, appointmentTypesTrendChart, petitCareLinesChart, sessionsEvolChart, sessionsTotalEvolChart, sessionMonthlyEvolutionChart, sessionsAttendanceChart, sessionsDailyChart;
 let currentGroup = '', currentType = '', currentCompany = '';
 let selectedMonths = new Set();
 let selectedAppointmentTypeMonths = new Set();
@@ -978,7 +1126,7 @@ document.querySelectorAll('.tab').forEach(t => {
     t.classList.add('active');
     document.getElementById('tab-' + t.dataset.tab).classList.add('active');
     const activeTab = t.dataset.tab;
-    const hasPeriodo = activeTab === 'agendamentos' || activeTab === 'sessoes' || activeTab.startsWith('qualidade');
+    const hasPeriodo = activeTab === 'agendamentos' || activeTab === 'sessoes' || activeTab === 'petit-comite' || activeTab.startsWith('qualidade');
     document.getElementById('filter-periodo').style.display = hasPeriodo ? 'flex' : 'none';
     updateFilterVisibility();
     updateFilterInfo();
@@ -989,7 +1137,7 @@ document.querySelectorAll('.tab').forEach(t => {
 function updateFilterVisibility() {
   const typeGroup = document.getElementById('filter-type-group');
   const activeTab = getActiveTab();
-  if (typeGroup) typeGroup.style.display = (activeTab === 'sessoes' || activeTab.startsWith('qualidade')) ? 'none' : 'flex';
+  if (typeGroup) typeGroup.style.display = (activeTab === 'sessoes' || activeTab === 'petit-comite' || activeTab.startsWith('qualidade')) ? 'none' : 'flex';
 }
 
 // --- Filtros ---
@@ -1053,7 +1201,7 @@ function updateFilterInfo() {
   if (currentGroup) parts.push(gSel.options[gSel.selectedIndex].text);
   if (currentCompany) parts.push(currentCompany);
   const activeTab = getActiveTab();
-  if (currentType && activeTab !== 'sessoes' && !activeTab.startsWith('qualidade')) parts.push(currentType === 'TITULAR' ? 'Titular' : 'Dependente');
+  if (currentType && activeTab !== 'sessoes' && activeTab !== 'petit-comite' && !activeTab.startsWith('qualidade')) parts.push(currentType === 'TITULAR' ? 'Titular' : 'Dependente');
   document.getElementById('filter-info').textContent = parts.length ? `Filtrando: ${parts.join(' · ')}` : '';
 }
 
@@ -1074,7 +1222,7 @@ function buildQS() {
   if (currentGroup)   p.set('group_name', currentGroup);
   if (currentCompany) p.set('company', currentCompany);
   const activeTab = getActiveTab();
-  if (currentType && activeTab !== 'sessoes' && !activeTab.startsWith('qualidade')) p.set('type', currentType);
+  if (currentType && activeTab !== 'sessoes' && activeTab !== 'petit-comite' && !activeTab.startsWith('qualidade')) p.set('type', currentType);
   const s = p.toString();
   return s ? '?' + s : '';
 }
@@ -1091,13 +1239,14 @@ function getActiveTab() {
 
 function isPeriodFilteredTab() {
   const activeTab = getActiveTab();
-  return activeTab === 'agendamentos' || activeTab === 'sessoes' || activeTab.startsWith('qualidade');
+  return activeTab === 'agendamentos' || activeTab === 'sessoes' || activeTab === 'petit-comite' || activeTab.startsWith('qualidade');
 }
 
 function loadPeriodFilteredTab() {
   const activeTab = getActiveTab();
   if (activeTab === 'agendamentos') loadAppointments();
   else if (activeTab === 'sessoes') loadSessions();
+  else if (activeTab === 'petit-comite') renderPetitComite();
   else if (activeTab.startsWith('qualidade')) loadQuality();
 }
 
@@ -1303,6 +1452,70 @@ function loadSessionAppointmentTypes() {
     ? [...selectedAppointmentTypeMonths].sort()
     : appointmentTypesBaseMonths;
   return loadAppointmentTypes(months, 'appointment-types');
+}
+
+// --- Petit Comitê ---
+function petitPeriodLabel() {
+  const months = [...selectedMonths].sort();
+  if (months.length === 0) return 'Período: DD/MM/2026 a DD/MM/2026';
+  if (months.length === 1) {
+    const [y, mm] = months[0].split('-');
+    return `Período: ${mN[mm]}/${y}`;
+  }
+  const first = months[0].split('-');
+  const last = months[months.length - 1].split('-');
+  const firstLabel = mN[first[1]] ? `${mN[first[1]]}/${first[0]}` : months[0];
+  const lastLabel = mN[last[1]] ? `${mN[last[1]]}/${last[0]}` : months[months.length - 1];
+  return `Período: ${firstLabel} a ${lastLabel}`;
+}
+
+function renderPetitComite() {
+  const period = document.getElementById('petit-period');
+  const cv = document.getElementById('petitCareLinesChart');
+  if (period) period.textContent = petitPeriodLabel();
+  if (!cv) return;
+
+  if (petitCareLinesChart) petitCareLinesChart.destroy();
+  petitCareLinesChart = new Chart(cv, {
+    type: 'bar',
+    data: {
+      labels: ['JAN/26', 'FEV/26', 'MAR/26'],
+      datasets: [
+        { label: 'Saudável', data: [1861, 1886, 2419], backgroundColor: '#0f766e', borderRadius: 6, borderSkipped: false },
+        { label: 'Situacional', data: [309, 380, 406], backgroundColor: '#2563eb', borderRadius: 6, borderSkipped: false },
+        { label: 'Gestantes', data: [120, 154, 167], backgroundColor: '#be185d', borderRadius: 6, borderSkipped: false },
+        { label: 'Crônicos', data: [780, 1232, 1403], backgroundColor: '#7c3aed', borderRadius: 6, borderSkipped: false },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: true, position: 'top', align: 'end', labels: { boxWidth: 10, boxHeight: 10, color: '#475569', font: { size: 11 } } },
+        tooltip: {
+          backgroundColor: '#1e293b',
+          borderColor: '#334155',
+          borderWidth: 1,
+          titleColor: '#cbd5e1',
+          bodyColor: '#f8fafc',
+          callbacks: { label: c => `${c.dataset.label}: ${fmt(c.parsed.y)}` },
+        },
+      },
+      scales: {
+        x: {
+          ticks: { color: '#64748b', font: { size: 11, weight: '600' } },
+          grid: { display: false },
+          border: { display: false },
+        },
+        y: {
+          beginAtZero: true,
+          ticks: { color: '#94a3b8', font: { size: 10 }, callback: v => fmt(v) },
+          grid: { color: 'rgba(148,163,184,0.18)' },
+          border: { display: false },
+        },
+      },
+    },
+  });
 }
 
 // --- Agendamentos ---
