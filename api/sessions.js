@@ -240,24 +240,6 @@ export default async function handler(req, res) {
       'NRO_DOCUMENTO',
     ]);
 
-    // Card 1 — Total
-    // - Com filtro de grupo/empresa: soma beneficiários da view (rápido).
-    // - Sem filtro: COUNT direto no botmaker_session, opcionalmente filtrado por mês.
-    const totalPromise = useCompanyFilterSum
-      ? runQuery(wh.id, `
-        SELECT
-          COUNT(*) AS total,
-          COUNT(DISTINCT NOME_CLIENTE) AS empresas
-        FROM ${VW_BENEFICIARIOS} b
-        WHERE NOME_CLIENTE IS NOT NULL
-          ${extraFilter}
-      `)
-      : runQuery(wh.id, `
-        SELECT COUNT(*) AS total, 0 AS empresas
-        FROM ${SESSION_TABLE}
-        ${sessionDateFilter ? `WHERE ${sessionDateFilter}` : ''}
-      `);
-
     const economicGroupTotalPromise = runQuery(wh.id, `
       SELECT COUNT(*) AS total
       FROM ${SESSION_TABLE}
@@ -359,20 +341,13 @@ export default async function handler(req, res) {
         LIMIT 30
       `);
 
-    const [totalSettled, typificationsSettled, economicGroupFinishersSettled, economicGroupOptionsSettled, economicGroupTotalSettled, companySessionsSettled] = await Promise.allSettled([
-      totalPromise,
+    const [typificationsSettled, economicGroupFinishersSettled, economicGroupOptionsSettled, economicGroupTotalSettled, companySessionsSettled] = await Promise.allSettled([
       typificationsPromise,
       economicGroupFinishersPromise,
       economicGroupOptionsPromise,
       economicGroupTotalPromise,
       companySessionsPromise,
     ]);
-    if (totalSettled.status !== 'fulfilled') {
-      throw totalSettled.reason instanceof Error ? totalSettled.reason : new Error(String(totalSettled.reason));
-    }
-    const rows = totalSettled.value;
-    const row = rows[0] || [];
-    const total = toInt(row[0]);
 
     const typificationsError = typificationsSettled.status === 'rejected'
       ? (typificationsSettled.reason instanceof Error ? typificationsSettled.reason.message : String(typificationsSettled.reason))
@@ -418,8 +393,6 @@ export default async function handler(req, res) {
     const economicGroupTotalError = companySessionsError || (companySessionsSettled.status === 'fulfilled' ? null : economicGroupTotalQueryError);
 
     res.status(200).json({
-      total,
-      empresas: toInt(row[1]),
       finishers_group_name: finisherGroupName,
       economic_group_total: economicGroupTotal,
       economic_group_total_error: economicGroupTotalError,
@@ -434,7 +407,6 @@ export default async function handler(req, res) {
       typifications,
       typifications_error: typificationsError,
       typifications_filter_applied: { period: true, organization: true, type: true },
-      source: useCompanyFilterSum ? "company_filter_sum" : "botmaker_session",
       period_filter_applied: meses.length > 0,
     });
   } catch (err) {

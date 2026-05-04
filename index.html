@@ -645,17 +645,6 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
 
   <!-- Tab: Sessões -->
   <div class="tab-content" id="tab-sessoes">
-    <div class="card-box" data-qtag="#Q1" style="display:flex;align-items:center;gap:20px;padding:20px 28px">
-      <div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#14b8a6,#0f766e);display:flex;align-items:center;justify-content:center">
-        <i class="fa-solid fa-comments" style="font-size:20px;color:#fff"></i>
-      </div>
-      <div>
-        <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;margin-bottom:3px">Total de Sessões</div>
-        <div style="font-size:34px;font-weight:700;color:#0f766e;letter-spacing:-1px;line-height:1" id="bullet-sessoes">—</div>
-        <div style="font-size:11px;color:#94a3b8;margin-top:3px" id="bullet-sessoes-periodo">botmaker_session · todos os períodos</div>
-      </div>
-    </div>
-
     <div class="card-box" data-qtag="#Q13" style="display:flex;align-items:center;justify-content:space-between;gap:20px;padding:20px 28px;flex-wrap:wrap">
       <div style="display:flex;align-items:center;gap:20px;min-width:260px">
         <div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#0f766e,#0b3b47);display:flex;align-items:center;justify-content:center">
@@ -1906,17 +1895,14 @@ function renderSessionTypifications(items, opts) {
 async function loadSessions() {
   buildAppointmentTypesPeriodoOptions();
   buildSessionsDailyMonthOptions();
-  const bullet = document.getElementById('bullet-sessoes');
   const economicGroupBullet = document.getElementById('bullet-sessoes-eg');
   const economicGroupPeriodoLabel = document.getElementById('bullet-sessoes-eg-periodo');
-  const periodoLabel = document.getElementById('bullet-sessoes-periodo');
   const economicFinishersLoading = document.getElementById('session-finishers-eg-loading');
   const economicFinishersContent = document.getElementById('session-finishers-eg-content');
   const sessionCompaniesLoading = document.getElementById('session-companies-loading');
   const sessionCompaniesWrap = document.getElementById('session-companies-wrap');
   const typificationsLoading = document.getElementById('session-typifications-loading');
   const typificationsContent = document.getElementById('session-typifications-content');
-  if (bullet) bullet.textContent = '…';
   if (economicGroupBullet) economicGroupBullet.textContent = '…';
   if (economicFinishersLoading) {
     economicFinishersLoading.style.display = 'block';
@@ -1968,22 +1954,7 @@ async function loadSessions() {
   const sessions = await safeGet('/api/sessions' + qs);
   if (sessions && !sessions.error) {
     renderSessionFinisherGroupFilters(sessions.economic_group_options || []);
-    if (bullet) bullet.textContent = fmt(sessions.total);
     if (economicGroupBullet) economicGroupBullet.textContent = sessions.economic_group_total_error ? 'Erro' : fmt(sessions.economic_group_total || 0);
-    const empresas = sessions.empresas || 0;
-    let label = 'botmaker_session · todos os períodos';
-    if (sessions.source === 'company_filter_sum') {
-      label = `Soma do filtro de empresas · ${fmt(empresas)} ${empresas === 1 ? 'empresa' : 'empresas'}`;
-      if (currentCompany) label = 'Valor do filtro da empresa selecionada';
-      else if (currentGroup) label = `Soma dos valores do filtro Empresa · ${fmt(empresas)} ${empresas === 1 ? 'empresa' : 'empresas'}`;
-    } else {
-      if (meses.length === 1) { const [y,mm] = meses[0].split('-'); label = `botmaker_session · ${mN[mm]}/${y}`; }
-      else if (meses.length > 1) label = `botmaker_session · ${meses.length} meses selecionados`;
-    }
-    if (periodoLabel) {
-      periodoLabel.textContent = label;
-      periodoLabel.title = label;
-    }
     if (economicGroupPeriodoLabel) {
       let economicGroupLabel = sessions.company_sessions_mode === 'company'
         ? 'Mesmo total do Q14 · empresas do filtro global'
@@ -2007,13 +1978,8 @@ async function loadSessions() {
       error: sessions.typifications_error,
     });
   } else {
-    if (bullet) bullet.textContent = 'Erro';
     if (economicGroupBullet) economicGroupBullet.textContent = 'Erro';
     const msg = sessions && sessions.error ? sessions.error : 'Erro ao carregar sessões';
-    if (periodoLabel) {
-      periodoLabel.textContent = String(msg).slice(0, 220);
-      periodoLabel.title = String(msg);
-    }
     if (economicGroupPeriodoLabel) {
       economicGroupPeriodoLabel.textContent = String(msg).slice(0, 220);
       economicGroupPeriodoLabel.title = String(msg);
