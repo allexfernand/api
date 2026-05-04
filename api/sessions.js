@@ -287,7 +287,6 @@ export default async function handler(req, res) {
           ${companySessionsWhere ? `AND ${companySessionsWhere}` : ''}
         GROUP BY TRIM(CAST(o.${quoteIdent('name')} AS STRING))
         ORDER BY total_sessions DESC
-        LIMIT 100
       `)
       : runQuery(wh.id, `
         SELECT
@@ -307,7 +306,6 @@ export default async function handler(req, res) {
           ELSE TRIM(CAST(s.${quoteIdent('economic_group_name')} AS STRING))
         END
         ORDER BY total_sessions DESC
-        LIMIT 100
       `);
 
     const economicGroupOptionsPromise = runQueryQuick(wh.id, `
@@ -400,12 +398,6 @@ export default async function handler(req, res) {
           total: toInt(r[1]),
         })).filter((item) => item.name)
       : [];
-    const economicGroupTotalError = economicGroupTotalSettled.status === 'rejected'
-      ? (economicGroupTotalSettled.reason instanceof Error ? economicGroupTotalSettled.reason.message : String(economicGroupTotalSettled.reason))
-      : null;
-    const economicGroupTotal = economicGroupTotalSettled.status === 'fulfilled'
-      ? toInt(economicGroupTotalSettled.value[0]?.[0])
-      : 0;
     const companySessionsError = companySessionsSettled.status === 'rejected'
       ? (companySessionsSettled.reason instanceof Error ? companySessionsSettled.reason.message : String(companySessionsSettled.reason))
       : null;
@@ -415,6 +407,15 @@ export default async function handler(req, res) {
           total: toInt(r[1]),
         }))
       : [];
+    const economicGroupTotalQueryError = economicGroupTotalSettled.status === 'rejected'
+      ? (economicGroupTotalSettled.reason instanceof Error ? economicGroupTotalSettled.reason.message : String(economicGroupTotalSettled.reason))
+      : null;
+    const economicGroupTotalFallback = economicGroupTotalSettled.status === 'fulfilled'
+      ? toInt(economicGroupTotalSettled.value[0]?.[0])
+      : 0;
+    const companySessionsTotal = companySessions.reduce((acc, item) => acc + (Number(item.total) || 0), 0);
+    const economicGroupTotal = companySessionsSettled.status === 'fulfilled' ? companySessionsTotal : economicGroupTotalFallback;
+    const economicGroupTotalError = companySessionsError || (companySessionsSettled.status === 'fulfilled' ? null : economicGroupTotalQueryError);
 
     res.status(200).json({
       total,

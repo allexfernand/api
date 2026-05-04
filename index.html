@@ -667,9 +667,6 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
           <div style="font-size:11px;color:#94a3b8;margin-top:3px" id="bullet-sessoes-eg-periodo">botmaker_session.economic_group_name · todos os períodos</div>
         </div>
       </div>
-      <select class="filter-select" id="session-total-eg-group-select" onchange="onSessionFinisherEconomicGroupChange(this.value)" style="min-width:220px;max-width:320px">
-        <option value="">(Todos os grupos econômicos)</option>
-      </select>
     </div>
 
     <div class="fluid-grid">
@@ -1773,7 +1770,6 @@ function renderSessionEconomicGroupFinishers(items, opts) {
 
 function renderSessionFinisherGroupFilters(options) {
   const selects = [
-    document.getElementById('session-total-eg-group-select'),
     document.getElementById('session-finisher-eg-group-select'),
   ].filter(Boolean);
   if (!selects.length) return;
@@ -1798,7 +1794,7 @@ function renderSessionFinisherGroupFilters(options) {
 
 function onSessionFinisherEconomicGroupChange(value) {
   selectedSessionFinisherEconomicGroup = value || '';
-  document.querySelectorAll('#session-total-eg-group-select,#session-finisher-eg-group-select').forEach((select) => {
+  document.querySelectorAll('#session-finisher-eg-group-select').forEach((select) => {
     if (select.value !== selectedSessionFinisherEconomicGroup) select.value = selectedSessionFinisherEconomicGroup;
   });
   loadSessions();
@@ -1989,12 +1985,13 @@ async function loadSessions() {
       periodoLabel.title = label;
     }
     if (economicGroupPeriodoLabel) {
-      let economicGroupLabel = 'botmaker_session.economic_group_name · todos os períodos';
-      if (selectedSessionFinisherEconomicGroup) economicGroupLabel = `economic_group_name · ${selectedSessionFinisherEconomicGroup}`;
-      else if (currentGroup) economicGroupLabel = `economic_group_name · ${currentGroup}`;
+      let economicGroupLabel = sessions.company_sessions_mode === 'company'
+        ? 'Mesmo total do Q14 · empresas do filtro global'
+        : 'Mesmo total do Q14 · grupos econômicos';
+      if (currentGroup) economicGroupLabel += ` · ${currentGroup}`;
       if (meses.length === 1) { const [y, mm] = meses[0].split('-'); economicGroupLabel += ` · ${mN[mm]}/${y}`; }
       else if (meses.length > 1) economicGroupLabel += ` · ${meses.length} meses selecionados`;
-      if (currentCompany) economicGroupLabel += ' · empresa não aplicada';
+      if (currentCompany) economicGroupLabel += ` · ${currentCompany}`;
       economicGroupPeriodoLabel.textContent = economicGroupLabel;
       economicGroupPeriodoLabel.title = economicGroupLabel;
     }
