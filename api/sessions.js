@@ -196,6 +196,10 @@ export default async function handler(req, res) {
     const sessionDateFilter = buildSessionDateFilter(meses);
     const finishersDateFilter = sessionDateFilter;
     const typificationExpr = sessionTypificationExpr('variables');
+    const economicGroupFilter = groupName
+      ? `UPPER(TRIM(CAST(${quoteIdent('economic_group_name')} AS STRING))) = UPPER(TRIM('${escape(groupName)}'))`
+      : null;
+    const economicGroupWhere = [sessionDateFilter, economicGroupFilter].filter(Boolean).join(' AND ');
     const beneficiaryColumns = useCompanyFilterSum ? await getColumns(wh.id, VW_BENEFICIARIOS) : [];
     const beneficiaryCpfColumn = pickColumn(beneficiaryColumns, [
       'cpf',
@@ -279,6 +283,16 @@ export default async function handler(req, res) {
         GROUP BY CASE WHEN finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END
       `);
 
+    const economicGroupFinishersPromise = runQuery(wh.id, `
+      SELECT
+        CASE WHEN finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END AS tipo_atendimento,
+        COUNT(*) AS total_sessions
+      FROM ${SESSION_TABLE}
+      ${economicGroupWhere ? `WHERE ${economicGroupWhere}` : ''}
+      GROUP BY CASE WHEN finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END
+      ORDER BY total_sessions DESC
+    `);
+
     const typificationsPromise = useCompanyFilterSum
       ? (beneficiaryCpfColumn ? runQueryQuick(wh.id, `
         WITH filtered_cpfs AS (
@@ -318,7 +332,12 @@ export default async function handler(req, res) {
         LIMIT 30
       `);
 
-    const [totalSettled, finishersSettled, typificationsSettled] = await Promise.allSettled([totalPromise, finishersPromise, typificationsPromise]);
+    const [totalSettled, finishersSettled, typificationsSettled, economicGroupFinishersSettled] = await Promise.allSettled([
+      totalPromise,
+      finishersPromise,
+      typificationsPromise,
+      economicGroupFinishersPromise,
+    ]);
     if (totalSettled.status !== 'fulfilled') {
       throw totalSettled.reason instanceof Error ? totalSettled.reason : new Error(String(totalSettled.reason));
     }
@@ -379,11 +398,23 @@ export default async function handler(req, res) {
           total: toInt(r[1]),
         }))
       : [];
+    const economicGroupFinishersError = economicGroupFinishersSettled.status === 'rejected'
+      ? (economicGroupFinishersSettled.reason instanceof Error ? economicGroupFinishersSettled.reason.message : String(economicGroupFinishersSettled.reason))
+      : null;
+    const economicGroupFinishers = economicGroupFinishersSettled.status === 'fulfilled'
+      ? economicGroupFinishersSettled.value.map((r) => ({
+          tipo: String(getCell(r[0]) || "—"),
+          total: toInt(r[1]),
+        }))
+      : [];
 
     res.status(200).json({
       total,
       empresas: toInt(row[1]),
       finishers,
+      economic_group_finishers: economicGroupFinishers,
+      economic_group_finishers_error: economicGroupFinishersError,
+      economic_group_finishers_filter_applied: { period: true, group: true, company: !company },
       typifications,
       typifications_error: typificationsError,
       typifications_filter_applied: { period: true, organization: true, type: true },
