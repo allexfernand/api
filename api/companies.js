@@ -36,10 +36,10 @@ function buildFilters(groupName, typeFilter) {
   const conditions = [];
   if (groupName) {
     conditions.push(`b.ID_EMPRESA IN (
-      SELECT id FROM sanus_databricks.sanus_prod.organizations WHERE name = '${escape(groupName)}'
+      SELECT id FROM hive_metastore.sanus_prod.organizations WHERE name = '${escape(groupName)}'
       UNION
-      SELECT id FROM sanus_databricks.sanus_prod.organizations
-      WHERE matriz_id = (SELECT id FROM sanus_databricks.sanus_prod.organizations WHERE name = '${escape(groupName)}' LIMIT 1)
+      SELECT id FROM hive_metastore.sanus_prod.organizations
+      WHERE matriz_id = (SELECT id FROM hive_metastore.sanus_prod.organizations WHERE name = '${escape(groupName)}' LIMIT 1)
     )`);
   }
   if (typeFilter === 'TITULAR') {

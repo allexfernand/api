@@ -35,7 +35,7 @@ const getCell = (cell) => {
 const toInt = (v) => { const n = parseInt(getCell(v)); return Number.isFinite(n) ? n : 0; };
 
 const SESSION_TABLE = `hive_metastore.sanus_prod.botmaker_session`;
-const ORGANIZATIONS_TABLE = `sanus_databricks.sanus_prod.organizations`;
+const ORGANIZATIONS_TABLE = `hive_metastore.sanus_prod.organizations`;
 
 function sessionTypificationExpr(variablesColumn, tableAlias = '') {
   const prefix = tableAlias ? `${tableAlias}.` : '';

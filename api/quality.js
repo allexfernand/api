@@ -7,7 +7,7 @@ const HEADERS = { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application
 
 const SUMMARY_TABLE = "hive_metastore.sanus_prod.quality_analysis_silver_summary";
 const CRITERIA_TABLE = "hive_metastore.sanus_prod.quality_analysis_silver_criteria";
-const ORGANIZATIONS_TABLE = "sanus_databricks.sanus_prod.organizations";
+const ORGANIZATIONS_TABLE = "hive_metastore.sanus_prod.organizations";
 
 const DATE_CANDIDATES = [
   "created_at", "analysis_created_at", "analysis_at", "processed_at", "updated_at",

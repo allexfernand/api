@@ -38,10 +38,10 @@ function buildFilters(groupName, typeFilter) {
   const conditions = [`b.created_at IS NOT NULL`];
   if (groupName) {
     conditions.push(`b.organization_id IN (
-      SELECT id FROM sanus_databricks.sanus_prod.organizations WHERE name = '${escape(groupName)}'
+      SELECT id FROM hive_metastore.sanus_prod.organizations WHERE name = '${escape(groupName)}'
       UNION
-      SELECT id FROM sanus_databricks.sanus_prod.organizations
-      WHERE matriz_id = (SELECT id FROM sanus_databricks.sanus_prod.organizations WHERE name = '${escape(groupName)}' LIMIT 1)
+      SELECT id FROM hive_metastore.sanus_prod.organizations
+      WHERE matriz_id = (SELECT id FROM hive_metastore.sanus_prod.organizations WHERE name = '${escape(groupName)}' LIMIT 1)
     )`);
   }
   if (typeFilter === 'TITULAR') {
@@ -76,12 +76,12 @@ export default async function handler(req, res) {
       `),
       !groupName ? runQuery(wh.id, `
         SELECT o1.name AS grupo, COUNT(filiais.id) AS total_filiais
-        FROM sanus_databricks.sanus_prod.organizations o1
-        LEFT JOIN sanus_databricks.sanus_prod.organizations filiais ON filiais.matriz_id = o1.id
+        FROM hive_metastore.sanus_prod.organizations o1
+        LEFT JOIN hive_metastore.sanus_prod.organizations filiais ON filiais.matriz_id = o1.id
         WHERE o1.active = true
           AND o1.name IS NOT NULL
           AND o1.id IN (
-            SELECT matriz_id FROM sanus_databricks.sanus_prod.organizations
+            SELECT matriz_id FROM hive_metastore.sanus_prod.organizations
             WHERE matriz_id IS NOT NULL
           )
         GROUP BY o1.name

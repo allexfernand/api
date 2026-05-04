@@ -9,7 +9,7 @@ const TOKEN = process.env.DATABRICKS_TOKEN;
 const HEADERS = { "Authorization": `Bearer ${TOKEN}`, "Content-Type": "application/json" };
 
 const SESSION_TABLE       = `hive_metastore.sanus_prod.botmaker_session`;
-const ORGANIZATIONS_TABLE = `sanus_databricks.sanus_prod.organizations`;
+const ORGANIZATIONS_TABLE = `hive_metastore.sanus_prod.organizations`;
 
 const SESSION_DATE_COLUMN = 'creation_time';
 
