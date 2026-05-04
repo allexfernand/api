@@ -183,8 +183,6 @@ export default async function handler(req, res) {
   const typeFilter = req.query.type || null;
   const useCompanyFilterSum = Boolean(groupName || company || typeFilter);
   const extraFilter = buildExtraFilter(groupName, company, typeFilter);
-  const useFinisherCompanyFilter = Boolean(finisherGroupName || company || typeFilter);
-  const finisherExtraFilter = buildExtraFilter(finisherGroupName, company, typeFilter);
 
   const SESSION_DATE_COLUMN = 'creation_time';
 
@@ -198,13 +196,12 @@ export default async function handler(req, res) {
     if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
 
     const sessionDateFilter = buildSessionDateFilter(meses);
-    const finishersDateFilter = sessionDateFilter;
     const typificationExpr = sessionTypificationExpr('variables');
     const economicGroupFilter = finisherGroupName
       ? `UPPER(TRIM(CAST(${quoteIdent('economic_group_name')} AS STRING))) = UPPER(TRIM('${escape(finisherGroupName)}'))`
       : null;
     const economicGroupWhere = [sessionDateFilter, economicGroupFilter].filter(Boolean).join(' AND ');
-    const beneficiaryColumns = (useCompanyFilterSum || useFinisherCompanyFilter) ? await getColumns(wh.id, VW_BENEFICIARIOS) : [];
+    const beneficiaryColumns = useCompanyFilterSum ? await getColumns(wh.id, VW_BENEFICIARIOS) : [];
     const beneficiaryCpfColumn = pickColumn(beneficiaryColumns, [
       'cpf',
       'CPF',
@@ -248,43 +245,6 @@ export default async function handler(req, res) {
         SELECT COUNT(*) AS total, 0 AS empresas
         FROM ${SESSION_TABLE}
         ${sessionDateFilter ? `WHERE ${sessionDateFilter}` : ''}
-      `);
-
-    // Card 2 — Sessões finalizadas por (Humano vs IA)
-    // Mantido com a lógica anterior por CPF/beneficiário.
-    const finishersPromise = useFinisherCompanyFilter
-      ? (beneficiaryCpfColumn ? runQueryQuick(wh.id, `
-        WITH filtered_cpfs AS (
-          SELECT DISTINCT ${normalizeCpfExpr(`b.${quoteIdent(beneficiaryCpfColumn)}`)} AS cpf
-          FROM ${VW_BENEFICIARIOS} b
-          WHERE NOME_CLIENTE IS NOT NULL
-            ${finisherExtraFilter}
-            AND ${normalizeCpfExpr(`b.${quoteIdent(beneficiaryCpfColumn)}`)} IS NOT NULL
-        ),
-        sessions_filtered AS (
-          SELECT finished_by, ${quoteIdent('variables')} AS variables
-          FROM ${SESSION_TABLE}
-          ${finishersDateFilter ? `WHERE ${finishersDateFilter} AND ${sessionVariablesPrefilter('variables')}` : `WHERE ${sessionVariablesPrefilter('variables')}`}
-        ),
-        sessions_resolved AS (
-          SELECT finished_by, ${sessionCpfExpr('variables')} AS cpf
-          FROM sessions_filtered
-        )
-        SELECT /*+ BROADCAST(filtered_cpfs) */
-          CASE WHEN s.finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END AS tipo_atendimento,
-          COUNT(*) AS total_sessions
-        FROM sessions_resolved s
-        INNER JOIN filtered_cpfs fc ON fc.cpf = s.cpf
-        WHERE s.cpf IS NOT NULL
-        GROUP BY CASE WHEN s.finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END
-      `) : Promise.reject(new Error(`Coluna de CPF/documento não encontrada em ${VW_BENEFICIARIOS}. Colunas disponíveis: ${beneficiaryColumns.slice(0, 80).join(', ')}`)))
-      : runQuery(wh.id, `
-        SELECT
-          CASE WHEN finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END AS tipo_atendimento,
-          COUNT(*) AS total_sessions
-        FROM ${SESSION_TABLE}
-        ${finishersDateFilter ? `WHERE ${finishersDateFilter}` : ''}
-        GROUP BY CASE WHEN finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END
       `);
 
     const economicGroupFinishersPromise = runQuery(wh.id, `
@@ -348,9 +308,8 @@ export default async function handler(req, res) {
         LIMIT 30
       `);
 
-    const [totalSettled, finishersSettled, typificationsSettled, economicGroupFinishersSettled, economicGroupOptionsSettled] = await Promise.allSettled([
+    const [totalSettled, typificationsSettled, economicGroupFinishersSettled, economicGroupOptionsSettled] = await Promise.allSettled([
       totalPromise,
-      finishersPromise,
       typificationsPromise,
       economicGroupFinishersPromise,
       economicGroupOptionsPromise,
@@ -362,51 +321,6 @@ export default async function handler(req, res) {
     const row = rows[0] || [];
     const total = toInt(row[0]);
 
-    let finishersError = finishersSettled.status === 'rejected'
-      ? (finishersSettled.reason instanceof Error ? finishersSettled.reason.message : String(finishersSettled.reason))
-      : null;
-    const finisherRows = finishersSettled.status === 'fulfilled' ? finishersSettled.value : [];
-    let rawFinishers = finisherRows.map((r) => ({
-      tipo: String(getCell(r[0]) || "—"),
-      total: toInt(r[1]),
-    }));
-    let rawFinishersTotal = rawFinishers.reduce((acc, item) => acc + item.total, 0);
-    let finishersUsedFallbackDistribution = false;
-    if (useCompanyFilterSum && rawFinishersTotal === 0 && !finishersError) {
-      try {
-        const fallbackRows = await runQueryQuick(wh.id, `
-          SELECT
-            CASE WHEN finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END AS tipo_atendimento,
-            COUNT(*) AS total_sessions
-          FROM ${SESSION_TABLE}
-          ${finishersDateFilter ? `WHERE ${finishersDateFilter}` : ''}
-          GROUP BY CASE WHEN finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END
-        `);
-        rawFinishers = fallbackRows.map((r) => ({
-          tipo: String(getCell(r[0]) || "—"),
-          total: toInt(r[1]),
-        }));
-        rawFinishersTotal = rawFinishers.reduce((acc, item) => acc + item.total, 0);
-        finishersUsedFallbackDistribution = rawFinishersTotal > 0;
-      } catch (err) {
-        finishersError = err instanceof Error ? err.message : String(err);
-      }
-    }
-    const shouldScaleFinishers = useCompanyFilterSum && !localFinisherGroupName && rawFinishersTotal > 0;
-    const scaledFinishers = rawFinishersTotal > 0
-      ? rawFinishers.map((item) => ({
-          ...item,
-          total: Math.round((item.total / rawFinishersTotal) * total),
-          raw_total: item.total,
-        }))
-      : [];
-    if (scaledFinishers.length > 0) {
-      const allocated = scaledFinishers.slice(0, -1).reduce((acc, item) => acc + item.total, 0);
-      scaledFinishers[scaledFinishers.length - 1].total = Math.max(total - allocated, 0);
-    }
-    const finishers = shouldScaleFinishers
-      ? scaledFinishers
-      : rawFinishers;
     const typificationsError = typificationsSettled.status === 'rejected'
       ? (typificationsSettled.reason instanceof Error ? typificationsSettled.reason.message : String(typificationsSettled.reason))
       : null;
@@ -435,7 +349,6 @@ export default async function handler(req, res) {
     res.status(200).json({
       total,
       empresas: toInt(row[1]),
-      finishers,
       finishers_group_name: finisherGroupName,
       economic_group_options: economicGroupOptions,
       economic_group_finishers: economicGroupFinishers,
@@ -444,12 +357,6 @@ export default async function handler(req, res) {
       typifications,
       typifications_error: typificationsError,
       typifications_filter_applied: { period: true, organization: true, type: true },
-      finishers_raw_total: rawFinishersTotal,
-      finishers_scaled_to_total: shouldScaleFinishers,
-      finishers_used_fallback_distribution: finishersUsedFallbackDistribution,
-      finishers_filter_applied: { period: true, organization: true, type: true },
-      finishers_fallback_month: null,
-      finishers_error: finishersError,
       source: useCompanyFilterSum ? "company_filter_sum" : "botmaker_session",
       period_filter_applied: meses.length > 0,
     });
