@@ -2072,7 +2072,7 @@ async function renderSessionsAttendanceChart(labels, monthValues, sessionValues,
   const modeLabel = document.getElementById('s-attendance-mode');
   if (!cv) return;
   if (modeLabel) {
-    if (data.mode === 'cpf_join' || data.mode === 'variables_json_filter') {
+    if (data.mode === 'cpf_join' || data.mode === 'variables_json_filter' || data.mode === 'organization_join') {
       const filterParts = [];
       if (data.filters && data.filters.group_name) filterParts.push(`grupo: ${data.filters.group_name}`);
       if (data.filters && data.filters.company) filterParts.push(`empresa: ${data.filters.company}`);
@@ -2261,7 +2261,7 @@ async function loadSessionsDailyEvolution() {
   const [year, mm] = String(month).split('-');
   if (modeLabel) {
     const parts = [mN[mm] ? `${mN[mm]}/${year}` : month];
-    if (data.mode === 'variables_json_filter') {
+    if (data.mode === 'variables_json_filter' || data.mode === 'organization_join') {
       if (data.filters && data.filters.group_name) parts.push(`grupo: ${data.filters.group_name}`);
       if (data.filters && data.filters.company) parts.push(`empresa: ${data.filters.company}`);
     }
@@ -2375,7 +2375,7 @@ async function loadSessionsEvolution() {
   }
 
   if (data && !data.error && modeLabel) {
-    if (data.mode === 'cpf_join' || data.mode === 'variables_json_filter') {
+    if (data.mode === 'cpf_join' || data.mode === 'variables_json_filter' || data.mode === 'organization_join') {
       const filterParts = [];
       if (data.filters && data.filters.group_name) filterParts.push(`grupo: ${data.filters.group_name}`);
       if (data.filters && data.filters.company)    filterParts.push(`empresa: ${data.filters.company}`);
@@ -2386,7 +2386,7 @@ async function loadSessionsEvolution() {
     }
   }
   if (totalModeLabel) {
-    if (data.mode === 'cpf_join' || data.mode === 'variables_json_filter') {
+    if (data.mode === 'cpf_join' || data.mode === 'variables_json_filter' || data.mode === 'organization_join') {
       const filterParts = [];
       if (data.filters && data.filters.group_name) filterParts.push(`grupo: ${data.filters.group_name}`);
       if (data.filters && data.filters.company) filterParts.push(`empresa: ${data.filters.company}`);
