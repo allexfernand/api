@@ -208,6 +208,10 @@ export default async function handler(req, res) {
       ? `CAST(o.${quoteIdent('id')} AS STRING) IN ${orgIdsSubquery(null, company)}`
       : (groupName ? `CAST(o.${quoteIdent('id')} AS STRING) IN ${orgIdsSubquery(groupName, null)}` : null);
     const companySessionsWhere = [companySessionsDateFilter, companySessionsOrgFilter].filter(Boolean).join(' AND ');
+    const companySessionsMode = groupName || company ? "company" : "economic_group";
+    const companySessionsSource = companySessionsMode === "company"
+      ? "botmaker_session.organization_id + organizations.id/name"
+      : "botmaker_session.economic_group_name";
     const beneficiaryColumns = useCompanyFilterSum ? await getColumns(wh.id, VW_BENEFICIARIOS) : [];
     const beneficiaryCpfColumn = pickColumn(beneficiaryColumns, [
       'cpf',
@@ -270,20 +274,33 @@ export default async function handler(req, res) {
       ORDER BY total_sessions DESC
     `);
 
-    const companySessionsPromise = runQuery(wh.id, `
-      SELECT
-        TRIM(CAST(o.${quoteIdent('name')} AS STRING)) AS empresa,
-        COUNT(*) AS total_sessions
-      FROM ${SESSION_TABLE} s
-      INNER JOIN ${ORGANIZATIONS_TABLE} o
-        ON CAST(s.${quoteIdent('organization_id')} AS STRING) = CAST(o.${quoteIdent('id')} AS STRING)
-      WHERE o.${quoteIdent('name')} IS NOT NULL
-        AND TRIM(CAST(o.${quoteIdent('name')} AS STRING)) != ''
-        ${companySessionsWhere ? `AND ${companySessionsWhere}` : ''}
-      GROUP BY TRIM(CAST(o.${quoteIdent('name')} AS STRING))
-      ORDER BY total_sessions DESC
-      LIMIT 100
-    `);
+    const companySessionsPromise = companySessionsMode === "company"
+      ? runQuery(wh.id, `
+        SELECT
+          TRIM(CAST(o.${quoteIdent('name')} AS STRING)) AS empresa,
+          COUNT(*) AS total_sessions
+        FROM ${SESSION_TABLE} s
+        INNER JOIN ${ORGANIZATIONS_TABLE} o
+          ON CAST(s.${quoteIdent('organization_id')} AS STRING) = CAST(o.${quoteIdent('id')} AS STRING)
+        WHERE o.${quoteIdent('name')} IS NOT NULL
+          AND TRIM(CAST(o.${quoteIdent('name')} AS STRING)) != ''
+          ${companySessionsWhere ? `AND ${companySessionsWhere}` : ''}
+        GROUP BY TRIM(CAST(o.${quoteIdent('name')} AS STRING))
+        ORDER BY total_sessions DESC
+        LIMIT 100
+      `)
+      : runQuery(wh.id, `
+        SELECT
+          TRIM(CAST(s.${quoteIdent('economic_group_name')} AS STRING)) AS empresa,
+          COUNT(*) AS total_sessions
+        FROM ${SESSION_TABLE} s
+        WHERE s.${quoteIdent('economic_group_name')} IS NOT NULL
+          AND TRIM(CAST(s.${quoteIdent('economic_group_name')} AS STRING)) != ''
+          ${companySessionsDateFilter ? `AND ${companySessionsDateFilter}` : ''}
+        GROUP BY TRIM(CAST(s.${quoteIdent('economic_group_name')} AS STRING))
+        ORDER BY total_sessions DESC
+        LIMIT 100
+      `);
 
     const economicGroupOptionsPromise = runQueryQuick(wh.id, `
       SELECT
@@ -399,7 +416,8 @@ export default async function handler(req, res) {
       economic_group_total_error: economicGroupTotalError,
       company_sessions: companySessions,
       company_sessions_error: companySessionsError,
-      company_sessions_source: "botmaker_session.organization_id + organizations.id/name",
+      company_sessions_mode: companySessionsMode,
+      company_sessions_source: companySessionsSource,
       economic_group_options: economicGroupOptions,
       economic_group_finishers: economicGroupFinishers,
       economic_group_finishers_error: economicGroupFinishersError,

@@ -708,7 +708,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
 
       <div class="card-box appointments-volume-card" data-qtag="#Q14">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap">
-          <div class="section-title" style="margin-bottom:0"><i class="fa-solid fa-building" style="margin-right:6px"></i>Sessões por empresa</div>
+          <div class="section-title" id="session-companies-title" style="margin-bottom:0"><i class="fa-solid fa-building" style="margin-right:6px"></i>Sessões por grupo econômico</div>
           <input type="text" id="session-company-search" placeholder="Buscar..." oninput="filterSessionCompanies()" style="font-size:12px;padding:5px 10px;border-radius:8px;border:1px solid #e2e8f0;outline:none;width:140px;color:#334155"/>
         </div>
         <div class="loading-box" id="session-companies-loading"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...</div>
@@ -717,7 +717,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
             <thead style="position:sticky;top:0;background:#fff;z-index:1">
               <tr style="border-bottom:2px solid #f1f5f9">
                 <th style="text-align:left;padding:6px 8px;font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase">#</th>
-                <th style="text-align:left;padding:6px 8px;font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase">Empresa</th>
+                <th id="session-companies-name-header" style="text-align:left;padding:6px 8px;font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase">Grupo econômico</th>
                 <th style="text-align:right;padding:6px 8px;font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase">Sessões</th>
                 <th style="padding:6px 8px;width:80px"></th>
               </tr>
@@ -1835,12 +1835,17 @@ function renderSessionCompanies(items, opts) {
   const loading = document.getElementById('session-companies-loading');
   const wrap = document.getElementById('session-companies-wrap');
   const note = document.getElementById('session-companies-note');
+  const title = document.getElementById('session-companies-title');
+  const nameHeader = document.getElementById('session-companies-name-header');
   opts = opts || {};
+  const isCompanyMode = opts.mode === 'company';
+  if (title) title.innerHTML = `<i class="fa-solid fa-building" style="margin-right:6px"></i>${isCompanyMode ? 'Sessões por empresa' : 'Sessões por grupo econômico'}`;
+  if (nameHeader) nameHeader.textContent = isCompanyMode ? 'Empresa' : 'Grupo econômico';
   if (opts.error) {
     sessionCompaniesData = [];
     if (loading) {
       loading.style.display = 'block';
-      loading.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>Erro ao carregar sessões por empresa: ' + String(opts.error).slice(0, 200);
+      loading.innerHTML = `<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>Erro ao carregar ${isCompanyMode ? 'sessões por empresa' : 'sessões por grupo econômico'}: ` + String(opts.error).slice(0, 200);
     }
     if (wrap) wrap.style.display = 'none';
     return;
@@ -1849,7 +1854,7 @@ function renderSessionCompanies(items, opts) {
   filterSessionCompanies();
   if (note) {
     const messages = [];
-    if (currentGroup) messages.push(`grupo: ${currentGroup}`);
+    if (isCompanyMode && currentGroup) messages.push(`grupo: ${currentGroup}`);
     if (currentCompany) messages.push(`empresa: ${currentCompany}`);
     if (opts.source) messages.push(opts.source);
     note.style.display = messages.length ? 'block' : 'none';
@@ -1998,6 +2003,7 @@ async function loadSessions() {
     });
     renderSessionCompanies(sessions.company_sessions || [], {
       error: sessions.company_sessions_error,
+      mode: sessions.company_sessions_mode,
       source: sessions.company_sessions_source,
     });
     renderSessionTypifications(sessions.typifications || [], {
