@@ -291,13 +291,21 @@ export default async function handler(req, res) {
       `)
       : runQuery(wh.id, `
         SELECT
-          TRIM(CAST(s.${quoteIdent('economic_group_name')} AS STRING)) AS empresa,
+          CASE
+            WHEN s.${quoteIdent('economic_group_name')} IS NULL
+              OR TRIM(CAST(s.${quoteIdent('economic_group_name')} AS STRING)) = ''
+            THEN 'Nulos'
+            ELSE TRIM(CAST(s.${quoteIdent('economic_group_name')} AS STRING))
+          END AS empresa,
           COUNT(*) AS total_sessions
         FROM ${SESSION_TABLE} s
-        WHERE s.${quoteIdent('economic_group_name')} IS NOT NULL
-          AND TRIM(CAST(s.${quoteIdent('economic_group_name')} AS STRING)) != ''
-          ${companySessionsDateFilter ? `AND ${companySessionsDateFilter}` : ''}
-        GROUP BY TRIM(CAST(s.${quoteIdent('economic_group_name')} AS STRING))
+        ${companySessionsDateFilter ? `WHERE ${companySessionsDateFilter}` : ''}
+        GROUP BY CASE
+          WHEN s.${quoteIdent('economic_group_name')} IS NULL
+            OR TRIM(CAST(s.${quoteIdent('economic_group_name')} AS STRING)) = ''
+          THEN 'Nulos'
+          ELSE TRIM(CAST(s.${quoteIdent('economic_group_name')} AS STRING))
+        END
         ORDER BY total_sessions DESC
         LIMIT 100
       `);
