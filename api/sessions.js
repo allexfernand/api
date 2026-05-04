@@ -93,7 +93,12 @@ function sessionCpfExpr(variablesColumn) {
 }
 
 function sessionTypificationExpr(variablesColumn) {
-  return `NULLIF(TRIM(CAST(${quoteIdent(variablesColumn)}['typification'] AS STRING)), '')`;
+  const raw = `${quoteIdent(variablesColumn)}['typification']`;
+  return `CASE
+    WHEN ${raw} IS NULL THEN '(NULO)'
+    WHEN TRIM(CAST(${raw} AS STRING)) = '' THEN '(VAZIO/BRANCO)'
+    ELSE TRIM(CAST(${raw} AS STRING))
+  END`;
 }
 
 function sessionVariablesPrefilter(variablesColumn) {
@@ -286,8 +291,7 @@ export default async function handler(req, res) {
         sessions_filtered AS (
           SELECT ${typificationExpr} AS tipificacao, ${quoteIdent('variables')} AS variables
           FROM ${SESSION_TABLE}
-          WHERE ${sessionDateFilter ? `${sessionDateFilter} AND ` : ''}${typificationExpr} IS NOT NULL
-            AND ${sessionVariablesPrefilter('variables')}
+          WHERE ${sessionDateFilter ? `${sessionDateFilter} AND ` : ''}${sessionVariablesPrefilter('variables')}
         ),
         sessions_resolved AS (
           SELECT tipificacao, ${sessionCpfExpr('variables')} AS cpf
@@ -308,7 +312,7 @@ export default async function handler(req, res) {
           ${typificationExpr} AS tipificacao,
           COUNT(*) AS total_sessions
         FROM ${SESSION_TABLE}
-        WHERE ${sessionDateFilter ? `${sessionDateFilter} AND ` : ''}${typificationExpr} IS NOT NULL
+        ${sessionDateFilter ? `WHERE ${sessionDateFilter}` : ''}
         GROUP BY ${typificationExpr}
         ORDER BY total_sessions DESC
         LIMIT 30
