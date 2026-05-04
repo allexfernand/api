@@ -177,8 +177,6 @@ export default async function handler(req, res) {
 
   const meses = req.query.meses ? req.query.meses.split(',').filter((m) => /^\d{4}-\d{2}$/.test(m)) : [];
   const groupName = req.query.group_name || null;
-  const localFinisherGroupName = req.query.finishers_group_name || null;
-  const finisherGroupName = localFinisherGroupName || groupName;
   const company = req.query.company || null;
   const typeFilter = req.query.type || null;
   const useCompanyFilterSum = Boolean(groupName || company || typeFilter);
@@ -197,10 +195,6 @@ export default async function handler(req, res) {
 
     const sessionDateFilter = buildSessionDateFilter(meses);
     const typificationExpr = sessionTypificationExpr('variables');
-    const economicGroupFilter = finisherGroupName
-      ? `UPPER(TRIM(CAST(${quoteIdent('economic_group_name')} AS STRING))) = UPPER(TRIM('${escape(finisherGroupName)}'))`
-      : null;
-    const economicGroupWhere = [sessionDateFilter, economicGroupFilter].filter(Boolean).join(' AND ');
     const companySessionsDateFilter = meses.length > 0
       ? `DATE_FORMAT(try_cast(s.${quoteIdent(SESSION_DATE_COLUMN)} AS TIMESTAMP), 'yyyy-MM') IN (${meses.map((m) => `'${m}'`).join(',')})`
       : null;
@@ -240,21 +234,45 @@ export default async function handler(req, res) {
       'NRO_DOCUMENTO',
     ]);
 
-    const economicGroupTotalPromise = runQuery(wh.id, `
-      SELECT COUNT(*) AS total
-      FROM ${SESSION_TABLE}
-      ${economicGroupWhere ? `WHERE ${economicGroupWhere}` : ''}
-    `);
+    const economicGroupTotalPromise = companySessionsMode === "company"
+      ? runQuery(wh.id, `
+        SELECT COUNT(*) AS total
+        FROM ${SESSION_TABLE} s
+        INNER JOIN ${ORGANIZATIONS_TABLE} o
+          ON CAST(s.${quoteIdent('organization_id')} AS STRING) = CAST(o.${quoteIdent('id')} AS STRING)
+        WHERE o.${quoteIdent('name')} IS NOT NULL
+          AND TRIM(CAST(o.${quoteIdent('name')} AS STRING)) != ''
+          ${companySessionsWhere ? `AND ${companySessionsWhere}` : ''}
+      `)
+      : runQuery(wh.id, `
+        SELECT COUNT(*) AS total
+        FROM ${SESSION_TABLE} s
+        ${companySessionsDateFilter ? `WHERE ${companySessionsDateFilter}` : ''}
+      `);
 
-    const economicGroupFinishersPromise = runQuery(wh.id, `
-      SELECT
-        CASE WHEN finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END AS tipo_atendimento,
-        COUNT(*) AS total_sessions
-      FROM ${SESSION_TABLE}
-      ${economicGroupWhere ? `WHERE ${economicGroupWhere}` : ''}
-      GROUP BY CASE WHEN finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END
-      ORDER BY total_sessions DESC
-    `);
+    const economicGroupFinishersPromise = companySessionsMode === "company"
+      ? runQuery(wh.id, `
+        SELECT
+          CASE WHEN s.finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END AS tipo_atendimento,
+          COUNT(*) AS total_sessions
+        FROM ${SESSION_TABLE} s
+        INNER JOIN ${ORGANIZATIONS_TABLE} o
+          ON CAST(s.${quoteIdent('organization_id')} AS STRING) = CAST(o.${quoteIdent('id')} AS STRING)
+        WHERE o.${quoteIdent('name')} IS NOT NULL
+          AND TRIM(CAST(o.${quoteIdent('name')} AS STRING)) != ''
+          ${companySessionsWhere ? `AND ${companySessionsWhere}` : ''}
+        GROUP BY CASE WHEN s.finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END
+        ORDER BY total_sessions DESC
+      `)
+      : runQuery(wh.id, `
+        SELECT
+          CASE WHEN s.finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END AS tipo_atendimento,
+          COUNT(*) AS total_sessions
+        FROM ${SESSION_TABLE} s
+        ${companySessionsDateFilter ? `WHERE ${companySessionsDateFilter}` : ''}
+        GROUP BY CASE WHEN s.finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END
+        ORDER BY total_sessions DESC
+      `);
 
     const companySessionsPromise = companySessionsMode === "company"
       ? runQuery(wh.id, `
@@ -289,18 +307,6 @@ export default async function handler(req, res) {
         END
         ORDER BY total_sessions DESC
       `);
-
-    const economicGroupOptionsPromise = runQueryQuick(wh.id, `
-      SELECT
-        TRIM(CAST(${quoteIdent('economic_group_name')} AS STRING)) AS economic_group_name,
-        COUNT(*) AS total_sessions
-      FROM ${SESSION_TABLE}
-      WHERE ${sessionDateFilter ? `${sessionDateFilter} AND ` : ''}${quoteIdent('economic_group_name')} IS NOT NULL
-        AND TRIM(CAST(${quoteIdent('economic_group_name')} AS STRING)) != ''
-      GROUP BY TRIM(CAST(${quoteIdent('economic_group_name')} AS STRING))
-      ORDER BY total_sessions DESC
-      LIMIT 200
-    `);
 
     const typificationsPromise = useCompanyFilterSum
       ? (beneficiaryCpfColumn ? runQueryQuick(wh.id, `
@@ -341,10 +347,9 @@ export default async function handler(req, res) {
         LIMIT 30
       `);
 
-    const [typificationsSettled, economicGroupFinishersSettled, economicGroupOptionsSettled, economicGroupTotalSettled, companySessionsSettled] = await Promise.allSettled([
+    const [typificationsSettled, economicGroupFinishersSettled, economicGroupTotalSettled, companySessionsSettled] = await Promise.allSettled([
       typificationsPromise,
       economicGroupFinishersPromise,
-      economicGroupOptionsPromise,
       economicGroupTotalPromise,
       companySessionsPromise,
     ]);
@@ -367,12 +372,6 @@ export default async function handler(req, res) {
           total: toInt(r[1]),
         }))
       : [];
-    const economicGroupOptions = economicGroupOptionsSettled.status === 'fulfilled'
-      ? economicGroupOptionsSettled.value.map((r) => ({
-          name: String(getCell(r[0]) || ""),
-          total: toInt(r[1]),
-        })).filter((item) => item.name)
-      : [];
     const companySessionsError = companySessionsSettled.status === 'rejected'
       ? (companySessionsSettled.reason instanceof Error ? companySessionsSettled.reason.message : String(companySessionsSettled.reason))
       : null;
@@ -393,17 +392,15 @@ export default async function handler(req, res) {
     const economicGroupTotalError = companySessionsError || (companySessionsSettled.status === 'fulfilled' ? null : economicGroupTotalQueryError);
 
     res.status(200).json({
-      finishers_group_name: finisherGroupName,
       economic_group_total: economicGroupTotal,
       economic_group_total_error: economicGroupTotalError,
       company_sessions: companySessions,
       company_sessions_error: companySessionsError,
       company_sessions_mode: companySessionsMode,
       company_sessions_source: companySessionsSource,
-      economic_group_options: economicGroupOptions,
       economic_group_finishers: economicGroupFinishers,
       economic_group_finishers_error: economicGroupFinishersError,
-      economic_group_finishers_filter_applied: { period: true, group: true, company: !company },
+      economic_group_finishers_filter_applied: { period: true, organization: true },
       typifications,
       typifications_error: typificationsError,
       typifications_filter_applied: { period: true, organization: true, type: true },
