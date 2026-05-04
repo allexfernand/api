@@ -101,18 +101,6 @@ function sessionTypificationExpr(variablesColumn) {
   END`;
 }
 
-function sessionCompanyExpr(variablesColumn, fallbackColumn) {
-  const variables = `CAST(${quoteIdent(variablesColumn)} AS STRING)`;
-  const fallbackExpr = fallbackColumn
-    ? `,\n    NULLIF(TRIM(CAST(${quoteIdent(fallbackColumn)} AS STRING)), '')`
-    : '';
-  return `COALESCE(
-    ${jsonValueExpr(variablesColumn, ['nameCompany', 'companyName', 'company', 'nome_cliente', 'NOME_CLIENTE'])},
-    NULLIF(TRIM(regexp_extract(${variables}, '"nameCompany"\\\\s*:\\\\s*"([^"]+)"', 1)), ''),
-    NULLIF(TRIM(regexp_extract(${variables}, '"nameCompany"\\\\s*:\\\\s*\\\\{[^}]*"value"\\\\s*:\\\\s*"([^"]+)"', 1)), '')${fallbackExpr}
-  )`;
-}
-
 function sessionVariablesPrefilter(variablesColumn) {
   if (!variablesColumn) return null;
   const v = `CAST(${quoteIdent(variablesColumn)} AS STRING)`;
@@ -209,29 +197,17 @@ export default async function handler(req, res) {
 
     const sessionDateFilter = buildSessionDateFilter(meses);
     const typificationExpr = sessionTypificationExpr('variables');
-    const sessionColumns = await getColumns(wh.id, SESSION_TABLE);
-    const sessionCompanyColumn = pickColumn(sessionColumns, [
-      'bot_company',
-      'bot company',
-      'botCompany',
-      'botcompany',
-      'bot_company_name',
-      'company_name',
-      'company',
-      'empresa',
-      'nome_empresa',
-      'NOME_EMPRESA',
-      'NOME_CLIENTE',
-      'nome_cliente',
-    ]);
-    const companyExpr = sessionCompanyExpr('variables', sessionCompanyColumn);
-    const companySessionsSource = sessionCompanyColumn
-      ? `botmaker_session.variables.nameCompany + botmaker_session.${sessionCompanyColumn}`
-      : 'botmaker_session.variables.nameCompany';
     const economicGroupFilter = finisherGroupName
       ? `UPPER(TRIM(CAST(${quoteIdent('economic_group_name')} AS STRING))) = UPPER(TRIM('${escape(finisherGroupName)}'))`
       : null;
     const economicGroupWhere = [sessionDateFilter, economicGroupFilter].filter(Boolean).join(' AND ');
+    const companySessionsDateFilter = meses.length > 0
+      ? `DATE_FORMAT(try_cast(s.${quoteIdent(SESSION_DATE_COLUMN)} AS TIMESTAMP), 'yyyy-MM') IN (${meses.map((m) => `'${m}'`).join(',')})`
+      : null;
+    const companySessionsEconomicGroupFilter = finisherGroupName
+      ? `UPPER(TRIM(CAST(s.${quoteIdent('economic_group_name')} AS STRING))) = UPPER(TRIM('${escape(finisherGroupName)}'))`
+      : null;
+    const companySessionsWhere = [companySessionsDateFilter, companySessionsEconomicGroupFilter].filter(Boolean).join(' AND ');
     const beneficiaryColumns = useCompanyFilterSum ? await getColumns(wh.id, VW_BENEFICIARIOS) : [];
     const beneficiaryCpfColumn = pickColumn(beneficiaryColumns, [
       'cpf',
@@ -295,18 +271,16 @@ export default async function handler(req, res) {
     `);
 
     const companySessionsPromise = runQuery(wh.id, `
-      WITH session_companies AS (
-        SELECT ${companyExpr} AS empresa
-        FROM ${SESSION_TABLE}
-        ${economicGroupWhere ? `WHERE ${economicGroupWhere}` : ''}
-      )
       SELECT
-        empresa,
+        TRIM(CAST(o.${quoteIdent('name')} AS STRING)) AS empresa,
         COUNT(*) AS total_sessions
-      FROM session_companies
-      WHERE empresa IS NOT NULL
-        AND TRIM(CAST(empresa AS STRING)) != ''
-      GROUP BY empresa
+      FROM ${SESSION_TABLE} s
+      INNER JOIN ${ORGANIZATIONS_TABLE} o
+        ON CAST(s.${quoteIdent('organization_id')} AS STRING) = CAST(o.${quoteIdent('id')} AS STRING)
+      WHERE o.${quoteIdent('name')} IS NOT NULL
+        AND TRIM(CAST(o.${quoteIdent('name')} AS STRING)) != ''
+        ${companySessionsWhere ? `AND ${companySessionsWhere}` : ''}
+      GROUP BY TRIM(CAST(o.${quoteIdent('name')} AS STRING))
       ORDER BY total_sessions DESC
       LIMIT 100
     `);
@@ -425,7 +399,7 @@ export default async function handler(req, res) {
       economic_group_total_error: economicGroupTotalError,
       company_sessions: companySessions,
       company_sessions_error: companySessionsError,
-      company_sessions_source: companySessionsSource,
+      company_sessions_source: "botmaker_session.organization_id + organizations.name",
       economic_group_options: economicGroupOptions,
       economic_group_finishers: economicGroupFinishers,
       economic_group_finishers_error: economicGroupFinishersError,
