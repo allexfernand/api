@@ -672,7 +672,8 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
       </select>
     </div>
 
-    <div class="card-box" data-qtag="#Q12">
+    <div class="fluid-grid">
+      <div class="card-box" data-qtag="#Q12">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap">
         <div class="section-title" style="margin-bottom:0"><i class="fa-solid fa-building-user" style="margin-right:6px"></i>Sessões finalizadas por · grupo econômico</div>
         <select class="filter-select" id="session-finisher-eg-group-select" onchange="onSessionFinisherEconomicGroupChange(this.value)" style="min-width:220px;max-width:320px">
@@ -702,6 +703,35 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
         </div>
         <div style="font-size:11px;color:#94a3b8;margin-top:10px;text-align:right">Total: <strong id="s-fin-eg-total" style="color:#64748b">—</strong> sessões · <code>botmaker_session.economic_group_name</code></div>
         <div style="font-size:11px;color:#f59e0b;margin-top:6px;text-align:right;display:none" id="s-fin-eg-filter-note"></div>
+      </div>
+    </div>
+
+      <div class="card-box appointments-volume-card" data-qtag="#Q14">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+          <div class="section-title" style="margin-bottom:0"><i class="fa-solid fa-building" style="margin-right:6px"></i>Sessões por empresa</div>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <input type="text" id="session-company-search" placeholder="Buscar..." oninput="filterSessionCompanies()" style="font-size:12px;padding:5px 10px;border-radius:8px;border:1px solid #e2e8f0;outline:none;width:140px;color:#334155"/>
+            <select class="filter-select" id="session-companies-eg-group-select" onchange="onSessionFinisherEconomicGroupChange(this.value)" style="min-width:220px;max-width:320px">
+              <option value="">(Todos os grupos econômicos)</option>
+            </select>
+          </div>
+        </div>
+        <div class="loading-box" id="session-companies-loading"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...</div>
+        <div id="session-companies-wrap" class="appointments-volume-scroll" style="display:none;max-height:300px">
+          <table style="width:100%;border-collapse:collapse;font-size:12px">
+            <thead style="position:sticky;top:0;background:#fff;z-index:1">
+              <tr style="border-bottom:2px solid #f1f5f9">
+                <th style="text-align:left;padding:6px 8px;font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase">#</th>
+                <th style="text-align:left;padding:6px 8px;font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase">Empresa</th>
+                <th style="text-align:right;padding:6px 8px;font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase">Sessões</th>
+                <th style="padding:6px 8px;width:80px"></th>
+              </tr>
+            </thead>
+            <tbody id="session-companies-tbody"></tbody>
+          </table>
+          <div id="session-companies-footer" style="margin-top:8px;font-size:10px;color:#94a3b8;text-align:right"></div>
+          <div id="session-companies-note" style="font-size:11px;color:#f59e0b;margin-top:6px;text-align:right;display:none"></div>
+        </div>
       </div>
     </div>
 
@@ -1130,7 +1160,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
 const fmt = n => Number(n).toLocaleString('pt-BR');
 const mN = {'01':'Jan','02':'Fev','03':'Mar','04':'Abr','05':'Mai','06':'Jun','07':'Jul','08':'Ago','09':'Set','10':'Out','11':'Nov','12':'Dez'};
 
-let usersData = [], companiesData = [], eChart, agegroupChart, appointmentTypesTrendChart, petitCareLinesChart, sessionsEvolChart, sessionsTotalEvolChart, sessionMonthlyEvolutionChart, sessionsAttendanceChart, sessionsDailyChart;
+let usersData = [], companiesData = [], sessionCompaniesData = [], eChart, agegroupChart, appointmentTypesTrendChart, petitCareLinesChart, sessionsEvolChart, sessionsTotalEvolChart, sessionMonthlyEvolutionChart, sessionsAttendanceChart, sessionsDailyChart;
 let currentGroup = '', currentType = '', currentCompany = '';
 let selectedMonths = new Set();
 let selectedAppointmentTypeMonths = new Set();
@@ -1750,6 +1780,7 @@ function renderSessionFinisherGroupFilters(options) {
   const selects = [
     document.getElementById('session-total-eg-group-select'),
     document.getElementById('session-finisher-eg-group-select'),
+    document.getElementById('session-companies-eg-group-select'),
   ].filter(Boolean);
   if (!selects.length) return;
   const normalized = [];
@@ -1773,10 +1804,66 @@ function renderSessionFinisherGroupFilters(options) {
 
 function onSessionFinisherEconomicGroupChange(value) {
   selectedSessionFinisherEconomicGroup = value || '';
-  document.querySelectorAll('#session-total-eg-group-select,#session-finisher-eg-group-select').forEach((select) => {
+  document.querySelectorAll('#session-total-eg-group-select,#session-finisher-eg-group-select,#session-companies-eg-group-select').forEach((select) => {
     if (select.value !== selectedSessionFinisherEconomicGroup) select.value = selectedSessionFinisherEconomicGroup;
   });
   loadSessions();
+}
+
+function filterSessionCompanies() {
+  const input = document.getElementById('session-company-search');
+  const q = input ? input.value.toLowerCase() : '';
+  renderSessionCompaniesTable(sessionCompaniesData.filter((c) => String(c.empresa || '').toLowerCase().includes(q)));
+}
+
+function renderSessionCompaniesTable(data) {
+  const tbody = document.getElementById('session-companies-tbody');
+  if (!tbody) return;
+  const rows = data || [];
+  const grand = sessionCompaniesData.reduce((acc, c) => acc + (Number(c.total) || 0), 0);
+  const max = sessionCompaniesData[0]?.total > 0 ? Number(sessionCompaniesData[0].total) : 0;
+  tbody.innerHTML = rows.length ? rows.slice(0, 100).map((c, i) => {
+    const total = Number(c.total) || 0;
+    const bw = max > 0 ? Math.max(Math.round((total / max) * 100), 2) : 0;
+    const pct = grand > 0 ? ((total / grand) * 100).toFixed(1).replace('.', ',') : '0,0';
+    return `<tr onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
+      <td style="padding:6px 8px;color:#cbd5e1;font-size:10px">${i + 1}</td>
+      <td style="padding:6px 8px;color:#334155;font-weight:500">${escapeHtml(c.empresa || 'Sem empresa')}</td>
+      <td style="padding:6px 8px;text-align:right;font-weight:700;color:#1e293b">${fmt(total)}</td>
+      <td style="padding:6px 8px"><div style="background:#f1f5f9;border-radius:3px;height:5px;overflow:hidden"><div style="height:100%;width:${bw}%;background:linear-gradient(90deg,#14b8a6,#0f766e);border-radius:3px"></div></div><div style="font-size:10px;color:#94a3b8;text-align:right">${pct}%</div></td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="4" style="padding:16px 8px;text-align:center;color:#94a3b8">Nenhuma empresa encontrada para o filtro atual.</td></tr>';
+  const footer = document.getElementById('session-companies-footer');
+  if (footer) footer.textContent = `${Math.min(rows.length, 100)} de ${rows.length} · ${fmt(grand)} sessões`;
+}
+
+function renderSessionCompanies(items, opts) {
+  const loading = document.getElementById('session-companies-loading');
+  const wrap = document.getElementById('session-companies-wrap');
+  const note = document.getElementById('session-companies-note');
+  opts = opts || {};
+  if (opts.error) {
+    sessionCompaniesData = [];
+    if (loading) {
+      loading.style.display = 'block';
+      loading.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>Erro ao carregar sessões por empresa: ' + String(opts.error).slice(0, 200);
+    }
+    if (wrap) wrap.style.display = 'none';
+    return;
+  }
+  sessionCompaniesData = (items || []).filter((item) => Number(item.total) > 0);
+  filterSessionCompanies();
+  if (note) {
+    const messages = [];
+    if (selectedSessionFinisherEconomicGroup) messages.push(`grupo: ${selectedSessionFinisherEconomicGroup}`);
+    else if (currentGroup) messages.push(`grupo: ${currentGroup}`);
+    if (currentCompany) messages.push('filtro de empresa global não aplicado nesta tabela');
+    if (opts.source) messages.push(opts.source);
+    note.style.display = messages.length ? 'block' : 'none';
+    note.textContent = messages.join(' · ');
+  }
+  if (loading) loading.style.display = 'none';
+  if (wrap) wrap.style.display = 'block';
 }
 
 function renderSessionTypifications(items, opts) {
@@ -1831,6 +1918,8 @@ async function loadSessions() {
   const periodoLabel = document.getElementById('bullet-sessoes-periodo');
   const economicFinishersLoading = document.getElementById('session-finishers-eg-loading');
   const economicFinishersContent = document.getElementById('session-finishers-eg-content');
+  const sessionCompaniesLoading = document.getElementById('session-companies-loading');
+  const sessionCompaniesWrap = document.getElementById('session-companies-wrap');
   const typificationsLoading = document.getElementById('session-typifications-loading');
   const typificationsContent = document.getElementById('session-typifications-content');
   if (bullet) bullet.textContent = '…';
@@ -1840,6 +1929,11 @@ async function loadSessions() {
     economicFinishersLoading.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...';
   }
   if (economicFinishersContent) economicFinishersContent.style.display = 'none';
+  if (sessionCompaniesLoading) {
+    sessionCompaniesLoading.style.display = 'block';
+    sessionCompaniesLoading.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...';
+  }
+  if (sessionCompaniesWrap) sessionCompaniesWrap.style.display = 'none';
   if (typificationsLoading) {
     typificationsLoading.style.display = 'block';
     typificationsLoading.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...';
@@ -1909,6 +2003,10 @@ async function loadSessions() {
     renderSessionEconomicGroupFinishers(sessions.economic_group_finishers || [], {
       error: sessions.economic_group_finishers_error,
     });
+    renderSessionCompanies(sessions.company_sessions || [], {
+      error: sessions.company_sessions_error,
+      source: sessions.company_sessions_source,
+    });
     renderSessionTypifications(sessions.typifications || [], {
       error: sessions.typifications_error,
     });
@@ -1925,6 +2023,7 @@ async function loadSessions() {
       economicGroupPeriodoLabel.title = String(msg);
     }
     if (economicFinishersLoading) economicFinishersLoading.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>Erro ao carregar finalizações por grupo';
+    if (sessionCompaniesLoading) sessionCompaniesLoading.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>Erro ao carregar sessões por empresa';
     if (typificationsLoading) typificationsLoading.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>Erro ao carregar encerramentos';
   }
 }

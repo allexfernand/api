@@ -101,6 +101,18 @@ function sessionTypificationExpr(variablesColumn) {
   END`;
 }
 
+function sessionCompanyExpr(variablesColumn, fallbackColumn) {
+  const variables = `CAST(${quoteIdent(variablesColumn)} AS STRING)`;
+  const fallbackExpr = fallbackColumn
+    ? `,\n    NULLIF(TRIM(CAST(${quoteIdent(fallbackColumn)} AS STRING)), '')`
+    : '';
+  return `COALESCE(
+    ${jsonValueExpr(variablesColumn, ['nameCompany', 'companyName', 'company', 'nome_cliente', 'NOME_CLIENTE'])},
+    NULLIF(TRIM(regexp_extract(${variables}, '"nameCompany"\\\\s*:\\\\s*"([^"]+)"', 1)), ''),
+    NULLIF(TRIM(regexp_extract(${variables}, '"nameCompany"\\\\s*:\\\\s*\\\\{[^}]*"value"\\\\s*:\\\\s*"([^"]+)"', 1)), '')${fallbackExpr}
+  )`;
+}
+
 function sessionVariablesPrefilter(variablesColumn) {
   if (!variablesColumn) return null;
   const v = `CAST(${quoteIdent(variablesColumn)} AS STRING)`;
@@ -197,6 +209,25 @@ export default async function handler(req, res) {
 
     const sessionDateFilter = buildSessionDateFilter(meses);
     const typificationExpr = sessionTypificationExpr('variables');
+    const sessionColumns = await getColumns(wh.id, SESSION_TABLE);
+    const sessionCompanyColumn = pickColumn(sessionColumns, [
+      'bot_company',
+      'bot company',
+      'botCompany',
+      'botcompany',
+      'bot_company_name',
+      'company_name',
+      'company',
+      'empresa',
+      'nome_empresa',
+      'NOME_EMPRESA',
+      'NOME_CLIENTE',
+      'nome_cliente',
+    ]);
+    const companyExpr = sessionCompanyExpr('variables', sessionCompanyColumn);
+    const companySessionsSource = sessionCompanyColumn
+      ? `botmaker_session.variables.nameCompany + botmaker_session.${sessionCompanyColumn}`
+      : 'botmaker_session.variables.nameCompany';
     const economicGroupFilter = finisherGroupName
       ? `UPPER(TRIM(CAST(${quoteIdent('economic_group_name')} AS STRING))) = UPPER(TRIM('${escape(finisherGroupName)}'))`
       : null;
@@ -263,6 +294,23 @@ export default async function handler(req, res) {
       ORDER BY total_sessions DESC
     `);
 
+    const companySessionsPromise = runQuery(wh.id, `
+      WITH session_companies AS (
+        SELECT ${companyExpr} AS empresa
+        FROM ${SESSION_TABLE}
+        ${economicGroupWhere ? `WHERE ${economicGroupWhere}` : ''}
+      )
+      SELECT
+        empresa,
+        COUNT(*) AS total_sessions
+      FROM session_companies
+      WHERE empresa IS NOT NULL
+        AND TRIM(CAST(empresa AS STRING)) != ''
+      GROUP BY empresa
+      ORDER BY total_sessions DESC
+      LIMIT 100
+    `);
+
     const economicGroupOptionsPromise = runQueryQuick(wh.id, `
       SELECT
         TRIM(CAST(${quoteIdent('economic_group_name')} AS STRING)) AS economic_group_name,
@@ -314,12 +362,13 @@ export default async function handler(req, res) {
         LIMIT 30
       `);
 
-    const [totalSettled, typificationsSettled, economicGroupFinishersSettled, economicGroupOptionsSettled, economicGroupTotalSettled] = await Promise.allSettled([
+    const [totalSettled, typificationsSettled, economicGroupFinishersSettled, economicGroupOptionsSettled, economicGroupTotalSettled, companySessionsSettled] = await Promise.allSettled([
       totalPromise,
       typificationsPromise,
       economicGroupFinishersPromise,
       economicGroupOptionsPromise,
       economicGroupTotalPromise,
+      companySessionsPromise,
     ]);
     if (totalSettled.status !== 'fulfilled') {
       throw totalSettled.reason instanceof Error ? totalSettled.reason : new Error(String(totalSettled.reason));
@@ -358,6 +407,15 @@ export default async function handler(req, res) {
     const economicGroupTotal = economicGroupTotalSettled.status === 'fulfilled'
       ? toInt(economicGroupTotalSettled.value[0]?.[0])
       : 0;
+    const companySessionsError = companySessionsSettled.status === 'rejected'
+      ? (companySessionsSettled.reason instanceof Error ? companySessionsSettled.reason.message : String(companySessionsSettled.reason))
+      : null;
+    const companySessions = companySessionsSettled.status === 'fulfilled'
+      ? companySessionsSettled.value.map((r) => ({
+          empresa: String(getCell(r[0]) || "Sem empresa"),
+          total: toInt(r[1]),
+        }))
+      : [];
 
     res.status(200).json({
       total,
@@ -365,6 +423,9 @@ export default async function handler(req, res) {
       finishers_group_name: finisherGroupName,
       economic_group_total: economicGroupTotal,
       economic_group_total_error: economicGroupTotalError,
+      company_sessions: companySessions,
+      company_sessions_error: companySessionsError,
+      company_sessions_source: companySessionsSource,
       economic_group_options: economicGroupOptions,
       economic_group_finishers: economicGroupFinishers,
       economic_group_finishers_error: economicGroupFinishersError,
