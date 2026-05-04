@@ -177,10 +177,14 @@ export default async function handler(req, res) {
 
   const meses = req.query.meses ? req.query.meses.split(',').filter((m) => /^\d{4}-\d{2}$/.test(m)) : [];
   const groupName = req.query.group_name || null;
+  const localFinisherGroupName = req.query.finishers_group_name || null;
+  const finisherGroupName = localFinisherGroupName || groupName;
   const company = req.query.company || null;
   const typeFilter = req.query.type || null;
   const useCompanyFilterSum = Boolean(groupName || company || typeFilter);
   const extraFilter = buildExtraFilter(groupName, company, typeFilter);
+  const useFinisherCompanyFilter = Boolean(finisherGroupName || company || typeFilter);
+  const finisherExtraFilter = buildExtraFilter(finisherGroupName, company, typeFilter);
 
   const SESSION_DATE_COLUMN = 'creation_time';
 
@@ -196,11 +200,11 @@ export default async function handler(req, res) {
     const sessionDateFilter = buildSessionDateFilter(meses);
     const finishersDateFilter = sessionDateFilter;
     const typificationExpr = sessionTypificationExpr('variables');
-    const economicGroupFilter = groupName
-      ? `UPPER(TRIM(CAST(${quoteIdent('economic_group_name')} AS STRING))) = UPPER(TRIM('${escape(groupName)}'))`
+    const economicGroupFilter = finisherGroupName
+      ? `UPPER(TRIM(CAST(${quoteIdent('economic_group_name')} AS STRING))) = UPPER(TRIM('${escape(finisherGroupName)}'))`
       : null;
     const economicGroupWhere = [sessionDateFilter, economicGroupFilter].filter(Boolean).join(' AND ');
-    const beneficiaryColumns = useCompanyFilterSum ? await getColumns(wh.id, VW_BENEFICIARIOS) : [];
+    const beneficiaryColumns = (useCompanyFilterSum || useFinisherCompanyFilter) ? await getColumns(wh.id, VW_BENEFICIARIOS) : [];
     const beneficiaryCpfColumn = pickColumn(beneficiaryColumns, [
       'cpf',
       'CPF',
@@ -248,13 +252,13 @@ export default async function handler(req, res) {
 
     // Card 2 — Sessões finalizadas por (Humano vs IA)
     // Mantido com a lógica anterior por CPF/beneficiário.
-    const finishersPromise = useCompanyFilterSum
+    const finishersPromise = useFinisherCompanyFilter
       ? (beneficiaryCpfColumn ? runQueryQuick(wh.id, `
         WITH filtered_cpfs AS (
           SELECT DISTINCT ${normalizeCpfExpr(`b.${quoteIdent(beneficiaryCpfColumn)}`)} AS cpf
           FROM ${VW_BENEFICIARIOS} b
           WHERE NOME_CLIENTE IS NOT NULL
-            ${extraFilter}
+            ${finisherExtraFilter}
             AND ${normalizeCpfExpr(`b.${quoteIdent(beneficiaryCpfColumn)}`)} IS NOT NULL
         ),
         sessions_filtered AS (
@@ -291,6 +295,18 @@ export default async function handler(req, res) {
       ${economicGroupWhere ? `WHERE ${economicGroupWhere}` : ''}
       GROUP BY CASE WHEN finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END
       ORDER BY total_sessions DESC
+    `);
+
+    const economicGroupOptionsPromise = runQueryQuick(wh.id, `
+      SELECT
+        TRIM(CAST(${quoteIdent('economic_group_name')} AS STRING)) AS economic_group_name,
+        COUNT(*) AS total_sessions
+      FROM ${SESSION_TABLE}
+      WHERE ${sessionDateFilter ? `${sessionDateFilter} AND ` : ''}${quoteIdent('economic_group_name')} IS NOT NULL
+        AND TRIM(CAST(${quoteIdent('economic_group_name')} AS STRING)) != ''
+      GROUP BY TRIM(CAST(${quoteIdent('economic_group_name')} AS STRING))
+      ORDER BY total_sessions DESC
+      LIMIT 200
     `);
 
     const typificationsPromise = useCompanyFilterSum
@@ -332,11 +348,12 @@ export default async function handler(req, res) {
         LIMIT 30
       `);
 
-    const [totalSettled, finishersSettled, typificationsSettled, economicGroupFinishersSettled] = await Promise.allSettled([
+    const [totalSettled, finishersSettled, typificationsSettled, economicGroupFinishersSettled, economicGroupOptionsSettled] = await Promise.allSettled([
       totalPromise,
       finishersPromise,
       typificationsPromise,
       economicGroupFinishersPromise,
+      economicGroupOptionsPromise,
     ]);
     if (totalSettled.status !== 'fulfilled') {
       throw totalSettled.reason instanceof Error ? totalSettled.reason : new Error(String(totalSettled.reason));
@@ -375,6 +392,7 @@ export default async function handler(req, res) {
         finishersError = err instanceof Error ? err.message : String(err);
       }
     }
+    const shouldScaleFinishers = useCompanyFilterSum && !localFinisherGroupName && rawFinishersTotal > 0;
     const scaledFinishers = rawFinishersTotal > 0
       ? rawFinishers.map((item) => ({
           ...item,
@@ -386,7 +404,7 @@ export default async function handler(req, res) {
       const allocated = scaledFinishers.slice(0, -1).reduce((acc, item) => acc + item.total, 0);
       scaledFinishers[scaledFinishers.length - 1].total = Math.max(total - allocated, 0);
     }
-    const finishers = useCompanyFilterSum && rawFinishersTotal > 0
+    const finishers = shouldScaleFinishers
       ? scaledFinishers
       : rawFinishers;
     const typificationsError = typificationsSettled.status === 'rejected'
@@ -407,11 +425,19 @@ export default async function handler(req, res) {
           total: toInt(r[1]),
         }))
       : [];
+    const economicGroupOptions = economicGroupOptionsSettled.status === 'fulfilled'
+      ? economicGroupOptionsSettled.value.map((r) => ({
+          name: String(getCell(r[0]) || ""),
+          total: toInt(r[1]),
+        })).filter((item) => item.name)
+      : [];
 
     res.status(200).json({
       total,
       empresas: toInt(row[1]),
       finishers,
+      finishers_group_name: finisherGroupName,
+      economic_group_options: economicGroupOptions,
       economic_group_finishers: economicGroupFinishers,
       economic_group_finishers_error: economicGroupFinishersError,
       economic_group_finishers_filter_applied: { period: true, group: true, company: !company },
@@ -419,7 +445,7 @@ export default async function handler(req, res) {
       typifications_error: typificationsError,
       typifications_filter_applied: { period: true, organization: true, type: true },
       finishers_raw_total: rawFinishersTotal,
-      finishers_scaled_to_total: useCompanyFilterSum && rawFinishersTotal > 0,
+      finishers_scaled_to_total: shouldScaleFinishers,
       finishers_used_fallback_distribution: finishersUsedFallbackDistribution,
       finishers_filter_applied: { period: true, organization: true, type: true },
       finishers_fallback_month: null,

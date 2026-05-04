@@ -657,7 +657,12 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
     </div>
 
     <div class="card-box" data-qtag="#Q2">
-      <div class="section-title"><i class="fa-solid fa-headset" style="margin-right:6px"></i>Sessões finalizadas por</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+        <div class="section-title" style="margin-bottom:0"><i class="fa-solid fa-headset" style="margin-right:6px"></i>Sessões finalizadas por</div>
+        <select class="filter-select" id="session-finisher-group-select" onchange="onSessionFinisherEconomicGroupChange(this.value)" style="min-width:220px;max-width:320px">
+          <option value="">(Todos os grupos econômicos)</option>
+        </select>
+      </div>
       <div class="loading-box" id="session-finishers-loading"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...</div>
       <div id="session-finishers-content" style="display:none">
         <div style="display:grid;grid-template-columns:1fr 1px 1fr;gap:20px;margin-bottom:18px">
@@ -685,7 +690,12 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
     </div>
 
     <div class="card-box" data-qtag="#Q12">
-      <div class="section-title"><i class="fa-solid fa-building-user" style="margin-right:6px"></i>Sessões finalizadas por · grupo econômico</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+        <div class="section-title" style="margin-bottom:0"><i class="fa-solid fa-building-user" style="margin-right:6px"></i>Sessões finalizadas por · grupo econômico</div>
+        <select class="filter-select" id="session-finisher-eg-group-select" onchange="onSessionFinisherEconomicGroupChange(this.value)" style="min-width:220px;max-width:320px">
+          <option value="">(Todos os grupos econômicos)</option>
+        </select>
+      </div>
       <div class="loading-box" id="session-finishers-eg-loading"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...</div>
       <div id="session-finishers-eg-content" style="display:none">
         <div style="display:grid;grid-template-columns:1fr 1px 1fr;gap:20px;margin-bottom:18px">
@@ -1143,6 +1153,7 @@ let selectedMonths = new Set();
 let selectedAppointmentTypeMonths = new Set();
 let appointmentTypesBaseMonths = [];
 let selectedSessionsDailyMonth = currentMonthValue();
+let selectedSessionFinisherEconomicGroup = '';
 let sessionsMonthlySummaryData = null, sessionsMonthlySummaryItems = [], selectedSessionMonthlyBotCompanies = [];
 let qualityData = null, selectedQualityKey = null;
 
@@ -1235,6 +1246,7 @@ function updateFilterInfo() {
 
 function clearFilters() {
   currentGroup = ''; currentType = ''; currentCompany = '';
+  selectedSessionFinisherEconomicGroup = '';
   document.getElementById('group-select').value = '';
   document.getElementById('type-select').value  = '';
   document.getElementById('company-select').innerHTML = '<option value="">(Selecione um grupo primeiro)</option>';
@@ -1741,6 +1753,7 @@ function renderSessionFinishers(items, filterApplied, opts) {
   if (barIa) barIa.style.width = width(ia);
   if (note) {
     const messages = [];
+    if (selectedSessionFinisherEconomicGroup) messages.push(`subfiltro grupo: ${selectedSessionFinisherEconomicGroup}`);
     if (filterApplied && filterApplied.period === false) messages.push('Filtro não aplicado: período');
     if (filterApplied && filterApplied.organization === false) messages.push('Filtro não aplicado: grupo/empresa');
     if (filterApplied && filterApplied.type === false) messages.push('Filtro não aplicado: tipo beneficiário');
@@ -1790,13 +1803,47 @@ function renderSessionEconomicGroupFinishers(items, opts) {
   if (barIa) barIa.style.width = width(ia);
   if (note) {
     const messages = [];
-    if (currentGroup) messages.push(`grupo: ${currentGroup}`);
+    if (selectedSessionFinisherEconomicGroup) messages.push(`grupo: ${selectedSessionFinisherEconomicGroup}`);
+    else if (currentGroup) messages.push(`grupo: ${currentGroup}`);
     if (currentCompany) messages.push('filtro de empresa não aplicado nesta lógica');
     note.style.display = messages.length ? 'block' : 'none';
     note.textContent = messages.join(' · ');
   }
   if (loading) loading.style.display = 'none';
   if (content) content.style.display = 'block';
+}
+
+function renderSessionFinisherGroupFilters(options) {
+  const selects = [
+    document.getElementById('session-finisher-group-select'),
+    document.getElementById('session-finisher-eg-group-select'),
+  ].filter(Boolean);
+  if (!selects.length) return;
+  const normalized = [];
+  const seen = new Set();
+  (options || []).forEach((item) => {
+    const name = String(item.name || '').trim();
+    if (!name || seen.has(name)) return;
+    seen.add(name);
+    normalized.push({ name, total: Number(item.total) || 0 });
+  });
+  if (selectedSessionFinisherEconomicGroup && !seen.has(selectedSessionFinisherEconomicGroup)) {
+    normalized.unshift({ name: selectedSessionFinisherEconomicGroup, total: 0 });
+  }
+  const html = '<option value="">(Todos os grupos econômicos)</option>' + normalized.map((item) => {
+    const selected = item.name === selectedSessionFinisherEconomicGroup ? ' selected' : '';
+    const totalLabel = item.total ? ` (${fmt(item.total)})` : '';
+    return `<option value="${escapeAttr(item.name)}"${selected}>${escapeHtml(item.name)}${totalLabel}</option>`;
+  }).join('');
+  selects.forEach((select) => { select.innerHTML = html; });
+}
+
+function onSessionFinisherEconomicGroupChange(value) {
+  selectedSessionFinisherEconomicGroup = value || '';
+  document.querySelectorAll('#session-finisher-group-select,#session-finisher-eg-group-select').forEach((select) => {
+    if (select.value !== selectedSessionFinisherEconomicGroup) select.value = selectedSessionFinisherEconomicGroup;
+  });
+  loadSessions();
 }
 
 function renderSessionTypifications(items, opts) {
@@ -1895,6 +1942,7 @@ async function loadSessions() {
   if (meses.length > 0)  p.set('meses', meses.join(','));
   if (currentGroup)      p.set('group_name', currentGroup);
   if (currentCompany)    p.set('company', currentCompany);
+  if (selectedSessionFinisherEconomicGroup) p.set('finishers_group_name', selectedSessionFinisherEconomicGroup);
   const qs = p.toString() ? '?' + p.toString() : '';
 
   loadSessionsEvolution();
@@ -1902,6 +1950,7 @@ async function loadSessions() {
 
   const sessions = await safeGet('/api/sessions' + qs);
   if (sessions && !sessions.error) {
+    renderSessionFinisherGroupFilters(sessions.economic_group_options || []);
     if (bullet) bullet.textContent = fmt(sessions.total);
     const empresas = sessions.empresas || 0;
     let label = 'botmaker_session · todos os períodos';
