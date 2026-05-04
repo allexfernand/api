@@ -247,6 +247,12 @@ export default async function handler(req, res) {
         ${sessionDateFilter ? `WHERE ${sessionDateFilter}` : ''}
       `);
 
+    const economicGroupTotalPromise = runQuery(wh.id, `
+      SELECT COUNT(*) AS total
+      FROM ${SESSION_TABLE}
+      ${economicGroupWhere ? `WHERE ${economicGroupWhere}` : ''}
+    `);
+
     const economicGroupFinishersPromise = runQuery(wh.id, `
       SELECT
         CASE WHEN finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END AS tipo_atendimento,
@@ -308,11 +314,12 @@ export default async function handler(req, res) {
         LIMIT 30
       `);
 
-    const [totalSettled, typificationsSettled, economicGroupFinishersSettled, economicGroupOptionsSettled] = await Promise.allSettled([
+    const [totalSettled, typificationsSettled, economicGroupFinishersSettled, economicGroupOptionsSettled, economicGroupTotalSettled] = await Promise.allSettled([
       totalPromise,
       typificationsPromise,
       economicGroupFinishersPromise,
       economicGroupOptionsPromise,
+      economicGroupTotalPromise,
     ]);
     if (totalSettled.status !== 'fulfilled') {
       throw totalSettled.reason instanceof Error ? totalSettled.reason : new Error(String(totalSettled.reason));
@@ -345,11 +352,19 @@ export default async function handler(req, res) {
           total: toInt(r[1]),
         })).filter((item) => item.name)
       : [];
+    const economicGroupTotalError = economicGroupTotalSettled.status === 'rejected'
+      ? (economicGroupTotalSettled.reason instanceof Error ? economicGroupTotalSettled.reason.message : String(economicGroupTotalSettled.reason))
+      : null;
+    const economicGroupTotal = economicGroupTotalSettled.status === 'fulfilled'
+      ? toInt(economicGroupTotalSettled.value[0]?.[0])
+      : 0;
 
     res.status(200).json({
       total,
       empresas: toInt(row[1]),
       finishers_group_name: finisherGroupName,
+      economic_group_total: economicGroupTotal,
+      economic_group_total_error: economicGroupTotalError,
       economic_group_options: economicGroupOptions,
       economic_group_finishers: economicGroupFinishers,
       economic_group_finishers_error: economicGroupFinishersError,

@@ -656,6 +656,22 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
       </div>
     </div>
 
+    <div class="card-box" data-qtag="#Q13" style="display:flex;align-items:center;justify-content:space-between;gap:20px;padding:20px 28px;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:20px;min-width:260px">
+        <div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#0f766e,#0b3b47);display:flex;align-items:center;justify-content:center">
+          <i class="fa-solid fa-building-user" style="font-size:20px;color:#fff"></i>
+        </div>
+        <div>
+          <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;margin-bottom:3px">Total de Sessões · grupo econômico</div>
+          <div style="font-size:34px;font-weight:700;color:#0f766e;letter-spacing:-1px;line-height:1" id="bullet-sessoes-eg">—</div>
+          <div style="font-size:11px;color:#94a3b8;margin-top:3px" id="bullet-sessoes-eg-periodo">botmaker_session.economic_group_name · todos os períodos</div>
+        </div>
+      </div>
+      <select class="filter-select" id="session-total-eg-group-select" onchange="onSessionFinisherEconomicGroupChange(this.value)" style="min-width:220px;max-width:320px">
+        <option value="">(Todos os grupos econômicos)</option>
+      </select>
+    </div>
+
     <div class="card-box" data-qtag="#Q12">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap">
         <div class="section-title" style="margin-bottom:0"><i class="fa-solid fa-building-user" style="margin-right:6px"></i>Sessões finalizadas por · grupo econômico</div>
@@ -1731,7 +1747,10 @@ function renderSessionEconomicGroupFinishers(items, opts) {
 }
 
 function renderSessionFinisherGroupFilters(options) {
-  const selects = [document.getElementById('session-finisher-eg-group-select')].filter(Boolean);
+  const selects = [
+    document.getElementById('session-total-eg-group-select'),
+    document.getElementById('session-finisher-eg-group-select'),
+  ].filter(Boolean);
   if (!selects.length) return;
   const normalized = [];
   const seen = new Set();
@@ -1754,7 +1773,7 @@ function renderSessionFinisherGroupFilters(options) {
 
 function onSessionFinisherEconomicGroupChange(value) {
   selectedSessionFinisherEconomicGroup = value || '';
-  document.querySelectorAll('#session-finisher-eg-group-select').forEach((select) => {
+  document.querySelectorAll('#session-total-eg-group-select,#session-finisher-eg-group-select').forEach((select) => {
     if (select.value !== selectedSessionFinisherEconomicGroup) select.value = selectedSessionFinisherEconomicGroup;
   });
   loadSessions();
@@ -1807,12 +1826,15 @@ async function loadSessions() {
   buildAppointmentTypesPeriodoOptions();
   buildSessionsDailyMonthOptions();
   const bullet = document.getElementById('bullet-sessoes');
+  const economicGroupBullet = document.getElementById('bullet-sessoes-eg');
+  const economicGroupPeriodoLabel = document.getElementById('bullet-sessoes-eg-periodo');
   const periodoLabel = document.getElementById('bullet-sessoes-periodo');
   const economicFinishersLoading = document.getElementById('session-finishers-eg-loading');
   const economicFinishersContent = document.getElementById('session-finishers-eg-content');
   const typificationsLoading = document.getElementById('session-typifications-loading');
   const typificationsContent = document.getElementById('session-typifications-content');
   if (bullet) bullet.textContent = '…';
+  if (economicGroupBullet) economicGroupBullet.textContent = '…';
   if (economicFinishersLoading) {
     economicFinishersLoading.style.display = 'block';
     economicFinishersLoading.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...';
@@ -1859,6 +1881,7 @@ async function loadSessions() {
   if (sessions && !sessions.error) {
     renderSessionFinisherGroupFilters(sessions.economic_group_options || []);
     if (bullet) bullet.textContent = fmt(sessions.total);
+    if (economicGroupBullet) economicGroupBullet.textContent = sessions.economic_group_total_error ? 'Erro' : fmt(sessions.economic_group_total || 0);
     const empresas = sessions.empresas || 0;
     let label = 'botmaker_session · todos os períodos';
     if (sessions.source === 'company_filter_sum') {
@@ -1873,6 +1896,16 @@ async function loadSessions() {
       periodoLabel.textContent = label;
       periodoLabel.title = label;
     }
+    if (economicGroupPeriodoLabel) {
+      let economicGroupLabel = 'botmaker_session.economic_group_name · todos os períodos';
+      if (selectedSessionFinisherEconomicGroup) economicGroupLabel = `economic_group_name · ${selectedSessionFinisherEconomicGroup}`;
+      else if (currentGroup) economicGroupLabel = `economic_group_name · ${currentGroup}`;
+      if (meses.length === 1) { const [y, mm] = meses[0].split('-'); economicGroupLabel += ` · ${mN[mm]}/${y}`; }
+      else if (meses.length > 1) economicGroupLabel += ` · ${meses.length} meses selecionados`;
+      if (currentCompany) economicGroupLabel += ' · empresa não aplicada';
+      economicGroupPeriodoLabel.textContent = economicGroupLabel;
+      economicGroupPeriodoLabel.title = economicGroupLabel;
+    }
     renderSessionEconomicGroupFinishers(sessions.economic_group_finishers || [], {
       error: sessions.economic_group_finishers_error,
     });
@@ -1881,10 +1914,15 @@ async function loadSessions() {
     });
   } else {
     if (bullet) bullet.textContent = 'Erro';
+    if (economicGroupBullet) economicGroupBullet.textContent = 'Erro';
     const msg = sessions && sessions.error ? sessions.error : 'Erro ao carregar sessões';
     if (periodoLabel) {
       periodoLabel.textContent = String(msg).slice(0, 220);
       periodoLabel.title = String(msg);
+    }
+    if (economicGroupPeriodoLabel) {
+      economicGroupPeriodoLabel.textContent = String(msg).slice(0, 220);
+      economicGroupPeriodoLabel.title = String(msg);
     }
     if (economicFinishersLoading) economicFinishersLoading.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>Erro ao carregar finalizações por grupo';
     if (typificationsLoading) typificationsLoading.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>Erro ao carregar encerramentos';
