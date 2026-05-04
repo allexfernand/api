@@ -24,18 +24,6 @@ async function runQuery(warehouseId, sql) {
   return data.result?.data_array || [];
 }
 
-async function runQueryQuick(warehouseId, sql) {
-  const data = await dbFetch("/api/2.0/sql/statements", {
-    method: "POST",
-    body: JSON.stringify({ warehouse_id: warehouseId, statement: sql, wait_timeout: "25s", on_wait_timeout: "CANCEL" }),
-  });
-  const state = data.status?.state;
-  if (state !== "SUCCEEDED") {
-    throw new Error(data.status?.error?.message || "Query excedeu o tempo limite: " + state);
-  }
-  return data.result?.data_array || [];
-}
-
 function escape(s) { return String(s).replace(/'/g, "''"); }
 function quoteIdent(s) { return `\`${String(s).replace(/`/g, "``")}\``; }
 
@@ -46,70 +34,17 @@ const getCell = (cell) => {
 };
 const toInt = (v) => { const n = parseInt(getCell(v)); return Number.isFinite(n) ? n : 0; };
 
-function normalizeCpfExpr(expr) {
-  const digits = `NULLIF(regexp_replace(TRIM(CAST(${expr} AS STRING)), '[^0-9]', ''), '')`;
-  return `CASE
-    WHEN ${digits} IS NULL THEN NULL
-    WHEN LENGTH(${digits}) < 11 THEN LPAD(${digits}, 11, '0')
-    ELSE ${digits}
-  END`;
-}
-
 const SESSION_TABLE = `hive_metastore.sanus_prod.botmaker_session`;
-const VW_BENEFICIARIOS = `sanus_databricks.sanus_prod.vw_beneficiarios`;
 const ORGANIZATIONS_TABLE = `sanus_databricks.sanus_prod.organizations`;
 
-function pickColumn(columns, candidates) {
-  const byLower = new Map(columns.map((column) => [column.toLowerCase(), column]));
-  for (const candidate of candidates) {
-    const column = byLower.get(candidate.toLowerCase());
-    if (column) return column;
-  }
-  return null;
-}
-
-async function getColumns(warehouseId, tableName) {
-  const rows = await runQuery(warehouseId, `DESCRIBE TABLE ${tableName}`);
-  return rows
-    .map((row) => String(getCell(row[0]) || '').trim())
-    .filter((column) => column && !column.startsWith('#'));
-}
-
-function jsonValueExpr(variablesColumn, keys) {
-  const variables = `CAST(${quoteIdent(variablesColumn)} AS STRING)`;
-  const expressions = keys.flatMap((key) => [
-    `NULLIF(TRIM(get_json_object(${variables}, '$.${key}')), '')`,
-    `NULLIF(TRIM(get_json_object(${variables}, '$.${key}.value')), '')`,
-  ]);
-  return `COALESCE(${expressions.join(', ')})`;
-}
-
-function sessionCpfExpr(variablesColumn) {
-  if (!variablesColumn) return null;
-  const jsonCpf = jsonValueExpr(variablesColumn, [
-    'inputcpfholder', 'cpf_holder', 'cpf',
-  ]);
-  return normalizeCpfExpr(jsonCpf);
-}
-
-function sessionTypificationExpr(variablesColumn) {
-  const raw = `${quoteIdent(variablesColumn)}['typification']`;
+function sessionTypificationExpr(variablesColumn, tableAlias = '') {
+  const prefix = tableAlias ? `${tableAlias}.` : '';
+  const raw = `${prefix}${quoteIdent(variablesColumn)}['typification']`;
   return `CASE
     WHEN ${raw} IS NULL THEN '(NULO)'
     WHEN TRIM(CAST(${raw} AS STRING)) = '' THEN '(VAZIO/BRANCO)'
     ELSE TRIM(CAST(${raw} AS STRING))
   END`;
-}
-
-function sessionVariablesPrefilter(variablesColumn) {
-  if (!variablesColumn) return null;
-  const v = `CAST(${quoteIdent(variablesColumn)} AS STRING)`;
-  return `${v} IS NOT NULL AND (
-    ${v} LIKE '%inputcpfholder%' OR
-    ${v} LIKE '%cpf_holder%' OR
-    ${v} LIKE '%"cpf"%' OR
-    ${v} LIKE '%"CPF"%'
-  )`;
 }
 
 function orgIdsSubquery(groupName, company) {
@@ -125,50 +60,6 @@ function orgIdsSubquery(groupName, company) {
   )`;
 }
 
-function orgNamesSubquery(groupName, company) {
-  if (company) {
-    return `(SELECT UPPER(TRIM(name)) FROM ${ORGANIZATIONS_TABLE} WHERE name = '${escape(company)}')`;
-  }
-  const g = escape(groupName);
-  return `(
-    SELECT UPPER(TRIM(name)) FROM ${ORGANIZATIONS_TABLE} WHERE name = '${g}'
-    UNION
-    SELECT UPPER(TRIM(name)) FROM ${ORGANIZATIONS_TABLE}
-    WHERE matriz_id = (SELECT id FROM ${ORGANIZATIONS_TABLE} WHERE name = '${g}' LIMIT 1)
-  )`;
-}
-
-function textEqualsExpr(expr, value) {
-  return `UPPER(TRIM(CAST(${expr} AS STRING))) = UPPER(TRIM('${escape(value)}'))`;
-}
-
-function textInExpr(expr, subquery) {
-  return `UPPER(TRIM(CAST(${expr} AS STRING))) IN ${subquery}`;
-}
-
-function buildExtraFilter(groupName, company, typeFilter) {
-  const conditions = [];
-  if (groupName) {
-    const g = escape(groupName);
-    conditions.push(`b.ID_EMPRESA IN (
-      SELECT id FROM ${ORGANIZATIONS_TABLE} WHERE name = '${g}'
-      UNION
-      SELECT id FROM ${ORGANIZATIONS_TABLE}
-      WHERE matriz_id = (SELECT id FROM ${ORGANIZATIONS_TABLE} WHERE name = '${g}' LIMIT 1)
-    )`);
-  }
-  if (company) {
-    const c = escape(company);
-    conditions.push(`b.ID_EMPRESA IN (SELECT id FROM ${ORGANIZATIONS_TABLE} WHERE name = '${c}')`);
-  }
-  if (typeFilter === 'TITULAR') {
-    conditions.push(`UPPER(TRIM(COALESCE(b.GRAU_PARENTESCO,''))) = 'TITULAR'`);
-  } else if (typeFilter === 'DEPENDENTE') {
-    conditions.push(`UPPER(TRIM(COALESCE(b.GRAU_PARENTESCO,''))) != 'TITULAR'`);
-  }
-  return conditions.length ? `AND ${conditions.join(' AND ')}` : '';
-}
-
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
@@ -178,9 +69,6 @@ export default async function handler(req, res) {
   const meses = req.query.meses ? req.query.meses.split(',').filter((m) => /^\d{4}-\d{2}$/.test(m)) : [];
   const groupName = req.query.group_name || null;
   const company = req.query.company || null;
-  const typeFilter = req.query.type || null;
-  const useCompanyFilterSum = Boolean(groupName || company || typeFilter);
-  const extraFilter = buildExtraFilter(groupName, company, typeFilter);
 
   const SESSION_DATE_COLUMN = 'creation_time';
 
@@ -195,6 +83,7 @@ export default async function handler(req, res) {
 
     const sessionDateFilter = buildSessionDateFilter(meses);
     const typificationExpr = sessionTypificationExpr('variables');
+    const aliasedTypificationExpr = sessionTypificationExpr('variables', 's');
     const companySessionsDateFilter = meses.length > 0
       ? `DATE_FORMAT(try_cast(s.${quoteIdent(SESSION_DATE_COLUMN)} AS TIMESTAMP), 'yyyy-MM') IN (${meses.map((m) => `'${m}'`).join(',')})`
       : null;
@@ -206,33 +95,6 @@ export default async function handler(req, res) {
     const companySessionsSource = companySessionsMode === "company"
       ? "botmaker_session.organization_id + organizations.id/name"
       : "botmaker_session.economic_group_name";
-    const beneficiaryColumns = useCompanyFilterSum ? await getColumns(wh.id, VW_BENEFICIARIOS) : [];
-    const beneficiaryCpfColumn = pickColumn(beneficiaryColumns, [
-      'cpf',
-      'CPF',
-      'nr_cpf',
-      'NR_CPF',
-      'num_cpf',
-      'NUM_CPF',
-      'cpf_beneficiario',
-      'CPF_BENEFICIARIO',
-      'cpf_benef',
-      'CPF_BENEF',
-      'cpf_titular',
-      'CPF_TITULAR',
-      'cpf_holder',
-      'CPF_HOLDER',
-      'document',
-      'DOCUMENT',
-      'documento',
-      'DOCUMENTO',
-      'document_number',
-      'DOCUMENT_NUMBER',
-      'numero_documento',
-      'NUMERO_DOCUMENTO',
-      'nro_documento',
-      'NRO_DOCUMENTO',
-    ]);
 
     const economicGroupTotalPromise = companySessionsMode === "company"
       ? runQuery(wh.id, `
@@ -308,34 +170,21 @@ export default async function handler(req, res) {
         ORDER BY total_sessions DESC
       `);
 
-    const typificationsPromise = useCompanyFilterSum
-      ? (beneficiaryCpfColumn ? runQueryQuick(wh.id, `
-        WITH filtered_cpfs AS (
-          SELECT DISTINCT ${normalizeCpfExpr(`b.${quoteIdent(beneficiaryCpfColumn)}`)} AS cpf
-          FROM ${VW_BENEFICIARIOS} b
-          WHERE NOME_CLIENTE IS NOT NULL
-            ${extraFilter}
-            AND ${normalizeCpfExpr(`b.${quoteIdent(beneficiaryCpfColumn)}`)} IS NOT NULL
-        ),
-        sessions_filtered AS (
-          SELECT ${typificationExpr} AS tipificacao, ${quoteIdent('variables')} AS variables
-          FROM ${SESSION_TABLE}
-          WHERE ${sessionDateFilter ? `${sessionDateFilter} AND ` : ''}${sessionVariablesPrefilter('variables')}
-        ),
-        sessions_resolved AS (
-          SELECT tipificacao, ${sessionCpfExpr('variables')} AS cpf
-          FROM sessions_filtered
-        )
-        SELECT /*+ BROADCAST(filtered_cpfs) */
-          s.tipificacao,
+    const typificationsPromise = companySessionsMode === "company"
+      ? runQuery(wh.id, `
+        SELECT
+          ${aliasedTypificationExpr} AS tipificacao,
           COUNT(*) AS total_sessions
-        FROM sessions_resolved s
-        INNER JOIN filtered_cpfs fc ON fc.cpf = s.cpf
-        WHERE s.cpf IS NOT NULL
-        GROUP BY s.tipificacao
+        FROM ${SESSION_TABLE} s
+        INNER JOIN ${ORGANIZATIONS_TABLE} o
+          ON CAST(s.${quoteIdent('organization_id')} AS STRING) = CAST(o.${quoteIdent('id')} AS STRING)
+        WHERE o.${quoteIdent('name')} IS NOT NULL
+          AND TRIM(CAST(o.${quoteIdent('name')} AS STRING)) != ''
+          ${companySessionsWhere ? `AND ${companySessionsWhere}` : ''}
+        GROUP BY ${aliasedTypificationExpr}
         ORDER BY total_sessions DESC
         LIMIT 30
-      `) : Promise.reject(new Error(`Coluna de CPF/documento não encontrada em ${VW_BENEFICIARIOS}. Colunas disponíveis: ${beneficiaryColumns.slice(0, 80).join(', ')}`)))
+      `)
       : runQuery(wh.id, `
         SELECT
           ${typificationExpr} AS tipificacao,

@@ -1847,7 +1847,7 @@ function renderSessionTypifications(items, opts) {
   if (meta) meta.textContent = `${rows.length} tipos · total ${fmt(total)} sessões tipificadas`;
   if (note) {
     const messages = [];
-    if (currentGroup || currentCompany) messages.push('Filtro de grupo/empresa aplicado via CPF nas variáveis da sessão');
+    if (currentGroup || currentCompany) messages.push('Filtro global aplicado via organization_id/organizations');
     note.style.display = messages.length ? 'block' : 'none';
     note.textContent = messages.join(' · ');
   }
