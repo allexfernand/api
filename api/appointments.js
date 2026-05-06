@@ -4,6 +4,7 @@ const TOKEN = process.env.DATABRICKS_TOKEN;
 const HEADERS = { "Authorization": `Bearer ${TOKEN}`, "Content-Type": "application/json" };
 const APPOINTMENTS_TABLE = `hive_metastore.sanus_prod.atendimento_summarized_gold_live`;
 const APPOINTMENTS_DATE_COLUMN = 'hora_criacao_atendimento';
+let cachedWarehouseId = null;
 
 async function dbFetch(path, options = {}) {
   const res = await fetch(`${HOST}${path}`, { ...options, headers: { ...HEADERS, ...(options.headers || {}) } });
@@ -24,6 +25,15 @@ async function runQuery(warehouseId, sql) {
   }
   if (state !== "SUCCEEDED") throw new Error(data.status?.error?.message || "Query falhou: " + state);
   return data.result?.data_array || [];
+}
+
+async function getWarehouseId() {
+  if (cachedWarehouseId) return cachedWarehouseId;
+  const { warehouses = [] } = await dbFetch("/api/2.0/sql/warehouses");
+  const wh = warehouses.find((w) => w.state === "RUNNING") || warehouses[0];
+  if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
+  cachedWarehouseId = wh.id;
+  return cachedWarehouseId;
 }
 
 const getCell = (cell) => {
@@ -75,11 +85,9 @@ export default async function handler(req, res) {
     : '';
 
   try {
-    const { warehouses = [] } = await dbFetch("/api/2.0/sql/warehouses");
-    const wh = warehouses.find((w) => w.state === "RUNNING") || warehouses[0];
-    if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
+    const warehouseId = await getWarehouseId();
 
-    const rows = await runQuery(wh.id, `
+    const rows = await runQuery(warehouseId, `
       SELECT COUNT(*) AS total_tickets
       FROM ${APPOINTMENTS_TABLE}
       WHERE (${monthRangeFilter})

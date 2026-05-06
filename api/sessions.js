@@ -36,6 +36,16 @@ const toInt = (v) => { const n = parseInt(getCell(v)); return Number.isFinite(n)
 
 const SESSION_TABLE = `hive_metastore.sanus_prod.botmaker_session`;
 const ORGANIZATIONS_TABLE = `hive_metastore.sanus_prod.organizations`;
+let cachedWarehouseId = null;
+
+async function getWarehouseId() {
+  if (cachedWarehouseId) return cachedWarehouseId;
+  const { warehouses = [] } = await dbFetch("/api/2.0/sql/warehouses");
+  const wh = warehouses.find((w) => w.state === "RUNNING") || warehouses[0];
+  if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
+  cachedWarehouseId = wh.id;
+  return cachedWarehouseId;
+}
 
 function sessionTypificationExpr(variablesColumn, tableAlias = '') {
   const prefix = tableAlias ? `${tableAlias}.` : '';
@@ -72,6 +82,20 @@ function lastNMonthsList(n) {
   return out;
 }
 
+function nextMonth(month) {
+  const [year, mm] = month.split('-').map((value) => parseInt(value, 10));
+  const d = new Date(Date.UTC(year, mm - 1, 1));
+  d.setUTCMonth(d.getUTCMonth() + 1);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+function monthRangeFilter(tableAlias, column, monthsArr) {
+  if (!monthsArr.length) return null;
+  const prefix = tableAlias ? `${tableAlias}.` : '';
+  const col = `${prefix}${quoteIdent(column)}`;
+  return `(${monthsArr.map((month) => `(${col} >= '${month}-01' AND ${col} < '${nextMonth(month)}-01')`).join(' OR ')})`;
+}
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
@@ -87,20 +111,11 @@ export default async function handler(req, res) {
 
   const SESSION_DATE_COLUMN = 'creation_time';
 
-  const buildSessionDateFilter = (mesesArr) => mesesArr.length > 0
-    ? `DATE_FORMAT(try_cast(${quoteIdent(SESSION_DATE_COLUMN)} AS TIMESTAMP), 'yyyy-MM') IN (${mesesArr.map((m) => `'${m}'`).join(',')})`
-    : null;
-
   try {
-    const { warehouses = [] } = await dbFetch("/api/2.0/sql/warehouses");
-    const wh = warehouses.find((w) => w.state === "RUNNING") || warehouses[0];
-    if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
+    const warehouseId = await getWarehouseId();
 
-    const sessionDateFilter = buildSessionDateFilter(meses);
     const aliasedTypificationExpr = sessionTypificationExpr('variables', 's');
-    const companySessionsDateFilter = meses.length > 0
-      ? `DATE_FORMAT(try_cast(s.${quoteIdent(SESSION_DATE_COLUMN)} AS TIMESTAMP), 'yyyy-MM') IN (${meses.map((m) => `'${m}'`).join(',')})`
-      : null;
+    const companySessionsDateFilter = monthRangeFilter('s', SESSION_DATE_COLUMN, meses);
     const companySessionsOrgFilter = company
       ? `CAST(o.${quoteIdent('id')} AS STRING) IN ${orgIdsSubquery(null, company)}`
       : (groupName ? `CAST(o.${quoteIdent('id')} AS STRING) IN ${orgIdsSubquery(groupName, null)}` : null);
@@ -113,7 +128,7 @@ export default async function handler(req, res) {
       ? 's.finished_by IS NOT NULL'
       : (typificationFinisher === 'ia' ? 's.finished_by IS NULL' : null);
     const topGroupMonths = meses.length ? [...meses].sort() : lastNMonthsList(12);
-    const topGroupDateFilter = `DATE_FORMAT(try_cast(s.${quoteIdent(SESSION_DATE_COLUMN)} AS TIMESTAMP), 'yyyy-MM') IN (${topGroupMonths.map((m) => `'${m}'`).join(',')})`;
+    const topGroupDateFilter = monthRangeFilter('s', SESSION_DATE_COLUMN, topGroupMonths);
     const topGroupNameExpr = `TRIM(CAST(s.${quoteIdent('economic_group_name')} AS STRING))`;
     const topGroupValidFilter = `s.${quoteIdent('economic_group_name')} IS NOT NULL AND ${topGroupNameExpr} != ''`;
     const topGroupWhere = [topGroupDateFilter, companySessionsOrgFilter, topGroupValidFilter].filter(Boolean).join(' AND ');
@@ -124,7 +139,7 @@ export default async function handler(req, res) {
       : `${SESSION_TABLE} s`;
 
     const economicGroupTotalPromise = companySessionsMode === "company"
-      ? runQuery(wh.id, `
+      ? runQuery(warehouseId, `
         SELECT COUNT(*) AS total
         FROM ${SESSION_TABLE} s
         INNER JOIN ${ORGANIZATIONS_TABLE} o
@@ -133,14 +148,14 @@ export default async function handler(req, res) {
           AND TRIM(CAST(o.${quoteIdent('name')} AS STRING)) != ''
           ${companySessionsWhere ? `AND ${companySessionsWhere}` : ''}
       `)
-      : runQuery(wh.id, `
+      : runQuery(warehouseId, `
         SELECT COUNT(*) AS total
         FROM ${SESSION_TABLE} s
         ${companySessionsDateFilter ? `WHERE ${companySessionsDateFilter}` : ''}
       `);
 
     const economicGroupFinishersPromise = companySessionsMode === "company"
-      ? runQuery(wh.id, `
+      ? runQuery(warehouseId, `
         SELECT
           CASE WHEN s.finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END AS tipo_atendimento,
           COUNT(*) AS total_sessions
@@ -153,7 +168,7 @@ export default async function handler(req, res) {
         GROUP BY CASE WHEN s.finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END
         ORDER BY total_sessions DESC
       `)
-      : runQuery(wh.id, `
+      : runQuery(warehouseId, `
         SELECT
           CASE WHEN s.finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END AS tipo_atendimento,
           COUNT(*) AS total_sessions
@@ -164,7 +179,7 @@ export default async function handler(req, res) {
       `);
 
     const companySessionsPromise = companySessionsMode === "company"
-      ? runQuery(wh.id, `
+      ? runQuery(warehouseId, `
         SELECT
           TRIM(CAST(o.${quoteIdent('name')} AS STRING)) AS empresa,
           COUNT(*) AS total_sessions
@@ -177,7 +192,7 @@ export default async function handler(req, res) {
         GROUP BY TRIM(CAST(o.${quoteIdent('name')} AS STRING))
         ORDER BY total_sessions DESC
       `)
-      : runQuery(wh.id, `
+      : runQuery(warehouseId, `
         SELECT
           CASE
             WHEN s.${quoteIdent('economic_group_name')} IS NULL
@@ -198,7 +213,7 @@ export default async function handler(req, res) {
       `);
 
     const typificationsPromise = companySessionsMode === "company"
-      ? runQuery(wh.id, `
+      ? runQuery(warehouseId, `
         SELECT
           ${aliasedTypificationExpr} AS tipificacao,
           COUNT(*) AS total_sessions
@@ -213,7 +228,7 @@ export default async function handler(req, res) {
         ORDER BY total_sessions DESC
         LIMIT 30
       `)
-      : runQuery(wh.id, `
+      : runQuery(warehouseId, `
         SELECT
           ${aliasedTypificationExpr} AS tipificacao,
           COUNT(*) AS total_sessions
@@ -224,7 +239,7 @@ export default async function handler(req, res) {
         LIMIT 30
       `);
 
-    const topGroupsEvolutionPromise = runQuery(wh.id, `
+    const topGroupsEvolutionPromise = runQuery(warehouseId, `
       WITH scoped_sessions AS (
         SELECT
           DATE_FORMAT(try_cast(s.${quoteIdent(SESSION_DATE_COLUMN)} AS TIMESTAMP), 'yyyy-MM') AS mes,
