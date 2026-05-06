@@ -70,7 +70,7 @@ export default async function handler(req, res) {
     const [userRows, groupRows] = await Promise.all([
       runQuery(wh.id, `
         SELECT DATE_TRUNC('DAY', b.created_at) AS dia, COUNT(DISTINCT b.id) AS n
-        FROM sanus_databricks.sanus_prod.beneficiaries b
+        FROM hive_metastore.sanus_prod.beneficiaries b
         ${groupFilter}
         GROUP BY 1 ORDER BY 1
       `),

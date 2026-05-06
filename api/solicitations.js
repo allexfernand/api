@@ -64,7 +64,7 @@ export default async function handler(req, res) {
           ELSE 'Outros'
         END AS tipo_agrupado,
         COUNT(*) AS quantidade
-      FROM sanus_databricks.sanus_prod.atendimento_gold_live
+      FROM hive_metastore.sanus_prod.atendimento_gold_live
       WHERE motivo IN ('Concluído com sucesso', 'Concluído com sucesso pela DASA')
         ${periodoFilter}
         ${groupFilter}

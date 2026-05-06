@@ -88,7 +88,7 @@ export default async function handler(req, res) {
           b.organization_id,
           b.type_kinship,
           FLOOR(try_divide(DATEDIFF(CURRENT_DATE(), CAST(b.birthday AS DATE)), 365.25)) AS idade
-        FROM sanus_databricks.sanus_prod.beneficiaries b
+        FROM hive_metastore.sanus_prod.beneficiaries b
         WHERE b.birthday IS NOT NULL
         ${extraFilter}
       ) b

@@ -90,7 +90,7 @@ export default async function handler(req, res) {
             AND b.birthday IS NOT NULL
             AND try_divide(MONTHS_BETWEEN(CURRENT_DATE(), b.birthday), 12) BETWEEN 19 AND 38
             THEN 1 ELSE 0 END)                                                                                AS mulheres_19_38
-      FROM sanus_databricks.sanus_prod.beneficiaries b
+      FROM hive_metastore.sanus_prod.beneficiaries b
       ${groupFilter}
     `),
     ]);

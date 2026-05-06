@@ -69,7 +69,7 @@ export default async function handler(req, res) {
       SELECT
         NOME_CLIENTE AS empresa,
         COUNT(*) AS total
-      FROM sanus_databricks.sanus_prod.vw_beneficiarios b
+      FROM hive_metastore.sanus_prod.vw_beneficiarios b
       WHERE NOME_CLIENTE IS NOT NULL
         ${extraFilter}
       GROUP BY NOME_CLIENTE
