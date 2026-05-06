@@ -383,6 +383,7 @@ body {
 @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
 .tab-content{display:none}
 .tab-content.active{display:block}
+body[data-active-tab="sessoes"] #filter-company-group{display:none!important}
 .loading-box{text-align:center;padding:32px;color:var(--text-faint);font-size:13px}
 footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
 </style>
@@ -1173,6 +1174,7 @@ document.querySelectorAll('.tab').forEach(t => {
     t.classList.add('active');
     document.getElementById('tab-' + t.dataset.tab).classList.add('active');
     const activeTab = t.dataset.tab;
+    document.body.dataset.activeTab = activeTab;
     const hasPeriodo = activeTab === 'agendamentos' || activeTab === 'sessoes' || activeTab === 'petit-comite' || activeTab.startsWith('qualidade');
     document.getElementById('filter-periodo').style.display = hasPeriodo ? 'flex' : 'none';
     updateFilterVisibility();
@@ -1185,6 +1187,13 @@ function updateFilterVisibility() {
   const typeGroup = document.getElementById('filter-type-group');
   const companyGroup = document.getElementById('filter-company-group');
   const activeTab = getActiveTab();
+  document.body.dataset.activeTab = activeTab;
+  if (activeTab === 'sessoes') {
+    currentCompany = '';
+    resetCompanySelect();
+  } else if (currentGroup) {
+    loadCompanyOptions();
+  }
   if (typeGroup) typeGroup.style.display = (activeTab === 'sessoes' || activeTab === 'petit-comite' || activeTab.startsWith('qualidade')) ? 'none' : 'flex';
   if (companyGroup) companyGroup.style.display = activeTab === 'sessoes' ? 'none' : 'flex';
 }
@@ -1194,7 +1203,8 @@ document.getElementById('group-select').addEventListener('change', e => {
   currentGroup = e.target.value;
   // Ao trocar grupo, limpa empresa e recarrega lista
   currentCompany = '';
-  loadCompanyOptions();
+  if (getActiveTab() === 'sessoes') resetCompanySelect();
+  else loadCompanyOptions();
   updateFilterInfo();
   loadAll(false);
   if (isPeriodFilteredTab()) loadPeriodFilteredTab();
@@ -1213,11 +1223,17 @@ document.getElementById('type-select').addEventListener('change', e => {
 });
 
 // Carrega empresas do grupo selecionado para o dropdown de empresa
+function resetCompanySelect() {
+  const sel = document.getElementById('company-select');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">(Selecione um grupo primeiro)</option>';
+  sel.disabled = true;
+}
+
 async function loadCompanyOptions() {
   const sel = document.getElementById('company-select');
   if (!currentGroup) {
-    sel.innerHTML = '<option value="">(Selecione um grupo primeiro)</option>';
-    sel.disabled = true;
+    resetCompanySelect();
     return;
   }
   // Estado de carregamento

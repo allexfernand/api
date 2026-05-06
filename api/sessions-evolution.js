@@ -12,7 +12,6 @@ const SESSION_TABLE       = `hive_metastore.sanus_prod.botmaker_session`;
 const ORGANIZATIONS_TABLE = `hive_metastore.sanus_prod.organizations`;
 
 const SESSION_DATE_COLUMN = 'creation_time';
-let cachedWarehouseId = null;
 
 async function dbFetch(path, options = {}) {
   const res = await fetch(`${HOST}${path}`, { ...options, headers: { ...HEADERS, ...(options.headers || {}) } });
@@ -33,15 +32,6 @@ async function runQuery(warehouseId, sql) {
   }
   if (state !== "SUCCEEDED") throw new Error(data.status?.error?.message || "Query falhou: " + state);
   return data.result?.data_array || [];
-}
-
-async function getWarehouseId() {
-  if (cachedWarehouseId) return cachedWarehouseId;
-  const { warehouses = [] } = await dbFetch("/api/2.0/sql/warehouses");
-  const wh = warehouses.find((w) => w.state === "RUNNING") || warehouses[0];
-  if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
-  cachedWarehouseId = wh.id;
-  return cachedWarehouseId;
 }
 
 const escape = (s) => String(s).replace(/'/g, "''");
@@ -103,15 +93,17 @@ export default async function handler(req, res) {
   const hasOrgFilter = Boolean(groupName || company);
 
   const monthList = lastNMonthsList(months);
-  const sessionDateColumn = `s.${quoteIdent(SESSION_DATE_COLUMN)}`;
-  const sessionDateExpr = `try_cast(${sessionDateColumn} AS TIMESTAMP)`;
-  const monthsSqlFilter = `(${monthList.map((month) => `(${sessionDateColumn} >= '${month}-01' AND ${sessionDateColumn} < '${nextMonth(month)}-01')`).join(' OR ')})`;
+  const monthInList = `(${monthList.map((m) => `'${m}'`).join(',')})`;
+  const sessionDateExpr = `try_cast(s.${quoteIdent(SESSION_DATE_COLUMN)} AS TIMESTAMP)`;
+  const monthsSqlFilter = `DATE_FORMAT(${sessionDateExpr}, 'yyyy-MM') IN ${monthInList}`;
   const selectedDayMonth = dayMonth || monthList[monthList.length - 1];
-  const daySqlFilter = `${sessionDateColumn} >= '${selectedDayMonth}-01'
-    AND ${sessionDateColumn} < '${nextMonth(selectedDayMonth)}-01'`;
+  const daySqlFilter = `${sessionDateExpr} >= '${selectedDayMonth}-01'
+    AND ${sessionDateExpr} < '${nextMonth(selectedDayMonth)}-01'`;
 
   try {
-    const warehouseId = await getWarehouseId();
+    const { warehouses = [] } = await dbFetch("/api/2.0/sql/warehouses");
+    const wh = warehouses.find((w) => w.state === "RUNNING") || warehouses[0];
+    if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
 
     const filters = [granularity === 'day' ? daySqlFilter : monthsSqlFilter];
     if (hasOrgFilter) {
@@ -125,7 +117,7 @@ export default async function handler(req, res) {
     const where = `WHERE ${filters.join(' AND ')}`;
     const mode = hasOrgFilter ? "organization_join" : "global";
     if (granularity === 'day') {
-      const rows = await runQuery(warehouseId, `
+      const rows = await runQuery(wh.id, `
         SELECT
           DATE_FORMAT(${sessionDateExpr}, 'yyyy-MM-dd') AS dia,
           CASE WHEN s.finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END AS tipo_atendimento,
@@ -164,7 +156,7 @@ export default async function handler(req, res) {
       });
     }
 
-    const rows = await runQuery(warehouseId, `
+    const rows = await runQuery(wh.id, `
       SELECT
         DATE_FORMAT(${sessionDateExpr}, 'yyyy-MM') AS mes,
         CASE WHEN s.finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END AS tipo_atendimento,

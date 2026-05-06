@@ -7,8 +7,6 @@ const HEADERS = { "Authorization": `Bearer ${TOKEN}`, "Content-Type": "applicati
 
 const APPOINTMENTS_TABLE = `hive_metastore.sanus_prod.atendimento_summarized_gold_live`;
 const APPOINTMENTS_DATE_COLUMN = 'hora_criacao_atendimento';
-let cachedWarehouseId = null;
-let cachedAppointmentColumns = null;
 
 async function dbFetch(path, options = {}) {
   const res = await fetch(`${HOST}${path}`, { ...options, headers: { ...HEADERS, ...(options.headers || {}) } });
@@ -31,15 +29,6 @@ async function runQuery(warehouseId, sql) {
   return data.result?.data_array || [];
 }
 
-async function getWarehouseId() {
-  if (cachedWarehouseId) return cachedWarehouseId;
-  const { warehouses = [] } = await dbFetch("/api/2.0/sql/warehouses");
-  const wh = warehouses.find((w) => w.state === "RUNNING") || warehouses[0];
-  if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
-  cachedWarehouseId = wh.id;
-  return cachedWarehouseId;
-}
-
 const escape = (s) => String(s).replace(/'/g, "''");
 const quoteIdent = (s) => `\`${String(s).replace(/`/g, "``")}\``;
 const getCell = (cell) => {
@@ -59,13 +48,10 @@ function pickColumn(columns, candidates) {
 }
 
 async function getColumns(warehouseId, tableName) {
-  if (tableName === APPOINTMENTS_TABLE && cachedAppointmentColumns) return cachedAppointmentColumns;
   const rows = await runQuery(warehouseId, `DESCRIBE TABLE ${tableName}`);
-  const columns = rows
+  return rows
     .map((row) => String(getCell(row[0]) || '').trim())
     .filter((column) => column && !column.startsWith('#'));
-  if (tableName === APPOINTMENTS_TABLE) cachedAppointmentColumns = columns;
-  return columns;
 }
 
 function lastNMonthsList(n) {
@@ -112,11 +98,13 @@ export default async function handler(req, res) {
     : '';
 
   try {
-    const warehouseId = await getWarehouseId();
+    const { warehouses = [] } = await dbFetch("/api/2.0/sql/warehouses");
+    const wh = warehouses.find((w) => w.state === "RUNNING") || warehouses[0];
+    if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
 
     let companyColumn = null;
     if (company) {
-      const columns = await getColumns(warehouseId, APPOINTMENTS_TABLE);
+      const columns = await getColumns(wh.id, APPOINTMENTS_TABLE);
       companyColumn = pickColumn(columns, [
         'NOME_CLIENTE',
         'nome_cliente',
@@ -132,7 +120,7 @@ export default async function handler(req, res) {
       ? `AND UPPER(TRIM(CAST(${quoteIdent(companyColumn)} AS STRING))) = UPPER(TRIM('${escape(company)}'))`
       : '';
 
-    const rows = await runQuery(warehouseId, `
+    const rows = await runQuery(wh.id, `
       SELECT
         ${monthExpr} AS mes,
         COUNT(*) AS total

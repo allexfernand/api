@@ -9,8 +9,6 @@ const HEADERS = { "Authorization": `Bearer ${TOKEN}`, "Content-Type": "applicati
 const SESSION_TABLE = `hive_metastore.sanus_prod.botmaker_session`;
 const ORGANIZATIONS_TABLE = `hive_metastore.sanus_prod.organizations`;
 const SESSION_DATE_COLUMN = 'creation_time';
-let cachedWarehouseId = null;
-let cachedSessionColumns = null;
 
 async function dbFetch(path, options = {}) {
   const res = await fetch(`${HOST}${path}`, { ...options, headers: { ...HEADERS, ...(options.headers || {}) } });
@@ -33,15 +31,6 @@ async function runQuery(warehouseId, sql) {
   return data.result?.data_array || [];
 }
 
-async function getWarehouseId() {
-  if (cachedWarehouseId) return cachedWarehouseId;
-  const { warehouses = [] } = await dbFetch("/api/2.0/sql/warehouses");
-  const wh = warehouses.find((w) => w.state === "RUNNING") || warehouses[0];
-  if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
-  cachedWarehouseId = wh.id;
-  return cachedWarehouseId;
-}
-
 function escape(s) { return String(s).replace(/'/g, "''"); }
 function quoteIdent(s) { return `\`${String(s).replace(/`/g, "``")}\``; }
 
@@ -62,13 +51,10 @@ function pickColumn(columns, candidates) {
 }
 
 async function getColumns(warehouseId, tableName) {
-  if (tableName === SESSION_TABLE && cachedSessionColumns) return cachedSessionColumns;
   const rows = await runQuery(warehouseId, `DESCRIBE TABLE ${tableName}`);
-  const columns = rows
+  return rows
     .map((row) => String(getCell(row[0]) || '').trim())
     .filter((column) => column && !column.startsWith('#'));
-  if (tableName === SESSION_TABLE) cachedSessionColumns = columns;
-  return columns;
 }
 
 function lastNMonthsList(n) {
@@ -83,17 +69,6 @@ function lastNMonthsList(n) {
     out.push(`${y}-${m}`);
   }
   return out;
-}
-
-function nextMonth(month) {
-  const [year, mm] = month.split('-').map((value) => parseInt(value, 10));
-  const d = new Date(Date.UTC(year, mm - 1, 1));
-  d.setUTCMonth(d.getUTCMonth() + 1);
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
-}
-
-function monthRangeFilter(column, monthsArr) {
-  return `(${monthsArr.map((month) => `(${column} >= '${month}-01' AND ${column} < '${nextMonth(month)}-01')`).join(' OR ')})`;
 }
 
 function orgNamesSubquery(groupName, company) {
@@ -124,15 +99,16 @@ export default async function handler(req, res) {
   const company = req.query.company || null;
   const meses = req.query.meses ? req.query.meses.split(',').filter((m) => /^\d{4}-\d{2}$/.test(m)) : [];
   const monthList = meses.length ? meses.sort() : lastNMonthsList(Math.min(Math.max(parseInt(req.query.months) || 12, 1), 24));
-  const sessionDateColumn = quoteIdent(SESSION_DATE_COLUMN);
-  const monthExpr = `DATE_FORMAT(try_cast(${sessionDateColumn} AS TIMESTAMP), 'yyyy-MM')`;
-  const monthFilter = monthRangeFilter(sessionDateColumn, monthList);
+  const monthInList = `(${monthList.map((m) => `'${m}'`).join(',')})`;
+  const monthExpr = `DATE_FORMAT(try_cast(${quoteIdent(SESSION_DATE_COLUMN)} AS TIMESTAMP), 'yyyy-MM')`;
   const hasOrgFilter = Boolean(groupName || company);
 
   try {
-    const warehouseId = await getWarehouseId();
+    const { warehouses = [] } = await dbFetch("/api/2.0/sql/warehouses");
+    const wh = warehouses.find((w) => w.state === "RUNNING") || warehouses[0];
+    if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
 
-    const sessionColumns = await getColumns(warehouseId, SESSION_TABLE);
+    const sessionColumns = await getColumns(wh.id, SESSION_TABLE);
     const botCompanyColumn = pickColumn(sessionColumns, [
       'bot company',
       'bot_company',
@@ -148,7 +124,7 @@ export default async function handler(req, res) {
     const botCompanyExpr = `COALESCE(NULLIF(TRIM(CAST(${quoteIdent(botCompanyColumn)} AS STRING)), ''), 'Sem bot company')`;
     const botCompanyFilter = buildBotCompanyFilter(botCompanyColumn, groupName, company);
 
-    const rows = await runQuery(warehouseId, `
+    const rows = await runQuery(wh.id, `
         SELECT
           ${monthExpr} AS mes,
           ${botCompanyExpr} AS bot_company,
@@ -156,7 +132,7 @@ export default async function handler(req, res) {
           SUM(CASE WHEN finished_by IS NOT NULL THEN 1 ELSE 0 END) AS humano,
           SUM(CASE WHEN finished_by IS NULL THEN 1 ELSE 0 END) AS ia
         FROM ${SESSION_TABLE}
-        WHERE ${monthFilter}
+        WHERE ${monthExpr} IN ${monthInList}
           ${botCompanyFilter}
         GROUP BY ${monthExpr}, ${botCompanyExpr}
         ORDER BY mes, bot_company
