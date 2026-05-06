@@ -412,7 +412,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
     <label>🏢 Grupo Econômico</label>
     <select class="filter-select" id="group-select"><option value="">(Todos os grupos)</option></select>
   </div>
-  <div class="filter-group">
+  <div class="filter-group" id="filter-company-group">
     <label>🏬 Empresa</label>
     <select class="filter-select" id="company-select" disabled>
       <option value="">(Selecione um grupo primeiro)</option>
@@ -1183,8 +1183,10 @@ document.querySelectorAll('.tab').forEach(t => {
 
 function updateFilterVisibility() {
   const typeGroup = document.getElementById('filter-type-group');
+  const companyGroup = document.getElementById('filter-company-group');
   const activeTab = getActiveTab();
   if (typeGroup) typeGroup.style.display = (activeTab === 'sessoes' || activeTab === 'petit-comite' || activeTab.startsWith('qualidade')) ? 'none' : 'flex';
+  if (companyGroup) companyGroup.style.display = activeTab === 'sessoes' ? 'none' : 'flex';
 }
 
 // --- Filtros ---
@@ -1245,9 +1247,9 @@ function escapeAttr(s){return String(s).replace(/"/g,'&quot;');}
 function updateFilterInfo() {
   const parts = [];
   const gSel = document.getElementById('group-select');
-  if (currentGroup) parts.push(gSel.options[gSel.selectedIndex].text);
-  if (currentCompany) parts.push(currentCompany);
   const activeTab = getActiveTab();
+  if (currentGroup) parts.push(gSel.options[gSel.selectedIndex].text);
+  if (currentCompany && activeTab !== 'sessoes') parts.push(currentCompany);
   if (currentType && activeTab !== 'sessoes' && activeTab !== 'petit-comite' && !activeTab.startsWith('qualidade')) parts.push(currentType === 'TITULAR' ? 'Titular' : 'Dependente');
   document.getElementById('filter-info').textContent = parts.length ? `Filtrando: ${parts.join(' · ')}` : '';
 }
@@ -1270,8 +1272,8 @@ function clearFilters() {
 function buildQS() {
   const p = new URLSearchParams();
   if (currentGroup)   p.set('group_name', currentGroup);
-  if (currentCompany) p.set('company', currentCompany);
   const activeTab = getActiveTab();
+  if (currentCompany && activeTab !== 'sessoes') p.set('company', currentCompany);
   if (currentType && activeTab !== 'sessoes' && activeTab !== 'petit-comite' && !activeTab.startsWith('qualidade')) p.set('type', currentType);
   const s = p.toString();
   return s ? '?' + s : '';
@@ -1764,7 +1766,6 @@ function renderSessionEconomicGroupFinishers(items, opts) {
   if (note) {
     const messages = [];
     if (currentGroup) messages.push(`grupo: ${currentGroup}`);
-    if (currentCompany) messages.push(`empresa: ${currentCompany}`);
     messages.push('mesma base do Q14');
     note.style.display = messages.length ? 'block' : 'none';
     note.textContent = messages.join(' · ');
@@ -1824,7 +1825,6 @@ function renderSessionCompanies(items, opts) {
   if (note) {
     const messages = [];
     if (isCompanyMode && currentGroup) messages.push(`grupo: ${currentGroup}`);
-    if (currentCompany) messages.push(`empresa: ${currentCompany}`);
     if (opts.source) messages.push(opts.source);
     note.style.display = messages.length ? 'block' : 'none';
     note.textContent = messages.join(' · ');
@@ -1890,7 +1890,6 @@ function renderSessionsTopGroupsEvolution(data) {
     parts.push('top 5 pelo mês mais recente');
     parts.push('sem nulos');
     if (currentGroup) parts.push(`grupo: ${currentGroup}`);
-    if (currentCompany) parts.push(`empresa: ${currentCompany}`);
     mode.textContent = parts.join(' · ');
   }
 
@@ -1971,7 +1970,7 @@ function renderSessionTypifications(items, opts) {
   if (meta) meta.textContent = `${rows.length} tipos · total ${fmt(total)} sessões tipificadas`;
   if (note) {
     const messages = [];
-    if (currentGroup || currentCompany) messages.push('Filtro global aplicado via organization_id/organizations');
+    if (currentGroup) messages.push('Filtro global aplicado via organization_id/organizations');
     if (selectedSessionTypificationFinisher === 'humano') messages.push('finalizadas por Humano');
     else if (selectedSessionTypificationFinisher === 'ia') messages.push('finalizadas por IA');
     note.style.display = messages.length ? 'block' : 'none';
@@ -2045,7 +2044,6 @@ async function loadSessions() {
   const p = new URLSearchParams();
   if (meses.length > 0)  p.set('meses', meses.join(','));
   if (currentGroup)      p.set('group_name', currentGroup);
-  if (currentCompany)    p.set('company', currentCompany);
   if (selectedSessionTypificationFinisher) p.set('typification_finisher', selectedSessionTypificationFinisher);
   const qs = p.toString() ? '?' + p.toString() : '';
 
@@ -2062,7 +2060,6 @@ async function loadSessions() {
       if (currentGroup) economicGroupLabel += ` · ${currentGroup}`;
       if (meses.length === 1) { const [y, mm] = meses[0].split('-'); economicGroupLabel += ` · ${mN[mm]}/${y}`; }
       else if (meses.length > 1) economicGroupLabel += ` · ${meses.length} meses selecionados`;
-      if (currentCompany) economicGroupLabel += ` · ${currentCompany}`;
       economicGroupPeriodoLabel.textContent = economicGroupLabel;
       economicGroupPeriodoLabel.title = economicGroupLabel;
     }
@@ -2216,7 +2213,6 @@ async function renderSessionsAttendanceChart(labels, monthValues, sessionValues,
     if (data.mode === 'cpf_join' || data.mode === 'variables_json_filter' || data.mode === 'organization_join') {
       const filterParts = [];
       if (data.filters && data.filters.group_name) filterParts.push(`grupo: ${data.filters.group_name}`);
-      if (data.filters && data.filters.company) filterParts.push(`empresa: ${data.filters.company}`);
       modeLabel.textContent = filterParts.join(' · ') || 'filtrado';
     } else {
       modeLabel.textContent = 'global';
@@ -2225,16 +2221,12 @@ async function renderSessionsAttendanceChart(labels, monthValues, sessionValues,
   const p = new URLSearchParams();
   if (monthValues && monthValues.length > 0) p.set('meses', monthValues.join(','));
   if (currentGroup) p.set('group_name', currentGroup);
-  if (currentCompany) p.set('company', currentCompany);
   const appointmentsData = await safeGet('/api/appointments-evolution' + (p.toString() ? '?' + p.toString() : ''));
   if (!appointmentsData || appointmentsData.error) {
     showSessionsAttendanceError(appointmentsData);
     return;
   }
   const demographicsData = await safeGet('/api/demographics' + buildQS());
-  if (modeLabel && currentCompany && appointmentsData.company_filter_applied === false) {
-    modeLabel.textContent = `${modeLabel.textContent} · filtro empresa não aplicado em agendamentos`;
-  }
 
   const appointmentsSeries = appointmentsData.series || [];
   const appointmentsByMonth = Object.fromEntries(appointmentsSeries.map((it) => [it.mes, Number(it.total) || 0]));
@@ -2387,7 +2379,6 @@ async function loadSessionsDailyEvolution() {
   p.set('granularity', 'day');
   p.set('mes', selectedSessionsDailyMonth || currentMonthValue());
   if (currentGroup) p.set('group_name', currentGroup);
-  if (currentCompany) p.set('company', currentCompany);
   const data = await safeGet('/api/sessions-evolution?' + p.toString());
   if (!data || data.error) {
     if (errorBox) {
@@ -2404,7 +2395,6 @@ async function loadSessionsDailyEvolution() {
     const parts = [mN[mm] ? `${mN[mm]}/${year}` : month];
     if (data.mode === 'variables_json_filter' || data.mode === 'organization_join') {
       if (data.filters && data.filters.group_name) parts.push(`grupo: ${data.filters.group_name}`);
-      if (data.filters && data.filters.company) parts.push(`empresa: ${data.filters.company}`);
     }
     modeLabel.textContent = parts.join(' · ');
   }
@@ -2496,7 +2486,6 @@ async function loadSessionsEvolution() {
 
   const p = new URLSearchParams();
   if (currentGroup)   p.set('group_name', currentGroup);
-  if (currentCompany) p.set('company', currentCompany);
   const qs = p.toString() ? '?' + p.toString() : '';
 
   const data = await safeGet('/api/sessions-evolution' + qs);
@@ -2519,7 +2508,6 @@ async function loadSessionsEvolution() {
     if (data.mode === 'cpf_join' || data.mode === 'variables_json_filter' || data.mode === 'organization_join') {
       const filterParts = [];
       if (data.filters && data.filters.group_name) filterParts.push(`grupo: ${data.filters.group_name}`);
-      if (data.filters && data.filters.company)    filterParts.push(`empresa: ${data.filters.company}`);
       if (data.filters && data.filters.type)       filterParts.push(`tipo: ${data.filters.type}`);
       modeLabel.textContent = filterParts.join(' · ') || 'filtrado';
     } else {
@@ -2530,7 +2518,6 @@ async function loadSessionsEvolution() {
     if (data.mode === 'cpf_join' || data.mode === 'variables_json_filter' || data.mode === 'organization_join') {
       const filterParts = [];
       if (data.filters && data.filters.group_name) filterParts.push(`grupo: ${data.filters.group_name}`);
-      if (data.filters && data.filters.company) filterParts.push(`empresa: ${data.filters.company}`);
       totalModeLabel.textContent = filterParts.join(' · ') || 'filtrado';
     } else {
       totalModeLabel.textContent = 'global';
@@ -2707,7 +2694,6 @@ function renderSessionMonthlyEvolution(items, data) {
   if (mode) {
     const parts = [];
     if (data && data.filters && data.filters.group_name) parts.push(`grupo: ${data.filters.group_name}`);
-    if (data && data.filters && data.filters.company) parts.push(`empresa: ${data.filters.company}`);
     if (selectedSessionMonthlyBotCompanies.length) parts.push(`bot company: ${sessionMonthlyBotCompanyLabel(selectedSessionMonthlyBotCompanies)}`);
     mode.textContent = parts.length ? parts.join(' · ') : 'todos os bot companies';
   }
@@ -2795,7 +2781,6 @@ function renderSessionsMonthlySummary() {
   if (meta) {
     const parts = [];
     if (data.filters && data.filters.group_name) parts.push(`grupo: ${escapeHtml(data.filters.group_name)}`);
-    if (data.filters && data.filters.company) parts.push(`empresa: ${escapeHtml(data.filters.company)}`);
     if (selectedSessionMonthlyBotCompanies.length) parts.push(`bot company: ${escapeHtml(sessionMonthlyBotCompanyLabel(selectedSessionMonthlyBotCompanies))}`);
     const monthCount = new Set(items.map((it) => it.mes).filter(Boolean)).size || ((data.months || []).length);
     const botCompanyColumn = data.bot_company_column ? `botmaker_session.${escapeHtml(data.bot_company_column)}` : 'botmaker_session.bot_company';
@@ -2826,7 +2811,6 @@ async function loadSessionsMonthlySummary(meses) {
   const p = new URLSearchParams();
   if (Array.isArray(meses) && meses.length > 0) p.set('meses', meses.join(','));
   if (currentGroup) p.set('group_name', currentGroup);
-  if (currentCompany) p.set('company', currentCompany);
   const qs = p.toString() ? '?' + p.toString() : '';
 
   const data = await safeGet('/api/sessions-monthly-summary' + qs);
