@@ -123,22 +123,6 @@ export default async function handler(req, res) {
           ON CAST(s.${quoteIdent('organization_id')} AS STRING) = CAST(o.${quoteIdent('id')} AS STRING)`
       : `${SESSION_TABLE} s`;
 
-    const economicGroupTotalPromise = companySessionsMode === "company"
-      ? runQuery(wh.id, `
-        SELECT COUNT(*) AS total
-        FROM ${SESSION_TABLE} s
-        INNER JOIN ${ORGANIZATIONS_TABLE} o
-          ON CAST(s.${quoteIdent('organization_id')} AS STRING) = CAST(o.${quoteIdent('id')} AS STRING)
-        WHERE o.${quoteIdent('name')} IS NOT NULL
-          AND TRIM(CAST(o.${quoteIdent('name')} AS STRING)) != ''
-          ${companySessionsWhere ? `AND ${companySessionsWhere}` : ''}
-      `)
-      : runQuery(wh.id, `
-        SELECT COUNT(*) AS total
-        FROM ${SESSION_TABLE} s
-        ${companySessionsDateFilter ? `WHERE ${companySessionsDateFilter}` : ''}
-      `);
-
     const economicGroupFinishersPromise = companySessionsMode === "company"
       ? runQuery(wh.id, `
         SELECT
@@ -257,10 +241,9 @@ export default async function handler(req, res) {
       ORDER BY tg.current_sessions DESC, s.grupo, s.mes
     `);
 
-    const [typificationsSettled, economicGroupFinishersSettled, economicGroupTotalSettled, companySessionsSettled, topGroupsEvolutionSettled] = await Promise.allSettled([
+    const [typificationsSettled, economicGroupFinishersSettled, companySessionsSettled, topGroupsEvolutionSettled] = await Promise.allSettled([
       typificationsPromise,
       economicGroupFinishersPromise,
-      economicGroupTotalPromise,
       companySessionsPromise,
       topGroupsEvolutionPromise,
     ]);
@@ -292,15 +275,9 @@ export default async function handler(req, res) {
           total: toInt(r[1]),
         }))
       : [];
-    const economicGroupTotalQueryError = economicGroupTotalSettled.status === 'rejected'
-      ? (economicGroupTotalSettled.reason instanceof Error ? economicGroupTotalSettled.reason.message : String(economicGroupTotalSettled.reason))
-      : null;
-    const economicGroupTotalFallback = economicGroupTotalSettled.status === 'fulfilled'
-      ? toInt(economicGroupTotalSettled.value[0]?.[0])
-      : 0;
     const companySessionsTotal = companySessions.reduce((acc, item) => acc + (Number(item.total) || 0), 0);
-    const economicGroupTotal = companySessionsSettled.status === 'fulfilled' ? companySessionsTotal : economicGroupTotalFallback;
-    const economicGroupTotalError = companySessionsError || (companySessionsSettled.status === 'fulfilled' ? null : economicGroupTotalQueryError);
+    const economicGroupTotal = companySessionsSettled.status === 'fulfilled' ? companySessionsTotal : 0;
+    const economicGroupTotalError = companySessionsError;
     const topGroupsEvolutionError = topGroupsEvolutionSettled.status === 'rejected'
       ? (topGroupsEvolutionSettled.reason instanceof Error ? topGroupsEvolutionSettled.reason.message : String(topGroupsEvolutionSettled.reason))
       : null;

@@ -1201,11 +1201,16 @@ function updateFilterVisibility() {
 // --- Filtros ---
 document.getElementById('group-select').addEventListener('change', e => {
   currentGroup = e.target.value;
+  const activeTab = getActiveTab();
   // Ao trocar grupo, limpa empresa e recarrega lista
   currentCompany = '';
-  if (getActiveTab() === 'sessoes') resetCompanySelect();
+  if (activeTab === 'sessoes') resetCompanySelect();
   else loadCompanyOptions();
   updateFilterInfo();
+  if (activeTab === 'sessoes') {
+    loadSessions();
+    return;
+  }
   loadAll(false);
   if (isPeriodFilteredTab()) loadPeriodFilteredTab();
 });
@@ -1271,6 +1276,7 @@ function updateFilterInfo() {
 }
 
 function clearFilters() {
+  const activeTab = getActiveTab();
   currentGroup = ''; currentType = ''; currentCompany = '';
   selectedSessionTypificationFinisher = '';
   document.getElementById('group-select').value = '';
@@ -1281,6 +1287,10 @@ function clearFilters() {
   document.getElementById('company-select').disabled = true;
   document.getElementById('filter-info').textContent = '';
   clearPeriodo(false);
+  if (activeTab === 'sessoes') {
+    loadSessions();
+    return;
+  }
   loadAll(false);
   if (isPeriodFilteredTab()) loadPeriodFilteredTab();
 }
