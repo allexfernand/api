@@ -276,16 +276,11 @@ body {
 
 .quality-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
 .quality-main-grid{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:16px;align-items:start}
-.quality-pillar-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:0;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;background:var(--border)}
-.quality-pillar{background:var(--surface);padding:16px;text-align:center}
-.quality-pillar:not(:last-child){border-right:1px solid var(--border)}
 
 .quality-score{font-weight:800;color:#0b3b47}
 .quality-score.good{color:#0f8a6f}
 .quality-score.warn{color:#d97706}
 .quality-score.bad{color:#c53030}
-.quality-pillar-score{font-size:30px;line-height:1;margin-bottom:6px}
-.quality-pillar-name{font-size:12px;font-weight:600;color:#64748b;margin-bottom:10px}
 
 .quality-bar{height:6px;background:#f1f5f9;border-radius:999px;overflow:hidden}
 .quality-bar-fill{height:100%;border-radius:999px;background:#0f8a6f;transition:width 0.5s var(--ease)}
@@ -344,7 +339,6 @@ body {
 
 @media (max-width:1100px){
   .quality-kpi-grid{grid-template-columns:repeat(3,1fr)}
-  .quality-pillar-grid{grid-template-columns:repeat(3,1fr)}
   .quality-grid-2,.quality-main-grid{grid-template-columns:1fr}
 }
 @media (max-width:980px){
@@ -1014,14 +1008,6 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
       <div class="section-title"><i class="fa-solid fa-clipboard-check" style="margin-right:6px"></i>Critérios avaliados</div>
       <div style="font-size:11px;color:#94a3b8;margin-bottom:14px"><code>quality_analysis_silver_criteria</code> · aplicáveis · <span id="quality-criteria-bullets-period">período atual</span></div>
       <div class="quality-criteria-bullets" id="quality-criteria-bullets"></div>
-    </div>
-
-    <div class="card-box">
-      <div class="section-title"><i class="fa-solid fa-layer-group" style="margin-right:6px"></i>Performance por pilar</div>
-      <div class="loading-box" id="quality-strategic-loading"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando qualidade...</div>
-      <div id="quality-strategic-content" style="display:none">
-        <div class="quality-pillar-grid" id="quality-pillars"></div>
-      </div>
     </div>
 
     <div class="quality-grid-2">
@@ -2760,15 +2746,8 @@ function escapeJs(s) {
 
 async function loadQuality() {
   setStatus('loading', '⏳ Carregando qualidade...');
-  const strategicLoading = document.getElementById('quality-strategic-loading');
-  const strategicContent = document.getElementById('quality-strategic-content');
   const operationalLoading = document.getElementById('quality-operational-loading');
   const operationalItems = document.getElementById('quality-items');
-  if (strategicLoading) {
-    strategicLoading.style.display = 'block';
-    strategicLoading.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando qualidade...';
-  }
-  if (strategicContent) strategicContent.style.display = 'none';
   if (operationalLoading) {
     operationalLoading.style.display = 'block';
     operationalLoading.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando atendimentos...';
@@ -2784,7 +2763,6 @@ async function loadQuality() {
 
   if (!data || data.error) {
     const msg = data && data.error ? String(data.error).slice(0, 220) : 'Erro ao carregar qualidade';
-    if (strategicLoading) strategicLoading.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>' + msg;
     if (operationalLoading) operationalLoading.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>' + msg;
     setStatus('error', '✗ Erro qualidade');
     return;
@@ -2839,20 +2817,6 @@ function renderQualityStrategic() {
         <div class="quality-criteria-bullet-meta">${fmt(Number(item.total_atendimentos) || 0)} atendimentos · ${fmt(Number(item.total_avaliacoes) || 0)} avaliações${attendancePctLabel}</div>
       </div>`;
     }).join('') : '<div class="loading-box" style="grid-column:1/-1">Nenhum critério aplicável encontrado no recorte.</div>';
-  }
-
-  const pillarsEl = document.getElementById('quality-pillars');
-  const pillars = strategic.pillars || [];
-  if (pillarsEl) {
-    pillarsEl.innerHTML = pillars.length ? pillars.map((pillar) => {
-      const pct = Number(pillar.score_pct) || 0;
-      const cls = qualityScoreClass(pct);
-      return `<div class="quality-pillar">
-        <div class="quality-pillar-score quality-score ${cls}">${fmtPct(pct)}</div>
-        <div class="quality-pillar-name">${escapeHtml(pillar.pillar_id)} · ${escapeHtml(pillar.pillar_name)}</div>
-        <div class="quality-bar"><div class="quality-bar-fill ${cls}" style="width:${Math.max(0, Math.min(100, pct))}%"></div></div>
-      </div>`;
-    }).join('') : '<div style="grid-column:1/-1;padding:20px;text-align:center;color:#94a3b8;background:#fff">Nenhum pilar encontrado no recorte.</div>';
   }
 
   const criteria = [...(strategic.criteria || [])]
@@ -2910,10 +2874,6 @@ function renderQualityStrategic() {
   setText('quality-alert-title', insights[1]?.title || 'Sem alerta crítico');
   setText('quality-alert-desc', insights[1]?.description || 'Não há sinal de segurança destacado no recorte atual.');
 
-  const loading = document.getElementById('quality-strategic-loading');
-  const content = document.getElementById('quality-strategic-content');
-  if (loading) loading.style.display = 'none';
-  if (content) content.style.display = 'block';
 }
 
 function renderQualityOperational() {
