@@ -80,9 +80,13 @@ const EVIDENCE_CANDIDATES = ["evidence", "evidencia", "trecho", "quote", "excerp
 const FINISHER_CANDIDATES = ["finished_by"];
 const SUMMARY_SESSION_JOIN_PAIRS = [
   ["attendance_id", "attendance_id"],
+  ["attendance_id", "id"],
   ["atendimento_id", "attendance_id"],
+  ["atendimento_id", "id"],
   ["appointment_id", "attendance_id"],
+  ["appointment_id", "id"],
   ["botmaker_attendance_id", "attendance_id"],
+  ["botmaker_attendance_id", "id"],
   ["botmaker_session_id", "id"],
   ["session_id", "id"],
   ["session_id", "session_id"],
@@ -181,12 +185,64 @@ function pickJoinKey(summaryColumns, criteriaColumns) {
 }
 
 function pickSummarySessionJoin(summaryColumns, sessionColumns) {
+  const candidates = [];
+  const seen = new Set();
   for (const [summaryCandidate, sessionCandidate] of SUMMARY_SESSION_JOIN_PAIRS) {
     const summary = pickColumn(summaryColumns, [summaryCandidate]);
     const session = pickColumn(sessionColumns, [sessionCandidate]);
-    if (summary && session) return { summary, session };
+    if (!summary || !session) continue;
+    const key = `${summary}|${session}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    candidates.push({ summary, session });
   }
-  return null;
+  return candidates;
+}
+
+function summaryProbeMonthFilter(scope) {
+  if (!scope.months.length) return "";
+  const monthList = scope.months.map((month) => `'${escapeSql(month)}'`).join(",");
+  return `AND DATE_FORMAT(try_cast(s.${quoteIdent("event_timestamp")} AS TIMESTAMP), 'yyyy-MM') IN (${monthList})`;
+}
+
+async function resolveSummarySessionJoin(warehouseId, candidates, scope) {
+  let best = null;
+  for (const candidate of candidates) {
+    try {
+      const rows = await runQuery(warehouseId, `
+        SELECT
+          COUNT(*) AS total_matches,
+          SUM(CASE WHEN bs.has_humano = 1 THEN 1 ELSE 0 END) AS humano_matches,
+          SUM(CASE WHEN bs.has_humano = 0 THEN 1 ELSE 0 END) AS ia_matches
+        FROM (
+          SELECT DISTINCT CAST(s.${quoteIdent(candidate.summary)} AS STRING) AS join_key
+          FROM ${EVALUATED_VOLUME_TABLE} s
+          WHERE s.${quoteIdent(candidate.summary)} IS NOT NULL
+            ${summaryProbeMonthFilter(scope)}
+        ) qs
+        INNER JOIN (
+          SELECT
+            CAST(b.${quoteIdent(candidate.session)} AS STRING) AS join_key,
+            MAX(CASE WHEN b.${quoteIdent("finished_by")} IS NOT NULL THEN 1 ELSE 0 END) AS has_humano
+          FROM ${SESSION_TABLE} b
+          WHERE b.${quoteIdent(candidate.session)} IS NOT NULL
+          GROUP BY CAST(b.${quoteIdent(candidate.session)} AS STRING)
+        ) bs
+          ON qs.join_key = bs.join_key
+      `);
+      const row = rows[0] || [];
+      const total = toInt(row[0]);
+      const humano = toInt(row[1]);
+      const ia = toInt(row[2]);
+      const scored = { ...candidate, total_matches: total, humano_matches: humano, ia_matches: ia };
+      if (!best || (humano > 0 && ia > 0 && !(best.humano_matches > 0 && best.ia_matches > 0)) || total > best.total_matches) {
+        best = scored;
+      }
+    } catch (err) {
+      // Some candidate pairs can be type-incompatible or too sparse; keep testing the rest.
+    }
+  }
+  return best && best.total_matches > 0 ? best : null;
 }
 
 function stringExpr(alias, column, fallback = "Não informado") {
@@ -883,9 +939,12 @@ export default async function handler(req, res) {
     ]);
     const scope = buildSummaryScope(summaryColumns, req.query);
     const sharedKey = pickJoinKey(summaryColumns, criteriaColumns);
-    const summarySessionJoin = pickSummarySessionJoin(summaryColumns, sessionColumns);
     const summaryFinishedByColumn = pickColumn(summaryColumns, FINISHER_CANDIDATES);
     const criteriaFinishedByColumn = pickColumn(criteriaColumns, FINISHER_CANDIDATES);
+    const summarySessionJoinCandidates = pickSummarySessionJoin(summaryColumns, sessionColumns);
+    const summarySessionJoin = criteriaFinisher && !summaryFinishedByColumn && !criteriaFinishedByColumn
+      ? await resolveSummarySessionJoin(warehouse.id, summarySessionJoinCandidates, scope)
+      : null;
 
     const [strategic, operational] = await Promise.all([
       loadStrategic(warehouse.id, summaryColumns, criteriaColumns, scope, sharedKey, criteriaFinisher, summarySessionJoin, summaryFinishedByColumn, criteriaFinishedByColumn),
@@ -908,6 +967,7 @@ export default async function handler(req, res) {
         summary_org_column: scope.orgColumn,
         summary_group_column: scope.groupColumn,
         summary_session_join: summarySessionJoin,
+        summary_session_join_candidates: summarySessionJoinCandidates,
         summary_finished_by_column: summaryFinishedByColumn,
         criteria_finished_by_column: criteriaFinishedByColumn,
         shared_key: sharedKey,
