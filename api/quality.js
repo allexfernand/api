@@ -6,6 +6,7 @@ const TOKEN = process.env.DATABRICKS_TOKEN;
 const HEADERS = { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" };
 
 const SUMMARY_TABLE = "hive_metastore.sanus_prod.quality_analysis_silver_summary";
+const EVALUATED_VOLUME_TABLE = "sanus_databricks.sanus_prod.quality_analysis_silver_summary";
 const CRITERIA_TABLE = "hive_metastore.sanus_prod.quality_analysis_silver_criteria";
 const ORGANIZATIONS_TABLE = "hive_metastore.sanus_prod.organizations";
 
@@ -242,6 +243,54 @@ function buildSummaryScope(columns, query) {
   };
 }
 
+function buildEvaluatedVolumeWhere(scope) {
+  const conditions = [];
+
+  if (scope.months.length) {
+    const monthList = scope.months.map((month) => `'${escapeSql(month)}'`).join(",");
+    conditions.push(`DATE_FORMAT(try_cast(q.${quoteIdent("event_timestamp")} AS TIMESTAMP), 'yyyy-MM') IN (${monthList})`);
+  } else {
+    conditions.push(`try_cast(q.${quoteIdent("event_timestamp")} AS TIMESTAMP) >= current_timestamp() - INTERVAL 30 DAYS`);
+  }
+
+  if ((scope.groupName || scope.company) && scope.orgColumn) {
+    conditions.push(`UPPER(TRIM(CAST(${qcol("q", scope.orgColumn)} AS STRING))) IN ${orgNamesSubquery(scope.groupName, scope.company)}`);
+  } else if (scope.groupName && scope.groupColumn) {
+    conditions.push(`UPPER(TRIM(CAST(${qcol("q", scope.groupColumn)} AS STRING))) = UPPER(TRIM('${escapeSql(scope.groupName)}'))`);
+  }
+
+  return conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+}
+
+async function loadEvaluatedVolume(warehouseId, scope) {
+  const rows = await runQuery(warehouseId, `
+    SELECT
+      DATE_FORMAT(try_cast(q.${quoteIdent("event_timestamp")} AS TIMESTAMP), 'yyyy-MM') AS mes,
+      COUNT(*) AS volume,
+      MAX(try_cast(q.${quoteIdent("event_timestamp")} AS TIMESTAMP)) AS latest_at
+    FROM ${EVALUATED_VOLUME_TABLE} q
+    ${buildEvaluatedVolumeWhere(scope)}
+    GROUP BY DATE_FORMAT(try_cast(q.${quoteIdent("event_timestamp")} AS TIMESTAMP), 'yyyy-MM')
+    ORDER BY mes
+  `);
+
+  const monthly = rows.map((row) => ({
+    mes: String(getCell(row[0]) || ""),
+    volume: toInt(row[1]),
+    latest_at: getCell(row[2]),
+  }));
+  const latestAt = monthly
+    .map((item) => item.latest_at)
+    .filter(Boolean)
+    .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] || null;
+
+  return {
+    monthly,
+    total: monthly.reduce((acc, item) => acc + item.volume, 0),
+    latest_at: latestAt,
+  };
+}
+
 function buildCriteriaWithSql(scope, sharedKey, criteriaColumns) {
   const criteriaDateColumn = pickColumn(criteriaColumns, DATE_CANDIDATES);
   if (sharedKey) {
@@ -442,7 +491,7 @@ async function loadStrategic(warehouseId, columns, criteriaColumns, scope, share
   const criterionNameColumn = pickColumn(criteriaColumns, CRITERION_NAME_CANDIDATES);
   const criteriaWithSql = buildCriteriaWithSql(scope, sharedKey, criteriaColumns);
 
-  const [summaryRows, criteriaRows] = await Promise.all([
+  const [summaryRows, criteriaRows, evaluatedVolume] = await Promise.all([
     runQuery(warehouseId, `
       SELECT
         COUNT(*) AS total,
@@ -464,11 +513,11 @@ async function loadStrategic(warehouseId, columns, criteriaColumns, scope, share
       FROM criteria_base c
       GROUP BY 1, 2, 3, 4, 5
     `),
+    loadEvaluatedVolume(warehouseId, scope),
   ]);
 
   const criteriaAgg = aggregateCriteria(criteriaRows);
   const summary = summaryRows[0] || [];
-  const totalEvaluated = toInt(summary[0]);
   const summaryScore = normalizeSummaryScore(summary[2]);
   const overallScore = criteriaAgg.totals.applicable > 0 ? criteriaAgg.totals.score_pct : summaryScore;
   const resolvedRate = toNumber(summary[3]);
@@ -519,11 +568,12 @@ async function loadStrategic(warehouseId, columns, criteriaColumns, scope, share
   return {
     kpis: {
       overall_score: overallScore,
-      evaluated: totalEvaluated,
+      evaluated: evaluatedVolume.total,
+      evaluated_monthly: evaluatedVolume.monthly,
       resolved_pct: resolvedRate === null ? null : Number((resolvedRate * 100).toFixed(1)),
       na_pct: criteriaAgg.totals.total > 0 ? criteriaAgg.totals.pct_na : null,
       weakest_pillar: weakestPillar,
-      latest_at: getCell(summary[1]),
+      latest_at: evaluatedVolume.latest_at || getCell(summary[1]),
     },
     pillars: criteriaAgg.pillars,
     criteria: criteriaAgg.criteria,
@@ -671,12 +721,14 @@ export default async function handler(req, res) {
       },
       schema: {
         summary_date_column: scope.dateColumn,
+        evaluated_volume_date_column: "event_timestamp",
         summary_org_column: scope.orgColumn,
         summary_group_column: scope.groupColumn,
         shared_key: sharedKey,
       },
       source: {
         summary: SUMMARY_TABLE,
+        evaluated_volume: EVALUATED_VOLUME_TABLE,
         criteria: CRITERIA_TABLE,
       },
       updatedAt: new Date().toISOString(),
