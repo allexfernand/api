@@ -391,6 +391,25 @@ function buildEvaluatedCriteriaWhere(scope, criteriaFinisher, criteriaFinishedBy
   return `WHERE ${conditions.join(" AND ")}`;
 }
 
+async function loadOverallCriteriaScore(warehouseId, scope) {
+  const rows = await runQuery(warehouseId, `
+    SELECT
+      COUNT(*) AS total_criterios,
+      COALESCE(SUM(${numberExpr("q", "pontuacao")}), 0) AS pontuacao_total,
+      COUNT(*) * ${CRITERION_MAX_SCORE} AS pontuacao_maxima,
+      COALESCE(SUM(${numberExpr("q", "pontuacao")}), 0) / NULLIF(COUNT(*) * ${CRITERION_MAX_SCORE}, 0) * 100 AS score_pct
+    FROM ${EVALUATED_CRITERIA_TABLE} q
+    ${buildEvaluatedCriteriaWhere(scope, "", null)}
+  `);
+  const row = rows[0] || [];
+  return {
+    total_criterios: toInt(row[0]),
+    pontuacao_total: toNumber(row[1]) || 0,
+    pontuacao_maxima: toNumber(row[2]) || 0,
+    score_pct: toNumber(row[3]),
+  };
+}
+
 function buildCriteriaFinisherSql(criteriaFinisher, summarySessionJoin, summaryFinishedByColumn, criteriaFinishedByColumn) {
   if (!criteriaFinisher) {
     return { summarySelect: "CAST(NULL AS STRING)", cte: "", join: "", where: "", applied: false, strategy: "none" };
@@ -730,7 +749,7 @@ async function loadStrategic(warehouseId, columns, criteriaColumns, scope, share
   const criterionNameColumn = pickColumn(criteriaColumns, CRITERION_NAME_CANDIDATES);
   const criteriaWithSql = buildCriteriaWithSql(scope, sharedKey, criteriaColumns);
 
-  const [summaryRows, criteriaRows, evaluatedVolume, evaluatedCriteria] = await Promise.all([
+  const [summaryRows, criteriaRows, evaluatedVolume, evaluatedCriteria, overallCriteriaScore] = await Promise.all([
     runQuery(warehouseId, `
       SELECT
         COUNT(*) AS total,
@@ -754,12 +773,13 @@ async function loadStrategic(warehouseId, columns, criteriaColumns, scope, share
     `),
     loadEvaluatedVolume(warehouseId, scope),
     loadEvaluatedCriteriaBullets(warehouseId, scope, criteriaFinisher, summarySessionJoin, summaryFinishedByColumn, criteriaFinishedByColumn),
+    loadOverallCriteriaScore(warehouseId, scope),
   ]);
 
   const criteriaAgg = aggregateCriteria(criteriaRows);
   const summary = summaryRows[0] || [];
   const summaryScore = normalizeSummaryScore(summary[2]);
-  const overallScore = criteriaAgg.totals.applicable > 0 ? criteriaAgg.totals.score_pct : summaryScore;
+  const overallScore = overallCriteriaScore.score_pct !== null ? overallCriteriaScore.score_pct : (criteriaAgg.totals.applicable > 0 ? criteriaAgg.totals.score_pct : summaryScore);
   const resolvedRate = toNumber(summary[3]);
   const weakestPillar = criteriaAgg.pillars
     .filter((item) => item.applicable > 0 && item.score_pct !== null)
@@ -808,10 +828,11 @@ async function loadStrategic(warehouseId, columns, criteriaColumns, scope, share
   return {
     kpis: {
       overall_score: overallScore,
+      overall_criteria_score: overallCriteriaScore,
       evaluated: evaluatedVolume.total,
       evaluated_monthly: evaluatedVolume.monthly,
       resolved_pct: resolvedRate === null ? null : Number((resolvedRate * 100).toFixed(1)),
-      applicable_criteria: criteriaAgg.totals.applicable,
+      applicable_criteria: overallCriteriaScore.total_criterios || criteriaAgg.totals.applicable,
       na_pct: criteriaAgg.totals.total > 0 ? criteriaAgg.totals.pct_na : null,
       weakest_pillar: weakestPillar,
       latest_at: evaluatedVolume.latest_at || getCell(summary[1]),
