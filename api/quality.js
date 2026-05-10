@@ -76,6 +76,7 @@ const JUSTIFICATION_CANDIDATES = [
   "justification", "justificativa", "reason", "explanation", "motivo", "rationale",
 ];
 const EVIDENCE_CANDIDATES = ["evidence", "evidencia", "trecho", "quote", "excerpt"];
+const CRITERION_MAX_SCORE = 2;
 
 async function dbFetch(path, options = {}) {
   const res = await fetch(`${HOST}${path}`, {
@@ -297,17 +298,42 @@ function buildEvaluatedCriteriaWhere(scope) {
 
 async function loadEvaluatedCriteriaBullets(warehouseId, scope) {
   const rows = await runQuery(warehouseId, `
+    WITH criteria_by_attendance AS (
+      SELECT
+        CAST(q.${quoteIdent("criterio_id")} AS STRING) AS criterio_id,
+        COALESCE(NULLIF(TRIM(CAST(q.${quoteIdent("sub_criterio")} AS STRING)), ''), 'Sem subcritério') AS sub_criterio,
+        CAST(q.${quoteIdent("attendance_id")} AS STRING) AS attendance_id,
+        AVG(${numberExpr("q", "pontuacao")}) AS pontuacao_criterio,
+        COUNT(*) AS total_avaliacoes
+      FROM ${EVALUATED_CRITERIA_TABLE} q
+      ${buildEvaluatedCriteriaWhere(scope)}
+      GROUP BY
+        CAST(q.${quoteIdent("criterio_id")} AS STRING),
+        COALESCE(NULLIF(TRIM(CAST(q.${quoteIdent("sub_criterio")} AS STRING)), ''), 'Sem subcritério'),
+        CAST(q.${quoteIdent("attendance_id")} AS STRING)
+    ),
+    summary_by_attendance AS (
+      SELECT
+        CAST(s.${quoteIdent("attendance_id")} AS STRING) AS attendance_id,
+        AVG(${numberExpr("s", "nota_atendimento")}) AS nota_atendimento,
+        AVG(${numberExpr("s", "nota_maxima_possivel")}) AS nota_maxima_possivel
+      FROM ${EVALUATED_VOLUME_TABLE} s
+      GROUP BY CAST(s.${quoteIdent("attendance_id")} AS STRING)
+    )
     SELECT
-      CAST(q.${quoteIdent("criterio_id")} AS STRING) AS criterio_id,
-      COALESCE(NULLIF(TRIM(CAST(q.${quoteIdent("sub_criterio")} AS STRING)), ''), 'Sem subcritério') AS sub_criterio,
-      COUNT(DISTINCT CAST(q.${quoteIdent("attendance_id")} AS STRING)) AS total_atendimentos,
-      COUNT(*) AS total_avaliacoes,
-      AVG(try_cast(q.${quoteIdent("pontuacao")} AS DOUBLE)) AS pontuacao_media
-    FROM ${EVALUATED_CRITERIA_TABLE} q
-    ${buildEvaluatedCriteriaWhere(scope)}
-    GROUP BY
-      CAST(q.${quoteIdent("criterio_id")} AS STRING),
-      COALESCE(NULLIF(TRIM(CAST(q.${quoteIdent("sub_criterio")} AS STRING)), ''), 'Sem subcritério')
+      c.criterio_id,
+      c.sub_criterio,
+      COUNT(*) AS total_atendimentos,
+      SUM(c.total_avaliacoes) AS total_avaliacoes,
+      AVG(c.pontuacao_criterio) AS pontuacao_media,
+      AVG(c.pontuacao_criterio) / ${CRITERION_MAX_SCORE} AS percentual_criterio,
+      AVG(s.nota_atendimento) AS nota_atendimento_media,
+      AVG(s.nota_maxima_possivel) AS nota_maxima_media,
+      AVG(s.nota_atendimento / NULLIF(s.nota_maxima_possivel, 0)) AS percentual_atendimento
+    FROM criteria_by_attendance c
+    LEFT JOIN summary_by_attendance s
+      ON c.attendance_id = s.attendance_id
+    GROUP BY c.criterio_id, c.sub_criterio
     ORDER BY total_atendimentos DESC
     LIMIT 12
   `);
@@ -318,6 +344,11 @@ async function loadEvaluatedCriteriaBullets(warehouseId, scope) {
     total_atendimentos: toInt(row[2]),
     total_avaliacoes: toInt(row[3]),
     pontuacao_media: toNumber(row[4]),
+    percentual_criterio: toNumber(row[5]),
+    nota_atendimento_media: toNumber(row[6]),
+    nota_maxima_media: toNumber(row[7]),
+    percentual_atendimento: toNumber(row[8]),
+    criterio_max_score: CRITERION_MAX_SCORE,
   }));
 }
 

@@ -2822,17 +2822,22 @@ function renderQualityStrategic() {
   if (criteriaBulletsEl) {
     criteriaBulletsEl.innerHTML = evaluatedCriteria.length ? evaluatedCriteria.map((item) => {
       const avg = Number(item.pontuacao_media);
+      const maxScore = Number(item.criterio_max_score) || 2;
+      const criterionPct = Number(item.percentual_criterio);
+      const attendancePct = Number(item.percentual_atendimento);
       const avgLabel = Number.isFinite(avg)
         ? avg.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 2 })
         : '—';
+      const criterionPctLabel = Number.isFinite(criterionPct) ? fmtPct(criterionPct * 100) : '—';
+      const attendancePctLabel = Number.isFinite(attendancePct) ? ` · atend. ${fmtPct(attendancePct * 100)}` : '';
       return `<div class="quality-criteria-bullet">
         <div class="quality-criteria-bullet-head">
           <span class="quality-criteria-bullet-id">${escapeHtml(item.criterio_id)}</span>
-          <span class="quality-criteria-bullet-score">média ${avgLabel}</span>
+          <span class="quality-criteria-bullet-score">média ${avgLabel}/${maxScore}</span>
         </div>
         <div class="quality-criteria-bullet-title" title="${escapeAttr(item.sub_criterio)}">${escapeHtml(item.sub_criterio)}</div>
-        <div class="quality-criteria-bullet-value">${fmt(Number(item.total_atendimentos) || 0)}</div>
-        <div class="quality-criteria-bullet-meta">${fmt(Number(item.total_avaliacoes) || 0)} avaliações aplicáveis</div>
+        <div class="quality-criteria-bullet-value">${criterionPctLabel}</div>
+        <div class="quality-criteria-bullet-meta">${fmt(Number(item.total_atendimentos) || 0)} atendimentos · ${fmt(Number(item.total_avaliacoes) || 0)} avaliações${attendancePctLabel}</div>
       </div>`;
     }).join('') : '<div class="loading-box" style="grid-column:1/-1">Nenhum critério aplicável encontrado no recorte.</div>';
   }
