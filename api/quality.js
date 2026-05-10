@@ -8,6 +8,7 @@ const HEADERS = { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application
 const SUMMARY_TABLE = "hive_metastore.sanus_prod.quality_analysis_silver_summary";
 const EVALUATED_VOLUME_TABLE = "sanus_databricks.sanus_prod.quality_analysis_silver_summary";
 const CRITERIA_TABLE = "hive_metastore.sanus_prod.quality_analysis_silver_criteria";
+const EVALUATED_CRITERIA_TABLE = "sanus_databricks.sanus_prod.quality_analysis_silver_criteria";
 const ORGANIZATIONS_TABLE = "hive_metastore.sanus_prod.organizations";
 
 const DATE_CANDIDATES = [
@@ -283,6 +284,43 @@ async function loadEvaluatedVolume(warehouseId, scope) {
   };
 }
 
+function buildEvaluatedCriteriaWhere(scope) {
+  const conditions = [`q.${quoteIdent("is_applicable")} = true`];
+
+  if (scope.months.length) {
+    const monthList = scope.months.map((month) => `'${escapeSql(month)}'`).join(",");
+    conditions.push(`DATE_FORMAT(try_cast(q.${quoteIdent("event_timestamp")} AS TIMESTAMP), 'yyyy-MM') IN (${monthList})`);
+  }
+
+  return `WHERE ${conditions.join(" AND ")}`;
+}
+
+async function loadEvaluatedCriteriaBullets(warehouseId, scope) {
+  const rows = await runQuery(warehouseId, `
+    SELECT
+      CAST(q.${quoteIdent("criterio_id")} AS STRING) AS criterio_id,
+      COALESCE(NULLIF(TRIM(CAST(q.${quoteIdent("sub_criterio")} AS STRING)), ''), 'Sem subcritério') AS sub_criterio,
+      COUNT(DISTINCT CAST(q.${quoteIdent("attendance_id")} AS STRING)) AS total_atendimentos,
+      COUNT(*) AS total_avaliacoes,
+      AVG(try_cast(q.${quoteIdent("pontuacao")} AS DOUBLE)) AS pontuacao_media
+    FROM ${EVALUATED_CRITERIA_TABLE} q
+    ${buildEvaluatedCriteriaWhere(scope)}
+    GROUP BY
+      CAST(q.${quoteIdent("criterio_id")} AS STRING),
+      COALESCE(NULLIF(TRIM(CAST(q.${quoteIdent("sub_criterio")} AS STRING)), ''), 'Sem subcritério')
+    ORDER BY total_atendimentos DESC
+    LIMIT 12
+  `);
+
+  return rows.map((row) => ({
+    criterio_id: String(getCell(row[0]) || "Critério"),
+    sub_criterio: String(getCell(row[1]) || "Sem subcritério"),
+    total_atendimentos: toInt(row[2]),
+    total_avaliacoes: toInt(row[3]),
+    pontuacao_media: toNumber(row[4]),
+  }));
+}
+
 function buildCriteriaWithSql(scope, sharedKey, criteriaColumns) {
   const criteriaDateColumn = pickColumn(criteriaColumns, DATE_CANDIDATES);
   if (sharedKey) {
@@ -483,7 +521,7 @@ async function loadStrategic(warehouseId, columns, criteriaColumns, scope, share
   const criterionNameColumn = pickColumn(criteriaColumns, CRITERION_NAME_CANDIDATES);
   const criteriaWithSql = buildCriteriaWithSql(scope, sharedKey, criteriaColumns);
 
-  const [summaryRows, criteriaRows, evaluatedVolume] = await Promise.all([
+  const [summaryRows, criteriaRows, evaluatedVolume, evaluatedCriteria] = await Promise.all([
     runQuery(warehouseId, `
       SELECT
         COUNT(*) AS total,
@@ -506,6 +544,7 @@ async function loadStrategic(warehouseId, columns, criteriaColumns, scope, share
       GROUP BY 1, 2, 3, 4, 5
     `),
     loadEvaluatedVolume(warehouseId, scope),
+    loadEvaluatedCriteriaBullets(warehouseId, scope),
   ]);
 
   const criteriaAgg = aggregateCriteria(criteriaRows);
@@ -569,6 +608,7 @@ async function loadStrategic(warehouseId, columns, criteriaColumns, scope, share
     },
     pillars: criteriaAgg.pillars,
     criteria: criteriaAgg.criteria,
+    evaluated_criteria: evaluatedCriteria,
     collaborators,
     care_lines: careLines,
     insights: buildInsightCards(criteriaAgg.criteria, criteriaAgg.pillars),
@@ -721,6 +761,7 @@ export default async function handler(req, res) {
       source: {
         summary: SUMMARY_TABLE,
         evaluated_volume: EVALUATED_VOLUME_TABLE,
+        evaluated_criteria: EVALUATED_CRITERIA_TABLE,
         criteria: CRITERIA_TABLE,
       },
       updatedAt: new Date().toISOString(),

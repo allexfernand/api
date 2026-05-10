@@ -265,6 +265,14 @@ body {
 .quality-kpi-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-faint);margin-bottom:8px}
 .quality-kpi-value{font-size:28px;font-weight:800;line-height:1;color:#0b3b47;letter-spacing:-1px}
 .quality-kpi-note{font-size:11px;color:var(--text-faint);margin-top:8px}
+.quality-criteria-bullets{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+.quality-criteria-bullet{border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;background:#fff;box-shadow:var(--shadow-sm)}
+.quality-criteria-bullet-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}
+.quality-criteria-bullet-id{font-size:11px;font-weight:800;color:#0f766e;background:#e6fffb;border:1px solid #99f6e4;border-radius:999px;padding:4px 8px;white-space:nowrap}
+.quality-criteria-bullet-score{font-size:11px;font-weight:800;color:#0b3b47;background:#f8fafc;border:1px solid var(--border);border-radius:999px;padding:4px 8px;white-space:nowrap}
+.quality-criteria-bullet-title{font-size:13px;font-weight:700;color:#0f172a;line-height:1.35;min-height:36px}
+.quality-criteria-bullet-value{font-size:28px;font-weight:800;color:#0b3b47;letter-spacing:-.8px;line-height:1;margin-top:12px}
+.quality-criteria-bullet-meta{font-size:11px;color:#64748b;margin-top:6px;line-height:1.4}
 
 .quality-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
 .quality-main-grid{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:16px;align-items:start}
@@ -1000,6 +1008,12 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
         <div class="quality-kpi-value" id="q-kpi-weak" style="font-size:18px;margin-top:6px">—</div>
         <div class="quality-kpi-note">menor score por pilar</div>
       </div>
+    </div>
+
+    <div class="card-box">
+      <div class="section-title"><i class="fa-solid fa-clipboard-check" style="margin-right:6px"></i>Critérios avaliados</div>
+      <div style="font-size:11px;color:#94a3b8;margin-bottom:14px"><code>quality_analysis_silver_criteria</code> · aplicáveis · <span id="quality-criteria-bullets-period">período atual</span></div>
+      <div class="quality-criteria-bullets" id="quality-criteria-bullets"></div>
     </div>
 
     <div class="card-box">
@@ -2801,6 +2815,27 @@ function renderQualityStrategic() {
   setText('q-kpi-na', fmtPct(kpis.na_pct));
   setText('q-kpi-weak', weak ? `${weak.pillar_name} (${fmtPct(weak.score_pct)})` : '—');
   setText('q-kpi-latest', `último registro: ${formatQualityDate(kpis.latest_at)}`);
+  setText('quality-criteria-bullets-period', period);
+
+  const criteriaBulletsEl = document.getElementById('quality-criteria-bullets');
+  const evaluatedCriteria = strategic.evaluated_criteria || [];
+  if (criteriaBulletsEl) {
+    criteriaBulletsEl.innerHTML = evaluatedCriteria.length ? evaluatedCriteria.map((item) => {
+      const avg = Number(item.pontuacao_media);
+      const avgLabel = Number.isFinite(avg)
+        ? avg.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 2 })
+        : '—';
+      return `<div class="quality-criteria-bullet">
+        <div class="quality-criteria-bullet-head">
+          <span class="quality-criteria-bullet-id">${escapeHtml(item.criterio_id)}</span>
+          <span class="quality-criteria-bullet-score">média ${avgLabel}</span>
+        </div>
+        <div class="quality-criteria-bullet-title" title="${escapeAttr(item.sub_criterio)}">${escapeHtml(item.sub_criterio)}</div>
+        <div class="quality-criteria-bullet-value">${fmt(Number(item.total_atendimentos) || 0)}</div>
+        <div class="quality-criteria-bullet-meta">${fmt(Number(item.total_avaliacoes) || 0)} avaliações aplicáveis</div>
+      </div>`;
+    }).join('') : '<div class="loading-box" style="grid-column:1/-1">Nenhum critério aplicável encontrado no recorte.</div>';
+  }
 
   const pillarsEl = document.getElementById('quality-pillars');
   const pillars = strategic.pillars || [];
