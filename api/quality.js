@@ -9,6 +9,7 @@ const SUMMARY_TABLE = "hive_metastore.sanus_prod.quality_analysis_silver_summary
 const EVALUATED_VOLUME_TABLE = "sanus_databricks.sanus_prod.quality_analysis_silver_summary";
 const CRITERIA_TABLE = "hive_metastore.sanus_prod.quality_analysis_silver_criteria";
 const EVALUATED_CRITERIA_TABLE = "sanus_databricks.sanus_prod.quality_analysis_silver_criteria";
+const SESSION_TABLE = "hive_metastore.sanus_prod.botmaker_session";
 const ORGANIZATIONS_TABLE = "hive_metastore.sanus_prod.organizations";
 
 const DATE_CANDIDATES = [
@@ -76,6 +77,7 @@ const JUSTIFICATION_CANDIDATES = [
   "justification", "justificativa", "reason", "explanation", "motivo", "rationale",
 ];
 const EVIDENCE_CANDIDATES = ["evidence", "evidencia", "trecho", "quote", "excerpt"];
+const SESSION_ATTENDANCE_CANDIDATES = ["attendance_id", "atendimento_id", "appointment_id", "botmaker_attendance_id"];
 const CRITERION_MAX_SCORE = 2;
 
 async function dbFetch(path, options = {}) {
@@ -296,7 +298,34 @@ function buildEvaluatedCriteriaWhere(scope) {
   return `WHERE ${conditions.join(" AND ")}`;
 }
 
-async function loadEvaluatedCriteriaBullets(warehouseId, scope) {
+function buildCriteriaFinisherSql(criteriaFinisher, sessionAttendanceColumn) {
+  if (!criteriaFinisher || !sessionAttendanceColumn) {
+    return { cte: "", join: "", applied: false };
+  }
+
+  return {
+    cte: `,
+    session_finishers AS (
+      SELECT
+        CAST(s.${quoteIdent(sessionAttendanceColumn)} AS STRING) AS attendance_id,
+        CASE
+          WHEN MAX(CASE WHEN s.${quoteIdent("finished_by")} IS NOT NULL THEN 1 ELSE 0 END) = 1 THEN 'humano'
+          ELSE 'ia'
+        END AS criteria_finisher
+      FROM ${SESSION_TABLE} s
+      WHERE s.${quoteIdent(sessionAttendanceColumn)} IS NOT NULL
+      GROUP BY CAST(s.${quoteIdent(sessionAttendanceColumn)} AS STRING)
+    )`,
+    join: `
+    INNER JOIN session_finishers sf
+      ON c.attendance_id = sf.attendance_id
+      AND sf.criteria_finisher = '${escapeSql(criteriaFinisher)}'`,
+    applied: true,
+  };
+}
+
+async function loadEvaluatedCriteriaBullets(warehouseId, scope, criteriaFinisher, sessionAttendanceColumn) {
+  const finisherSql = buildCriteriaFinisherSql(criteriaFinisher, sessionAttendanceColumn);
   const rows = await runQuery(warehouseId, `
     WITH criteria_by_attendance AS (
       SELECT
@@ -320,6 +349,7 @@ async function loadEvaluatedCriteriaBullets(warehouseId, scope) {
       FROM ${EVALUATED_VOLUME_TABLE} s
       GROUP BY CAST(s.${quoteIdent("attendance_id")} AS STRING)
     )
+    ${finisherSql.cte}
     SELECT
       c.criterio_id,
       c.sub_criterio,
@@ -331,6 +361,7 @@ async function loadEvaluatedCriteriaBullets(warehouseId, scope) {
       AVG(s.nota_maxima_possivel) AS nota_maxima_media,
       AVG(s.nota_atendimento / NULLIF(s.nota_maxima_possivel, 0)) AS percentual_atendimento
     FROM criteria_by_attendance c
+    ${finisherSql.join}
     LEFT JOIN summary_by_attendance s
       ON c.attendance_id = s.attendance_id
     GROUP BY c.criterio_id, c.sub_criterio
@@ -338,18 +369,26 @@ async function loadEvaluatedCriteriaBullets(warehouseId, scope) {
     LIMIT 12
   `);
 
-  return rows.map((row) => ({
-    criterio_id: String(getCell(row[0]) || "Critério"),
-    sub_criterio: String(getCell(row[1]) || "Sem subcritério"),
-    total_atendimentos: toInt(row[2]),
-    total_avaliacoes: toInt(row[3]),
-    pontuacao_media: toNumber(row[4]),
-    percentual_criterio: toNumber(row[5]),
-    nota_atendimento_media: toNumber(row[6]),
-    nota_maxima_media: toNumber(row[7]),
-    percentual_atendimento: toNumber(row[8]),
-    criterio_max_score: CRITERION_MAX_SCORE,
-  }));
+  return {
+    items: rows.map((row) => ({
+      criterio_id: String(getCell(row[0]) || "Critério"),
+      sub_criterio: String(getCell(row[1]) || "Sem subcritério"),
+      total_atendimentos: toInt(row[2]),
+      total_avaliacoes: toInt(row[3]),
+      pontuacao_media: toNumber(row[4]),
+      percentual_criterio: toNumber(row[5]),
+      nota_atendimento_media: toNumber(row[6]),
+      nota_maxima_media: toNumber(row[7]),
+      percentual_atendimento: toNumber(row[8]),
+      criterio_max_score: CRITERION_MAX_SCORE,
+    })),
+    filter: {
+      requested: criteriaFinisher || "",
+      applied: finisherSql.applied,
+      session_join_column: sessionAttendanceColumn || null,
+      logic: "botmaker_session.finished_by IS NOT NULL => humano; IS NULL => ia",
+    },
+  };
 }
 
 function buildCriteriaWithSql(scope, sharedKey, criteriaColumns) {
@@ -540,7 +579,7 @@ function buildInsightCards(criteria, pillars) {
   ];
 }
 
-async function loadStrategic(warehouseId, columns, criteriaColumns, scope, sharedKey) {
+async function loadStrategic(warehouseId, columns, criteriaColumns, scope, sharedKey, criteriaFinisher, sessionAttendanceColumn) {
   const summaryScoreColumn = pickColumn(columns, SCORE_CANDIDATES);
   const resolvedColumn = pickColumn(columns, RESOLVED_CANDIDATES);
   const collaboratorColumn = pickColumn(columns, COLLABORATOR_CANDIDATES);
@@ -575,7 +614,7 @@ async function loadStrategic(warehouseId, columns, criteriaColumns, scope, share
       GROUP BY 1, 2, 3, 4, 5
     `),
     loadEvaluatedVolume(warehouseId, scope),
-    loadEvaluatedCriteriaBullets(warehouseId, scope),
+    loadEvaluatedCriteriaBullets(warehouseId, scope, criteriaFinisher, sessionAttendanceColumn),
   ]);
 
   const criteriaAgg = aggregateCriteria(criteriaRows);
@@ -639,7 +678,8 @@ async function loadStrategic(warehouseId, columns, criteriaColumns, scope, share
     },
     pillars: criteriaAgg.pillars,
     criteria: criteriaAgg.criteria,
-    evaluated_criteria: evaluatedCriteria,
+    evaluated_criteria: evaluatedCriteria.items,
+    criteria_finisher_filter: evaluatedCriteria.filter,
     collaborators,
     care_lines: careLines,
     insights: buildInsightCards(criteriaAgg.criteria, criteriaAgg.pillars),
@@ -757,19 +797,24 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
 
   try {
+    const criteriaFinisher = ["humano", "ia"].includes(String(req.query.criteria_finisher || "").toLowerCase())
+      ? String(req.query.criteria_finisher).toLowerCase()
+      : "";
     const { warehouses = [] } = await dbFetch("/api/2.0/sql/warehouses");
     const warehouse = warehouses.find((item) => item.state === "RUNNING") || warehouses[0];
     if (!warehouse) throw new Error("Nenhum SQL Warehouse disponível.");
 
-    const [summaryColumns, criteriaColumns] = await Promise.all([
+    const [summaryColumns, criteriaColumns, sessionColumns] = await Promise.all([
       getColumns(warehouse.id, SUMMARY_TABLE),
       getColumns(warehouse.id, CRITERIA_TABLE),
+      getColumns(warehouse.id, SESSION_TABLE),
     ]);
     const scope = buildSummaryScope(summaryColumns, req.query);
     const sharedKey = pickJoinKey(summaryColumns, criteriaColumns);
+    const sessionAttendanceColumn = pickColumn(sessionColumns, SESSION_ATTENDANCE_CANDIDATES);
 
     const [strategic, operational] = await Promise.all([
-      loadStrategic(warehouse.id, summaryColumns, criteriaColumns, scope, sharedKey),
+      loadStrategic(warehouse.id, summaryColumns, criteriaColumns, scope, sharedKey, criteriaFinisher, sessionAttendanceColumn),
       loadOperational(warehouse.id, summaryColumns, criteriaColumns, scope, sharedKey),
     ]);
 
@@ -780,6 +825,7 @@ export default async function handler(req, res) {
         group_name: scope.groupName,
         company: scope.company,
         months: scope.months,
+        criteria_finisher: criteriaFinisher,
         applied: scope.filtersApplied,
       },
       schema: {
@@ -787,12 +833,14 @@ export default async function handler(req, res) {
         evaluated_volume_date_column: "event_timestamp",
         summary_org_column: scope.orgColumn,
         summary_group_column: scope.groupColumn,
+        session_attendance_column: sessionAttendanceColumn,
         shared_key: sharedKey,
       },
       source: {
         summary: SUMMARY_TABLE,
         evaluated_volume: EVALUATED_VOLUME_TABLE,
         evaluated_criteria: EVALUATED_CRITERIA_TABLE,
+        sessions: SESSION_TABLE,
         criteria: CRITERIA_TABLE,
       },
       updatedAt: new Date().toISOString(),

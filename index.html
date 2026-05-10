@@ -1011,7 +1011,14 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
     </div>
 
     <div class="card-box">
-      <div class="section-title"><i class="fa-solid fa-clipboard-check" style="margin-right:6px"></i>Critérios avaliados</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;flex-wrap:wrap">
+        <div class="section-title" style="margin-bottom:0"><i class="fa-solid fa-clipboard-check" style="margin-right:6px"></i>Critérios avaliados</div>
+        <select class="filter-select" id="quality-criteria-finisher-select" onchange="onQualityCriteriaFinisherChange(this.value)" style="min-width:160px">
+          <option value="">(Humano + IA)</option>
+          <option value="humano">Humano</option>
+          <option value="ia">IA</option>
+        </select>
+      </div>
       <div style="font-size:11px;color:#94a3b8;margin-bottom:14px"><code>quality_analysis_silver_criteria</code> · aplicáveis · <span id="quality-criteria-bullets-period">período atual</span></div>
       <div class="quality-criteria-bullets" id="quality-criteria-bullets"></div>
     </div>
@@ -1120,6 +1127,7 @@ let selectedAppointmentTypeMonths = new Set();
 let appointmentTypesBaseMonths = [];
 let selectedSessionsDailyMonth = currentMonthValue();
 let selectedSessionTypificationFinisher = '';
+let selectedQualityCriteriaFinisher = '';
 let qualityData = null, selectedQualityKey = null;
 
 // --- Tabs ---
@@ -2759,12 +2767,19 @@ function escapeJs(s) {
   return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, ' ');
 }
 
+function onQualityCriteriaFinisherChange(value) {
+  selectedQualityCriteriaFinisher = value || '';
+  loadQuality();
+}
+
 async function loadQuality() {
   setStatus('loading', '⏳ Carregando qualidade...');
   const strategicLoading = document.getElementById('quality-strategic-loading');
   const strategicContent = document.getElementById('quality-strategic-content');
   const operationalLoading = document.getElementById('quality-operational-loading');
   const operationalItems = document.getElementById('quality-items');
+  const criteriaFinisherSelect = document.getElementById('quality-criteria-finisher-select');
+  if (criteriaFinisherSelect) criteriaFinisherSelect.value = selectedQualityCriteriaFinisher;
   if (strategicLoading) {
     strategicLoading.style.display = 'block';
     strategicLoading.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando qualidade...';
@@ -2781,6 +2796,7 @@ async function loadQuality() {
   if (meses.length > 0) p.set('meses', meses.join(','));
   if (currentGroup) p.set('group_name', currentGroup);
   if (currentCompany) p.set('company', currentCompany);
+  if (selectedQualityCriteriaFinisher) p.set('criteria_finisher', selectedQualityCriteriaFinisher);
   const data = await safeGet('/api/quality' + (p.toString() ? '?' + p.toString() : ''));
 
   if (!data || data.error) {
@@ -2815,7 +2831,14 @@ function renderQualityStrategic() {
   setText('q-kpi-na', fmtPct(kpis.na_pct));
   setText('q-kpi-weak', weak ? `${weak.pillar_name} (${fmtPct(weak.score_pct)})` : '—');
   setText('q-kpi-latest', `último registro: ${formatQualityDate(kpis.latest_at)}`);
-  setText('quality-criteria-bullets-period', period);
+  const criteriaFinisherFilter = strategic.criteria_finisher_filter || {};
+  const criteriaFinisherLabel = selectedQualityCriteriaFinisher === 'humano'
+    ? 'Humano'
+    : (selectedQualityCriteriaFinisher === 'ia' ? 'IA' : 'Humano + IA');
+  const criteriaFinisherNote = criteriaFinisherFilter.requested && !criteriaFinisherFilter.applied
+    ? `${criteriaFinisherLabel} (filtro indisponível)`
+    : criteriaFinisherLabel;
+  setText('quality-criteria-bullets-period', `${period} · ${criteriaFinisherNote}`);
 
   const criteriaBulletsEl = document.getElementById('quality-criteria-bullets');
   const evaluatedCriteria = strategic.evaluated_criteria || [];
