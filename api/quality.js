@@ -249,14 +249,6 @@ function buildEvaluatedVolumeWhere(scope) {
   if (scope.months.length) {
     const monthList = scope.months.map((month) => `'${escapeSql(month)}'`).join(",");
     conditions.push(`DATE_FORMAT(try_cast(q.${quoteIdent("event_timestamp")} AS TIMESTAMP), 'yyyy-MM') IN (${monthList})`);
-  } else {
-    conditions.push(`try_cast(q.${quoteIdent("event_timestamp")} AS TIMESTAMP) >= current_timestamp() - INTERVAL 30 DAYS`);
-  }
-
-  if ((scope.groupName || scope.company) && scope.orgColumn) {
-    conditions.push(`UPPER(TRIM(CAST(${qcol("q", scope.orgColumn)} AS STRING))) IN ${orgNamesSubquery(scope.groupName, scope.company)}`);
-  } else if (scope.groupName && scope.groupColumn) {
-    conditions.push(`UPPER(TRIM(CAST(${qcol("q", scope.groupColumn)} AS STRING))) = UPPER(TRIM('${escapeSql(scope.groupName)}'))`);
   }
 
   return conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
