@@ -73,6 +73,7 @@ const PILLAR_NAME_CANDIDATES = ["pillar_name", "pilar", "nome_pilar", "pillar_la
 const CRITERIA_SCORE_CANDIDATES = [
   "score", "nota", "value", "criterion_score", "score_value", "nota_criterio",
 ];
+const APPLICABLE_CANDIDATES = ["is_applicable", "applicable", "aplicavel", "aplicável"];
 const JUSTIFICATION_CANDIDATES = [
   "justification", "justificativa", "reason", "explanation", "motivo", "rationale",
 ];
@@ -270,6 +271,12 @@ function resolvedExpr(alias, column) {
   END`;
 }
 
+function applicableCriteriaCondition(alias, column) {
+  if (!column) return null;
+  const expr = `LOWER(TRIM(CAST(${qcol(alias, column)} AS STRING)))`;
+  return `${expr} IN ('true','1','sim','yes','y')`;
+}
+
 function orgNamesSubquery(groupName, company) {
   if (company) {
     return `(SELECT UPPER(TRIM(name)) FROM ${ORGANIZATIONS_TABLE} WHERE name = '${escapeSql(company)}')`;
@@ -371,7 +378,7 @@ function buildFinisherCondition(alias, column, criteriaFinisher) {
 }
 
 function buildEvaluatedCriteriaWhere(scope, criteriaFinisher, criteriaFinishedByColumn) {
-  const conditions = [`q.${quoteIdent("is_applicable")} = true`];
+  const conditions = [applicableCriteriaCondition("q", "is_applicable")];
 
   if (scope.months.length) {
     const monthList = scope.months.map((month) => `'${escapeSql(month)}'`).join(",");
@@ -521,6 +528,8 @@ async function loadEvaluatedCriteriaBullets(warehouseId, scope, criteriaFinisher
 
 function buildCriteriaWithSql(scope, sharedKey, criteriaColumns) {
   const criteriaDateColumn = pickColumn(criteriaColumns, DATE_CANDIDATES);
+  const applicableColumn = pickColumn(criteriaColumns, APPLICABLE_CANDIDATES);
+  const applicableCondition = applicableCriteriaCondition("c", applicableColumn);
   if (sharedKey) {
     return `
       summary_base AS (
@@ -533,11 +542,13 @@ function buildCriteriaWithSql(scope, sharedKey, criteriaColumns) {
         FROM ${CRITERIA_TABLE} c
         INNER JOIN summary_base sb
           ON CAST(${qcol("c", sharedKey.criteria)} AS STRING) = sb.item_key
+        ${applicableCondition ? `WHERE ${applicableCondition}` : ""}
       )
     `;
   }
 
   const conditions = ["1=1"];
+  if (applicableCondition) conditions.push(applicableCondition);
   if (criteriaDateColumn) {
     if (scope.months.length) {
       const monthList = scope.months.map((month) => `'${escapeSql(month)}'`).join(",");
@@ -800,6 +811,7 @@ async function loadStrategic(warehouseId, columns, criteriaColumns, scope, share
       evaluated: evaluatedVolume.total,
       evaluated_monthly: evaluatedVolume.monthly,
       resolved_pct: resolvedRate === null ? null : Number((resolvedRate * 100).toFixed(1)),
+      applicable_criteria: criteriaAgg.totals.applicable,
       na_pct: criteriaAgg.totals.total > 0 ? criteriaAgg.totals.pct_na : null,
       weakest_pillar: weakestPillar,
       latest_at: evaluatedVolume.latest_at || getCell(summary[1]),
