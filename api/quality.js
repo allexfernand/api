@@ -77,6 +77,7 @@ const JUSTIFICATION_CANDIDATES = [
   "justification", "justificativa", "reason", "explanation", "motivo", "rationale",
 ];
 const EVIDENCE_CANDIDATES = ["evidence", "evidencia", "trecho", "quote", "excerpt"];
+const FINISHER_CANDIDATES = ["finished_by"];
 const SUMMARY_SESSION_JOIN_PAIRS = [
   ["attendance_id", "attendance_id"],
   ["atendimento_id", "attendance_id"],
@@ -306,7 +307,14 @@ async function loadEvaluatedVolume(warehouseId, scope) {
   };
 }
 
-function buildEvaluatedCriteriaWhere(scope) {
+function buildFinisherCondition(alias, column, criteriaFinisher) {
+  if (!column || !criteriaFinisher) return null;
+  return criteriaFinisher === "humano"
+    ? `${alias}.${quoteIdent(column)} IS NOT NULL`
+    : `${alias}.${quoteIdent(column)} IS NULL`;
+}
+
+function buildEvaluatedCriteriaWhere(scope, criteriaFinisher, criteriaFinishedByColumn) {
   const conditions = [`q.${quoteIdent("is_applicable")} = true`];
 
   if (scope.months.length) {
@@ -314,15 +322,48 @@ function buildEvaluatedCriteriaWhere(scope) {
     conditions.push(`DATE_FORMAT(try_cast(q.${quoteIdent("event_timestamp")} AS TIMESTAMP), 'yyyy-MM') IN (${monthList})`);
   }
 
+  const finisherCondition = buildFinisherCondition("q", criteriaFinishedByColumn, criteriaFinisher);
+  if (finisherCondition) conditions.push(finisherCondition);
+
   return `WHERE ${conditions.join(" AND ")}`;
 }
 
-function buildCriteriaFinisherSql(criteriaFinisher, summarySessionJoin) {
-  if (!criteriaFinisher || !summarySessionJoin) {
-    return { cte: "", join: "", applied: false };
+function buildCriteriaFinisherSql(criteriaFinisher, summarySessionJoin, summaryFinishedByColumn, criteriaFinishedByColumn) {
+  if (!criteriaFinisher) {
+    return { summarySelect: "CAST(NULL AS STRING)", cte: "", join: "", where: "", applied: false, strategy: "none" };
+  }
+
+  if (criteriaFinishedByColumn) {
+    return {
+      summarySelect: "CAST(NULL AS STRING)",
+      cte: "",
+      join: "",
+      where: "",
+      applied: true,
+      strategy: "criteria.finished_by",
+    };
+  }
+
+  if (summaryFinishedByColumn) {
+    return {
+      summarySelect: `CASE
+          WHEN MAX(CASE WHEN s.${quoteIdent(summaryFinishedByColumn)} IS NOT NULL THEN 1 ELSE 0 END) = 1 THEN 'humano'
+          ELSE 'ia'
+        END`,
+      cte: "",
+      join: "",
+      where: `WHERE s.criteria_finisher = '${escapeSql(criteriaFinisher)}'`,
+      applied: true,
+      strategy: "summary.finished_by",
+    };
+  }
+
+  if (!summarySessionJoin) {
+    return { summarySelect: "CAST(NULL AS STRING)", cte: "", join: "", where: "", applied: false, strategy: "unavailable" };
   }
 
   return {
+    summarySelect: "CAST(NULL AS STRING)",
     cte: `,
     session_finishers AS (
       SELECT
@@ -339,12 +380,14 @@ function buildCriteriaFinisherSql(criteriaFinisher, summarySessionJoin) {
     INNER JOIN session_finishers sf
       ON s.session_join_key = sf.session_join_key
       AND sf.criteria_finisher = '${escapeSql(criteriaFinisher)}'`,
+    where: "",
     applied: true,
+    strategy: "botmaker_session.finished_by",
   };
 }
 
-async function loadEvaluatedCriteriaBullets(warehouseId, scope, criteriaFinisher, summarySessionJoin) {
-  const finisherSql = buildCriteriaFinisherSql(criteriaFinisher, summarySessionJoin);
+async function loadEvaluatedCriteriaBullets(warehouseId, scope, criteriaFinisher, summarySessionJoin, summaryFinishedByColumn, criteriaFinishedByColumn) {
+  const finisherSql = buildCriteriaFinisherSql(criteriaFinisher, summarySessionJoin, summaryFinishedByColumn, criteriaFinishedByColumn);
   const summaryJoinSelect = summarySessionJoin
     ? `MAX(CAST(s.${quoteIdent(summarySessionJoin.summary)} AS STRING))`
     : "CAST(NULL AS STRING)";
@@ -357,7 +400,7 @@ async function loadEvaluatedCriteriaBullets(warehouseId, scope, criteriaFinisher
         AVG(${numberExpr("q", "pontuacao")}) AS pontuacao_criterio,
         COUNT(*) AS total_avaliacoes
       FROM ${EVALUATED_CRITERIA_TABLE} q
-      ${buildEvaluatedCriteriaWhere(scope)}
+      ${buildEvaluatedCriteriaWhere(scope, criteriaFinisher, criteriaFinishedByColumn)}
       GROUP BY
         CAST(q.${quoteIdent("criterio_id")} AS STRING),
         COALESCE(NULLIF(TRIM(CAST(q.${quoteIdent("sub_criterio")} AS STRING)), ''), 'Sem subcritério'),
@@ -367,6 +410,7 @@ async function loadEvaluatedCriteriaBullets(warehouseId, scope, criteriaFinisher
       SELECT
         CAST(s.${quoteIdent("attendance_id")} AS STRING) AS attendance_id,
         ${summaryJoinSelect} AS session_join_key,
+        ${finisherSql.summarySelect} AS criteria_finisher,
         AVG(${numberExpr("s", "nota_atendimento")}) AS nota_atendimento,
         AVG(${numberExpr("s", "nota_maxima_possivel")}) AS nota_maxima_possivel
       FROM ${EVALUATED_VOLUME_TABLE} s
@@ -387,6 +431,7 @@ async function loadEvaluatedCriteriaBullets(warehouseId, scope, criteriaFinisher
     LEFT JOIN summary_by_attendance s
       ON c.attendance_id = s.attendance_id
     ${finisherSql.join}
+    ${finisherSql.where}
     GROUP BY c.criterio_id, c.sub_criterio
     ORDER BY total_atendimentos DESC
     LIMIT 12
@@ -410,6 +455,9 @@ async function loadEvaluatedCriteriaBullets(warehouseId, scope, criteriaFinisher
       applied: finisherSql.applied,
       summary_join_column: summarySessionJoin?.summary || null,
       session_join_column: summarySessionJoin?.session || null,
+      summary_finished_by_column: summaryFinishedByColumn || null,
+      criteria_finished_by_column: criteriaFinishedByColumn || null,
+      strategy: finisherSql.strategy,
       logic: "botmaker_session.finished_by IS NOT NULL => humano; IS NULL => ia",
     },
   };
@@ -603,7 +651,7 @@ function buildInsightCards(criteria, pillars) {
   ];
 }
 
-async function loadStrategic(warehouseId, columns, criteriaColumns, scope, sharedKey, criteriaFinisher, summarySessionJoin) {
+async function loadStrategic(warehouseId, columns, criteriaColumns, scope, sharedKey, criteriaFinisher, summarySessionJoin, summaryFinishedByColumn, criteriaFinishedByColumn) {
   const summaryScoreColumn = pickColumn(columns, SCORE_CANDIDATES);
   const resolvedColumn = pickColumn(columns, RESOLVED_CANDIDATES);
   const collaboratorColumn = pickColumn(columns, COLLABORATOR_CANDIDATES);
@@ -638,7 +686,7 @@ async function loadStrategic(warehouseId, columns, criteriaColumns, scope, share
       GROUP BY 1, 2, 3, 4, 5
     `),
     loadEvaluatedVolume(warehouseId, scope),
-    loadEvaluatedCriteriaBullets(warehouseId, scope, criteriaFinisher, summarySessionJoin),
+    loadEvaluatedCriteriaBullets(warehouseId, scope, criteriaFinisher, summarySessionJoin, summaryFinishedByColumn, criteriaFinishedByColumn),
   ]);
 
   const criteriaAgg = aggregateCriteria(criteriaRows);
@@ -836,9 +884,11 @@ export default async function handler(req, res) {
     const scope = buildSummaryScope(summaryColumns, req.query);
     const sharedKey = pickJoinKey(summaryColumns, criteriaColumns);
     const summarySessionJoin = pickSummarySessionJoin(summaryColumns, sessionColumns);
+    const summaryFinishedByColumn = pickColumn(summaryColumns, FINISHER_CANDIDATES);
+    const criteriaFinishedByColumn = pickColumn(criteriaColumns, FINISHER_CANDIDATES);
 
     const [strategic, operational] = await Promise.all([
-      loadStrategic(warehouse.id, summaryColumns, criteriaColumns, scope, sharedKey, criteriaFinisher, summarySessionJoin),
+      loadStrategic(warehouse.id, summaryColumns, criteriaColumns, scope, sharedKey, criteriaFinisher, summarySessionJoin, summaryFinishedByColumn, criteriaFinishedByColumn),
       loadOperational(warehouse.id, summaryColumns, criteriaColumns, scope, sharedKey),
     ]);
 
@@ -858,6 +908,8 @@ export default async function handler(req, res) {
         summary_org_column: scope.orgColumn,
         summary_group_column: scope.groupColumn,
         summary_session_join: summarySessionJoin,
+        summary_finished_by_column: summaryFinishedByColumn,
+        criteria_finished_by_column: criteriaFinishedByColumn,
         shared_key: sharedKey,
       },
       source: {
