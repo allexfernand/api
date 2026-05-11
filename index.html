@@ -1019,6 +1019,17 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
     <div class="quality-grid-2">
       <div class="card-box" style="margin-bottom:0">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+          <div class="section-title" style="margin-bottom:0"><i class="fa-solid fa-chart-simple" style="margin-right:6px"></i>Distribuição por critério</div>
+          <select class="filter-select" id="quality-criteria-sort" onchange="onQualityCriteriaSortChange(this.value)" style="min-width:180px">
+            <option value="worst">Pior → melhor</option>
+            <option value="best">Melhor → pior</option>
+          </select>
+        </div>
+        <div id="quality-criteria-only-dist"></div>
+      </div>
+
+      <div class="card-box" style="margin-bottom:0">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap">
           <div class="section-title" style="margin-bottom:0"><i class="fa-solid fa-chart-simple" style="margin-right:6px"></i>Distribuição por subcritério</div>
           <select class="filter-select" id="quality-subcriteria-sort" onchange="onQualitySubcriteriaSortChange(this.value)" style="min-width:180px">
             <option value="worst">Pior → melhor</option>
@@ -1032,7 +1043,9 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
           <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#c53030;margin-right:4px"></span>Nota 0</span>
         </div>
       </div>
+    </div>
 
+    <div class="quality-grid-2">
       <div class="card-box" style="margin-bottom:0">
         <div class="section-title"><i class="fa-solid fa-ranking-star" style="margin-right:6px"></i>Ranking de colaboradores</div>
         <div class="table-scroll">
@@ -1044,13 +1057,14 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
           </table>
         </div>
       </div>
-    </div>
 
-    <div class="quality-grid-2">
       <div class="card-box" style="margin-bottom:0">
         <div class="section-title"><i class="fa-solid fa-route" style="margin-right:6px"></i>Qualidade por linha de cuidado</div>
         <div id="quality-care-lines"></div>
       </div>
+    </div>
+
+    <div class="quality-grid-2">
       <div style="display:flex;flex-direction:column;gap:16px">
         <div class="card-box quality-insight" style="margin-bottom:0">
           <div class="section-title">Insight automático</div>
@@ -1063,6 +1077,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
           <div class="quality-insight-desc" id="quality-alert-desc">—</div>
         </div>
       </div>
+      <div></div>
     </div>
   </div>
 
@@ -1117,6 +1132,7 @@ let selectedAppointmentTypeMonths = new Set();
 let appointmentTypesBaseMonths = [];
 let selectedSessionsDailyMonth = currentMonthValue();
 let selectedSessionTypificationFinisher = '';
+let selectedQualityCriteriaSort = 'worst';
 let selectedQualitySubcriteriaSort = 'worst';
 let qualityData = null, selectedQualityKey = null;
 
@@ -2762,6 +2778,50 @@ function onQualitySubcriteriaSortChange(value) {
   renderQualityStrategic();
 }
 
+function onQualityCriteriaSortChange(value) {
+  selectedQualityCriteriaSort = value === 'best' ? 'best' : 'worst';
+  renderQualityStrategic();
+}
+
+function aggregateQualityCriteria(items) {
+  const grouped = new Map();
+  (items || []).filter((item) => item.total > 0).forEach((item) => {
+    const rawId = String(item.criterion_id || 'Sem critério').trim() || 'Sem critério';
+    const key = rawId.replace(/\s+/g, ' ').toLowerCase();
+    const current = grouped.get(key) || {
+      criterion_id: rawId,
+      criterion_name: `Critério ${rawId}`,
+      total: 0,
+      applicable: 0,
+      scoreSum: 0,
+      score_2: 0,
+      score_1: 0,
+      score_0: 0,
+      total_atendimentos: 0,
+    };
+    current.total += Number(item.total) || 0;
+    current.applicable += Number(item.applicable) || 0;
+    current.scoreSum += Number(item.scoreSum) || 0;
+    current.score_2 += Number(item.score_2) || 0;
+    current.score_1 += Number(item.score_1) || 0;
+    current.score_0 += Number(item.score_0) || 0;
+    current.total_atendimentos += Number(item.total_atendimentos || item.total) || 0;
+    grouped.set(key, current);
+  });
+
+  return [...grouped.values()].map((item) => {
+    const applicable = item.applicable || item.total;
+    const scorePct = applicable > 0 ? (item.scoreSum / (applicable * 2)) * 100 : 0;
+    return {
+      ...item,
+      score_pct: Number(scorePct.toFixed(1)),
+      pct_2: item.total > 0 ? Number(((item.score_2 / item.total) * 100).toFixed(1)) : 0,
+      pct_1: item.total > 0 ? Number(((item.score_1 / item.total) * 100).toFixed(1)) : 0,
+      pct_0: item.total > 0 ? Number(((item.score_0 / item.total) * 100).toFixed(1)) : 0,
+    };
+  });
+}
+
 function aggregateQualitySubcriteria(items) {
   const grouped = new Map();
   (items || []).filter((item) => item.total > 0).forEach((item) => {
@@ -2885,6 +2945,36 @@ function renderQualityStrategic() {
         <div class="quality-criteria-bullet-meta">${fmt(Number(item.total_atendimentos) || 0)} atendimentos · ${fmt(Number(item.total_avaliacoes) || 0)} avaliações${attendancePctLabel}</div>
       </div>`;
     }).join('') : '<div class="loading-box" style="grid-column:1/-1">Nenhum critério aplicável encontrado no recorte.</div>';
+  }
+
+  const criteriaSortSelect = document.getElementById('quality-criteria-sort');
+  if (criteriaSortSelect) criteriaSortSelect.value = selectedQualityCriteriaSort;
+  const criteriaOnly = aggregateQualityCriteria(strategic.criteria || [])
+    .sort((a, b) => {
+      const scoreSort = selectedQualityCriteriaSort === 'best'
+        ? (Number(b.score_pct) || 0) - (Number(a.score_pct) || 0)
+        : (Number(a.score_pct) || 0) - (Number(b.score_pct) || 0);
+      return scoreSort || String(a.criterion_id).localeCompare(String(b.criterion_id), 'pt-BR', { numeric: true });
+    });
+  const criteriaOnlyEl = document.getElementById('quality-criteria-only-dist');
+  if (criteriaOnlyEl) {
+    criteriaOnlyEl.innerHTML = criteriaOnly.length ? criteriaOnly.map((item) => {
+      const pct = Number(item.score_pct) || 0;
+      const cls = qualityScoreClass(pct);
+      const attendances = Number(item.total_atendimentos) || 0;
+      return `<div class="quality-dist-row quality-subcriteria-row">
+        <div class="quality-dist-label quality-subcriteria-label" title="${escapeAttr(item.criterion_name)}">${escapeHtml(item.criterion_name)}</div>
+        <div class="quality-dist-track">
+          <div class="quality-dist-seg s2" style="width:${item.pct_2 || 0}%"></div>
+          <div class="quality-dist-seg s1" style="width:${item.pct_1 || 0}%"></div>
+          <div class="quality-dist-seg s0" style="width:${item.pct_0 || 0}%"></div>
+        </div>
+        <div class="quality-subcriteria-value">
+          <div class="quality-score ${cls}" style="font-size:12px;text-align:right">${fmtPct(pct)}</div>
+          <div class="quality-subcriteria-count">${fmt(attendances)} atend.</div>
+        </div>
+      </div>`;
+    }).join('') : '<div class="loading-box">Nenhum critério encontrado.</div>';
   }
 
   const sortSelect = document.getElementById('quality-subcriteria-sort');
