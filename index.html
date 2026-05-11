@@ -289,6 +289,8 @@ body {
 
 .quality-dist-row{display:grid;grid-template-columns:110px minmax(0,1fr) 52px;gap:10px;align-items:center;margin-bottom:10px}
 .quality-dist-label{font-size:12px;font-weight:600;color:#64748b;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.quality-subcriteria-row{grid-template-columns:minmax(240px,1.2fr) minmax(140px,.85fr) 64px;gap:12px}
+.quality-subcriteria-label{text-align:left;white-space:normal;overflow:visible;text-overflow:clip;line-height:1.35}
 .quality-dist-track{height:20px;background:#f1f5f9;border-radius:5px;overflow:hidden;display:flex}
 .quality-dist-seg.s2{background:#0f8a6f}
 .quality-dist-seg.s1{background:#d97706}
@@ -364,6 +366,8 @@ body {
   .session-typification-track{grid-column:1 / -1;grid-row:2}
   .filter-select{width:100%;max-width:none;min-width:0}
   .quality-kpi-grid{grid-template-columns:repeat(2,1fr)}
+  .quality-subcriteria-row{grid-template-columns:1fr 64px;gap:8px}
+  .quality-subcriteria-row .quality-dist-track{grid-column:1 / -1;grid-row:2}
   .quality-item{grid-template-columns:46px minmax(0,1fr)}
   .quality-item>.quality-pill,.quality-item>span:last-child{display:none}
 }
@@ -2760,8 +2764,13 @@ function aggregateQualitySubcriteria(items) {
   const grouped = new Map();
   (items || []).filter((item) => item.total > 0).forEach((item) => {
     const name = String(item.criterion_name || 'Sem subcritério').trim() || 'Sem subcritério';
-    const current = grouped.get(name) || {
+    const rawId = String(item.criterion_id || '').trim();
+    const normalizedId = rawId.replace(/\s+/g, ' ').toLowerCase();
+    const normalizedName = name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+    const groupKey = normalizedId || normalizedName;
+    const current = grouped.get(groupKey) || {
       criterion_id: new Set(),
+      criterion_names: new Map(),
       criterion_name: name,
       total: 0,
       applicable: 0,
@@ -2770,22 +2779,27 @@ function aggregateQualitySubcriteria(items) {
       score_1: 0,
       score_0: 0,
     };
-    current.criterion_id.add(String(item.criterion_id || '').trim());
-    current.total += Number(item.total) || 0;
+    const total = Number(item.total) || 0;
+    if (rawId) current.criterion_id.add(rawId);
+    current.criterion_names.set(name, (current.criterion_names.get(name) || 0) + total);
+    current.total += total;
     current.applicable += Number(item.applicable) || 0;
     current.scoreSum += Number(item.scoreSum) || 0;
     current.score_2 += Number(item.score_2) || 0;
     current.score_1 += Number(item.score_1) || 0;
     current.score_0 += Number(item.score_0) || 0;
-    grouped.set(name, current);
+    grouped.set(groupKey, current);
   });
 
   return [...grouped.values()].map((item) => {
     const applicable = item.applicable || item.total;
     const scorePct = applicable > 0 ? (item.scoreSum / (applicable * 2)) * 100 : 0;
+    const bestName = [...item.criterion_names.entries()]
+      .sort((a, b) => b[1] - a[1] || b[0].length - a[0].length)[0]?.[0] || item.criterion_name;
     return {
       ...item,
       criterion_id: [...item.criterion_id].filter(Boolean).sort((a, b) => a.localeCompare(b, 'pt-BR', { numeric: true })).join(', '),
+      criterion_name: bestName,
       score_pct: Number(scorePct.toFixed(1)),
       pct_2: item.total > 0 ? Number(((item.score_2 / item.total) * 100).toFixed(1)) : 0,
       pct_1: item.total > 0 ? Number(((item.score_1 / item.total) * 100).toFixed(1)) : 0,
@@ -2884,8 +2898,8 @@ function renderQualityStrategic() {
       const pct = Number(item.score_pct) || 0;
       const cls = qualityScoreClass(pct);
       const label = item.criterion_id ? `${item.criterion_id} ${item.criterion_name}` : item.criterion_name;
-      return `<div class="quality-dist-row">
-        <div class="quality-dist-label" title="${escapeAttr(label)}">${escapeHtml(label)}</div>
+      return `<div class="quality-dist-row quality-subcriteria-row">
+        <div class="quality-dist-label quality-subcriteria-label" title="${escapeAttr(label)}">${escapeHtml(label)}</div>
         <div class="quality-dist-track">
           <div class="quality-dist-seg s2" style="width:${item.pct_2 || 0}%"></div>
           <div class="quality-dist-seg s1" style="width:${item.pct_1 || 0}%"></div>
