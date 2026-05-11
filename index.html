@@ -316,6 +316,14 @@ body {
 .quality-insight .section-title{color:#7dd3c7;margin-bottom:10px}
 .quality-insight-title{font-size:17px;font-weight:800;margin-bottom:6px;letter-spacing:-.2px}
 .quality-insight-desc{font-size:13px;color:rgba(255,255,255,.82);line-height:1.5}
+.quality-factual-insight{border:1px solid #c7d2fe;background:linear-gradient(135deg,#f8fafc,#eef2ff)}
+.quality-factual-header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap}
+.quality-factual-summary{font-size:13px;line-height:1.55;color:#334155;margin-bottom:14px}
+.quality-factual-themes{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.quality-factual-theme{font-size:11px;font-weight:800;color:#3730a3;background:#e0e7ff;border:1px solid #c7d2fe;border-radius:999px;padding:5px 10px}
+.quality-factual-examples{display:grid;gap:8px}
+.quality-factual-example{font-size:12px;line-height:1.45;color:#475569;background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px}
+.quality-factual-example strong{color:#0f766e}
 
 .quality-list{display:flex;flex-direction:column;gap:4px}
 .quality-item {
@@ -1061,6 +1069,28 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
     </div>
 
     <div class="quality-grid-2">
+      <div class="card-box quality-factual-insight" style="margin-bottom:0">
+        <div class="quality-factual-header">
+          <div class="section-title" style="margin-bottom:0"><i class="fa-solid fa-lightbulb" style="margin-right:6px"></i>Insights por justificativa factual</div>
+          <select class="filter-select" id="quality-factual-criterion" onchange="onQualityFactualCriterionChange(this.value)" style="min-width:260px">
+            <option value="">Selecione um critério</option>
+            <option value="1">Critério 1 — Humanização e Vínculo</option>
+            <option value="2">Critério 2 — Efetividade e Resolução</option>
+            <option value="3">Critério 3 — Comunicação Profissional</option>
+            <option value="4">Critério 4 — Proatividade e Gestão</option>
+            <option value="5">Critério 5 — Segurança Clínica</option>
+          </select>
+        </div>
+        <div style="font-size:11px;color:#64748b;margin-bottom:12px"><code>justificativa factual</code> · aplicáveis · <span id="quality-factual-period">período atual</span></div>
+        <div id="quality-factual-content">
+          <div class="loading-box" style="padding:18px">Selecione um critério para gerar o insight do período.</div>
+        </div>
+      </div>
+
+      <div></div>
+    </div>
+
+    <div class="quality-grid-2">
       <div class="card-box" style="margin-bottom:0">
         <div class="section-title"><i class="fa-solid fa-ranking-star" style="margin-right:6px"></i>Ranking de colaboradores</div>
         <div class="table-scroll">
@@ -1150,6 +1180,7 @@ let selectedSessionTypificationFinisher = '';
 let selectedQualityCriteriaSort = 'worst';
 let selectedQualitySubcriteriaSort = 'worst';
 let selectedQualitySubcriteriaCriterion = '';
+let selectedQualityFactualCriterion = '';
 let qualityData = null, selectedQualityKey = null;
 
 // --- Tabs ---
@@ -2804,6 +2835,11 @@ function onQualityCriteriaSortChange(value) {
   renderQualityStrategic();
 }
 
+function onQualityFactualCriterionChange(value) {
+  selectedQualityFactualCriterion = value || '';
+  loadQualityFactualInsight();
+}
+
 function qualityCriterionGroupId(value) {
   const raw = String(value || '').trim().replace(',', '.');
   const match = raw.match(/^(\d+)/);
@@ -2964,6 +3000,45 @@ function syncQualityDistributionHeights() {
 
 window.addEventListener('resize', syncQualityDistributionHeights);
 
+async function loadQualityFactualInsight() {
+  const select = document.getElementById('quality-factual-criterion');
+  const content = document.getElementById('quality-factual-content');
+  const period = document.getElementById('quality-factual-period');
+  if (select) select.value = selectedQualityFactualCriterion;
+  if (period) period.textContent = qualityPeriodLabel();
+  if (!content) return;
+
+  if (!selectedQualityFactualCriterion) {
+    content.innerHTML = '<div class="loading-box" style="padding:18px">Selecione um critério para gerar o insight do período.</div>';
+    return;
+  }
+
+  content.innerHTML = '<div class="loading-box" style="padding:18px"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Gerando insight...</div>';
+  const meses = [...selectedMonths].sort();
+  const p = new URLSearchParams();
+  p.set('criterio', selectedQualityFactualCriterion);
+  if (meses.length > 0) p.set('meses', meses.join(','));
+  const data = await safeGet('/api/quality-criterion-insights?' + p.toString());
+
+  if (!data || data.error) {
+    content.innerHTML = `<div class="loading-box" style="padding:18px;color:#b45309">${escapeHtml(data?.error || 'Erro ao gerar insight.')}</div>`;
+    return;
+  }
+
+  const themesHtml = (data.temas || []).map((item) =>
+    `<span class="quality-factual-theme">${escapeHtml(item.label)} · ${fmt(Number(item.total) || 0)}</span>`
+  ).join('');
+  const examplesHtml = (data.exemplos || []).map((item) =>
+    `<div class="quality-factual-example"><strong>${fmt(Number(item.total) || 0)}x</strong> ${escapeHtml(item.texto)}</div>`
+  ).join('');
+
+  content.innerHTML = `
+    <div class="quality-factual-summary">${escapeHtml(data.resumo || 'Sem resumo disponível.')}</div>
+    ${themesHtml ? `<div class="quality-factual-themes">${themesHtml}</div>` : ''}
+    <div class="quality-factual-examples">${examplesHtml || '<div class="quality-factual-example">Nenhuma justificativa factual encontrada no período.</div>'}</div>
+  `;
+}
+
 async function loadQuality() {
   setStatus('loading', '⏳ Carregando qualidade...');
   const operationalLoading = document.getElementById('quality-operational-loading');
@@ -2992,6 +3067,7 @@ async function loadQuality() {
   selectedQualityKey = null;
   renderQualityStrategic();
   renderQualityOperational();
+  loadQualityFactualInsight();
   setStatus('ok', '✓ Dados ao vivo');
   document.getElementById('last-upd').textContent = 'Atualizado: ' + new Date().toLocaleTimeString('pt-BR');
 }
