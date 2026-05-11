@@ -1012,7 +1012,13 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
 
     <div class="quality-grid-2">
       <div class="card-box" style="margin-bottom:0">
-        <div class="section-title"><i class="fa-solid fa-chart-simple" style="margin-right:6px"></i>Distribuição por subcritério</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+          <div class="section-title" style="margin-bottom:0"><i class="fa-solid fa-chart-simple" style="margin-right:6px"></i>Distribuição por subcritério</div>
+          <select class="filter-select" id="quality-subcriteria-sort" onchange="onQualitySubcriteriaSortChange(this.value)" style="min-width:180px">
+            <option value="worst">Pior → melhor</option>
+            <option value="best">Melhor → pior</option>
+          </select>
+        </div>
         <div id="quality-criteria-dist"></div>
         <div style="display:flex;gap:16px;margin-top:14px;padding-top:12px;border-top:1px solid #f1f5f9;font-size:11px;color:#64748b;flex-wrap:wrap">
           <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#0f8a6f;margin-right:4px"></span>Nota 2</span>
@@ -1105,6 +1111,7 @@ let selectedAppointmentTypeMonths = new Set();
 let appointmentTypesBaseMonths = [];
 let selectedSessionsDailyMonth = currentMonthValue();
 let selectedSessionTypificationFinisher = '';
+let selectedQualitySubcriteriaSort = 'worst';
 let qualityData = null, selectedQualityKey = null;
 
 // --- Tabs ---
@@ -2744,6 +2751,49 @@ function escapeJs(s) {
   return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, ' ');
 }
 
+function onQualitySubcriteriaSortChange(value) {
+  selectedQualitySubcriteriaSort = value === 'best' ? 'best' : 'worst';
+  renderQualityStrategic();
+}
+
+function aggregateQualitySubcriteria(items) {
+  const grouped = new Map();
+  (items || []).filter((item) => item.total > 0).forEach((item) => {
+    const name = String(item.criterion_name || 'Sem subcritério').trim() || 'Sem subcritério';
+    const current = grouped.get(name) || {
+      criterion_id: new Set(),
+      criterion_name: name,
+      total: 0,
+      applicable: 0,
+      scoreSum: 0,
+      score_2: 0,
+      score_1: 0,
+      score_0: 0,
+    };
+    current.criterion_id.add(String(item.criterion_id || '').trim());
+    current.total += Number(item.total) || 0;
+    current.applicable += Number(item.applicable) || 0;
+    current.scoreSum += Number(item.scoreSum) || 0;
+    current.score_2 += Number(item.score_2) || 0;
+    current.score_1 += Number(item.score_1) || 0;
+    current.score_0 += Number(item.score_0) || 0;
+    grouped.set(name, current);
+  });
+
+  return [...grouped.values()].map((item) => {
+    const applicable = item.applicable || item.total;
+    const scorePct = applicable > 0 ? (item.scoreSum / (applicable * 2)) * 100 : 0;
+    return {
+      ...item,
+      criterion_id: [...item.criterion_id].filter(Boolean).sort((a, b) => a.localeCompare(b, 'pt-BR', { numeric: true })).join(', '),
+      score_pct: Number(scorePct.toFixed(1)),
+      pct_2: item.total > 0 ? Number(((item.score_2 / item.total) * 100).toFixed(1)) : 0,
+      pct_1: item.total > 0 ? Number(((item.score_1 / item.total) * 100).toFixed(1)) : 0,
+      pct_0: item.total > 0 ? Number(((item.score_0 / item.total) * 100).toFixed(1)) : 0,
+    };
+  });
+}
+
 async function loadQuality() {
   setStatus('loading', '⏳ Carregando qualidade...');
   const operationalLoading = document.getElementById('quality-operational-loading');
@@ -2819,19 +2869,23 @@ function renderQualityStrategic() {
     }).join('') : '<div class="loading-box" style="grid-column:1/-1">Nenhum critério aplicável encontrado no recorte.</div>';
   }
 
-  const criteria = [...(strategic.criteria || [])]
-    .filter((item) => item.total > 0)
+  const sortSelect = document.getElementById('quality-subcriteria-sort');
+  if (sortSelect) sortSelect.value = selectedQualitySubcriteriaSort;
+  const criteria = aggregateQualitySubcriteria(strategic.criteria || [])
     .sort((a, b) => {
-      const idSort = String(a.criterion_id).localeCompare(String(b.criterion_id), 'pt-BR', { numeric: true });
-      return idSort || String(a.criterion_name).localeCompare(String(b.criterion_name), 'pt-BR', { sensitivity: 'base' });
+      const scoreSort = selectedQualitySubcriteriaSort === 'best'
+        ? (Number(b.score_pct) || 0) - (Number(a.score_pct) || 0)
+        : (Number(a.score_pct) || 0) - (Number(b.score_pct) || 0);
+      return scoreSort || String(a.criterion_name).localeCompare(String(b.criterion_name), 'pt-BR', { sensitivity: 'base' });
     });
   const distEl = document.getElementById('quality-criteria-dist');
   if (distEl) {
     distEl.innerHTML = criteria.length ? criteria.map((item) => {
       const pct = Number(item.score_pct) || 0;
       const cls = qualityScoreClass(pct);
+      const label = item.criterion_id ? `${item.criterion_id} ${item.criterion_name}` : item.criterion_name;
       return `<div class="quality-dist-row">
-        <div class="quality-dist-label" title="${escapeAttr(item.criterion_id + ' ' + item.criterion_name)}">${escapeHtml(item.criterion_id)} ${escapeHtml(item.criterion_name)}</div>
+        <div class="quality-dist-label" title="${escapeAttr(label)}">${escapeHtml(label)}</div>
         <div class="quality-dist-track">
           <div class="quality-dist-seg s2" style="width:${item.pct_2 || 0}%"></div>
           <div class="quality-dist-seg s1" style="width:${item.pct_1 || 0}%"></div>
