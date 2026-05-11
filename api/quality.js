@@ -13,7 +13,8 @@ const SESSION_TABLE = "hive_metastore.sanus_prod.botmaker_session";
 const ORGANIZATIONS_TABLE = "hive_metastore.sanus_prod.organizations";
 
 const DATE_CANDIDATES = [
-  "created_at", "analysis_created_at", "analysis_at", "processed_at", "updated_at",
+  "event_timestamp", "created_at", "creation_time", "data_criacao", "created_date",
+  "analysis_created_at", "analysis_at", "processed_at", "updated_at",
   "hora_criacao_atendimento", "session_created_at", "conversation_started_at",
   "data_atendimento", "dt_atendimento", "date", "timestamp",
 ];
@@ -545,10 +546,21 @@ async function loadEvaluatedCriteriaBullets(warehouseId, scope, criteriaFinisher
   };
 }
 
+function criteriaRecordDateCondition(scope, criteriaDateColumn) {
+  if (!criteriaDateColumn) return null;
+  if (scope.months.length) {
+    const monthList = scope.months.map((month) => `'${escapeSql(month)}'`).join(",");
+    return `DATE_FORMAT(try_cast(${qcol("c", criteriaDateColumn)} AS TIMESTAMP), 'yyyy-MM') IN (${monthList})`;
+  }
+  return `try_cast(${qcol("c", criteriaDateColumn)} AS TIMESTAMP) >= current_timestamp() - INTERVAL 30 DAYS`;
+}
+
 function buildCriteriaWithSql(scope, sharedKey, criteriaColumns) {
   const criteriaDateColumn = pickColumn(criteriaColumns, DATE_CANDIDATES);
   const applicableColumn = pickColumn(criteriaColumns, APPLICABLE_CANDIDATES);
   const applicableCondition = applicableCriteriaCondition("c", applicableColumn);
+  const dateCondition = criteriaRecordDateCondition(scope, criteriaDateColumn);
+  const criteriaConditions = [applicableCondition, dateCondition].filter(Boolean);
   if (sharedKey) {
     return `
       summary_base AS (
@@ -561,21 +573,13 @@ function buildCriteriaWithSql(scope, sharedKey, criteriaColumns) {
         FROM ${CRITERIA_TABLE} c
         INNER JOIN summary_base sb
           ON CAST(${qcol("c", sharedKey.criteria)} AS STRING) = sb.item_key
-        ${applicableCondition ? `WHERE ${applicableCondition}` : ""}
+        ${criteriaConditions.length ? `WHERE ${criteriaConditions.join(" AND ")}` : ""}
       )
     `;
   }
 
   const conditions = ["1=1"];
-  if (applicableCondition) conditions.push(applicableCondition);
-  if (criteriaDateColumn) {
-    if (scope.months.length) {
-      const monthList = scope.months.map((month) => `'${escapeSql(month)}'`).join(",");
-      conditions.push(`DATE_FORMAT(try_cast(${qcol("c", criteriaDateColumn)} AS TIMESTAMP), 'yyyy-MM') IN (${monthList})`);
-    } else {
-      conditions.push(`try_cast(${qcol("c", criteriaDateColumn)} AS TIMESTAMP) >= current_timestamp() - INTERVAL 30 DAYS`);
-    }
-  }
+  conditions.push(...criteriaConditions);
   return `
     criteria_base AS (
       SELECT c.*
