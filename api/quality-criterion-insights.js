@@ -6,6 +6,10 @@ const TOKEN = process.env.DATABRICKS_TOKEN;
 const HEADERS = { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" };
 
 const CRITERIA_TABLE = "sanus_databricks.sanus_prod.quality_analysis_silver_criteria";
+const SUMMARY_TABLES = [
+  "sanus_databricks.sanus_prod.quality_analysis_silver_summary",
+  "hive_metastore.sanus_prod.quality_analysis_silver_summary",
+];
 
 const DATE_CANDIDATES = ["event_timestamp", "created_at", "creation_time", "data_criacao", "created_date", "timestamp"];
 const CRITERION_ID_CANDIDATES = ["criterio_id", "criterion_id", "codigo_criterio", "id_criterio"];
@@ -18,6 +22,20 @@ const FACTUAL_JUSTIFICATION_CANDIDATES = [
 ];
 const APPLICABLE_CANDIDATES = ["is_applicable", "applicable", "aplicavel", "aplicável"];
 const ATTENDANCE_CANDIDATES = ["attendance_id", "atendimento_id", "appointment_id"];
+const RESOLVED_CANDIDATES = [
+  "problema_resolvido",
+  "problema resolvido",
+  "problema_reslvado",
+  "problema reslvado",
+  "problem_resolved",
+  "problem resolved",
+  "resolved",
+  "is_resolved",
+  "houve_tarefa_concluida",
+  "tarefa_concluida",
+  "concluido",
+  "concluida",
+];
 
 async function dbFetch(path, options = {}) {
   const res = await fetch(`${HOST}${path}`, {
@@ -81,13 +99,46 @@ function pickColumn(columns, candidates) {
   return null;
 }
 
+async function resolveSummaryFilterSchema(warehouseId) {
+  for (const table of SUMMARY_TABLES) {
+    try {
+      const columns = await getColumns(warehouseId, table);
+      const summaryAttendanceColumn = pickColumn(columns, ATTENDANCE_CANDIDATES);
+      const resolvedColumn = pickColumn(columns, RESOLVED_CANDIDATES);
+      if (summaryAttendanceColumn && resolvedColumn) {
+        return { summaryTable: table, summaryAttendanceColumn, resolvedColumn };
+      }
+    } catch (_) {}
+  }
+  return { summaryTable: SUMMARY_TABLES[0], summaryAttendanceColumn: null, resolvedColumn: null };
+}
+
 function applicableCondition(alias, column) {
   if (!column) return "1=1";
   const expr = `LOWER(TRIM(CAST(${alias}.${quoteIdent(column)} AS STRING)))`;
   return `${expr} IN ('true','1','sim','yes','y')`;
 }
 
-function buildWhere({ criterio, meses, criterionColumn, dateColumn, applicableColumn, justificationColumn }) {
+function resolvedCondition(alias, column, resolved) {
+  const expr = `LOWER(TRIM(CAST(${alias}.${quoteIdent(column)} AS STRING)))`;
+  return resolved === "sim"
+    ? `${expr} IN ('true','1','sim','yes','y','resolved','resolvido','concluido','concluida')`
+    : `${expr} IN ('false','0','nao','não','no','n','pending','pendente','aberto')`;
+}
+
+function buildWhere({
+  criterio,
+  meses,
+  resolved,
+  criterionColumn,
+  dateColumn,
+  applicableColumn,
+  justificationColumn,
+  attendanceColumn,
+  summaryTable,
+  summaryAttendanceColumn,
+  resolvedColumn,
+}) {
   const conditions = [
     `regexp_extract(regexp_replace(CAST(q.${quoteIdent(criterionColumn)} AS STRING), ',', '.'), '^(\\\\d+)', 1) = '${escapeSql(criterio)}'`,
     applicableCondition("q", applicableColumn),
@@ -101,6 +152,18 @@ function buildWhere({ criterio, meses, criterionColumn, dateColumn, applicableCo
     } else {
       conditions.push(`try_cast(q.${quoteIdent(dateColumn)} AS TIMESTAMP) >= current_timestamp() - INTERVAL 30 DAYS`);
     }
+  }
+
+  if (resolved) {
+    if (!attendanceColumn || !summaryTable || !summaryAttendanceColumn || !resolvedColumn) {
+      throw new Error(`Filtro de problema resolvido indisponível. attendance=${attendanceColumn || "n/a"} summary_attendance=${summaryAttendanceColumn || "n/a"} resolved=${resolvedColumn || "n/a"}`);
+    }
+    conditions.push(`EXISTS (
+      SELECT 1
+      FROM ${summaryTable} s
+      WHERE CAST(s.${quoteIdent(summaryAttendanceColumn)} AS STRING) = CAST(q.${quoteIdent(attendanceColumn)} AS STRING)
+        AND ${resolvedCondition("s", resolvedColumn, resolved)}
+    )`);
   }
 
   return conditions.join(" AND ");
@@ -147,6 +210,7 @@ export default async function handler(req, res) {
 
   const criterio = String(req.query.criterio || "").trim();
   const meses = req.query.meses ? String(req.query.meses).split(",").filter((mes) => /^\d{4}-\d{2}$/.test(mes)) : [];
+  const resolved = ["sim", "nao"].includes(String(req.query.resolved || "").trim()) ? String(req.query.resolved).trim() : "";
   if (!/^\d+$/.test(criterio)) {
     return res.status(400).json({ error: "Critério inválido." });
   }
@@ -162,11 +226,26 @@ export default async function handler(req, res) {
     const applicableColumn = pickColumn(columns, APPLICABLE_CANDIDATES);
     const justificationColumn = pickColumn(columns, FACTUAL_JUSTIFICATION_CANDIDATES);
     const attendanceColumn = pickColumn(columns, ATTENDANCE_CANDIDATES);
+    const summaryFilter = resolved
+      ? await resolveSummaryFilterSchema(warehouse.id)
+      : { summaryTable: null, summaryAttendanceColumn: null, resolvedColumn: null };
     if (!criterionColumn || !justificationColumn) {
       throw new Error(`Colunas necessárias não encontradas. criterio=${criterionColumn || "n/a"} justificativa=${justificationColumn || "n/a"}`);
     }
 
-    const where = buildWhere({ criterio, meses, criterionColumn, dateColumn, applicableColumn, justificationColumn });
+    const where = buildWhere({
+      criterio,
+      meses,
+      resolved,
+      criterionColumn,
+      dateColumn,
+      applicableColumn,
+      justificationColumn,
+      attendanceColumn,
+      summaryTable: summaryFilter.summaryTable,
+      summaryAttendanceColumn: summaryFilter.summaryAttendanceColumn,
+      resolvedColumn: summaryFilter.resolvedColumn,
+    });
     const [summaryRows, justificationRows] = await Promise.all([
       runQuery(warehouse.id, `
         SELECT
@@ -202,8 +281,8 @@ export default async function handler(req, res) {
       resumo: buildSummary({ criterio, total, atendimentos, themes }),
       temas: themes,
       exemplos: items.slice(0, 6),
-      filters: { meses },
-      schema: { criterionColumn, dateColumn, applicableColumn, justificationColumn, attendanceColumn },
+      filters: { meses, resolved },
+      schema: { criterionColumn, dateColumn, applicableColumn, justificationColumn, attendanceColumn, ...summaryFilter },
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

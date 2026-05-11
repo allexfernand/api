@@ -1072,14 +1072,21 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
       <div class="card-box quality-factual-insight" style="margin-bottom:0;grid-column:1/-1">
         <div class="quality-factual-header">
           <div class="section-title" style="margin-bottom:0"><i class="fa-solid fa-lightbulb" style="margin-right:6px"></i>Insights por justificativa factual</div>
-          <select class="filter-select" id="quality-factual-criterion" onchange="onQualityFactualCriterionChange(this.value)" style="min-width:260px">
-            <option value="">Selecione um critério</option>
-            <option value="1">Critério 1 — Humanização e Vínculo</option>
-            <option value="2">Critério 2 — Efetividade e Resolução</option>
-            <option value="3">Critério 3 — Comunicação Profissional</option>
-            <option value="4">Critério 4 — Proatividade e Gestão</option>
-            <option value="5">Critério 5 — Segurança Clínica</option>
-          </select>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <select class="filter-select" id="quality-factual-criterion" onchange="onQualityFactualCriterionChange(this.value)" style="min-width:260px">
+              <option value="">Selecione um critério</option>
+              <option value="1">Critério 1 — Humanização e Vínculo</option>
+              <option value="2">Critério 2 — Efetividade e Resolução</option>
+              <option value="3">Critério 3 — Comunicação Profissional</option>
+              <option value="4">Critério 4 — Proatividade e Gestão</option>
+              <option value="5">Critério 5 — Segurança Clínica</option>
+            </select>
+            <select class="filter-select" id="quality-factual-resolved" onchange="onQualityFactualResolvedChange(this.value)" style="min-width:190px">
+              <option value="">Problema resolvido: todos</option>
+              <option value="sim">Problema resolvido: sim</option>
+              <option value="nao">Problema resolvido: não</option>
+            </select>
+          </div>
         </div>
         <div style="font-size:11px;color:#64748b;margin-bottom:12px"><code>justificativa factual</code> · aplicáveis · <span id="quality-factual-period">período atual</span></div>
         <div id="quality-factual-content">
@@ -1179,6 +1186,7 @@ let selectedQualityCriteriaSort = 'worst';
 let selectedQualitySubcriteriaSort = 'worst';
 let selectedQualitySubcriteriaCriterion = '';
 let selectedQualityFactualCriterion = '';
+let selectedQualityFactualResolved = '';
 let qualityData = null, selectedQualityKey = null;
 
 // --- Tabs ---
@@ -2838,6 +2846,11 @@ function onQualityFactualCriterionChange(value) {
   loadQualityFactualInsight();
 }
 
+function onQualityFactualResolvedChange(value) {
+  selectedQualityFactualResolved = ['sim', 'nao'].includes(value) ? value : '';
+  loadQualityFactualInsight();
+}
+
 function qualityCriterionGroupId(value) {
   const raw = String(value || '').trim().replace(',', '.');
   const match = raw.match(/^(\d+)/);
@@ -3056,9 +3069,11 @@ window.addEventListener('resize', syncQualityDistributionHeights);
 
 async function loadQualityFactualInsight() {
   const select = document.getElementById('quality-factual-criterion');
+  const resolvedSelect = document.getElementById('quality-factual-resolved');
   const content = document.getElementById('quality-factual-content');
   const period = document.getElementById('quality-factual-period');
   if (select) select.value = selectedQualityFactualCriterion;
+  if (resolvedSelect) resolvedSelect.value = selectedQualityFactualResolved;
   if (period) period.textContent = qualityPeriodLabel();
   if (!content) return;
 
@@ -3072,6 +3087,7 @@ async function loadQualityFactualInsight() {
   const p = new URLSearchParams();
   p.set('criterio', selectedQualityFactualCriterion);
   if (meses.length > 0) p.set('meses', meses.join(','));
+  if (selectedQualityFactualResolved) p.set('resolved', selectedQualityFactualResolved);
   const data = await safeGet('/api/quality-criterion-insights?' + p.toString());
 
   if (!data || data.error) {
