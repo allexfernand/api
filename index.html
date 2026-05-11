@@ -318,6 +318,14 @@ body {
 .quality-sort-button:hover{color:#0f766e}
 .quality-total-row{background:#f8fafc;border-top:2px solid #e2e8f0}
 .quality-total-row td{position:sticky;bottom:0;background:#f8fafc;z-index:1}
+.quality-collab-button{border:0;background:transparent;color:inherit;font:inherit;text-align:left;padding:0;cursor:pointer}
+.quality-collab-button:hover{color:#0f766e}
+.quality-collab-row.active td{background:#ecfeff}
+.quality-collab-detail-list{display:grid;gap:10px}
+.quality-collab-detail-row{display:grid;grid-template-columns:minmax(170px,1fr) minmax(120px,1.2fr) 96px;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid #e2e8f0}
+.quality-collab-detail-row:last-child{border-bottom:0}
+.quality-collab-detail-name{font-size:12px;font-weight:800;color:#334155}
+.quality-collab-detail-meta{font-size:10px;font-weight:700;color:#94a3b8;margin-top:2px}
 
 .quality-insight{background:linear-gradient(135deg,#0b3b47,#0f4d5c);color:#fff;border:none}
 .quality-insight.warning{background:linear-gradient(135deg,#2d0a3e,#4a1568)}
@@ -1145,8 +1153,11 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
       </div>
 
       <div class="card-box" style="margin-bottom:0">
-        <div class="section-title"><i class="fa-solid fa-route" style="margin-right:6px"></i>Qualidade por linha de cuidado</div>
-        <div id="quality-care-lines"></div>
+        <div class="section-title"><i class="fa-solid fa-user-check" style="margin-right:6px"></i>Notas por critério do colaborador</div>
+        <div style="font-size:11px;color:#94a3b8;margin-bottom:14px">Clique em um colaborador no ranking para carregar as notas do período selecionado.</div>
+        <div id="quality-collab-detail">
+          <div class="loading-box" style="padding:18px">Nenhum colaborador selecionado.</div>
+        </div>
       </div>
     </div>
 
@@ -1163,7 +1174,10 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
           <div class="quality-insight-desc" id="quality-alert-desc">—</div>
         </div>
       </div>
-      <div></div>
+      <div class="card-box" style="margin-bottom:0">
+        <div class="section-title"><i class="fa-solid fa-route" style="margin-right:6px"></i>Qualidade por linha de cuidado</div>
+        <div id="quality-care-lines"></div>
+      </div>
     </div>
   </div>
 
@@ -1225,6 +1239,7 @@ let selectedQualityFactualCriterion = '';
 let selectedQualityFactualResolved = '';
 let selectedQualityCollaboratorSort = 'score';
 let selectedQualityCollaboratorSortDir = 'desc';
+let selectedQualityCollaboratorName = '';
 let qualityData = null, selectedQualityKey = null;
 
 // --- Tabs ---
@@ -2861,7 +2876,7 @@ function qualityInitials(name) {
 }
 
 function escapeJs(s) {
-  return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, ' ');
+  return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;').replace(/\n/g, ' ');
 }
 
 function onQualitySubcriteriaSortChange(value) {
@@ -2888,6 +2903,10 @@ function onQualityCollaboratorSortChange(value) {
     selectedQualityCollaboratorSortDir = 'desc';
   }
   renderQualityStrategic();
+}
+
+function isMissingQualityCollaborator(name) {
+  return String(name || '') === 'Sem close_by preenchido';
 }
 
 function onQualityFactualCriterionChange(value) {
@@ -3324,6 +3343,61 @@ async function loadQualityFactualInsight() {
   `;
 }
 
+async function loadQualityCollaboratorCriteria(name) {
+  selectedQualityCollaboratorName = name || '';
+  renderQualityStrategic();
+  const content = document.getElementById('quality-collab-detail');
+  if (!content || !selectedQualityCollaboratorName) return;
+
+  content.innerHTML = '<div class="loading-box" style="padding:18px"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando notas do colaborador...</div>';
+  const meses = [...selectedMonths].sort();
+  const p = new URLSearchParams();
+  if (isMissingQualityCollaborator(selectedQualityCollaboratorName)) {
+    p.set('missing_close_by', '1');
+  } else {
+    p.set('collaborator', selectedQualityCollaboratorName);
+  }
+  if (meses.length > 0) p.set('meses', meses.join(','));
+  const data = await safeGet('/api/quality-collaborator-criteria?' + p.toString());
+  if (!data || data.error) {
+    content.innerHTML = `<div class="loading-box" style="padding:18px;color:#b45309">${escapeHtml(data?.error || 'Erro ao carregar notas por critério.')}</div>`;
+    return;
+  }
+
+  const items = [...(data.items || [])].sort((a, b) => String(a.criterion_id).localeCompare(String(b.criterion_id), 'pt-BR', { numeric: true }));
+  const totalAttendances = items.reduce((acc, item) => acc + (Number(item.total_atendimentos) || 0), 0);
+  const totalEvaluations = items.reduce((acc, item) => acc + (Number(item.total_avaliacoes) || 0), 0);
+  const weightedScore = totalEvaluations > 0
+    ? items.reduce((acc, item) => acc + ((Number(item.score_pct) || 0) * (Number(item.total_avaliacoes) || 0)), 0) / totalEvaluations
+    : 0;
+  const rowsHtml = items.map((item) => {
+    const criterionId = qualityCriterionGroupId(item.criterion_id);
+    const definition = qualityCriterionDefinitions[criterionId];
+    const score = Number(item.score_pct) || 0;
+    const cls = qualityScoreClass(score);
+    const avg = Number(item.pontuacao_media);
+    return `<div class="quality-collab-detail-row">
+      <div>
+        <div class="quality-collab-detail-name">${escapeHtml(definition ? definition.title : `Critério ${criterionId}`)}</div>
+        <div class="quality-collab-detail-meta">${fmt(Number(item.total_atendimentos) || 0)} atend. · ${fmt(Number(item.total_avaliacoes) || 0)} avaliações · média ${Number.isFinite(avg) ? avg.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 2 }) : '—'}/2</div>
+      </div>
+      <div class="quality-bar"><div class="quality-bar-fill ${cls}" style="width:${Math.max(0, Math.min(100, score))}%"></div></div>
+      <div class="quality-score ${cls}" style="font-size:12px;text-align:right">${fmtPct(score)}</div>
+    </div>`;
+  }).join('');
+
+  content.innerHTML = `
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px;flex-wrap:wrap">
+      <div>
+        <div style="font-size:13px;font-weight:800;color:#0f172a">${escapeHtml(data.collaborator || selectedQualityCollaboratorName)}</div>
+        <div style="font-size:11px;color:#94a3b8">${qualityPeriodLabel()} · ${fmt(totalAttendances)} atend. · ${fmt(totalEvaluations)} avaliações</div>
+      </div>
+      <div class="quality-score ${qualityScoreClass(weightedScore)}" style="font-size:18px">${fmtPct(weightedScore)}</div>
+    </div>
+    <div class="quality-collab-detail-list">${rowsHtml || '<div class="loading-box" style="padding:18px">Nenhuma nota aplicável encontrada para este colaborador no período.</div>'}</div>
+  `;
+}
+
 async function loadQuality() {
   setStatus('loading', '⏳ Carregando qualidade...');
   const operationalLoading = document.getElementById('quality-operational-loading');
@@ -3350,6 +3424,7 @@ async function loadQuality() {
 
   qualityData = data;
   selectedQualityKey = null;
+  selectedQualityCollaboratorName = '';
   renderQualityStrategic();
   renderQualityOperational();
   loadQualityFactualInsight();
@@ -3512,8 +3587,9 @@ function renderQualityStrategic() {
       const collaboratorRows = sortedCollaborators.map((item) => {
       const scoreValue = Number(item.score_pct);
       const cls = qualityScoreClass(scoreValue);
-      return `<tr>
-        <td><div style="display:flex;align-items:center;gap:8px"><span style="width:28px;height:28px;border-radius:50%;background:#e6fffb;color:#0f766e;display:grid;place-items:center;font-size:11px;font-weight:800">${escapeHtml(qualityInitials(item.name))}</span>${escapeHtml(item.name)}</div></td>
+      const isActive = selectedQualityCollaboratorName === item.name;
+      return `<tr class="quality-collab-row${isActive ? ' active' : ''}">
+        <td><button class="quality-collab-button" type="button" onclick="loadQualityCollaboratorCriteria('${escapeJs(item.name)}')" title="Carregar notas por critério"><div style="display:flex;align-items:center;gap:8px"><span style="width:28px;height:28px;border-radius:50%;background:#e6fffb;color:#0f766e;display:grid;place-items:center;font-size:11px;font-weight:800">${escapeHtml(qualityInitials(item.name))}</span>${escapeHtml(item.name)}</div></button></td>
         <td style="text-align:right"><span class="quality-score ${cls}">${fmtPct(scoreValue)}</span></td>
         <td style="text-align:right;font-weight:700">${fmt(Number(item.total) || 0)}</td>
       </tr>`;
@@ -3535,6 +3611,10 @@ function renderQualityStrategic() {
     } else {
       collabTbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:#94a3b8;padding:16px">Ranking indisponível no schema atual.</td></tr>';
     }
+  }
+  if (!selectedQualityCollaboratorName) {
+    const detailEl = document.getElementById('quality-collab-detail');
+    if (detailEl) detailEl.innerHTML = '<div class="loading-box" style="padding:18px">Nenhum colaborador selecionado.</div>';
   }
 
   const careEl = document.getElementById('quality-care-lines');
