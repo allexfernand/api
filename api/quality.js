@@ -773,7 +773,7 @@ async function loadStrategic(warehouseId, columns, criteriaColumns, scope, share
   const criterionIdColumn = pickColumn(criteriaColumns, CRITERION_ID_CANDIDATES);
   const criterionNameColumn = pickColumn(criteriaColumns, CRITERION_NAME_CANDIDATES);
   const criteriaAttendanceColumn = pickColumn(criteriaColumns, ["attendance_id", "atendimento_id", "appointment_id"]);
-  const criteriaWithSql = buildCriteriaWithSql(scope, sharedKey, criteriaColumns);
+  const strategicCriteriaWhere = buildEvaluatedCriteriaWhere(scope, "", null).replace(/\bq\./g, "c.");
 
   const [summaryRows, criteriaRows, evaluatedVolume, evaluatedCriteria, overallCriteriaScore] = await Promise.all([
     runQuery(warehouseId, `
@@ -786,7 +786,6 @@ async function loadStrategic(warehouseId, columns, criteriaColumns, scope, share
       WHERE ${scope.sql}
     `),
     runQuery(warehouseId, `
-      WITH ${criteriaWithSql}
       SELECT
         ${stringExpr("c", pillarIdColumn, "Pilar")} AS pillar_id,
         ${stringExpr("c", pillarNameColumn, "Sem pilar")} AS pillar_name,
@@ -795,7 +794,8 @@ async function loadStrategic(warehouseId, columns, criteriaColumns, scope, share
         ${criteriaScoreColumn ? nullableStringExpr("c", criteriaScoreColumn) : "CAST(NULL AS STRING)"} AS score_raw,
         COUNT(*) AS total,
         ${criteriaAttendanceColumn ? `COUNT(DISTINCT CAST(${qcol("c", criteriaAttendanceColumn)} AS STRING))` : "COUNT(*)"} AS total_atendimentos
-      FROM criteria_base c
+      FROM ${EVALUATED_CRITERIA_TABLE} c
+      ${strategicCriteriaWhere}
       GROUP BY 1, 2, 3, 4, 5
     `),
     loadEvaluatedVolume(warehouseId, scope),
