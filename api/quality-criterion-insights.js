@@ -195,6 +195,84 @@ function buildThemes(items) {
     .slice(0, 4);
 }
 
+function buildImprovementSuggestions({ criterio, items, themes }) {
+  if (!items.length) return [];
+
+  const suggestionByTheme = {
+    "clareza e orientação": {
+      title: "Padronizar orientações críticas",
+      action: "Criar respostas-guia com passo a passo, próximos passos e critérios claros de quando acionar outro canal.",
+    },
+    "acolhimento e vínculo": {
+      title: "Reforçar acolhimento antes da orientação",
+      action: "Treinar o time para validar a demanda do beneficiário antes de explicar a solução, usando linguagem empática e personalizada.",
+    },
+    "resolução e encaminhamento": {
+      title: "Fechar o atendimento com encaminhamento explícito",
+      action: "Garantir que a mensagem final informe o que foi resolvido, o que ficou pendente, responsável e prazo de retorno.",
+    },
+    "proatividade e continuidade": {
+      title: "Criar checklist de continuidade do cuidado",
+      action: "Adicionar perguntas obrigatórias de investigação, expectativa e verificação final antes do encerramento.",
+    },
+    "segurança clínica": {
+      title: "Evidenciar sinais de alerta e conduta segura",
+      action: "Usar roteiros com sinais de gravidade, orientação de urgência e escalonamento quando houver risco clínico.",
+    },
+    "comunicação e escrita": {
+      title: "Revisar clareza, etiqueta e escrita",
+      action: "Aplicar revisão rápida de tom, estrutura, pontuação e ortografia antes de enviar mensagens sensíveis.",
+    },
+  };
+
+  const criterionFallbacks = {
+    "1": {
+      title: "Fortalecer vínculo no primeiro contato",
+      action: "Usar abertura acolhedora, validação emocional e personalização antes de orientar o beneficiário.",
+    },
+    "2": {
+      title: "Aumentar foco em resolução",
+      action: "Responder com orientação objetiva, caminho de solução e confirmação de entendimento.",
+    },
+    "3": {
+      title: "Melhorar estrutura da comunicação",
+      action: "Organizar mensagens em blocos curtos, com saudação, orientação central e fechamento claro.",
+    },
+    "4": {
+      title: "Antecipar necessidades do cuidado",
+      action: "Investigar contexto, alinhar expectativa e combinar o próximo passo antes de encerrar.",
+    },
+    "5": {
+      title: "Reforçar segurança clínica",
+      action: "Priorizar condutas específicas, sinais de alerta e encaminhamento seguro em cenários críticos.",
+    },
+  };
+
+  const suggestions = themes
+    .map((theme) => {
+      const template = suggestionByTheme[theme.label];
+      if (!template) return null;
+      return {
+        title: template.title,
+        action: template.action,
+        evidence: `${theme.total.toLocaleString("pt-BR")} justificativas mencionam ${theme.label}.`,
+      };
+    })
+    .filter(Boolean);
+
+  if (suggestions.length < 3) {
+    const fallback = criterionFallbacks[String(criterio)];
+    if (fallback && !suggestions.some((item) => item.title === fallback.title)) {
+      suggestions.push({
+        ...fallback,
+        evidence: "Sugestão complementar baseada no critério selecionado.",
+      });
+    }
+  }
+
+  return suggestions.slice(0, 4);
+}
+
 function buildSummary({ criterio, total, atendimentos, themes }) {
   if (!total) return `Não encontrei justificativas factuais para o Critério ${criterio} no período selecionado.`;
   const topThemes = themes.length ? themes.map((item) => item.label).join(", ") : "pontos recorrentes variados";
@@ -273,6 +351,7 @@ export default async function handler(req, res) {
       total: toInt(row[1]),
     }));
     const themes = buildThemes(items);
+    const improvementSuggestions = buildImprovementSuggestions({ criterio, items, themes });
 
     res.status(200).json({
       criterio,
@@ -280,6 +359,7 @@ export default async function handler(req, res) {
       total_atendimentos: atendimentos,
       resumo: buildSummary({ criterio, total, atendimentos, themes }),
       temas: themes,
+      sugestoes_melhoria: improvementSuggestions,
       exemplos: items.slice(0, 6),
       filters: { meses, resolved },
       schema: { criterionColumn, dateColumn, applicableColumn, justificationColumn, attendanceColumn, ...summaryFilter },

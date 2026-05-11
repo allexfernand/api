@@ -321,6 +321,11 @@ body {
 .quality-factual-summary{font-size:13px;line-height:1.55;color:#334155;margin-bottom:14px}
 .quality-factual-themes{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
 .quality-factual-theme{font-size:11px;font-weight:800;color:#3730a3;background:#e0e7ff;border:1px solid #c7d2fe;border-radius:999px;padding:5px 10px}
+.quality-factual-suggestions{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px;margin:12px 0}
+.quality-factual-suggestion{background:#fff;border:1px solid #c7d2fe;border-radius:10px;padding:12px;box-shadow:var(--shadow-sm)}
+.quality-factual-suggestion-title{font-size:12px;font-weight:800;color:#312e81;margin-bottom:6px}
+.quality-factual-suggestion-action{font-size:12px;line-height:1.45;color:#334155;margin-bottom:8px}
+.quality-factual-suggestion-evidence{font-size:11px;color:#64748b}
 .quality-factual-examples{display:grid;gap:8px}
 .quality-factual-example{font-size:12px;line-height:1.45;color:#475569;background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px}
 .quality-factual-example strong{color:#0f766e}
@@ -3101,10 +3106,18 @@ async function loadQualityFactualInsight() {
   const examplesHtml = (data.exemplos || []).map((item) =>
     `<div class="quality-factual-example"><strong>${fmt(Number(item.total) || 0)}x</strong> ${escapeHtml(item.texto)}</div>`
   ).join('');
+  const suggestionsHtml = (data.sugestoes_melhoria || []).map((item) =>
+    `<div class="quality-factual-suggestion">
+      <div class="quality-factual-suggestion-title">${escapeHtml(item.title || 'Sugestão de melhoria')}</div>
+      <div class="quality-factual-suggestion-action">${escapeHtml(item.action || '')}</div>
+      <div class="quality-factual-suggestion-evidence">${escapeHtml(item.evidence || '')}</div>
+    </div>`
+  ).join('');
 
   content.innerHTML = `
     <div class="quality-factual-summary">${escapeHtml(data.resumo || 'Sem resumo disponível.')}</div>
     ${themesHtml ? `<div class="quality-factual-themes">${themesHtml}</div>` : ''}
+    ${suggestionsHtml ? `<div class="quality-factual-suggestions">${suggestionsHtml}</div>` : ''}
     <div class="quality-factual-examples">${examplesHtml || '<div class="quality-factual-example">Nenhuma justificativa factual encontrada no período.</div>'}</div>
   `;
 }
