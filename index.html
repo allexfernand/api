@@ -2783,10 +2783,16 @@ function onQualityCriteriaSortChange(value) {
   renderQualityStrategic();
 }
 
+function qualityCriterionGroupId(value) {
+  const raw = String(value || '').trim().replace(',', '.');
+  const match = raw.match(/^(\d+)/);
+  return match ? match[1] : (raw || 'Sem critério');
+}
+
 function aggregateQualityCriteria(items) {
   const grouped = new Map();
   (items || []).filter((item) => item.total > 0).forEach((item) => {
-    const rawId = String(item.criterion_id || 'Sem critério').trim() || 'Sem critério';
+    const rawId = qualityCriterionGroupId(item.criterion_id);
     const key = rawId.replace(/\s+/g, ' ').toLowerCase();
     const current = grouped.get(key) || {
       criterion_id: rawId,
