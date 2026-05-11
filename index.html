@@ -3024,7 +3024,11 @@ function renderQualityStrategic() {
   setText('quality-criteria-bullets-period', `${period} · is_applicable = true`);
 
   const criteriaBulletsEl = document.getElementById('quality-criteria-bullets');
-  const evaluatedCriteria = strategic.evaluated_criteria || [];
+  const evaluatedCriteria = [...(strategic.evaluated_criteria || [])]
+    .sort((a, b) => {
+      const idSort = String(a.criterio_id).localeCompare(String(b.criterio_id), 'pt-BR', { numeric: true });
+      return idSort || String(a.sub_criterio).localeCompare(String(b.sub_criterio), 'pt-BR', { sensitivity: 'base' });
+    });
   if (criteriaBulletsEl) {
     criteriaBulletsEl.innerHTML = evaluatedCriteria.length ? evaluatedCriteria.map((item) => {
       const avg = Number(item.pontuacao_media);
