@@ -795,6 +795,83 @@ function buildInsightCards(criteria, pillars) {
   ];
 }
 
+async function loadQualityEvolution(warehouseId, criteriaColumns) {
+  const criteriaDateColumn = pickColumn(criteriaColumns, DATE_CANDIDATES);
+  const criteriaScoreColumn = pickColumn(criteriaColumns, CRITERIA_SCORE_CANDIDATES);
+  const criterionIdColumn = pickColumn(criteriaColumns, CRITERION_ID_CANDIDATES);
+  const criteriaAttendanceColumn = pickColumn(criteriaColumns, ["attendance_id", "atendimento_id", "appointment_id"]);
+  const applicableColumn = pickColumn(criteriaColumns, APPLICABLE_CANDIDATES);
+  const applicableCondition = applicableCriteriaCondition("c", applicableColumn);
+  if (!criteriaDateColumn || !criteriaScoreColumn || !criterionIdColumn || !applicableCondition) {
+    return { monthly: [], by_criterion: [] };
+  }
+
+  const monthExpr = `DATE_FORMAT(DATE_TRUNC('MONTH', try_cast(${qcol("c", criteriaDateColumn)} AS TIMESTAMP)), 'yyyy-MM')`;
+  const criterionGroupExpr = `COALESCE(NULLIF(regexp_extract(regexp_replace(CAST(${qcol("c", criterionIdColumn)} AS STRING), ',', '.'), '^(\\\\d+)', 1), ''), CAST(${qcol("c", criterionIdColumn)} AS STRING))`;
+  const attendanceExpr = criteriaAttendanceColumn
+    ? `COUNT(DISTINCT CAST(${qcol("c", criteriaAttendanceColumn)} AS STRING))`
+    : "COUNT(*)";
+  const baseCte = `
+    month_scope AS (
+      SELECT ${monthExpr} AS month
+      FROM ${EVALUATED_CRITERIA_TABLE} c
+      WHERE ${applicableCondition}
+        AND try_cast(${qcol("c", criteriaDateColumn)} AS TIMESTAMP) IS NOT NULL
+      GROUP BY ${monthExpr}
+      ORDER BY month DESC
+      LIMIT 12
+    )
+  `;
+
+  const [monthlyRows, criterionRows] = await Promise.all([
+    runQuery(warehouseId, `
+      WITH ${baseCte}
+      SELECT
+        ${monthExpr} AS month,
+        COALESCE(SUM(COALESCE(${numberExpr("c", criteriaScoreColumn)}, 0)), 0) / NULLIF(COUNT(*) * ${CRITERION_MAX_SCORE}, 0) * 100 AS score_pct,
+        COUNT(*) AS total_avaliacoes,
+        ${attendanceExpr} AS total_atendimentos
+      FROM ${EVALUATED_CRITERIA_TABLE} c
+      INNER JOIN month_scope ms
+        ON ${monthExpr} = ms.month
+      WHERE ${applicableCondition}
+      GROUP BY ${monthExpr}
+      ORDER BY month
+    `),
+    runQuery(warehouseId, `
+      WITH ${baseCte}
+      SELECT
+        ${monthExpr} AS month,
+        ${criterionGroupExpr} AS criterion_id,
+        COALESCE(SUM(COALESCE(${numberExpr("c", criteriaScoreColumn)}, 0)), 0) / NULLIF(COUNT(*) * ${CRITERION_MAX_SCORE}, 0) * 100 AS score_pct,
+        COUNT(*) AS total_avaliacoes,
+        ${attendanceExpr} AS total_atendimentos
+      FROM ${EVALUATED_CRITERIA_TABLE} c
+      INNER JOIN month_scope ms
+        ON ${monthExpr} = ms.month
+      WHERE ${applicableCondition}
+      GROUP BY ${monthExpr}, ${criterionGroupExpr}
+      ORDER BY month, criterion_id
+    `),
+  ]);
+
+  return {
+    monthly: monthlyRows.map((row) => ({
+      month: String(getCell(row[0]) || ""),
+      score_pct: toNumber(row[1]),
+      total_avaliacoes: toInt(row[2]),
+      total_atendimentos: toInt(row[3]),
+    })).filter((item) => item.month),
+    by_criterion: criterionRows.map((row) => ({
+      month: String(getCell(row[0]) || ""),
+      criterion_id: String(getCell(row[1]) || "Critério"),
+      score_pct: toNumber(row[2]),
+      total_avaliacoes: toInt(row[3]),
+      total_atendimentos: toInt(row[4]),
+    })).filter((item) => item.month),
+  };
+}
+
 async function loadStrategic(warehouseId, columns, criteriaColumns, scope, sharedKey, criteriaFinisher, summarySessionJoin, summaryFinishedByColumn, criteriaFinishedByColumn) {
   const summaryScoreColumn = pickColumn(columns, SCORE_CANDIDATES);
   const resolvedColumn = pickColumn(columns, RESOLVED_CANDIDATES);
@@ -808,7 +885,7 @@ async function loadStrategic(warehouseId, columns, criteriaColumns, scope, share
   const criteriaAttendanceColumn = pickColumn(criteriaColumns, ["attendance_id", "atendimento_id", "appointment_id"]);
   const strategicCriteriaWhere = buildEvaluatedCriteriaWhere(scope, "", null).replace(/\bq\./g, "c.");
 
-  const [summaryRows, criteriaRows, evaluatedVolume, evaluatedCriteria, overallCriteriaScore] = await Promise.all([
+  const [summaryRows, criteriaRows, evaluatedVolume, evaluatedCriteria, overallCriteriaScore, qualityEvolution] = await Promise.all([
     runQuery(warehouseId, `
       SELECT
         COUNT(*) AS total,
@@ -834,6 +911,7 @@ async function loadStrategic(warehouseId, columns, criteriaColumns, scope, share
     loadEvaluatedVolume(warehouseId, scope),
     loadEvaluatedCriteriaBullets(warehouseId, scope, criteriaFinisher, summarySessionJoin, summaryFinishedByColumn, criteriaFinishedByColumn),
     loadOverallCriteriaScore(warehouseId, scope),
+    loadQualityEvolution(warehouseId, criteriaColumns),
   ]);
 
   const criteriaAgg = aggregateCriteria(criteriaRows);
@@ -902,6 +980,7 @@ async function loadStrategic(warehouseId, columns, criteriaColumns, scope, share
     criteria: criteriaAgg.criteria,
     evaluated_criteria: evaluatedCriteria.items,
     criteria_finisher_filter: evaluatedCriteria.filter,
+    evolution: qualityEvolution,
     collaborators,
     care_lines: careLines,
     insights: buildInsightCards(criteriaAgg.criteria, criteriaAgg.pillars),

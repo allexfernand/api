@@ -1074,6 +1074,25 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
     </div>
 
     <div class="quality-grid-2">
+      <div class="card-box" style="margin-bottom:0">
+        <div class="section-title"><i class="fa-solid fa-chart-line" style="margin-right:6px"></i>Evolução de qualidade</div>
+        <div style="font-size:11px;color:#94a3b8;margin-bottom:14px"><code>quality_analysis_silver_criteria.event_timestamp</code> · últimos 12 meses · não impactado pelo filtro de data</div>
+        <div class="chart-wrap" style="height:320px">
+          <div class="loading-box" id="quality-evolution-empty" style="display:none">Sem dados de evolução disponíveis.</div>
+          <canvas id="qualityEvolutionChart"></canvas>
+        </div>
+      </div>
+      <div class="card-box" style="margin-bottom:0">
+        <div class="section-title"><i class="fa-solid fa-chart-line" style="margin-right:6px"></i>Evolução de qualidade por critério</div>
+        <div style="font-size:11px;color:#94a3b8;margin-bottom:14px"><code>quality_analysis_silver_criteria.event_timestamp</code> · critérios agrupados · últimos 12 meses</div>
+        <div class="chart-wrap" style="height:320px">
+          <div class="loading-box" id="quality-criteria-evolution-empty" style="display:none">Sem dados por critério disponíveis.</div>
+          <canvas id="qualityCriteriaEvolutionChart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <div class="quality-grid-2">
       <div class="card-box quality-factual-insight" style="margin-bottom:0;grid-column:1/-1">
         <div class="quality-factual-header">
           <div class="section-title" style="margin-bottom:0"><i class="fa-solid fa-lightbulb" style="margin-right:6px"></i>Insights por justificativa factual</div>
@@ -1180,7 +1199,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
 const fmt = n => Number(n).toLocaleString('pt-BR');
 const mN = {'01':'Jan','02':'Fev','03':'Mar','04':'Abr','05':'Mai','06':'Jun','07':'Jul','08':'Ago','09':'Set','10':'Out','11':'Nov','12':'Dez'};
 
-let usersData = [], companiesData = [], sessionCompaniesData = [], eChart, agegroupChart, appointmentTypesTrendChart, petitCareLinesChart, sessionsEvolChart, sessionsTotalEvolChart, sessionsAttendanceChart, sessionsDailyChart, sessionsTopGroupsChart;
+let usersData = [], companiesData = [], sessionCompaniesData = [], eChart, agegroupChart, appointmentTypesTrendChart, petitCareLinesChart, sessionsEvolChart, sessionsTotalEvolChart, sessionsAttendanceChart, sessionsDailyChart, sessionsTopGroupsChart, qualityEvolutionChart, qualityCriteriaEvolutionChart;
 let currentGroup = '', currentType = '', currentCompany = '';
 let selectedMonths = new Set();
 let selectedAppointmentTypeMonths = new Set();
@@ -3072,6 +3091,113 @@ function syncQualityDistributionHeights() {
 
 window.addEventListener('resize', syncQualityDistributionHeights);
 
+function qualityMonthLabel(value) {
+  const [year, month] = String(value || '').split('-');
+  return month && year ? `${mN[month]}/${year.slice(2)}` : String(value || '');
+}
+
+function renderQualityEvolutionCharts(evolution) {
+  const monthly = (evolution?.monthly || []).filter((item) => item.month);
+  const byCriterion = (evolution?.by_criterion || []).filter((item) => item.month);
+  const globalCanvas = document.getElementById('qualityEvolutionChart');
+  const criteriaCanvas = document.getElementById('qualityCriteriaEvolutionChart');
+  const globalEmpty = document.getElementById('quality-evolution-empty');
+  const criteriaEmpty = document.getElementById('quality-criteria-evolution-empty');
+  const labels = monthly.length
+    ? monthly.map((item) => item.month)
+    : [...new Set(byCriterion.map((item) => item.month))].sort();
+
+  if (qualityEvolutionChart) qualityEvolutionChart.destroy();
+  if (qualityCriteriaEvolutionChart) qualityCriteriaEvolutionChart.destroy();
+
+  if (!globalCanvas || !criteriaCanvas) return;
+
+  if (!monthly.length) {
+    globalCanvas.style.display = 'none';
+    if (globalEmpty) globalEmpty.style.display = 'block';
+  } else {
+    if (globalEmpty) globalEmpty.style.display = 'none';
+    globalCanvas.style.display = 'block';
+    qualityEvolutionChart = new Chart(globalCanvas, {
+      type: 'line',
+      data: {
+        labels: labels.map(qualityMonthLabel),
+        datasets: [{
+          label: 'Qualidade',
+          data: labels.map((month) => {
+            const item = monthly.find((row) => row.month === month);
+            return item ? Number(item.score_pct) || 0 : 0;
+          }),
+          borderColor: '#0f766e',
+          backgroundColor: 'rgba(15,118,110,0.08)',
+          borderWidth: 2,
+          pointRadius: 3,
+          pointBackgroundColor: '#0f766e',
+          fill: true,
+          tension: 0.35,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { backgroundColor: '#1e293b', borderColor: '#334155', borderWidth: 1, titleColor: '#cbd5e1', bodyColor: '#f8fafc', callbacks: { label: c => `Qualidade: ${fmtPct(c.parsed.y)}` } },
+        },
+        scales: {
+          x: { ticks: { font: { size: 10 }, color: '#94a3b8' }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } },
+          y: { min: 0, max: 100, ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => `${v}%` }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } },
+        },
+      },
+    });
+  }
+
+  if (!byCriterion.length || !labels.length) {
+    criteriaCanvas.style.display = 'none';
+    if (criteriaEmpty) criteriaEmpty.style.display = 'block';
+    return;
+  }
+
+  if (criteriaEmpty) criteriaEmpty.style.display = 'none';
+  criteriaCanvas.style.display = 'block';
+  const colors = ['#0f766e', '#2563eb', '#7c3aed', '#d97706', '#c53030', '#64748b'];
+  const criterionIds = [...new Set(byCriterion.map((item) => qualityCriterionGroupId(item.criterion_id)))].sort((a, b) => a.localeCompare(b, 'pt-BR', { numeric: true }));
+  const datasets = criterionIds.map((criterionId, index) => {
+    const definition = qualityCriterionDefinitions[criterionId];
+    return {
+      label: definition ? definition.title.replace(/^Critério \d+ —\s*/, `C${criterionId} · `) : `Critério ${criterionId}`,
+      data: labels.map((month) => {
+        const item = byCriterion.find((row) => row.month === month && qualityCriterionGroupId(row.criterion_id) === criterionId);
+        return item ? Number(item.score_pct) || 0 : 0;
+      }),
+      borderColor: colors[index % colors.length],
+      backgroundColor: colors[index % colors.length],
+      borderWidth: 2,
+      pointRadius: 2.5,
+      tension: 0.3,
+      fill: false,
+    };
+  });
+
+  qualityCriteriaEvolutionChart = new Chart(criteriaCanvas, {
+    type: 'line',
+    data: { labels: labels.map(qualityMonthLabel), datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'bottom', labels: { boxWidth: 10, usePointStyle: true, font: { size: 10 }, color: '#64748b' } },
+        tooltip: { backgroundColor: '#1e293b', borderColor: '#334155', borderWidth: 1, titleColor: '#cbd5e1', bodyColor: '#f8fafc', callbacks: { label: c => `${c.dataset.label}: ${fmtPct(c.parsed.y)}` } },
+      },
+      scales: {
+        x: { ticks: { font: { size: 10 }, color: '#94a3b8' }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } },
+        y: { min: 0, max: 100, ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => `${v}%` }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } },
+      },
+    },
+  });
+}
+
 async function loadQualityFactualInsight() {
   const select = document.getElementById('quality-factual-criterion');
   const resolvedSelect = document.getElementById('quality-factual-resolved');
@@ -3181,6 +3307,7 @@ function renderQualityStrategic() {
     : 'menor score por critério');
   setText('q-kpi-latest', `último registro: ${formatQualityDate(kpis.latest_at)}`);
   setText('quality-criteria-bullets-period', `${period} · is_applicable = true`);
+  renderQualityEvolutionCharts(strategic.evolution || {});
 
   const criteriaBulletsEl = document.getElementById('quality-criteria-bullets');
   const evaluatedCriteria = aggregateQualityEvaluatedCriteria(strategic.evaluated_criteria || [])
