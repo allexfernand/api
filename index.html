@@ -1041,10 +1041,15 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
       <div class="card-box quality-distribution-card" id="quality-subcriteria-card" style="margin-bottom:0">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap">
           <div class="section-title" style="margin-bottom:0"><i class="fa-solid fa-chart-simple" style="margin-right:6px"></i>Distribuição por subcritério</div>
-          <select class="filter-select" id="quality-subcriteria-sort" onchange="onQualitySubcriteriaSortChange(this.value)" style="min-width:180px">
-            <option value="worst">Pior → melhor</option>
-            <option value="best">Melhor → pior</option>
-          </select>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <select class="filter-select" id="quality-subcriteria-criterion" onchange="onQualitySubcriteriaCriterionChange(this.value)" style="min-width:180px">
+              <option value="">Todos os critérios</option>
+            </select>
+            <select class="filter-select" id="quality-subcriteria-sort" onchange="onQualitySubcriteriaSortChange(this.value)" style="min-width:180px">
+              <option value="worst">Pior → melhor</option>
+              <option value="best">Melhor → pior</option>
+            </select>
+          </div>
         </div>
         <div class="quality-distribution-list scrollable" id="quality-criteria-dist"></div>
         <div class="quality-distribution-legend">
@@ -1144,6 +1149,7 @@ let selectedSessionsDailyMonth = currentMonthValue();
 let selectedSessionTypificationFinisher = '';
 let selectedQualityCriteriaSort = 'worst';
 let selectedQualitySubcriteriaSort = 'worst';
+let selectedQualitySubcriteriaCriterion = '';
 let qualityData = null, selectedQualityKey = null;
 
 // --- Tabs ---
@@ -2788,6 +2794,11 @@ function onQualitySubcriteriaSortChange(value) {
   renderQualityStrategic();
 }
 
+function onQualitySubcriteriaCriterionChange(value) {
+  selectedQualitySubcriteriaCriterion = value || '';
+  renderQualityStrategic();
+}
+
 function onQualityCriteriaSortChange(value) {
   selectedQualityCriteriaSort = value === 'best' ? 'best' : 'worst';
   renderQualityStrategic();
@@ -2868,11 +2879,14 @@ function aggregateQualitySubcriteria(items) {
   (items || []).filter((item) => item.total > 0).forEach((item) => {
     const name = String(item.criterion_name || 'Sem subcritério').trim() || 'Sem subcritério';
     const rawId = String(item.criterion_id || '').trim();
+    const criterionGroupId = qualityCriterionGroupId(rawId);
+    if (selectedQualitySubcriteriaCriterion && criterionGroupId !== selectedQualitySubcriteriaCriterion) return;
     const normalizedId = rawId.replace(/\s+/g, ' ').toLowerCase();
     const normalizedName = name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
     const groupKey = normalizedId || normalizedName;
     const current = grouped.get(groupKey) || {
       criterion_id: new Set(),
+      criterion_group_id: criterionGroupId,
       criterion_names: new Map(),
       criterion_name: name,
       total: 0,
@@ -2903,6 +2917,7 @@ function aggregateQualitySubcriteria(items) {
       .sort((a, b) => b[1] - a[1] || b[0].length - a[0].length)[0]?.[0] || item.criterion_name;
     return {
       ...item,
+      criterion_group_id: item.criterion_group_id,
       criterion_id: [...item.criterion_id].filter(Boolean).sort((a, b) => a.localeCompare(b, 'pt-BR', { numeric: true })).join(', '),
       criterion_name: bestName,
       score_pct: Number(scorePct.toFixed(1)),
@@ -3059,6 +3074,21 @@ function renderQualityStrategic() {
         </div>
       </div>`;
     }).join('') : '<div class="loading-box">Nenhum critério encontrado.</div>';
+  }
+
+  const subcriteriaCriterionSelect = document.getElementById('quality-subcriteria-criterion');
+  if (subcriteriaCriterionSelect) {
+    const availableCriterionIds = new Set(criteriaGroups.map((item) => String(item.criterion_id)));
+    if (selectedQualitySubcriteriaCriterion && !availableCriterionIds.has(selectedQualitySubcriteriaCriterion)) {
+      selectedQualitySubcriteriaCriterion = '';
+    }
+    const options = ['<option value="">Todos os critérios</option>'].concat(
+      criteriaGroups
+        .slice()
+        .sort((a, b) => String(a.criterion_id).localeCompare(String(b.criterion_id), 'pt-BR', { numeric: true }))
+        .map((item) => `<option value="${escapeAttr(item.criterion_id)}"${selectedQualitySubcriteriaCriterion === String(item.criterion_id) ? ' selected' : ''}>${escapeHtml(item.criterion_name)}</option>`)
+    );
+    subcriteriaCriterionSelect.innerHTML = options.join('');
   }
 
   const sortSelect = document.getElementById('quality-subcriteria-sort');
