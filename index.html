@@ -2962,6 +2962,62 @@ function aggregateQualitySubcriteria(items) {
   });
 }
 
+function aggregateQualityEvaluatedCriteria(items) {
+  const grouped = new Map();
+  (items || []).forEach((item) => {
+    const rawId = String(item.criterio_id || '').trim();
+    const name = String(item.sub_criterio || 'Sem subcritério').trim() || 'Sem subcritério';
+    const normalizedId = rawId.replace(/\s+/g, ' ').toLowerCase();
+    const normalizedName = name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+    const groupKey = normalizedId || normalizedName;
+    const current = grouped.get(groupKey) || {
+      criterio_id: new Set(),
+      sub_criterio: name,
+      sub_criterios: new Map(),
+      total_atendimentos: 0,
+      total_avaliacoes: 0,
+      scoreWeight: 0,
+      pontuacaoSum: 0,
+      percentualCriterioSum: 0,
+      percentualAtendimentoSum: 0,
+      criterio_max_score: Number(item.criterio_max_score) || 2,
+    };
+    const attendances = Number(item.total_atendimentos) || 0;
+    const evaluations = Number(item.total_avaliacoes) || 0;
+    const weight = attendances || evaluations;
+    if (rawId) current.criterio_id.add(rawId);
+    current.sub_criterios.set(name, (current.sub_criterios.get(name) || 0) + (weight || 1));
+    current.total_atendimentos += attendances;
+    current.total_avaliacoes += evaluations;
+    current.criterio_max_score = Number(item.criterio_max_score) || current.criterio_max_score;
+    if (weight > 0) {
+      const avg = Number(item.pontuacao_media);
+      const criterionPct = Number(item.percentual_criterio);
+      const attendancePct = Number(item.percentual_atendimento);
+      if (Number.isFinite(avg)) current.pontuacaoSum += avg * weight;
+      if (Number.isFinite(criterionPct)) current.percentualCriterioSum += criterionPct * weight;
+      if (Number.isFinite(attendancePct)) current.percentualAtendimentoSum += attendancePct * weight;
+      current.scoreWeight += weight;
+    }
+    grouped.set(groupKey, current);
+  });
+
+  return [...grouped.values()].map((item) => {
+    const bestName = [...item.sub_criterios.entries()]
+      .sort((a, b) => b[1] - a[1] || b[0].length - a[0].length)[0]?.[0] || item.sub_criterio;
+    return {
+      criterio_id: [...item.criterio_id].filter(Boolean).sort((a, b) => a.localeCompare(b, 'pt-BR', { numeric: true })).join(', ') || 'Critério',
+      sub_criterio: bestName,
+      total_atendimentos: item.total_atendimentos,
+      total_avaliacoes: item.total_avaliacoes,
+      pontuacao_media: item.scoreWeight > 0 ? item.pontuacaoSum / item.scoreWeight : 0,
+      percentual_criterio: item.scoreWeight > 0 ? item.percentualCriterioSum / item.scoreWeight : 0,
+      percentual_atendimento: item.scoreWeight > 0 ? item.percentualAtendimentoSum / item.scoreWeight : 0,
+      criterio_max_score: item.criterio_max_score,
+    };
+  });
+}
+
 function syncQualityDistributionHeights() {
   const criteriaCard = document.getElementById('quality-criteria-card');
   const criteriaList = document.getElementById('quality-criteria-only-dist');
@@ -3098,7 +3154,7 @@ function renderQualityStrategic() {
   setText('quality-criteria-bullets-period', `${period} · is_applicable = true`);
 
   const criteriaBulletsEl = document.getElementById('quality-criteria-bullets');
-  const evaluatedCriteria = [...(strategic.evaluated_criteria || [])]
+  const evaluatedCriteria = aggregateQualityEvaluatedCriteria(strategic.evaluated_criteria || [])
     .sort((a, b) => {
       const idSort = String(a.criterio_id).localeCompare(String(b.criterio_id), 'pt-BR', { numeric: true });
       return idSort || String(a.sub_criterio).localeCompare(String(b.sub_criterio), 'pt-BR', { sensitivity: 'base' });
