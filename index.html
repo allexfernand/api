@@ -289,6 +289,12 @@ body {
 
 .quality-dist-row{display:grid;grid-template-columns:110px minmax(0,1fr) 52px;gap:10px;align-items:center;margin-bottom:10px}
 .quality-dist-label{font-size:12px;font-weight:600;color:#64748b;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.quality-distribution-card{display:flex;flex-direction:column;min-height:0}
+.quality-distribution-list{min-height:0}
+.quality-distribution-list.scrollable{overflow-y:auto;padding-right:4px}
+.quality-distribution-list.scrollable::-webkit-scrollbar{width:6px}
+.quality-distribution-list.scrollable::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:999px}
+.quality-distribution-legend{display:flex;gap:16px;margin-top:14px;padding-top:12px;border-top:1px solid #f1f5f9;font-size:11px;color:#64748b;flex-wrap:wrap}
 .quality-subcriteria-row{grid-template-columns:minmax(240px,1.2fr) minmax(140px,.85fr) 104px;gap:12px}
 .quality-subcriteria-label{text-align:left;white-space:normal;overflow:visible;text-overflow:clip;line-height:1.35}
 .quality-subcriteria-value{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
@@ -368,6 +374,8 @@ body {
   .session-typification-track{grid-column:1 / -1;grid-row:2}
   .filter-select{width:100%;max-width:none;min-width:0}
   .quality-kpi-grid{grid-template-columns:repeat(2,1fr)}
+  .quality-distribution-card{height:auto!important}
+  .quality-distribution-list.scrollable{overflow:visible;padding-right:0}
   .quality-subcriteria-row{grid-template-columns:1fr 96px;gap:8px}
   .quality-subcriteria-row .quality-dist-track{grid-column:1 / -1;grid-row:2}
   .quality-item{grid-template-columns:46px minmax(0,1fr)}
@@ -1017,7 +1025,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
     </div>
 
     <div class="quality-grid-2">
-      <div class="card-box" style="margin-bottom:0">
+      <div class="card-box quality-distribution-card" id="quality-criteria-card" style="margin-bottom:0">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap">
           <div class="section-title" style="margin-bottom:0"><i class="fa-solid fa-chart-simple" style="margin-right:6px"></i>Distribuição por critério</div>
           <select class="filter-select" id="quality-criteria-sort" onchange="onQualityCriteriaSortChange(this.value)" style="min-width:180px">
@@ -1025,10 +1033,10 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
             <option value="best">Melhor → pior</option>
           </select>
         </div>
-        <div id="quality-criteria-only-dist"></div>
+        <div class="quality-distribution-list" id="quality-criteria-only-dist"></div>
       </div>
 
-      <div class="card-box" style="margin-bottom:0">
+      <div class="card-box quality-distribution-card" id="quality-subcriteria-card" style="margin-bottom:0">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap">
           <div class="section-title" style="margin-bottom:0"><i class="fa-solid fa-chart-simple" style="margin-right:6px"></i>Distribuição por subcritério</div>
           <select class="filter-select" id="quality-subcriteria-sort" onchange="onQualitySubcriteriaSortChange(this.value)" style="min-width:180px">
@@ -1036,8 +1044,8 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
             <option value="best">Melhor → pior</option>
           </select>
         </div>
-        <div id="quality-criteria-dist"></div>
-        <div style="display:flex;gap:16px;margin-top:14px;padding-top:12px;border-top:1px solid #f1f5f9;font-size:11px;color:#64748b;flex-wrap:wrap">
+        <div class="quality-distribution-list scrollable" id="quality-criteria-dist"></div>
+        <div class="quality-distribution-legend">
           <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#0f8a6f;margin-right:4px"></span>Nota 2</span>
           <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#d97706;margin-right:4px"></span>Nota 1</span>
           <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#c53030;margin-right:4px"></span>Nota 0</span>
@@ -2789,14 +2797,39 @@ function qualityCriterionGroupId(value) {
   return match ? match[1] : (raw || 'Sem critério');
 }
 
+const qualityCriterionDefinitions = {
+  '1': {
+    title: 'Critério 1 — Humanização e Vínculo com o Beneficiário',
+    description: 'Engloba validação emocional, escuta ativa, personalização, acolhimento e respeito à autonomia.',
+  },
+  '2': {
+    title: 'Critério 2 — Efetividade e Resolução',
+    description: 'Engloba clareza na orientação, resolução de problemas e uso correto do canal.',
+  },
+  '3': {
+    title: 'Critério 3 — Comunicação Profissional',
+    description: 'Engloba etiqueta na abertura, clareza/estrutura das mensagens e correção gramatical.',
+  },
+  '4': {
+    title: 'Critério 4 — Proatividade e Gestão do Cuidado',
+    description: 'Engloba antecipação clínica, gestão de expectativas, continuidade do cuidado, investigação proativa e verificação final.',
+  },
+  '5': {
+    title: 'Critério 5 — Segurança Clínica',
+    description: 'Engloba especificidade em orientações críticas e ação em situações de crise.',
+  },
+};
+
 function aggregateQualityCriteria(items) {
   const grouped = new Map();
   (items || []).filter((item) => item.total > 0).forEach((item) => {
     const rawId = qualityCriterionGroupId(item.criterion_id);
+    const definition = qualityCriterionDefinitions[rawId];
     const key = rawId.replace(/\s+/g, ' ').toLowerCase();
     const current = grouped.get(key) || {
       criterion_id: rawId,
-      criterion_name: `Critério ${rawId}`,
+      criterion_name: definition ? definition.title : `Critério ${rawId}`,
+      criterion_description: definition ? definition.description : '',
       total: 0,
       applicable: 0,
       scoreSum: 0,
@@ -2877,6 +2910,34 @@ function aggregateQualitySubcriteria(items) {
     };
   });
 }
+
+function syncQualityDistributionHeights() {
+  const criteriaCard = document.getElementById('quality-criteria-card');
+  const subcriteriaCard = document.getElementById('quality-subcriteria-card');
+  const subcriteriaList = document.getElementById('quality-criteria-dist');
+  if (!criteriaCard || !subcriteriaCard || !subcriteriaList) return;
+
+  subcriteriaCard.style.height = '';
+  subcriteriaList.style.maxHeight = '';
+  if (window.innerWidth <= 1100) return;
+
+  requestAnimationFrame(() => {
+    const targetHeight = criteriaCard.offsetHeight;
+    if (!targetHeight) return;
+    const header = subcriteriaCard.firstElementChild;
+    const legend = subcriteriaCard.querySelector('.quality-distribution-legend');
+    const cardStyle = window.getComputedStyle(subcriteriaCard);
+    const headerStyle = header ? window.getComputedStyle(header) : null;
+    const legendStyle = legend ? window.getComputedStyle(legend) : null;
+    const verticalPadding = (parseFloat(cardStyle.paddingTop) || 0) + (parseFloat(cardStyle.paddingBottom) || 0);
+    const headerSpace = header ? header.offsetHeight + (parseFloat(headerStyle.marginBottom) || 0) : 0;
+    const legendSpace = legend ? legend.offsetHeight + (parseFloat(legendStyle.marginTop) || 0) : 0;
+    subcriteriaCard.style.height = `${targetHeight}px`;
+    subcriteriaList.style.maxHeight = `${Math.max(120, targetHeight - verticalPadding - headerSpace - legendSpace)}px`;
+  });
+}
+
+window.addEventListener('resize', syncQualityDistributionHeights);
 
 async function loadQuality() {
   setStatus('loading', '⏳ Carregando qualidade...');
@@ -2968,8 +3029,9 @@ function renderQualityStrategic() {
       const pct = Number(item.score_pct) || 0;
       const cls = qualityScoreClass(pct);
       const attendances = Number(item.total_atendimentos) || 0;
+      const title = item.criterion_description ? `${item.criterion_name}: ${item.criterion_description}` : item.criterion_name;
       return `<div class="quality-dist-row quality-subcriteria-row">
-        <div class="quality-dist-label quality-subcriteria-label" title="${escapeAttr(item.criterion_name)}">${escapeHtml(item.criterion_name)}</div>
+        <div class="quality-dist-label quality-subcriteria-label" title="${escapeAttr(title)}">${escapeHtml(item.criterion_name)}</div>
         <div class="quality-dist-track">
           <div class="quality-dist-seg s2" style="width:${item.pct_2 || 0}%"></div>
           <div class="quality-dist-seg s1" style="width:${item.pct_1 || 0}%"></div>
@@ -3013,6 +3075,7 @@ function renderQualityStrategic() {
       </div>`;
     }).join('') : '<div class="loading-box">Nenhum subcritério encontrado.</div>';
   }
+  syncQualityDistributionHeights();
 
   const collabTbody = document.getElementById('quality-collab-tbody');
   const collaborators = strategic.collaborators || [];
