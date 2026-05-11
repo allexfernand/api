@@ -3470,7 +3470,8 @@ function renderQualityStrategic() {
   const collabTbody = document.getElementById('quality-collab-tbody');
   const collaborators = strategic.collaborators || [];
   if (collabTbody) {
-    collabTbody.innerHTML = collaborators.length ? collaborators.map((item) => {
+    if (collaborators.length) {
+      const collaboratorRows = collaborators.map((item) => {
       const scoreValue = Number(item.score_pct);
       const cls = qualityScoreClass(scoreValue);
       return `<tr>
@@ -3478,7 +3479,24 @@ function renderQualityStrategic() {
         <td style="text-align:right"><span class="quality-score ${cls}">${fmtPct(scoreValue)}</span></td>
         <td style="text-align:right;font-weight:700">${fmt(Number(item.total) || 0)}</td>
       </tr>`;
-    }).join('') : '<tr><td colspan="3" style="text-align:center;color:#94a3b8;padding:16px">Ranking indisponível no schema atual.</td></tr>';
+      }).join('');
+      const totalAttendances = collaborators.reduce((acc, item) => acc + (Number(item.total) || 0), 0);
+      const weightedScoreSum = collaborators.reduce((acc, item) => {
+        const total = Number(item.total) || 0;
+        const scoreValue = Number(item.score_pct);
+        return Number.isFinite(scoreValue) ? acc + (scoreValue * total) : acc;
+      }, 0);
+      const totalScore = totalAttendances > 0 ? weightedScoreSum / totalAttendances : 0;
+      const totalCls = qualityScoreClass(totalScore);
+      collabTbody.innerHTML = `${collaboratorRows}
+        <tr style="background:#f8fafc;border-top:2px solid #e2e8f0">
+          <td style="font-weight:800;color:#0f172a">Total da lista</td>
+          <td style="text-align:right"><span class="quality-score ${totalCls}">${fmtPct(totalScore)}</span></td>
+          <td style="text-align:right;font-weight:800;color:#0f172a">${fmt(totalAttendances)}</td>
+        </tr>`;
+    } else {
+      collabTbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:#94a3b8;padding:16px">Ranking indisponível no schema atual.</td></tr>';
+    }
   }
 
   const careEl = document.getElementById('quality-care-lines');
