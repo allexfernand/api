@@ -289,6 +289,7 @@ body {
 
 .quality-dist-row{display:grid;grid-template-columns:110px minmax(0,1fr) 52px;gap:10px;align-items:center;margin-bottom:10px}
 .quality-dist-label{font-size:12px;font-weight:600;color:#64748b;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.quality-distribution-grid{align-items:start}
 .quality-distribution-card{display:flex;flex-direction:column;min-height:0}
 .quality-distribution-list{min-height:0}
 .quality-distribution-list.scrollable{overflow-y:auto;padding-right:4px}
@@ -1024,7 +1025,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
       <div class="quality-criteria-bullets" id="quality-criteria-bullets"></div>
     </div>
 
-    <div class="quality-grid-2">
+    <div class="quality-grid-2 quality-distribution-grid">
       <div class="card-box quality-distribution-card" id="quality-criteria-card" style="margin-bottom:0">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap">
           <div class="section-title" style="margin-bottom:0"><i class="fa-solid fa-chart-simple" style="margin-right:6px"></i>Distribuição por critério</div>
@@ -2922,7 +2923,7 @@ function syncQualityDistributionHeights() {
   if (window.innerWidth <= 1100) return;
 
   requestAnimationFrame(() => {
-    const targetHeight = criteriaCard.offsetHeight;
+    const targetHeight = criteriaCard.scrollHeight;
     if (!targetHeight) return;
     const header = subcriteriaCard.firstElementChild;
     const legend = subcriteriaCard.querySelector('.quality-distribution-legend');
