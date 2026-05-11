@@ -289,8 +289,10 @@ body {
 
 .quality-dist-row{display:grid;grid-template-columns:110px minmax(0,1fr) 52px;gap:10px;align-items:center;margin-bottom:10px}
 .quality-dist-label{font-size:12px;font-weight:600;color:#64748b;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.quality-subcriteria-row{grid-template-columns:minmax(240px,1.2fr) minmax(140px,.85fr) 64px;gap:12px}
+.quality-subcriteria-row{grid-template-columns:minmax(240px,1.2fr) minmax(140px,.85fr) 104px;gap:12px}
 .quality-subcriteria-label{text-align:left;white-space:normal;overflow:visible;text-overflow:clip;line-height:1.35}
+.quality-subcriteria-value{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
+.quality-subcriteria-count{font-size:10px;font-weight:700;color:#94a3b8;white-space:nowrap}
 .quality-dist-track{height:20px;background:#f1f5f9;border-radius:5px;overflow:hidden;display:flex}
 .quality-dist-seg.s2{background:#0f8a6f}
 .quality-dist-seg.s1{background:#d97706}
@@ -366,7 +368,7 @@ body {
   .session-typification-track{grid-column:1 / -1;grid-row:2}
   .filter-select{width:100%;max-width:none;min-width:0}
   .quality-kpi-grid{grid-template-columns:repeat(2,1fr)}
-  .quality-subcriteria-row{grid-template-columns:1fr 64px;gap:8px}
+  .quality-subcriteria-row{grid-template-columns:1fr 96px;gap:8px}
   .quality-subcriteria-row .quality-dist-track{grid-column:1 / -1;grid-row:2}
   .quality-item{grid-template-columns:46px minmax(0,1fr)}
   .quality-item>.quality-pill,.quality-item>span:last-child{display:none}
@@ -2778,6 +2780,7 @@ function aggregateQualitySubcriteria(items) {
       score_2: 0,
       score_1: 0,
       score_0: 0,
+      total_atendimentos: 0,
     };
     const total = Number(item.total) || 0;
     if (rawId) current.criterion_id.add(rawId);
@@ -2788,6 +2791,7 @@ function aggregateQualitySubcriteria(items) {
     current.score_2 += Number(item.score_2) || 0;
     current.score_1 += Number(item.score_1) || 0;
     current.score_0 += Number(item.score_0) || 0;
+    current.total_atendimentos += Number(item.total_atendimentos || item.total) || 0;
     grouped.set(groupKey, current);
   });
 
@@ -2898,6 +2902,7 @@ function renderQualityStrategic() {
       const pct = Number(item.score_pct) || 0;
       const cls = qualityScoreClass(pct);
       const label = item.criterion_id ? `${item.criterion_id} ${item.criterion_name}` : item.criterion_name;
+      const attendances = Number(item.total_atendimentos) || 0;
       return `<div class="quality-dist-row quality-subcriteria-row">
         <div class="quality-dist-label quality-subcriteria-label" title="${escapeAttr(label)}">${escapeHtml(label)}</div>
         <div class="quality-dist-track">
@@ -2905,7 +2910,10 @@ function renderQualityStrategic() {
           <div class="quality-dist-seg s1" style="width:${item.pct_1 || 0}%"></div>
           <div class="quality-dist-seg s0" style="width:${item.pct_0 || 0}%"></div>
         </div>
-        <div class="quality-score ${cls}" style="font-size:12px;text-align:right">${fmtPct(pct)}</div>
+        <div class="quality-subcriteria-value">
+          <div class="quality-score ${cls}" style="font-size:12px;text-align:right">${fmtPct(pct)}</div>
+          <div class="quality-subcriteria-count">${fmt(attendances)} atend.</div>
+        </div>
       </div>`;
     }).join('') : '<div class="loading-box">Nenhum subcritério encontrado.</div>';
   }

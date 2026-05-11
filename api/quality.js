@@ -631,6 +631,10 @@ function addScore(group, score, count) {
   else group.score_0 += count;
 }
 
+function addAttendanceCount(group, count) {
+  group.total_atendimentos += count;
+}
+
 function emptyScoreGroup(extra) {
   return {
     ...extra,
@@ -641,6 +645,7 @@ function emptyScoreGroup(extra) {
     score_1: 0,
     score_0: 0,
     na: 0,
+    total_atendimentos: 0,
     score_pct: null,
     pct_2: 0,
     pct_1: 0,
@@ -660,12 +665,14 @@ function aggregateCriteria(rows) {
     const criterionName = String(getCell(row[3]) || criterionId);
     const score = normalizeCriterionScore(row[4]);
     const count = toInt(row[5]);
+    const attendanceCount = toInt(row[6] ?? row[5]);
 
     const pillarKey = `${pillarId}|${pillarName}`;
     if (!pillarMap.has(pillarKey)) {
       pillarMap.set(pillarKey, emptyScoreGroup({ pillar_id: pillarId, pillar_name: pillarName }));
     }
     addScore(pillarMap.get(pillarKey), score, count);
+    addAttendanceCount(pillarMap.get(pillarKey), attendanceCount);
 
     const criterionKey = `${pillarId}|${criterionId}|${criterionName}`;
     if (!criteriaMap.has(criterionKey)) {
@@ -677,6 +684,7 @@ function aggregateCriteria(rows) {
       }));
     }
     addScore(criteriaMap.get(criterionKey), score, count);
+    addAttendanceCount(criteriaMap.get(criterionKey), attendanceCount);
   });
 
   const pillars = [...pillarMap.values()]
@@ -697,6 +705,7 @@ function aggregateCriteria(rows) {
     acc.score_1 += pillar.score_1;
     acc.score_0 += pillar.score_0;
     acc.na += pillar.na;
+    acc.total_atendimentos += pillar.total_atendimentos;
     return acc;
   }, emptyScoreGroup({})));
 
@@ -747,6 +756,7 @@ async function loadStrategic(warehouseId, columns, criteriaColumns, scope, share
   const pillarNameColumn = pickColumn(criteriaColumns, PILLAR_NAME_CANDIDATES);
   const criterionIdColumn = pickColumn(criteriaColumns, CRITERION_ID_CANDIDATES);
   const criterionNameColumn = pickColumn(criteriaColumns, CRITERION_NAME_CANDIDATES);
+  const criteriaAttendanceColumn = pickColumn(criteriaColumns, ["attendance_id", "atendimento_id", "appointment_id"]);
   const criteriaWithSql = buildCriteriaWithSql(scope, sharedKey, criteriaColumns);
 
   const [summaryRows, criteriaRows, evaluatedVolume, evaluatedCriteria, overallCriteriaScore] = await Promise.all([
@@ -767,7 +777,8 @@ async function loadStrategic(warehouseId, columns, criteriaColumns, scope, share
         ${stringExpr("c", criterionIdColumn, "Critério")} AS criterion_id,
         ${stringExpr("c", criterionNameColumn, "Sem critério")} AS criterion_name,
         ${criteriaScoreColumn ? nullableStringExpr("c", criteriaScoreColumn) : "CAST(NULL AS STRING)"} AS score_raw,
-        COUNT(*) AS total
+        COUNT(*) AS total,
+        ${criteriaAttendanceColumn ? `COUNT(DISTINCT CAST(${qcol("c", criteriaAttendanceColumn)} AS STRING))` : "COUNT(*)"} AS total_atendimentos
       FROM criteria_base c
       GROUP BY 1, 2, 3, 4, 5
     `),
