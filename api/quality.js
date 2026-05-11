@@ -42,6 +42,10 @@ const COLLABORATOR_CANDIDATES = [
   "collaborator_name", "colaborador", "agent_name", "attendant_name", "nome_colaborador",
   "responsavel", "finished_by", "operator_name", "user_name",
 ];
+const CRITERIA_COLLABORATOR_CANDIDATES = [
+  "close_by", "close by", "closed_by", "closed by", "closeby", "closedby",
+  "colaborador", "nome_colaborador", "responsavel", "operator_name", "user_name",
+];
 const PATIENT_CANDIDATES = [
   "patient_name", "beneficiary_name", "beneficiario", "nome_beneficiario",
   "nome_paciente", "customer_name", "cliente", "paciente",
@@ -875,9 +879,9 @@ async function loadQualityEvolution(warehouseId, criteriaColumns) {
 async function loadStrategic(warehouseId, columns, criteriaColumns, scope, sharedKey, criteriaFinisher, summarySessionJoin, summaryFinishedByColumn, criteriaFinishedByColumn) {
   const summaryScoreColumn = pickColumn(columns, SCORE_CANDIDATES);
   const resolvedColumn = pickColumn(columns, RESOLVED_CANDIDATES);
-  const collaboratorColumn = pickColumn(columns, COLLABORATOR_CANDIDATES);
   const careLineColumn = pickColumn(columns, CARE_LINE_CANDIDATES);
   const criteriaScoreColumn = pickColumn(criteriaColumns, CRITERIA_SCORE_CANDIDATES);
+  const criteriaCollaboratorColumn = pickColumn(criteriaColumns, CRITERIA_COLLABORATOR_CANDIDATES);
   const pillarIdColumn = pickColumn(criteriaColumns, PILLAR_ID_CANDIDATES);
   const pillarNameColumn = pickColumn(criteriaColumns, PILLAR_NAME_CANDIDATES);
   const criterionIdColumn = pickColumn(criteriaColumns, CRITERION_ID_CANDIDATES);
@@ -924,22 +928,25 @@ async function loadStrategic(warehouseId, columns, criteriaColumns, scope, share
     .sort((a, b) => a.score_pct - b.score_pct)[0] || null;
 
   let collaborators = [];
-  if (collaboratorColumn) {
+  if (criteriaCollaboratorColumn && criteriaScoreColumn) {
     const rows = await runQuery(warehouseId, `
       SELECT
-        ${stringExpr("s", collaboratorColumn, "Sem colaborador")} AS collaborator,
-        COUNT(*) AS total,
-        AVG(${numberExpr("s", summaryScoreColumn)}) AS avg_score
-      FROM ${SUMMARY_TABLE} s
-      WHERE ${scope.sql}
+        ${nullableStringExpr("c", criteriaCollaboratorColumn)} AS collaborator,
+        ${criteriaAttendanceColumn ? `COUNT(DISTINCT CAST(${qcol("c", criteriaAttendanceColumn)} AS STRING))` : "COUNT(*)"} AS total_atendimentos,
+        COUNT(*) AS total_avaliacoes,
+        COALESCE(SUM(COALESCE(${numberExpr("c", criteriaScoreColumn)}, 0)), 0) / NULLIF(COUNT(*) * ${CRITERION_MAX_SCORE}, 0) * 100 AS score_pct
+      FROM ${EVALUATED_CRITERIA_TABLE} c
+      ${strategicCriteriaWhere}
+        AND ${nullableStringExpr("c", criteriaCollaboratorColumn)} IS NOT NULL
       GROUP BY 1
-      ORDER BY total DESC
+      ORDER BY score_pct DESC, total_atendimentos DESC
       LIMIT 10
     `);
     collaborators = rows.map((row) => ({
       name: String(getCell(row[0]) || "Sem colaborador"),
       total: toInt(row[1]),
-      score_pct: normalizeSummaryScore(row[2]),
+      total_avaliacoes: toInt(row[2]),
+      score_pct: toNumber(row[3]),
     }));
   }
 
