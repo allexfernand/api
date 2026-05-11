@@ -310,6 +310,14 @@ body {
 .quality-table{width:100%;border-collapse:collapse;font-size:12px}
 .quality-table th{text-align:left;padding:9px 10px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-faint);border-bottom:1px solid var(--border)}
 .quality-table td{padding:10px;border-bottom:1px solid var(--border-light);color:#334155}
+.quality-collab-scroll{max-height:390px;overflow-y:auto}
+.quality-collab-scroll::-webkit-scrollbar{width:6px}
+.quality-collab-scroll::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:999px}
+.quality-collab-scroll thead th{position:sticky;top:0;background:#fff;z-index:2}
+.quality-sort-button{border:0;background:transparent;color:inherit;font:inherit;text-transform:inherit;letter-spacing:inherit;padding:0;cursor:pointer}
+.quality-sort-button:hover{color:#0f766e}
+.quality-total-row{background:#f8fafc;border-top:2px solid #e2e8f0}
+.quality-total-row td{position:sticky;bottom:0;background:#f8fafc;z-index:1}
 
 .quality-insight{background:linear-gradient(135deg,#0b3b47,#0f4d5c);color:#fff;border:none}
 .quality-insight.warning{background:linear-gradient(135deg,#2d0a3e,#4a1568)}
@@ -1122,10 +1130,14 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
     <div class="quality-grid-2">
       <div class="card-box" style="margin-bottom:0">
         <div class="section-title"><i class="fa-solid fa-ranking-star" style="margin-right:6px"></i>Ranking de colaboradores</div>
-        <div class="table-scroll">
+        <div class="table-scroll quality-collab-scroll">
           <table class="quality-table">
             <thead>
-              <tr><th>Colaborador</th><th style="text-align:right">Score</th><th style="text-align:right">Atend.</th></tr>
+              <tr>
+                <th>Colaborador</th>
+                <th style="text-align:right"><button class="quality-sort-button" type="button" onclick="onQualityCollaboratorSortChange('score')">Score <span id="quality-collab-score-sort">↓</span></button></th>
+                <th style="text-align:right"><button class="quality-sort-button" type="button" onclick="onQualityCollaboratorSortChange('attendance')">Atend. <span id="quality-collab-attendance-sort"></span></button></th>
+              </tr>
             </thead>
             <tbody id="quality-collab-tbody"></tbody>
           </table>
@@ -1211,6 +1223,8 @@ let selectedQualitySubcriteriaSort = 'worst';
 let selectedQualitySubcriteriaCriterion = '';
 let selectedQualityFactualCriterion = '';
 let selectedQualityFactualResolved = '';
+let selectedQualityCollaboratorSort = 'score';
+let selectedQualityCollaboratorSortDir = 'desc';
 let qualityData = null, selectedQualityKey = null;
 
 // --- Tabs ---
@@ -2865,6 +2879,17 @@ function onQualityCriteriaSortChange(value) {
   renderQualityStrategic();
 }
 
+function onQualityCollaboratorSortChange(value) {
+  const nextSort = value === 'attendance' ? 'attendance' : 'score';
+  if (selectedQualityCollaboratorSort === nextSort) {
+    selectedQualityCollaboratorSortDir = selectedQualityCollaboratorSortDir === 'desc' ? 'asc' : 'desc';
+  } else {
+    selectedQualityCollaboratorSort = nextSort;
+    selectedQualityCollaboratorSortDir = 'desc';
+  }
+  renderQualityStrategic();
+}
+
 function onQualityFactualCriterionChange(value) {
   selectedQualityFactualCriterion = value || '';
   loadQualityFactualInsight();
@@ -3469,9 +3494,22 @@ function renderQualityStrategic() {
 
   const collabTbody = document.getElementById('quality-collab-tbody');
   const collaborators = strategic.collaborators || [];
+  setText('quality-collab-score-sort', selectedQualityCollaboratorSort === 'score' ? (selectedQualityCollaboratorSortDir === 'desc' ? '↓' : '↑') : '');
+  setText('quality-collab-attendance-sort', selectedQualityCollaboratorSort === 'attendance' ? (selectedQualityCollaboratorSortDir === 'desc' ? '↓' : '↑') : '');
   if (collabTbody) {
     if (collaborators.length) {
-      const collaboratorRows = collaborators.map((item) => {
+      const direction = selectedQualityCollaboratorSortDir === 'asc' ? 1 : -1;
+      const sortedCollaborators = [...collaborators].sort((a, b) => {
+        const primaryA = selectedQualityCollaboratorSort === 'attendance' ? Number(a.total) || 0 : Number(a.score_pct) || 0;
+        const primaryB = selectedQualityCollaboratorSort === 'attendance' ? Number(b.total) || 0 : Number(b.score_pct) || 0;
+        const primarySort = (primaryA - primaryB) * direction;
+        if (primarySort) return primarySort;
+        const fallbackA = selectedQualityCollaboratorSort === 'attendance' ? Number(a.score_pct) || 0 : Number(a.total) || 0;
+        const fallbackB = selectedQualityCollaboratorSort === 'attendance' ? Number(b.score_pct) || 0 : Number(b.total) || 0;
+        const fallbackSort = (fallbackA - fallbackB) * direction;
+        return fallbackSort || String(a.name).localeCompare(String(b.name), 'pt-BR', { sensitivity: 'base' });
+      });
+      const collaboratorRows = sortedCollaborators.map((item) => {
       const scoreValue = Number(item.score_pct);
       const cls = qualityScoreClass(scoreValue);
       return `<tr>
@@ -3489,7 +3527,7 @@ function renderQualityStrategic() {
       const totalScore = totalAttendances > 0 ? weightedScoreSum / totalAttendances : 0;
       const totalCls = qualityScoreClass(totalScore);
       collabTbody.innerHTML = `${collaboratorRows}
-        <tr style="background:#f8fafc;border-top:2px solid #e2e8f0">
+        <tr class="quality-total-row">
           <td style="font-weight:800;color:#0f172a">Total da lista</td>
           <td style="text-align:right"><span class="quality-score ${totalCls}">${fmtPct(totalScore)}</span></td>
           <td style="text-align:right;font-weight:800;color:#0f172a">${fmt(totalAttendances)}</td>
