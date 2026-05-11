@@ -3096,6 +3096,13 @@ function qualityMonthLabel(value) {
   return month && year ? `${mN[month]}/${year.slice(2)}` : String(value || '');
 }
 
+function qualityEvolutionTooltipLabel(context) {
+  const value = Number(context.parsed.y) || 0;
+  return context.dataset.yAxisID === 'y1'
+    ? `${context.dataset.label}: ${fmt(value)} análises`
+    : `${context.dataset.label}: ${fmtPct(value)}`;
+}
+
 function renderQualityEvolutionCharts(evolution) {
   const monthly = (evolution?.monthly || []).filter((item) => item.month);
   const byCriterion = (evolution?.by_criterion || []).filter((item) => item.month);
@@ -3106,6 +3113,15 @@ function renderQualityEvolutionCharts(evolution) {
   const labels = monthly.length
     ? monthly.map((item) => item.month)
     : [...new Set(byCriterion.map((item) => item.month))].sort();
+  const volumeByMonth = new Map(labels.map((month) => {
+    const monthlyItem = monthly.find((item) => item.month === month);
+    const volume = monthlyItem
+      ? Number(monthlyItem.total_avaliacoes) || 0
+      : byCriterion
+        .filter((item) => item.month === month)
+        .reduce((acc, item) => acc + (Number(item.total_avaliacoes) || 0), 0);
+    return [month, volume];
+  }));
 
   if (qualityEvolutionChart) qualityEvolutionChart.destroy();
   if (qualityCriteriaEvolutionChart) qualityCriteriaEvolutionChart.destroy();
@@ -3122,31 +3138,49 @@ function renderQualityEvolutionCharts(evolution) {
       type: 'line',
       data: {
         labels: labels.map(qualityMonthLabel),
-        datasets: [{
-          label: 'Qualidade',
-          data: labels.map((month) => {
-            const item = monthly.find((row) => row.month === month);
-            return item ? Number(item.score_pct) || 0 : 0;
-          }),
-          borderColor: '#0f766e',
-          backgroundColor: 'rgba(15,118,110,0.08)',
-          borderWidth: 2,
-          pointRadius: 3,
-          pointBackgroundColor: '#0f766e',
-          fill: true,
-          tension: 0.35,
-        }],
+        datasets: [
+          {
+            label: 'Qualidade',
+            data: labels.map((month) => {
+              const item = monthly.find((row) => row.month === month);
+              return item ? Number(item.score_pct) || 0 : 0;
+            }),
+            yAxisID: 'y',
+            borderColor: '#0f766e',
+            backgroundColor: 'rgba(15,118,110,0.08)',
+            borderWidth: 2,
+            pointRadius: 3,
+            pointBackgroundColor: '#0f766e',
+            fill: true,
+            tension: 0.35,
+          },
+          {
+            label: 'Volume de análises',
+            data: labels.map((month) => volumeByMonth.get(month) || 0),
+            yAxisID: 'y1',
+            borderColor: '#64748b',
+            backgroundColor: '#64748b',
+            borderWidth: 2,
+            borderDash: [6, 5],
+            pointRadius: 2,
+            pointBackgroundColor: '#64748b',
+            fill: false,
+            tension: 0.25,
+          },
+        ],
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
         plugins: {
-          legend: { display: false },
-          tooltip: { backgroundColor: '#1e293b', borderColor: '#334155', borderWidth: 1, titleColor: '#cbd5e1', bodyColor: '#f8fafc', callbacks: { label: c => `Qualidade: ${fmtPct(c.parsed.y)}` } },
+          legend: { position: 'bottom', labels: { boxWidth: 10, usePointStyle: true, font: { size: 10 }, color: '#64748b' } },
+          tooltip: { backgroundColor: '#1e293b', borderColor: '#334155', borderWidth: 1, titleColor: '#cbd5e1', bodyColor: '#f8fafc', callbacks: { label: qualityEvolutionTooltipLabel } },
         },
         scales: {
           x: { ticks: { font: { size: 10 }, color: '#94a3b8' }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } },
           y: { min: 0, max: 100, ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => `${v}%` }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } },
+          y1: { position: 'right', beginAtZero: true, ticks: { font: { size: 10 }, color: '#64748b', callback: v => fmt(v) }, grid: { drawOnChartArea: false }, border: { display: false } },
         },
       },
     });
@@ -3170,6 +3204,7 @@ function renderQualityEvolutionCharts(evolution) {
         const item = byCriterion.find((row) => row.month === month && qualityCriterionGroupId(row.criterion_id) === criterionId);
         return item ? Number(item.score_pct) || 0 : 0;
       }),
+      yAxisID: 'y',
       borderColor: colors[index % colors.length],
       backgroundColor: colors[index % colors.length],
       borderWidth: 2,
@@ -3181,18 +3216,34 @@ function renderQualityEvolutionCharts(evolution) {
 
   qualityCriteriaEvolutionChart = new Chart(criteriaCanvas, {
     type: 'line',
-    data: { labels: labels.map(qualityMonthLabel), datasets },
+    data: {
+      labels: labels.map(qualityMonthLabel),
+      datasets: datasets.concat([{
+        label: 'Volume de análises',
+        data: labels.map((month) => volumeByMonth.get(month) || 0),
+        yAxisID: 'y1',
+        borderColor: '#64748b',
+        backgroundColor: '#64748b',
+        borderWidth: 2,
+        borderDash: [6, 5],
+        pointRadius: 2,
+        pointBackgroundColor: '#64748b',
+        tension: 0.25,
+        fill: false,
+      }]),
+    },
     options: {
       responsive: true,
       maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
       plugins: {
         legend: { position: 'bottom', labels: { boxWidth: 10, usePointStyle: true, font: { size: 10 }, color: '#64748b' } },
-        tooltip: { backgroundColor: '#1e293b', borderColor: '#334155', borderWidth: 1, titleColor: '#cbd5e1', bodyColor: '#f8fafc', callbacks: { label: c => `${c.dataset.label}: ${fmtPct(c.parsed.y)}` } },
+        tooltip: { backgroundColor: '#1e293b', borderColor: '#334155', borderWidth: 1, titleColor: '#cbd5e1', bodyColor: '#f8fafc', callbacks: { label: qualityEvolutionTooltipLabel } },
       },
       scales: {
         x: { ticks: { font: { size: 10 }, color: '#94a3b8' }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } },
         y: { min: 0, max: 100, ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => `${v}%` }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } },
+        y1: { position: 'right', beginAtZero: true, ticks: { font: { size: 10 }, color: '#64748b', callback: v => fmt(v) }, grid: { drawOnChartArea: false }, border: { display: false } },
       },
     },
   });
