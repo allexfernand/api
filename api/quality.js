@@ -61,17 +61,17 @@ const SUMMARY_TEXT_CANDIDATES = [
 ];
 
 const CRITERION_ID_CANDIDATES = [
-  "criterion_id", "subcriterion_id", "subcriterio_id", "criteria_id", "codigo_criterio",
+  "criterio_id", "criterion_id", "subcriterion_id", "subcriterio_id", "criteria_id", "codigo_criterio",
   "codigo_subcriterio", "criterion_code", "subcriterion_code", "id_criterio",
 ];
 const CRITERION_NAME_CANDIDATES = [
-  "criterion_name", "subcriterion_name", "subcriterio", "nome_criterio",
+  "sub_criterio", "criterion_name", "subcriterion_name", "subcriterio", "nome_criterio",
   "nome_subcriterio", "criteria_name", "criterio",
 ];
 const PILLAR_ID_CANDIDATES = ["pillar_id", "pilar_id", "pillar_code", "pilar_codigo", "pillar"];
 const PILLAR_NAME_CANDIDATES = ["pillar_name", "pilar", "nome_pilar", "pillar_label"];
 const CRITERIA_SCORE_CANDIDATES = [
-  "score", "nota", "value", "criterion_score", "score_value", "nota_criterio",
+  "pontuacao", "score", "nota", "value", "criterion_score", "score_value", "nota_criterio",
 ];
 const APPLICABLE_CANDIDATES = ["is_applicable", "applicable", "aplicavel", "aplicável"];
 const JUSTIFICATION_CANDIDATES = [

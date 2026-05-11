@@ -2821,8 +2821,10 @@ function renderQualityStrategic() {
 
   const criteria = [...(strategic.criteria || [])]
     .filter((item) => item.total > 0)
-    .sort((a, b) => (Number(a.score_pct) || 0) - (Number(b.score_pct) || 0))
-    .slice(0, 10);
+    .sort((a, b) => {
+      const idSort = String(a.criterion_id).localeCompare(String(b.criterion_id), 'pt-BR', { numeric: true });
+      return idSort || String(a.criterion_name).localeCompare(String(b.criterion_name), 'pt-BR', { sensitivity: 'base' });
+    });
   const distEl = document.getElementById('quality-criteria-dist');
   if (distEl) {
     distEl.innerHTML = criteria.length ? criteria.map((item) => {
