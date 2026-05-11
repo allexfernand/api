@@ -289,8 +289,9 @@ body {
 
 .quality-dist-row{display:grid;grid-template-columns:110px minmax(0,1fr) 52px;gap:10px;align-items:center;margin-bottom:10px}
 .quality-dist-label{font-size:12px;font-weight:600;color:#64748b;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.quality-distribution-grid{align-items:start}
+.quality-distribution-grid{align-items:start;grid-auto-rows:max-content}
 .quality-distribution-card{display:flex;flex-direction:column;min-height:0}
+.quality-distribution-card.compact{align-self:start;height:max-content}
 .quality-distribution-list{min-height:0}
 .quality-distribution-list.scrollable{overflow-y:auto;padding-right:4px}
 .quality-distribution-list.scrollable::-webkit-scrollbar{width:6px}
@@ -1026,7 +1027,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
     </div>
 
     <div class="quality-grid-2 quality-distribution-grid">
-      <div class="card-box quality-distribution-card" id="quality-criteria-card" style="margin-bottom:0">
+      <div class="card-box quality-distribution-card compact" id="quality-criteria-card" style="margin-bottom:0">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap">
           <div class="section-title" style="margin-bottom:0"><i class="fa-solid fa-chart-simple" style="margin-right:6px"></i>Distribuição por critério</div>
           <select class="filter-select" id="quality-criteria-sort" onchange="onQualityCriteriaSortChange(this.value)" style="min-width:180px">
@@ -2914,16 +2915,23 @@ function aggregateQualitySubcriteria(items) {
 
 function syncQualityDistributionHeights() {
   const criteriaCard = document.getElementById('quality-criteria-card');
+  const criteriaList = document.getElementById('quality-criteria-only-dist');
   const subcriteriaCard = document.getElementById('quality-subcriteria-card');
   const subcriteriaList = document.getElementById('quality-criteria-dist');
-  if (!criteriaCard || !subcriteriaCard || !subcriteriaList) return;
+  if (!criteriaCard || !criteriaList || !subcriteriaCard || !subcriteriaList) return;
 
+  criteriaCard.style.height = '';
   subcriteriaCard.style.height = '';
   subcriteriaList.style.maxHeight = '';
   if (window.innerWidth <= 1100) return;
 
   requestAnimationFrame(() => {
-    const targetHeight = criteriaCard.scrollHeight;
+    const criteriaHeader = criteriaCard.firstElementChild;
+    const criteriaStyle = window.getComputedStyle(criteriaCard);
+    const criteriaHeaderStyle = criteriaHeader ? window.getComputedStyle(criteriaHeader) : null;
+    const criteriaPadding = (parseFloat(criteriaStyle.paddingTop) || 0) + (parseFloat(criteriaStyle.paddingBottom) || 0);
+    const criteriaHeaderSpace = criteriaHeader ? criteriaHeader.offsetHeight + (parseFloat(criteriaHeaderStyle.marginBottom) || 0) : 0;
+    const targetHeight = Math.ceil(criteriaPadding + criteriaHeaderSpace + criteriaList.scrollHeight);
     if (!targetHeight) return;
     const header = subcriteriaCard.firstElementChild;
     const legend = subcriteriaCard.querySelector('.quality-distribution-legend');
@@ -2933,6 +2941,7 @@ function syncQualityDistributionHeights() {
     const verticalPadding = (parseFloat(cardStyle.paddingTop) || 0) + (parseFloat(cardStyle.paddingBottom) || 0);
     const headerSpace = header ? header.offsetHeight + (parseFloat(headerStyle.marginBottom) || 0) : 0;
     const legendSpace = legend ? legend.offsetHeight + (parseFloat(legendStyle.marginTop) || 0) : 0;
+    criteriaCard.style.height = `${targetHeight}px`;
     subcriteriaCard.style.height = `${targetHeight}px`;
     subcriteriaList.style.maxHeight = `${Math.max(120, targetHeight - verticalPadding - headerSpace - legendSpace)}px`;
   });
