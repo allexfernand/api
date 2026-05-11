@@ -3357,8 +3357,9 @@ async function loadQualityCollaboratorCriteria(name) {
   } else {
     p.set('collaborator', selectedQualityCollaboratorName);
   }
+  p.set('mode', 'collaborator_criteria');
   if (meses.length > 0) p.set('meses', meses.join(','));
-  const data = await safeGet('/api/quality-collaborator-criteria?' + p.toString());
+  const data = await safeGet('/api/quality?' + p.toString());
   if (!data || data.error) {
     content.innerHTML = `<div class="loading-box" style="padding:18px;color:#b45309">${escapeHtml(data?.error || 'Erro ao carregar notas por critério.')}</div>`;
     return;

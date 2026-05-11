@@ -46,6 +46,7 @@ const CRITERIA_COLLABORATOR_CANDIDATES = [
   "close_by", "close by", "closed_by", "closed by", "closeby", "closedby",
   "colaborador", "nome_colaborador", "responsavel", "operator_name", "user_name",
 ];
+const MISSING_COLLABORATOR_LABEL = "Sem close_by preenchido";
 const PATIENT_CANDIDATES = [
   "patient_name", "beneficiary_name", "beneficiario", "nome_beneficiario",
   "nome_paciente", "customer_name", "cliente", "paciente",
@@ -876,6 +877,57 @@ async function loadQualityEvolution(warehouseId, criteriaColumns) {
   };
 }
 
+async function loadCollaboratorCriteriaDetail(warehouseId, criteriaColumns, scope, query) {
+  const collaborator = String(query.collaborator || "").trim();
+  const missingCollaborator = String(query.missing_close_by || "") === "1";
+  if (!collaborator && !missingCollaborator) {
+    throw new Error("Colaborador inválido.");
+  }
+
+  const criteriaScoreColumn = pickColumn(criteriaColumns, CRITERIA_SCORE_CANDIDATES);
+  const criterionIdColumn = pickColumn(criteriaColumns, CRITERION_ID_CANDIDATES);
+  const criteriaAttendanceColumn = pickColumn(criteriaColumns, ["attendance_id", "atendimento_id", "appointment_id"]);
+  const criteriaCollaboratorColumn = pickColumn(criteriaColumns, CRITERIA_COLLABORATOR_CANDIDATES);
+  if (!criteriaScoreColumn || !criterionIdColumn || !criteriaCollaboratorColumn) {
+    throw new Error(`Colunas necessárias não encontradas. criterio=${criterionIdColumn || "n/a"} pontuacao=${criteriaScoreColumn || "n/a"} close_by=${criteriaCollaboratorColumn || "n/a"}`);
+  }
+
+  const collaboratorName = missingCollaborator ? MISSING_COLLABORATOR_LABEL : collaborator;
+  const criterionGroupExpr = `COALESCE(NULLIF(regexp_extract(regexp_replace(CAST(${qcol("c", criterionIdColumn)} AS STRING), ',', '.'), '^(\\\\d+)', 1), ''), CAST(${qcol("c", criterionIdColumn)} AS STRING))`;
+  const collaboratorExpr = stringExpr("c", criteriaCollaboratorColumn, MISSING_COLLABORATOR_LABEL);
+  const rows = await runQuery(warehouseId, `
+    SELECT
+      ${criterionGroupExpr} AS criterion_id,
+      ${criteriaAttendanceColumn ? `COUNT(DISTINCT CAST(${qcol("c", criteriaAttendanceColumn)} AS STRING))` : "COUNT(*)"} AS total_atendimentos,
+      COUNT(*) AS total_avaliacoes,
+      AVG(${numberExpr("c", criteriaScoreColumn)}) AS pontuacao_media,
+      COALESCE(SUM(COALESCE(${numberExpr("c", criteriaScoreColumn)}, 0)), 0) / NULLIF(COUNT(*) * ${CRITERION_MAX_SCORE}, 0) * 100 AS score_pct
+    FROM ${EVALUATED_CRITERIA_TABLE} c
+    ${buildEvaluatedCriteriaWhere(scope, "", null).replace(/\bq\./g, "c.")}
+      AND ${collaboratorExpr} = '${escapeSql(collaboratorName)}'
+    GROUP BY ${criterionGroupExpr}
+    ORDER BY criterion_id
+  `);
+
+  return {
+    collaborator: collaboratorName,
+    items: rows.map((row) => ({
+      criterion_id: String(getCell(row[0]) || "Critério"),
+      total_atendimentos: toInt(row[1]),
+      total_avaliacoes: toInt(row[2]),
+      pontuacao_media: toNumber(row[3]),
+      score_pct: toNumber(row[4]),
+    })),
+    filters: { meses: scope.months, missing_close_by: missingCollaborator },
+    schema: {
+      criterionColumn: criterionIdColumn,
+      scoreColumn: criteriaScoreColumn,
+      attendanceColumn: criteriaAttendanceColumn,
+      collaboratorColumn: criteriaCollaboratorColumn,
+    },
+  };
+}
+
 async function loadStrategic(warehouseId, columns, criteriaColumns, scope, sharedKey, criteriaFinisher, summarySessionJoin, summaryFinishedByColumn, criteriaFinishedByColumn) {
   const summaryScoreColumn = pickColumn(columns, SCORE_CANDIDATES);
   const resolvedColumn = pickColumn(columns, RESOLVED_CANDIDATES);
@@ -1116,6 +1168,11 @@ export default async function handler(req, res) {
       getColumns(warehouse.id, SESSION_TABLE),
     ]);
     const scope = buildSummaryScope(summaryColumns, req.query);
+    if (String(req.query.mode || "") === "collaborator_criteria") {
+      const detail = await loadCollaboratorCriteriaDetail(warehouse.id, criteriaColumns, scope, req.query);
+      return res.status(200).json(detail);
+    }
+
     const sharedKey = pickJoinKey(summaryColumns, criteriaColumns);
     const summaryFinishedByColumn = pickColumn(summaryColumns, FINISHER_CANDIDATES);
     const criteriaFinishedByColumn = pickColumn(criteriaColumns, FINISHER_CANDIDATES);
