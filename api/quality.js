@@ -392,6 +392,13 @@ function buildEvaluatedCriteriaWhere(scope, criteriaFinisher, criteriaFinishedBy
   return `WHERE ${conditions.join(" AND ")}`;
 }
 
+function buildEvaluatedCriteriaCatalogWhere(criteriaFinisher, criteriaFinishedByColumn) {
+  const conditions = [applicableCriteriaCondition("q", "is_applicable")];
+  const finisherCondition = buildFinisherCondition("q", criteriaFinishedByColumn, criteriaFinisher);
+  if (finisherCondition) conditions.push(finisherCondition);
+  return `WHERE ${conditions.join(" AND ")}`;
+}
+
 function buildCriteriaRecordWhere(scope) {
   const conditions = [];
   if (scope.months.length) {
@@ -487,7 +494,17 @@ async function loadEvaluatedCriteriaBullets(warehouseId, scope, criteriaFinisher
     ? `MAX(CAST(s.${quoteIdent(summarySessionJoin.summary)} AS STRING))`
     : "CAST(NULL AS STRING)";
   const rows = await runQuery(warehouseId, `
-    WITH criteria_by_attendance AS (
+    WITH criteria_catalog AS (
+      SELECT
+        CAST(q.${quoteIdent("criterio_id")} AS STRING) AS criterio_id,
+        COALESCE(NULLIF(TRIM(CAST(q.${quoteIdent("sub_criterio")} AS STRING)), ''), 'Sem subcritério') AS sub_criterio
+      FROM ${EVALUATED_CRITERIA_TABLE} q
+      ${buildEvaluatedCriteriaCatalogWhere(criteriaFinisher, criteriaFinishedByColumn)}
+      GROUP BY
+        CAST(q.${quoteIdent("criterio_id")} AS STRING),
+        COALESCE(NULLIF(TRIM(CAST(q.${quoteIdent("sub_criterio")} AS STRING)), ''), 'Sem subcritério')
+    ),
+    criteria_by_attendance AS (
       SELECT
         CAST(q.${quoteIdent("criterio_id")} AS STRING) AS criterio_id,
         COALESCE(NULLIF(TRIM(CAST(q.${quoteIdent("sub_criterio")} AS STRING)), ''), 'Sem subcritério') AS sub_criterio,
@@ -512,24 +529,40 @@ async function loadEvaluatedCriteriaBullets(warehouseId, scope, criteriaFinisher
       GROUP BY CAST(s.${quoteIdent("attendance_id")} AS STRING)
     )
     ${finisherSql.cte}
+    ,
+    period_metrics AS (
+      SELECT
+        c.criterio_id,
+        c.sub_criterio,
+        COUNT(*) AS total_atendimentos,
+        SUM(c.total_avaliacoes) AS total_avaliacoes,
+        AVG(c.pontuacao_criterio) AS pontuacao_media,
+        AVG(c.pontuacao_criterio) / ${CRITERION_MAX_SCORE} AS percentual_criterio,
+        AVG(s.nota_atendimento) AS nota_atendimento_media,
+        AVG(s.nota_maxima_possivel) AS nota_maxima_media,
+        AVG(s.nota_atendimento / NULLIF(s.nota_maxima_possivel, 0)) AS percentual_atendimento
+      FROM criteria_by_attendance c
+      LEFT JOIN summary_by_attendance s
+        ON c.attendance_id = s.attendance_id
+      ${finisherSql.join}
+      ${finisherSql.where}
+      GROUP BY c.criterio_id, c.sub_criterio
+    )
     SELECT
-      c.criterio_id,
-      c.sub_criterio,
-      COUNT(*) AS total_atendimentos,
-      SUM(c.total_avaliacoes) AS total_avaliacoes,
-      AVG(c.pontuacao_criterio) AS pontuacao_media,
-      AVG(c.pontuacao_criterio) / ${CRITERION_MAX_SCORE} AS percentual_criterio,
-      AVG(s.nota_atendimento) AS nota_atendimento_media,
-      AVG(s.nota_maxima_possivel) AS nota_maxima_media,
-      AVG(s.nota_atendimento / NULLIF(s.nota_maxima_possivel, 0)) AS percentual_atendimento
-    FROM criteria_by_attendance c
-    LEFT JOIN summary_by_attendance s
-      ON c.attendance_id = s.attendance_id
-    ${finisherSql.join}
-    ${finisherSql.where}
-    GROUP BY c.criterio_id, c.sub_criterio
-    ORDER BY total_atendimentos DESC
-    LIMIT 12
+      catalog.criterio_id,
+      catalog.sub_criterio,
+      COALESCE(pm.total_atendimentos, 0) AS total_atendimentos,
+      COALESCE(pm.total_avaliacoes, 0) AS total_avaliacoes,
+      COALESCE(pm.pontuacao_media, 0) AS pontuacao_media,
+      COALESCE(pm.percentual_criterio, 0) AS percentual_criterio,
+      COALESCE(pm.nota_atendimento_media, 0) AS nota_atendimento_media,
+      COALESCE(pm.nota_maxima_media, 0) AS nota_maxima_media,
+      COALESCE(pm.percentual_atendimento, 0) AS percentual_atendimento
+    FROM criteria_catalog catalog
+    LEFT JOIN period_metrics pm
+      ON catalog.criterio_id = pm.criterio_id
+      AND catalog.sub_criterio = pm.sub_criterio
+    ORDER BY catalog.criterio_id, catalog.sub_criterio
   `);
 
   return {
