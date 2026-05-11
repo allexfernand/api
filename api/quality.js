@@ -392,22 +392,34 @@ function buildEvaluatedCriteriaWhere(scope, criteriaFinisher, criteriaFinishedBy
   return `WHERE ${conditions.join(" AND ")}`;
 }
 
+function buildCriteriaRecordWhere(scope) {
+  const conditions = [];
+  if (scope.months.length) {
+    const monthList = scope.months.map((month) => `'${escapeSql(month)}'`).join(",");
+    conditions.push(`DATE_FORMAT(try_cast(q.${quoteIdent("event_timestamp")} AS TIMESTAMP), 'yyyy-MM') IN (${monthList})`);
+  }
+  return conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+}
+
 async function loadOverallCriteriaScore(warehouseId, scope) {
+  const applicableCondition = applicableCriteriaCondition("q", "is_applicable");
   const rows = await runQuery(warehouseId, `
     SELECT
-      COUNT(*) AS total_criterios,
-      COALESCE(SUM(${numberExpr("q", "pontuacao")}), 0) AS pontuacao_total,
-      COUNT(*) * ${CRITERION_MAX_SCORE} AS pontuacao_maxima,
-      COALESCE(SUM(${numberExpr("q", "pontuacao")}), 0) / NULLIF(COUNT(*) * ${CRITERION_MAX_SCORE}, 0) * 100 AS score_pct
+      SUM(CASE WHEN ${applicableCondition} THEN 1 ELSE 0 END) AS total_criterios_aplicaveis,
+      COUNT(*) AS total_criterios_disponiveis,
+      COALESCE(SUM(CASE WHEN ${applicableCondition} THEN COALESCE(${numberExpr("q", "pontuacao")}, 0) ELSE 0 END), 0) AS pontuacao_total,
+      SUM(CASE WHEN ${applicableCondition} THEN 1 ELSE 0 END) * ${CRITERION_MAX_SCORE} AS pontuacao_maxima,
+      COALESCE(SUM(CASE WHEN ${applicableCondition} THEN COALESCE(${numberExpr("q", "pontuacao")}, 0) ELSE 0 END), 0) / NULLIF(SUM(CASE WHEN ${applicableCondition} THEN 1 ELSE 0 END) * ${CRITERION_MAX_SCORE}, 0) * 100 AS score_pct
     FROM ${EVALUATED_CRITERIA_TABLE} q
-    ${buildEvaluatedCriteriaWhere(scope, "", null)}
+    ${buildCriteriaRecordWhere(scope)}
   `);
   const row = rows[0] || [];
   return {
     total_criterios: toInt(row[0]),
-    pontuacao_total: toNumber(row[1]) || 0,
-    pontuacao_maxima: toNumber(row[2]) || 0,
-    score_pct: toNumber(row[3]),
+    total_criterios_disponiveis: toInt(row[1]),
+    pontuacao_total: toNumber(row[2]) || 0,
+    pontuacao_maxima: toNumber(row[3]) || 0,
+    score_pct: toNumber(row[4]),
   };
 }
 
@@ -848,6 +860,7 @@ async function loadStrategic(warehouseId, columns, criteriaColumns, scope, share
       evaluated_monthly: evaluatedVolume.monthly,
       resolved_pct: resolvedRate === null ? null : Number((resolvedRate * 100).toFixed(1)),
       applicable_criteria: overallCriteriaScore.total_criterios || criteriaAgg.totals.applicable,
+      available_criteria: overallCriteriaScore.total_criterios_disponiveis || overallCriteriaScore.total_criterios || criteriaAgg.totals.total,
       na_pct: criteriaAgg.totals.total > 0 ? criteriaAgg.totals.pct_na : null,
       weakest_pillar: weakestPillar,
       latest_at: evaluatedVolume.latest_at || getCell(summary[1]),
