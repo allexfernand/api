@@ -1014,9 +1014,9 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
         <div class="quality-kpi-note">linhas com is_applicable = true</div>
       </div>
       <div class="quality-kpi">
-        <div class="quality-kpi-label">Pilar mais fraco</div>
+        <div class="quality-kpi-label">Critério mais fraco</div>
         <div class="quality-kpi-value" id="q-kpi-weak" style="font-size:18px;margin-top:6px">—</div>
-        <div class="quality-kpi-note">menor score por pilar</div>
+        <div class="quality-kpi-note" id="q-kpi-weak-note">menor score por critério</div>
       </div>
     </div>
 
@@ -2986,7 +2986,10 @@ function renderQualityStrategic() {
   const kpis = strategic.kpis || {};
   const score = Number(kpis.overall_score);
   const scoreLabel = Number.isFinite(score) ? fmtPct(score) : '—';
-  const weak = kpis.weakest_pillar;
+  const criteriaGroups = aggregateQualityCriteria(strategic.criteria || []);
+  const weakCriterion = [...criteriaGroups]
+    .filter((item) => Number.isFinite(Number(item.score_pct)))
+    .sort((a, b) => (Number(a.score_pct) || 0) - (Number(b.score_pct) || 0))[0] || null;
   const period = qualityPeriodLabel();
 
   setText('quality-head-score', scoreLabel);
@@ -2995,7 +2998,10 @@ function renderQualityStrategic() {
   setText('q-kpi-total', fmt(Number(kpis.evaluated) || 0));
   setText('q-kpi-resolved', fmtPct(kpis.resolved_pct));
   setText('q-kpi-na', fmt(Number(kpis.applicable_criteria) || 0));
-  setText('q-kpi-weak', weak ? `${weak.pillar_name} (${fmtPct(weak.score_pct)})` : '—');
+  setText('q-kpi-weak', weakCriterion ? `${weakCriterion.criterion_name} (${fmtPct(weakCriterion.score_pct)})` : '—');
+  setText('q-kpi-weak-note', weakCriterion
+    ? `${weakCriterion.criterion_description || 'Menor aproveitamento entre os critérios avaliados.'} ${fmt(Number(weakCriterion.total_atendimentos) || 0)} atend. avaliados.`
+    : 'menor score por critério');
   setText('q-kpi-latest', `último registro: ${formatQualityDate(kpis.latest_at)}`);
   setText('quality-criteria-bullets-period', `${period} · is_applicable = true`);
 
@@ -3026,7 +3032,7 @@ function renderQualityStrategic() {
 
   const criteriaSortSelect = document.getElementById('quality-criteria-sort');
   if (criteriaSortSelect) criteriaSortSelect.value = selectedQualityCriteriaSort;
-  const criteriaOnly = aggregateQualityCriteria(strategic.criteria || [])
+  const criteriaOnly = [...criteriaGroups]
     .sort((a, b) => {
       const scoreSort = selectedQualityCriteriaSort === 'best'
         ? (Number(b.score_pct) || 0) - (Number(a.score_pct) || 0)
