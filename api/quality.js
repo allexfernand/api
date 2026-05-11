@@ -931,16 +931,14 @@ async function loadStrategic(warehouseId, columns, criteriaColumns, scope, share
   if (criteriaCollaboratorColumn && criteriaScoreColumn) {
     const rows = await runQuery(warehouseId, `
       SELECT
-        ${nullableStringExpr("c", criteriaCollaboratorColumn)} AS collaborator,
+        ${stringExpr("c", criteriaCollaboratorColumn, "Sem close_by preenchido")} AS collaborator,
         ${criteriaAttendanceColumn ? `COUNT(DISTINCT CAST(${qcol("c", criteriaAttendanceColumn)} AS STRING))` : "COUNT(*)"} AS total_atendimentos,
         COUNT(*) AS total_avaliacoes,
         COALESCE(SUM(COALESCE(${numberExpr("c", criteriaScoreColumn)}, 0)), 0) / NULLIF(COUNT(*) * ${CRITERION_MAX_SCORE}, 0) * 100 AS score_pct
       FROM ${EVALUATED_CRITERIA_TABLE} c
       ${strategicCriteriaWhere}
-        AND ${nullableStringExpr("c", criteriaCollaboratorColumn)} IS NOT NULL
       GROUP BY 1
       ORDER BY score_pct DESC, total_atendimentos DESC
-      LIMIT 10
     `);
     collaborators = rows.map((row) => ({
       name: String(getCell(row[0]) || "Sem colaborador"),
