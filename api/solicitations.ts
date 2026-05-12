@@ -1,15 +1,26 @@
-// api/solicitations.js
+// api/solicitations.ts
+declare const process: { env: Record<string, string | undefined> };
+
 const HOST  = process.env.DATABRICKS_HOST;
 const TOKEN = process.env.DATABRICKS_TOKEN;
 const HEADERS = { "Authorization": `Bearer ${TOKEN}`, "Content-Type": "application/json" };
 
-async function dbFetch(path, options = {}) {
+type DatabricksCell = null | undefined | string | number | boolean | { string_value?: string };
+type DatabricksRow = DatabricksCell[];
+type ApiRequest = { method?: string; query: Record<string, any> };
+type ApiResponse = {
+  setHeader(name: string, value: string): void;
+  status(code: number): { json(body: unknown): void; end(): void };
+};
+type Warehouse = { id: string; state?: string };
+
+async function dbFetch(path: string, options: any = {}) {
   const res = await fetch(`${HOST}${path}`, { ...options, headers: { ...HEADERS, ...(options.headers || {}) } });
   if (!res.ok) throw new Error(`Databricks ${res.status}: ${await res.text()}`);
   return res.json();
 }
 
-async function runQuery(warehouseId, sql) {
+async function runQuery(warehouseId: string, sql: string): Promise<DatabricksRow[]> {
   let data = await dbFetch("/api/2.0/sql/statements", {
     method: "POST",
     body: JSON.stringify({ warehouse_id: warehouseId, statement: sql, wait_timeout: "50s", on_wait_timeout: "CONTINUE" }),
@@ -24,25 +35,25 @@ async function runQuery(warehouseId, sql) {
   return data.result?.data_array || [];
 }
 
-const getCell = (cell) => {
+const getCell = (cell: DatabricksCell) => {
   if (cell === null || cell === undefined) return null;
   if (typeof cell === "object" && cell.string_value !== undefined) return cell.string_value;
   return cell;
 };
-const toInt   = (v) => { const n = parseInt(getCell(v));   return Number.isFinite(n) ? n : 0; };
-const toFloat = (v) => { const n = parseFloat(getCell(v)); return Number.isFinite(n) ? n : 0; };
+const toInt   = (v: DatabricksCell) => { const n = parseInt(String(getCell(v)));   return Number.isFinite(n) ? n : 0; };
+const toFloat = (v: DatabricksCell) => { const n = parseFloat(String(getCell(v))); return Number.isFinite(n) ? n : 0; };
 
-export default async function handler(req, res) {
+export default async function handler(req: ApiRequest, res: ApiResponse) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   if (req.method === "OPTIONS") return res.status(200).end();
 
-  const meses     = req.query.meses ? req.query.meses.split(',').filter(m => /^\d{4}-\d{2}$/.test(m)) : [];
+  const meses     = req.query.meses ? req.query.meses.split(',').filter((m: string) => /^\d{4}-\d{2}$/.test(m)) : [];
   const groupName = req.query.group_name || null;
 
   const periodoFilter = meses.length > 0
-    ? `AND DATE_FORMAT(hora_criacao_atendimento, 'yyyy-MM') IN (${meses.map(m => `'${m}'`).join(',')})`
+    ? `AND DATE_FORMAT(hora_criacao_atendimento, 'yyyy-MM') IN (${meses.map((m: string) => `'${m}'`).join(',')})`
     : '';
 
   const groupFilter = groupName
@@ -50,7 +61,7 @@ export default async function handler(req, res) {
     : '';
 
   try {
-    const { warehouses = [] } = await dbFetch("/api/2.0/sql/warehouses");
+    const { warehouses = [] } = await dbFetch("/api/2.0/sql/warehouses") as { warehouses?: Warehouse[] };
     const wh = warehouses.find((w) => w.state === "RUNNING") || warehouses[0];
     if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
 
@@ -81,6 +92,6 @@ export default async function handler(req, res) {
 
     res.status(200).json({ items, total });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: (err as { message?: string }).message });
   }
 }

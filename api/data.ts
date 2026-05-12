@@ -1,15 +1,26 @@
-// api/data.js
+// api/data.ts
+declare const process: { env: Record<string, string | undefined> };
+
 const HOST  = process.env.DATABRICKS_HOST;
 const TOKEN = process.env.DATABRICKS_TOKEN;
 const HEADERS = { "Authorization": `Bearer ${TOKEN}`, "Content-Type": "application/json" };
 
-async function dbFetch(path, options = {}) {
+type DatabricksCell = null | undefined | string | number | boolean | { string_value?: string };
+type DatabricksRow = DatabricksCell[];
+type ApiRequest = { method?: string; query: Record<string, any> };
+type ApiResponse = {
+  setHeader(name: string, value: string): void;
+  status(code: number): { json(body: unknown): void; end(): void };
+};
+type Warehouse = { id: string; state?: string };
+
+async function dbFetch(path: string, options: any = {}) {
   const res = await fetch(`${HOST}${path}`, { ...options, headers: { ...HEADERS, ...(options.headers || {}) } });
   if (!res.ok) throw new Error(`Databricks ${res.status}: ${await res.text()}`);
   return res.json();
 }
 
-async function runQuery(warehouseId, sql) {
+async function runQuery(warehouseId: string, sql: string): Promise<DatabricksRow[]> {
   let data = await dbFetch("/api/2.0/sql/statements", {
     method: "POST",
     body: JSON.stringify({ warehouse_id: warehouseId, statement: sql, wait_timeout: "50s", on_wait_timeout: "CONTINUE" }),
@@ -24,17 +35,17 @@ async function runQuery(warehouseId, sql) {
   return data.result?.data_array || [];
 }
 
-function escape(s) { return String(s).replace(/'/g, "''"); }
+function escape(s: unknown) { return String(s).replace(/'/g, "''"); }
 
-const getCell = (cell) => {
+const getCell = (cell: DatabricksCell) => {
   if (cell === null || cell === undefined) return null;
   if (typeof cell === "object" && cell.string_value !== undefined) return cell.string_value;
   return cell;
 };
-const toInt = (v) => { const n = parseInt(getCell(v)); return Number.isFinite(n) ? n : 0; };
-const toDate = (v) => { const raw = getCell(v); return raw ? String(raw).slice(0, 10) : ""; };
+const toInt = (v: DatabricksCell) => { const n = parseInt(String(getCell(v))); return Number.isFinite(n) ? n : 0; };
+const toDate = (v: DatabricksCell) => { const raw = getCell(v); return raw ? String(raw).slice(0, 10) : ""; };
 
-function buildFilters(groupName, typeFilter) {
+function buildFilters(groupName: unknown, typeFilter: unknown) {
   const conditions = [`b.created_at IS NOT NULL`];
   if (groupName) {
     conditions.push(`b.organization_id IN (
@@ -52,7 +63,7 @@ function buildFilters(groupName, typeFilter) {
   return `WHERE ${conditions.join(' AND ')}`;
 }
 
-export default async function handler(req, res) {
+export default async function handler(req: ApiRequest, res: ApiResponse) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -63,7 +74,7 @@ export default async function handler(req, res) {
   const groupFilter = buildFilters(groupName, typeFilter);
 
   try {
-    const { warehouses = [] } = await dbFetch("/api/2.0/sql/warehouses");
+    const { warehouses = [] } = await dbFetch("/api/2.0/sql/warehouses") as { warehouses?: Warehouse[] };
     const wh = warehouses.find((w) => w.state === "RUNNING") || warehouses[0];
     if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
 
@@ -89,7 +100,7 @@ export default async function handler(req, res) {
       `) : Promise.resolve(null),
     ]);
 
-    const parse = (rows) => (rows || []).map((r) => [toDate(r[0]), toInt(r[1])]);
+    const parse = (rows: DatabricksRow[] | null) => (rows || []).map((r) => [toDate(r[0]), toInt(r[1])]);
     const groups = groupRows
       ? groupRows.map((r) => ({
           economic_group: getCell(r[0]) ? String(getCell(r[0])).trim() : null,
@@ -99,6 +110,6 @@ export default async function handler(req, res) {
 
     res.status(200).json({ users: parse(userRows), groups, updatedAt: new Date().toISOString() });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: (err as { message?: string }).message });
   }
 }
