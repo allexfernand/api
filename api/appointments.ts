@@ -1,17 +1,29 @@
-// api/appointments.js
+// api/appointments.ts
+declare const process: { env: Record<string, string | undefined> };
+
 const HOST  = process.env.DATABRICKS_HOST;
 const TOKEN = process.env.DATABRICKS_TOKEN;
 const HEADERS = { "Authorization": `Bearer ${TOKEN}`, "Content-Type": "application/json" };
 const APPOINTMENTS_TABLE = `hive_metastore.sanus_prod.atendimento_summarized_gold_live`;
 const APPOINTMENTS_DATE_COLUMN = 'hora_criacao_atendimento';
 
-async function dbFetch(path, options = {}) {
+type DbOptions = RequestInit & { headers?: Record<string, string> };
+type DatabricksCell = null | undefined | string | number | boolean | { string_value?: string };
+type DatabricksRow = DatabricksCell[];
+type ApiRequest = { method?: string; query: Record<string, string | string[] | undefined> };
+type ApiResponse = {
+  setHeader(name: string, value: string): void;
+  status(code: number): { json(body: unknown): void; end(): void };
+};
+type Warehouse = { id: string; state?: string };
+
+async function dbFetch(path: string, options: DbOptions = {}) {
   const res = await fetch(`${HOST}${path}`, { ...options, headers: { ...HEADERS, ...(options.headers || {}) } });
   if (!res.ok) throw new Error(`Databricks ${res.status}: ${await res.text()}`);
   return res.json();
 }
 
-async function runQuery(warehouseId, sql) {
+async function runQuery(warehouseId: string, sql: string): Promise<DatabricksRow[]> {
   let data = await dbFetch("/api/2.0/sql/statements", {
     method: "POST",
     body: JSON.stringify({ warehouse_id: warehouseId, statement: sql, wait_timeout: "50s", on_wait_timeout: "CONTINUE" }),
@@ -26,16 +38,16 @@ async function runQuery(warehouseId, sql) {
   return data.result?.data_array || [];
 }
 
-const getCell = (cell) => {
+const getCell = (cell: DatabricksCell) => {
   if (cell === null || cell === undefined) return null;
   if (typeof cell === "object" && cell.string_value !== undefined) return cell.string_value;
   return cell;
 };
-const toInt = (v) => { const n = parseInt(getCell(v)); return Number.isFinite(n) ? n : 0; };
-const escape = (s) => String(s).replace(/'/g, "''");
-const quoteIdent = (s) => `\`${String(s).replace(/`/g, "``")}\``;
+const toInt = (v: DatabricksCell) => { const n = parseInt(String(getCell(v))); return Number.isFinite(n) ? n : 0; };
+const escape = (s: unknown) => String(s).replace(/'/g, "''");
+const quoteIdent = (s: unknown) => `\`${String(s).replace(/`/g, "``")}\``;
 
-function lastNMonthsList(n) {
+function lastNMonthsList(n: number) {
   const out = [];
   const d = new Date();
   d.setUTCDate(1);
@@ -49,22 +61,22 @@ function lastNMonthsList(n) {
   return out;
 }
 
-function nextMonth(month) {
+function nextMonth(month: string) {
   const [year, mm] = month.split('-').map((value) => parseInt(value, 10));
   const d = new Date(Date.UTC(year, mm - 1, 1));
   d.setUTCMonth(d.getUTCMonth() + 1);
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
 }
 
-export default async function handler(req, res) {
+export default async function handler(req: ApiRequest, res: ApiResponse) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   if (req.method === "OPTIONS") return res.status(200).end();
 
-  const meses     = req.query.meses ? req.query.meses.split(',').filter(m => /^\d{4}-\d{2}$/.test(m)) : [];
+  const meses     = req.query.meses ? String(req.query.meses).split(',').filter(m => /^\d{4}-\d{2}$/.test(m)) : [];
   const groupName = req.query.group_name || null;
-  const monthList = meses.length ? meses.sort() : lastNMonthsList(Math.min(Math.max(parseInt(req.query.months) || 12, 1), 24));
+  const monthList = meses.length ? meses.sort() : lastNMonthsList(Math.min(Math.max(parseInt(String(req.query.months)) || 12, 1), 24));
   const monthRangeFilter = monthList.map((month) => `(
     ${quoteIdent(APPOINTMENTS_DATE_COLUMN)} >= '${month}-01'
     AND ${quoteIdent(APPOINTMENTS_DATE_COLUMN)} < '${nextMonth(month)}-01'
@@ -75,7 +87,7 @@ export default async function handler(req, res) {
     : '';
 
   try {
-    const { warehouses = [] } = await dbFetch("/api/2.0/sql/warehouses");
+    const { warehouses = [] } = await dbFetch("/api/2.0/sql/warehouses") as { warehouses?: Warehouse[] };
     const wh = warehouses.find((w) => w.state === "RUNNING") || warehouses[0];
     if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
 
@@ -106,6 +118,6 @@ export default async function handler(req, res) {
       filters: { group_name: groupName },
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: (err as { message?: string }).message });
   }
 }
