@@ -1,6 +1,8 @@
 // api/quality.js
 // Visões estratégica e operacional de qualidade a partir das tabelas silver.
 
+declare const process: { env: Record<string, string | undefined> };
+
 const HOST = process.env.DATABRICKS_HOST;
 const TOKEN = process.env.DATABRICKS_TOKEN;
 const HEADERS = { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" };
@@ -102,7 +104,7 @@ const SUMMARY_SESSION_JOIN_PAIRS = [
 ];
 const CRITERION_MAX_SCORE = 2;
 
-async function dbFetch(path, options = {}) {
+async function dbFetch(path, options: any = {}) {
   const res = await fetch(`${HOST}${path}`, {
     ...options,
     headers: { ...HEADERS, ...(options.headers || {}) },
@@ -1096,7 +1098,7 @@ async function loadOperational(warehouseId, columns, criteriaColumns, scope, sha
     score_pct: normalizeSummaryScore(row[8]),
     resolved: toNumber(row[9]),
     summary_text: getCell(row[10]) || null,
-    criteria: [],
+    criteria: [] as any[],
   }));
 
   const keys = [...new Set(items.map((item) => item.key).filter((key) => key && !key.startsWith("row_")))];
@@ -1118,10 +1120,10 @@ async function loadOperational(warehouseId, columns, criteriaColumns, scope, sha
       LIMIT 800
     `);
 
-    const byItem = new Map(items.map((item) => [item.key, item]));
+    const byItem = new Map(items.map((item) => [item.key, item] as const));
     criteriaRows.forEach((row) => {
       const key = String(getCell(row[0]) || "");
-      const item = byItem.get(key);
+      const item = byItem.get(key) as any;
       if (!item) return;
       item.criteria.push({
         pillar_id: String(getCell(row[1]) || "Pilar"),

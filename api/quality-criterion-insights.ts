@@ -1,6 +1,8 @@
 // api/quality-criterion-insights.js
 // Insights sob demanda a partir das justificativas factuais dos critérios de qualidade.
 
+declare const process: { env: Record<string, string | undefined> };
+
 const HOST = process.env.DATABRICKS_HOST;
 const TOKEN = process.env.DATABRICKS_TOKEN;
 const HEADERS = { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" };
@@ -37,7 +39,7 @@ const RESOLVED_CANDIDATES = [
   "concluida",
 ];
 
-async function dbFetch(path, options = {}) {
+async function dbFetch(path, options: any = {}) {
   const res = await fetch(`${HOST}${path}`, {
     ...options,
     headers: { ...HEADERS, ...(options.headers || {}) },
@@ -176,7 +178,7 @@ function normalizeText(value) {
 }
 
 function buildThemes(items) {
-  const themeDefs = [
+  const themeDefs: [string, RegExp][] = [
     ["clareza e orientação", /clar|objetiv|orient|explic|instru/i],
     ["acolhimento e vínculo", /acolh|empati|escuta|sentimento|emoc/i],
     ["resolução e encaminhamento", /resolv|solucion|encaminh|canal|problema/i],
