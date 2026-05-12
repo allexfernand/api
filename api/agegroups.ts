@@ -1,15 +1,45 @@
-// api/agegroups.js
-const HOST  = process.env.DATABRICKS_HOST;
+// api/agegroups.ts
+declare const process: { env: Record<string, string | undefined> };
+
+const HOST = process.env.DATABRICKS_HOST;
 const TOKEN = process.env.DATABRICKS_TOKEN;
 const HEADERS = { "Authorization": `Bearer ${TOKEN}`, "Content-Type": "application/json" };
 
-async function dbFetch(path, options = {}) {
+type DbOptions = RequestInit & {
+  headers?: Record<string, string>;
+};
+
+type DatabricksCell = null | undefined | string | number | boolean | { string_value?: string };
+type DatabricksRow = DatabricksCell[];
+
+type ApiRequest = {
+  method?: string;
+  query: Record<string, string | string[] | undefined>;
+};
+
+type ApiResponse = {
+  setHeader(name: string, value: string): void;
+  status(code: number): { json(body: unknown): void; end(): void };
+};
+
+type Warehouse = {
+  id: string;
+  state?: string;
+};
+
+type AgeGroupTotals = {
+  feminino: number;
+  masculino: number;
+  outros: number;
+};
+
+async function dbFetch(path: string, options: DbOptions = {}) {
   const res = await fetch(`${HOST}${path}`, { ...options, headers: { ...HEADERS, ...(options.headers || {}) } });
   if (!res.ok) throw new Error(`Databricks ${res.status}: ${await res.text()}`);
   return res.json();
 }
 
-async function runQuery(warehouseId, sql) {
+async function runQuery(warehouseId: string, sql: string): Promise<DatabricksRow[]> {
   let data = await dbFetch("/api/2.0/sql/statements", {
     method: "POST",
     body: JSON.stringify({ warehouse_id: warehouseId, statement: sql, wait_timeout: "50s", on_wait_timeout: "CONTINUE" }),
@@ -24,15 +54,15 @@ async function runQuery(warehouseId, sql) {
   return data.result?.data_array || [];
 }
 
-function escape(s) { return String(s).replace(/'/g, "''"); }
+function escape(s: unknown) { return String(s).replace(/'/g, "''"); }
 
-const getCell = (cell) => {
+const getCell = (cell: DatabricksCell) => {
   if (cell === null || cell === undefined) return null;
   if (typeof cell === "object" && cell.string_value !== undefined) return cell.string_value;
   return cell;
 };
 
-function buildFilters(groupName, typeFilter) {
+function buildFilters(groupName: unknown, typeFilter: unknown) {
   const conditions = [];
   if (groupName) {
     conditions.push(`b.organization_id IN (
@@ -50,7 +80,7 @@ function buildFilters(groupName, typeFilter) {
   return conditions.length ? `AND ${conditions.join(' AND ')}` : '';
 }
 
-export default async function handler(req, res) {
+export default async function handler(req: ApiRequest, res: ApiResponse) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -61,7 +91,7 @@ export default async function handler(req, res) {
   const extraFilter = buildFilters(groupName, typeFilter);
 
   try {
-    const { warehouses = [] } = await dbFetch("/api/2.0/sql/warehouses");
+    const { warehouses = [] } = await dbFetch("/api/2.0/sql/warehouses") as { warehouses?: Warehouse[] };
     const wh = warehouses.find((w) => w.state === "RUNNING") || warehouses[0];
     if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
 
@@ -103,13 +133,13 @@ export default async function handler(req, res) {
     `);
 
     const faixas = ['0-18','19-23','24-28','29-33','34-38','39-43','44-48','49-53','54-58','59+','Não informado'];
-    const result = {};
+    const result: Record<string, AgeGroupTotals> = {};
     faixas.forEach(f => { result[f] = { feminino: 0, masculino: 0, outros: 0 }; });
 
     rows.forEach(r => {
-      const faixa  = String(getCell(r[0]) || 'Não informado');
+      const faixa = String(getCell(r[0]) || 'Não informado');
       const genero = String(getCell(r[1]) || '').toUpperCase();
-      const total  = parseInt(getCell(r[2])) || 0;
+      const total = parseInt(String(getCell(r[2]))) || 0;
       if (!result[faixa]) result[faixa] = { feminino: 0, masculino: 0, outros: 0 };
       if (genero === 'FEMININO')       result[faixa].feminino  += total;
       else if (genero === 'MASCULINO') result[faixa].masculino += total;
@@ -125,6 +155,6 @@ export default async function handler(req, res) {
 
     res.status(200).json({ agegroups });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: (err as { message?: string }).message });
   }
 }
