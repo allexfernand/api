@@ -1,8 +1,9 @@
-// api/sessions-evolution.js
+// api/sessions-evolution.ts
 // Evolução mensal de sessões finalizadas por Humano e IA (últimos 12 meses).
 // - Sem filtro de grupo/empresa: COUNT(*) GROUP BY mês — query rápida.
 // - Com filtro: JOIN por botmaker_session.organization_id x organizations.id.
 // Aceita ?group_name=, ?company=, ?type=, ?months=12.
+declare const process: { env: Record<string, string | undefined> };
 
 const HOST  = process.env.DATABRICKS_HOST;
 const TOKEN = process.env.DATABRICKS_TOKEN;
@@ -13,13 +14,23 @@ const ORGANIZATIONS_TABLE = `hive_metastore.sanus_prod.organizations`;
 
 const SESSION_DATE_COLUMN = 'creation_time';
 
-async function dbFetch(path, options = {}) {
+type DbOptions = RequestInit & { headers?: Record<string, string> };
+type DatabricksCell = null | undefined | string | number | boolean | { string_value?: string };
+type DatabricksRow = DatabricksCell[];
+type ApiRequest = { method?: string; query: Record<string, any> };
+type ApiResponse = {
+  setHeader(name: string, value: string): void;
+  status(code: number): { json(body: unknown): void; end(): void };
+};
+type Warehouse = { id: string; state?: string };
+
+async function dbFetch(path: string, options: DbOptions = {}) {
   const res = await fetch(`${HOST}${path}`, { ...options, headers: { ...HEADERS, ...(options.headers || {}) } });
   if (!res.ok) throw new Error(`Databricks ${res.status}: ${await res.text()}`);
   return res.json();
 }
 
-async function runQuery(warehouseId, sql) {
+async function runQuery(warehouseId: string, sql: string): Promise<DatabricksRow[]> {
   let data = await dbFetch("/api/2.0/sql/statements", {
     method: "POST",
     body: JSON.stringify({ warehouse_id: warehouseId, statement: sql, wait_timeout: "50s", on_wait_timeout: "CONTINUE" }),
@@ -34,17 +45,17 @@ async function runQuery(warehouseId, sql) {
   return data.result?.data_array || [];
 }
 
-const escape = (s) => String(s).replace(/'/g, "''");
-const quoteIdent = (s) => `\`${String(s).replace(/`/g, "``")}\``;
+const escape = (s: unknown) => String(s).replace(/'/g, "''");
+const quoteIdent = (s: unknown) => `\`${String(s).replace(/`/g, "``")}\``;
 
-const getCell = (cell) => {
+const getCell = (cell: DatabricksCell) => {
   if (cell === null || cell === undefined) return null;
   if (typeof cell === "object" && cell.string_value !== undefined) return cell.string_value;
   return cell;
 };
-const toInt = (v) => { const n = parseInt(getCell(v)); return Number.isFinite(n) ? n : 0; };
+const toInt = (v: DatabricksCell) => { const n = parseInt(String(getCell(v))); return Number.isFinite(n) ? n : 0; };
 
-function orgIdsSubquery(groupName, company) {
+function orgIdsSubquery(groupName: unknown, company: unknown) {
   if (company) {
     return `(SELECT CAST(id AS STRING) FROM ${ORGANIZATIONS_TABLE} WHERE name = '${escape(company)}')`;
   }
@@ -57,7 +68,7 @@ function orgIdsSubquery(groupName, company) {
   )`;
 }
 
-function lastNMonthsList(n) {
+function lastNMonthsList(n: number) {
   const out = [];
   const d = new Date();
   d.setUTCDate(1);
@@ -71,14 +82,14 @@ function lastNMonthsList(n) {
   return out;
 }
 
-function nextMonth(month) {
+function nextMonth(month: string) {
   const [year, mm] = month.split('-').map((value) => parseInt(value, 10));
   const d = new Date(Date.UTC(year, mm - 1, 1));
   d.setUTCMonth(d.getUTCMonth() + 1);
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
 }
 
-export default async function handler(req, res) {
+export default async function handler(req: ApiRequest, res: ApiResponse) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -101,7 +112,7 @@ export default async function handler(req, res) {
     AND ${sessionDateExpr} < '${nextMonth(selectedDayMonth)}-01'`;
 
   try {
-    const { warehouses = [] } = await dbFetch("/api/2.0/sql/warehouses");
+    const { warehouses = [] } = await dbFetch("/api/2.0/sql/warehouses") as { warehouses?: Warehouse[] };
     const wh = warehouses.find((w) => w.state === "RUNNING") || warehouses[0];
     if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
 
@@ -187,6 +198,6 @@ export default async function handler(req, res) {
       source: "botmaker_session.creation_time",
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: (err as { message?: string }).message });
   }
 }

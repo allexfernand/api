@@ -1,15 +1,27 @@
-// api/sessions.js
+// api/sessions.ts
+declare const process: { env: Record<string, string | undefined> };
+
 const HOST  = process.env.DATABRICKS_HOST;
 const TOKEN = process.env.DATABRICKS_TOKEN;
 const HEADERS = { "Authorization": `Bearer ${TOKEN}`, "Content-Type": "application/json" };
 
-async function dbFetch(path, options = {}) {
+type DbOptions = RequestInit & { headers?: Record<string, string> };
+type DatabricksCell = null | undefined | string | number | boolean | { string_value?: string };
+type DatabricksRow = DatabricksCell[];
+type ApiRequest = { method?: string; query: Record<string, any> };
+type ApiResponse = {
+  setHeader(name: string, value: string): void;
+  status(code: number): { json(body: unknown): void; end(): void };
+};
+type Warehouse = { id: string; state?: string };
+
+async function dbFetch(path: string, options: DbOptions = {}) {
   const res = await fetch(`${HOST}${path}`, { ...options, headers: { ...HEADERS, ...(options.headers || {}) } });
   if (!res.ok) throw new Error(`Databricks ${res.status}: ${await res.text()}`);
   return res.json();
 }
 
-async function runQuery(warehouseId, sql) {
+async function runQuery(warehouseId: string, sql: string): Promise<DatabricksRow[]> {
   let data = await dbFetch("/api/2.0/sql/statements", {
     method: "POST",
     body: JSON.stringify({ warehouse_id: warehouseId, statement: sql, wait_timeout: "50s", on_wait_timeout: "CONTINUE" }),
@@ -24,20 +36,20 @@ async function runQuery(warehouseId, sql) {
   return data.result?.data_array || [];
 }
 
-function escape(s) { return String(s).replace(/'/g, "''"); }
-function quoteIdent(s) { return `\`${String(s).replace(/`/g, "``")}\``; }
+function escape(s: unknown) { return String(s).replace(/'/g, "''"); }
+function quoteIdent(s: unknown) { return `\`${String(s).replace(/`/g, "``")}\``; }
 
-const getCell = (cell) => {
+const getCell = (cell: DatabricksCell) => {
   if (cell === null || cell === undefined) return null;
   if (typeof cell === "object" && cell.string_value !== undefined) return cell.string_value;
   return cell;
 };
-const toInt = (v) => { const n = parseInt(getCell(v)); return Number.isFinite(n) ? n : 0; };
+const toInt = (v: DatabricksCell) => { const n = parseInt(String(getCell(v))); return Number.isFinite(n) ? n : 0; };
 
 const SESSION_TABLE = `hive_metastore.sanus_prod.botmaker_session`;
 const ORGANIZATIONS_TABLE = `hive_metastore.sanus_prod.organizations`;
 
-function sessionTypificationExpr(variablesColumn, tableAlias = '') {
+function sessionTypificationExpr(variablesColumn: string, tableAlias = '') {
   const prefix = tableAlias ? `${tableAlias}.` : '';
   const raw = `${prefix}${quoteIdent(variablesColumn)}['typification']`;
   return `CASE
@@ -47,7 +59,7 @@ function sessionTypificationExpr(variablesColumn, tableAlias = '') {
   END`;
 }
 
-function orgIdsSubquery(groupName, company) {
+function orgIdsSubquery(groupName: unknown, company: unknown) {
   if (company) {
     return `(SELECT CAST(id AS STRING) FROM ${ORGANIZATIONS_TABLE} WHERE name = '${escape(company)}')`;
   }
@@ -60,7 +72,7 @@ function orgIdsSubquery(groupName, company) {
   )`;
 }
 
-function lastNMonthsList(n) {
+function lastNMonthsList(n: number) {
   const out = [];
   const d = new Date();
   d.setUTCDate(1);
@@ -72,13 +84,13 @@ function lastNMonthsList(n) {
   return out;
 }
 
-export default async function handler(req, res) {
+export default async function handler(req: ApiRequest, res: ApiResponse) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   if (req.method === "OPTIONS") return res.status(200).end();
 
-  const meses = req.query.meses ? req.query.meses.split(',').filter((m) => /^\d{4}-\d{2}$/.test(m)) : [];
+  const meses = req.query.meses ? req.query.meses.split(',').filter((m: string) => /^\d{4}-\d{2}$/.test(m)) : [];
   const groupName = req.query.group_name || null;
   const company = req.query.company || null;
   const typificationFinisher = ['humano', 'ia'].includes(String(req.query.typification_finisher || '').toLowerCase())
@@ -87,19 +99,19 @@ export default async function handler(req, res) {
 
   const SESSION_DATE_COLUMN = 'creation_time';
 
-  const buildSessionDateFilter = (mesesArr) => mesesArr.length > 0
+  const buildSessionDateFilter = (mesesArr: string[]) => mesesArr.length > 0
     ? `DATE_FORMAT(try_cast(${quoteIdent(SESSION_DATE_COLUMN)} AS TIMESTAMP), 'yyyy-MM') IN (${mesesArr.map((m) => `'${m}'`).join(',')})`
     : null;
 
   try {
-    const { warehouses = [] } = await dbFetch("/api/2.0/sql/warehouses");
+    const { warehouses = [] } = await dbFetch("/api/2.0/sql/warehouses") as { warehouses?: Warehouse[] };
     const wh = warehouses.find((w) => w.state === "RUNNING") || warehouses[0];
     if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
 
     const sessionDateFilter = buildSessionDateFilter(meses);
     const aliasedTypificationExpr = sessionTypificationExpr('variables', 's');
     const companySessionsDateFilter = meses.length > 0
-      ? `DATE_FORMAT(try_cast(s.${quoteIdent(SESSION_DATE_COLUMN)} AS TIMESTAMP), 'yyyy-MM') IN (${meses.map((m) => `'${m}'`).join(',')})`
+      ? `DATE_FORMAT(try_cast(s.${quoteIdent(SESSION_DATE_COLUMN)} AS TIMESTAMP), 'yyyy-MM') IN (${meses.map((m: string) => `'${m}'`).join(',')})`
       : null;
     const companySessionsOrgFilter = company
       ? `CAST(o.${quoteIdent('id')} AS STRING) IN ${orgIdsSubquery(null, company)}`
@@ -316,6 +328,6 @@ export default async function handler(req, res) {
       period_filter_applied: meses.length > 0,
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: (err as { message?: string }).message });
   }
 }
