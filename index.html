@@ -793,7 +793,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
 
       <div class="chart-card" data-qtag="#Q4">
         <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Evolução mensal do total de sessões</h2>
-        <div style="font-size:11px;color:#94a3b8;margin-bottom:14px"><code>botmaker_session.creation_time</code> · sessões, beneficiários únicos e total de vidas · últimos 12 meses · <span id="s-total-evol-mode">global</span></div>
+        <div style="font-size:11px;color:#94a3b8;margin-bottom:14px"><code>botmaker_session.creation_time</code> · sessões e beneficiários únicos · últimos 12 meses · <span id="s-total-evol-mode">global</span></div>
         <div class="chart-wrap">
           <div class="skeleton" id="skel-s-total-evol"></div>
           <canvas id="sessionsTotalEvolChart" style="display:none"></canvas>
@@ -2638,10 +2638,6 @@ async function loadSessionsEvolution() {
     }
   }
 
-  const demographicsData = await safeGet('/api/demographics' + buildQS());
-  const totalBeneficiaries = demographicsData && !demographicsData.error
-    ? Number(demographicsData.total_beneficiarios ?? demographicsData.total_vidas) || 0
-    : 0;
   const series = (data && !data.error ? data.series : []) || [];
   const labels = series.map((it) => {
     const [y, mm] = String(it.mes).split('-');
@@ -2752,18 +2748,7 @@ async function loadSessionsEvolution() {
           fill: false,
           tension: 0.35,
         },
-      ].concat(totalBeneficiaries > 0 ? [{
-        label: 'Total de beneficiários',
-        data: labels.map(() => totalBeneficiaries),
-        borderColor: '#f59e0b',
-        backgroundColor: 'rgba(245,158,11,0.08)',
-        borderWidth: 2,
-        borderDash: [2, 5],
-        pointRadius: 2,
-        pointBackgroundColor: '#f59e0b',
-        fill: false,
-        tension: 0,
-      }] : []),
+      ],
     },
     options: {
       responsive: true,
