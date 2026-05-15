@@ -749,8 +749,8 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
     </div>
 
     <div class="chart-card" data-qtag="#Q15">
-      <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Evolução de sessões · top 5 grupos econômicos</h2>
-      <div style="font-size:11px;color:#94a3b8;margin-bottom:14px"><code>botmaker_session.economic_group_name</code> · <span id="s-top-groups-mode">últimos 12 meses</span></div>
+      <h2 id="s-top-groups-title" style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Evolução de sessões · top 5 grupos econômicos</h2>
+      <div style="font-size:11px;color:#94a3b8;margin-bottom:14px"><code id="s-top-groups-source">botmaker_session.economic_group_name</code> · <span id="s-top-groups-mode">últimos 12 meses</span></div>
       <div class="chart-wrap">
         <div class="skeleton" id="skel-s-top-groups"></div>
         <canvas id="sessionsTopGroupsChart" style="display:none"></canvas>
@@ -1938,6 +1938,8 @@ function renderSessionCompanies(items, opts) {
 function renderSessionsTopGroupsEvolution(data) {
   const skel = document.getElementById('skel-s-top-groups');
   const cv = document.getElementById('sessionsTopGroupsChart');
+  const title = document.getElementById('s-top-groups-title');
+  const source = document.getElementById('s-top-groups-source');
   const mode = document.getElementById('s-top-groups-mode');
   const errorBox = document.getElementById('s-top-groups-error');
   if (!cv) return;
@@ -1967,6 +1969,7 @@ function renderSessionsTopGroupsEvolution(data) {
 
   const months = Array.isArray(data.months) ? data.months : [];
   const series = Array.isArray(data.series) ? data.series : [];
+  const isCompanyEvolution = data.dimension === 'company';
   const groupsFromApi = Array.isArray(data.groups) ? data.groups.filter(Boolean) : [];
   const groups = groupsFromApi.length ? groupsFromApi.slice(0, 5) : [...new Set(series.map((item) => item.grupo).filter(Boolean))].slice(0, 5);
   const labels = months.map(monthShortLabel);
@@ -1988,17 +1991,20 @@ function renderSessionsTopGroupsEvolution(data) {
 
   if (mode) {
     const parts = [];
+    if (title) title.textContent = isCompanyEvolution ? 'Evolução de sessões · top 5 empresas' : 'Evolução de sessões · top 5 grupos econômicos';
+    if (source) source.textContent = data.source || (isCompanyEvolution ? 'botmaker_session.organization_id + organizations.name' : 'botmaker_session.economic_group_name');
     parts.push(selectedMonths.size ? `${selectedMonths.size} meses selecionados` : 'últimos 12 meses');
     parts.push('top 5 pelo mês mais recente');
     parts.push('sem nulos');
-    if (currentGroup) parts.push(`grupo: ${currentGroup}`);
+    if (currentGroup) parts.push(isCompanyEvolution ? `empresas do grupo: ${currentGroup}` : `grupo: ${currentGroup}`);
+    if (currentCompany) parts.push(`empresa: ${currentCompany}`);
     mode.textContent = parts.join(' · ');
   }
 
   if (!datasets.length) {
     if (skel) {
       skel.style.display = 'block';
-      skel.innerHTML = 'Sem sessões por grupo econômico para o filtro atual.';
+      skel.innerHTML = isCompanyEvolution ? 'Sem sessões por empresa para o filtro atual.' : 'Sem sessões por grupo econômico para o filtro atual.';
     }
     cv.style.display = 'none';
     return;

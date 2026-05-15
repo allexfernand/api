@@ -126,10 +126,15 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       : (typificationFinisher === 'ia' ? 's.finished_by IS NULL' : null);
     const topGroupMonths = meses.length ? [...meses].sort() : lastNMonthsList(12);
     const topGroupDateFilter = `DATE_FORMAT(try_cast(s.${quoteIdent(SESSION_DATE_COLUMN)} AS TIMESTAMP), 'yyyy-MM') IN (${topGroupMonths.map((m) => `'${m}'`).join(',')})`;
-    const topGroupNameExpr = `TRIM(CAST(s.${quoteIdent('economic_group_name')} AS STRING))`;
-    const topGroupValidFilter = `s.${quoteIdent('economic_group_name')} IS NOT NULL AND ${topGroupNameExpr} != ''`;
+    const topGroupByCompany = Boolean(groupName || company);
+    const topGroupNameExpr = topGroupByCompany
+      ? `TRIM(CAST(o.${quoteIdent('name')} AS STRING))`
+      : `TRIM(CAST(s.${quoteIdent('economic_group_name')} AS STRING))`;
+    const topGroupValidFilter = topGroupByCompany
+      ? `o.${quoteIdent('name')} IS NOT NULL AND ${topGroupNameExpr} != ''`
+      : `s.${quoteIdent('economic_group_name')} IS NOT NULL AND ${topGroupNameExpr} != ''`;
     const topGroupWhere = [topGroupDateFilter, companySessionsOrgFilter, topGroupValidFilter].filter(Boolean).join(' AND ');
-    const topGroupFromSql = companySessionsOrgFilter
+    const topGroupFromSql = topGroupByCompany || companySessionsOrgFilter
       ? `${SESSION_TABLE} s
         INNER JOIN ${ORGANIZATIONS_TABLE} o
           ON CAST(s.${quoteIdent('organization_id')} AS STRING) = CAST(o.${quoteIdent('id')} AS STRING)`
@@ -322,8 +327,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         groups: topGroups,
         series: topGroupsEvolutionRows,
         error: topGroupsEvolutionError,
-        source: "botmaker_session.economic_group_name",
-        ranking: "top_5_latest_month_non_null",
+        source: topGroupByCompany ? "botmaker_session.organization_id + organizations.name" : "botmaker_session.economic_group_name",
+        dimension: topGroupByCompany ? "company" : "economic_group",
+        ranking: topGroupByCompany ? "top_5_companies_latest_month_non_null" : "top_5_latest_month_non_null",
       },
       period_filter_applied: meses.length > 0,
     });
