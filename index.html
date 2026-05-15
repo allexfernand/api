@@ -216,12 +216,14 @@ body {
 .appointment-trend-meta{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px}
 .appointment-trend-pill{font-size:11px;font-weight:700;color:#4338ca;background:#eef2ff;border:1px solid #c7d2fe;border-radius:999px;padding:4px 10px}
 .sessions-utilization-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
-.sessions-utilization-card{border:1px solid var(--border);border-radius:var(--radius-sm);background:#fff;padding:14px;box-shadow:var(--shadow-sm)}
-.sessions-utilization-label{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:#94a3b8;margin-bottom:8px}
-.sessions-utilization-value{font-size:28px;font-weight:800;color:#0f172a;letter-spacing:-.8px;line-height:1}
+.sessions-utilization-card{--accent:#0f766e;--tint:#f0fdfa;border:1px solid color-mix(in srgb,var(--accent) 22%,#e2e8f0);border-radius:var(--radius-sm);background:linear-gradient(180deg,var(--tint),#fff 62%);padding:14px;box-shadow:var(--shadow-sm);position:relative;overflow:hidden}
+.sessions-utilization-card::before{content:"";position:absolute;inset:0 0 auto;height:3px;background:var(--accent)}
+.sessions-utilization-label{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:#475569;margin-bottom:8px}
+.sessions-utilization-value{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;font-size:28px;font-weight:800;color:#0f172a;letter-spacing:-.8px;line-height:1}
+.sessions-utilization-pct{font-size:14px;font-weight:800;color:var(--accent);letter-spacing:-.2px;background:#fff;border:1px solid color-mix(in srgb,var(--accent) 28%,#e2e8f0);border-radius:999px;padding:4px 8px}
 .sessions-utilization-meta{font-size:11px;color:#64748b;margin-top:8px;line-height:1.45}
 .sessions-utilization-track{height:8px;background:#f1f5f9;border-radius:999px;overflow:hidden;margin-top:12px}
-.sessions-utilization-fill{height:100%;background:linear-gradient(90deg,#0f766e,#14b8a6);border-radius:999px}
+.sessions-utilization-fill{height:100%;background:linear-gradient(90deg,var(--accent),color-mix(in srgb,var(--accent) 70%,#ffffff));border-radius:999px}
 .session-typification-list{display:grid;gap:10px}
 .session-typification-row{display:grid;grid-template-columns:minmax(160px,1fr) minmax(120px,2fr) 88px;gap:12px;align-items:center}
 .session-typification-label{font-size:12px;font-weight:700;color:#334155;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -2180,6 +2182,8 @@ function renderSessionsUtilization(data, demographicsData) {
       pct: pctLabel(unique1),
       meta: `${periodLabel(periods.last_1_month)} · ${pctLabel(unique1)} da base de ${fmt(base)} beneficiários`,
       progress: unique1,
+      accent: '#2563eb',
+      tint: '#eff6ff',
     },
     {
       label: 'Utilização · 3 meses',
@@ -2187,6 +2191,8 @@ function renderSessionsUtilization(data, demographicsData) {
       pct: pctLabel(unique3),
       meta: `${periodLabel(periods.last_3_months)} · ${pctLabel(unique3)} da base de ${fmt(base)} beneficiários`,
       progress: unique3,
+      accent: '#0f766e',
+      tint: '#f0fdfa',
     },
     {
       label: 'Utilização · 6 meses',
@@ -2194,6 +2200,8 @@ function renderSessionsUtilization(data, demographicsData) {
       pct: pctLabel(unique6),
       meta: `${periodLabel(periods.last_6_months)} · ${pctLabel(unique6)} da base de ${fmt(base)} beneficiários`,
       progress: unique6,
+      accent: '#7c3aed',
+      tint: '#f5f3ff',
     },
     {
       label: 'Utilização · 12 meses',
@@ -2201,11 +2209,13 @@ function renderSessionsUtilization(data, demographicsData) {
       pct: pctLabel(unique12),
       meta: `${periodLabel(periods.last_12_months)} · ${pctLabel(unique12)} da base de ${fmt(base)} beneficiários`,
       progress: unique12,
+      accent: '#b45309',
+      tint: '#fffbeb',
     },
   ];
-  content.innerHTML = cards.map((card) => `<div class="sessions-utilization-card">
+  content.innerHTML = cards.map((card) => `<div class="sessions-utilization-card" style="--accent:${escapeAttr(card.accent)};--tint:${escapeAttr(card.tint)}">
     <div class="sessions-utilization-label">${escapeHtml(card.label)}</div>
-    <div class="sessions-utilization-value">${fmt(card.value)} - ${escapeHtml(card.pct)}</div>
+    <div class="sessions-utilization-value"><span>${fmt(card.value)}</span><span class="sessions-utilization-pct">${escapeHtml(card.pct)}</span></div>
     <div class="sessions-utilization-meta">${escapeHtml(card.meta)}</div>
     <div class="sessions-utilization-track"><div class="sessions-utilization-fill" style="width:${width(card.progress)}"></div></div>
   </div>`).join('');
