@@ -165,10 +165,11 @@ function orgIdsSubquery(groupName: unknown, company: unknown) {
   )`;
 }
 
-function lastNMonthsList(n: number) {
+function lastNMonthsList(n: number, includeCurrentMonth = true) {
   const out = [];
   const d = new Date();
   d.setUTCDate(1);
+  if (!includeCurrentMonth) d.setUTCMonth(d.getUTCMonth() - 1);
   for (let i = n - 1; i >= 0; i--) {
     const dd = new Date(d);
     dd.setUTCMonth(d.getUTCMonth() - i);
@@ -203,6 +204,12 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   const hasOrgFilter = Boolean(groupName || company);
 
   const monthList = lastNMonthsList(months);
+  const fullMonthScopes = {
+    last_1_month: lastNMonthsList(1, false),
+    last_3_months: lastNMonthsList(3, false),
+    last_6_months: lastNMonthsList(6, false),
+    last_12_months: lastNMonthsList(12, false),
+  };
   const monthInList = `(${monthList.map((m) => `'${m}'`).join(',')})`;
   const sessionDateExpr = `try_cast(s.${quoteIdent(SESSION_DATE_COLUMN)} AS TIMESTAMP)`;
   const monthsSqlFilter = `DATE_FORMAT(${sessionDateExpr}, 'yyyy-MM') IN ${monthInList}`;
@@ -297,10 +304,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       FROM beneficiary_base
       GROUP BY mes
       UNION ALL
-      SELECT '__last_3_months', COUNT(DISTINCT CASE WHEN mes IN (${lastNMonthsList(3).map((month) => `'${month}'`).join(',')}) THEN beneficiary_key END)
+      SELECT '__last_1_month', COUNT(DISTINCT CASE WHEN mes IN (${fullMonthScopes.last_1_month.map((month) => `'${month}'`).join(',')}) THEN beneficiary_key END)
       FROM beneficiary_base
       UNION ALL
-      SELECT '__last_6_months', COUNT(DISTINCT CASE WHEN mes IN (${lastNMonthsList(6).map((month) => `'${month}'`).join(',')}) THEN beneficiary_key END)
+      SELECT '__last_3_months', COUNT(DISTINCT CASE WHEN mes IN (${fullMonthScopes.last_3_months.map((month) => `'${month}'`).join(',')}) THEN beneficiary_key END)
+      FROM beneficiary_base
+      UNION ALL
+      SELECT '__last_6_months', COUNT(DISTINCT CASE WHEN mes IN (${fullMonthScopes.last_6_months.map((month) => `'${month}'`).join(',')}) THEN beneficiary_key END)
       FROM beneficiary_base
       UNION ALL
       SELECT '__last_12_months', COUNT(DISTINCT beneficiary_key)
@@ -314,6 +324,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     ]));
     const beneficiariesByMes = new Map();
     const utilization = {
+      last_1_month: 0,
       last_3_months: 0,
       last_6_months: 0,
       last_12_months: 0,
@@ -321,7 +332,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     beneficiaryRows.forEach((row) => {
       const key = String(getCell(row[0]) || "");
       const value = toInt(row[1]);
-      if (key === "__last_3_months") utilization.last_3_months = value;
+      if (key === "__last_1_month") utilization.last_1_month = value;
+      else if (key === "__last_3_months") utilization.last_3_months = value;
       else if (key === "__last_6_months") utilization.last_6_months = value;
       else if (key === "__last_12_months") utilization.last_12_months = value;
       else beneficiariesByMes.set(key, value);
@@ -337,6 +349,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       months,
       series,
       utilization,
+      utilization_periods: fullMonthScopes,
       beneficiaries_included: Boolean(beneficiaryExpr),
       filters: { group_name: groupName, company, type: typeFilter },
       mode,

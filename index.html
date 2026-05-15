@@ -215,7 +215,7 @@ body {
 .appointments-analysis-grid>.card-box,.appointments-analysis-grid>.chart-card{margin-bottom:0}
 .appointment-trend-meta{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px}
 .appointment-trend-pill{font-size:11px;font-weight:700;color:#4338ca;background:#eef2ff;border:1px solid #c7d2fe;border-radius:999px;padding:4px 10px}
-.sessions-utilization-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.sessions-utilization-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
 .sessions-utilization-card{border:1px solid var(--border);border-radius:var(--radius-sm);background:#fff;padding:14px;box-shadow:var(--shadow-sm)}
 .sessions-utilization-label{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:#94a3b8;margin-bottom:8px}
 .sessions-utilization-value{font-size:28px;font-weight:800;color:#0f172a;letter-spacing:-.8px;line-height:1}
@@ -395,7 +395,7 @@ body {
 }
 @media (max-width:980px){
   .appointments-analysis-grid,.sessions-appointments-grid{grid-template-columns:1fr}
-  .sessions-utilization-grid{grid-template-columns:1fr}
+  .sessions-utilization-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
   .petit-kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
   .petit-grid-2,.petit-grid-3{grid-template-columns:1fr}
   .appointments-volume-scroll{max-height:320px}
@@ -417,6 +417,7 @@ body {
   .session-typification-track{grid-column:1 / -1;grid-row:2}
   .filter-select{width:100%;max-width:none;min-width:0}
   .quality-kpi-grid{grid-template-columns:repeat(2,1fr)}
+  .sessions-utilization-grid{grid-template-columns:1fr}
   .quality-distribution-card{height:auto!important}
   .quality-distribution-list.scrollable{overflow:visible;padding-right:0}
   .quality-subcriteria-row{grid-template-columns:1fr 96px;gap:8px}
@@ -2147,6 +2148,8 @@ function renderSessionsUtilization(data, demographicsData) {
     ? Number(demographicsData.total_beneficiarios ?? demographicsData.total_vidas) || 0
     : 0;
   const utilization = data?.utilization || {};
+  const periods = data?.utilization_periods || {};
+  const unique1 = Number(utilization.last_1_month) || 0;
   const unique12 = Number(utilization.last_12_months) || 0;
   const unique6 = Number(utilization.last_6_months) || 0;
   const unique3 = Number(utilization.last_3_months) || 0;
@@ -2156,6 +2159,12 @@ function renderSessionsUtilization(data, demographicsData) {
     return ratio === null ? '—' : fmtPct(ratio);
   };
   const width = (value) => `${Math.max(0, Math.min(100, pct(value) || 0))}%`;
+  const periodLabel = (months) => {
+    const values = (months || []).filter(Boolean);
+    if (!values.length) return 'período indisponível';
+    if (values.length === 1) return monthShortLabel(values[0]);
+    return `de ${monthShortLabel(values[0])} a ${monthShortLabel(values[values.length - 1])}`;
+  };
   if (context) context.textContent = currentGroup ? `grupo: ${currentGroup}` : 'global';
   if (errorBox) {
     const hasError = !base || !data?.utilization;
@@ -2166,22 +2175,28 @@ function renderSessionsUtilization(data, demographicsData) {
   }
   const cards = [
     {
-      label: 'Base total',
-      value: base,
-      meta: `${fmt(unique12)} beneficiários únicos em 12 meses · ${pctLabel(unique12)} da base`,
-      progress: unique12,
+      label: 'Utilização · último mês cheio',
+      value: unique1,
+      meta: `${periodLabel(periods.last_1_month)} · ${pctLabel(unique1)} da base de ${fmt(base)} beneficiários`,
+      progress: unique1,
     },
     {
       label: 'Utilização · 3 meses',
       value: unique3,
-      meta: `${pctLabel(unique3)} da base de ${fmt(base)} beneficiários`,
+      meta: `${periodLabel(periods.last_3_months)} · ${pctLabel(unique3)} da base de ${fmt(base)} beneficiários`,
       progress: unique3,
     },
     {
       label: 'Utilização · 6 meses',
       value: unique6,
-      meta: `${pctLabel(unique6)} da base de ${fmt(base)} beneficiários`,
+      meta: `${periodLabel(periods.last_6_months)} · ${pctLabel(unique6)} da base de ${fmt(base)} beneficiários`,
       progress: unique6,
+    },
+    {
+      label: 'Utilização · 12 meses',
+      value: unique12,
+      meta: `${periodLabel(periods.last_12_months)} · ${pctLabel(unique12)} da base de ${fmt(base)} beneficiários`,
+      progress: unique12,
     },
   ];
   content.innerHTML = cards.map((card) => `<div class="sessions-utilization-card">
