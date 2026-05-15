@@ -81,6 +81,9 @@ function uniqueBeneficiaryExpr(columns: string[]) {
     'beneficiary_id', 'beneficiario_id', 'id_beneficiario', 'idBeneficiario',
     'beneficiaryId', 'user_id', 'userId', 'customer_id', 'customerId',
     'patient_id', 'patientId', 'member_id', 'memberId', 'health_user_id',
+    'person_id', 'personId', 'individual_id', 'individualId', 'client_id',
+    'clientId', 'cliente_id', 'id_cliente', 'id_usuario', 'usuario_id',
+    'id_paciente', 'paciente_id', 'beneficiary_external_id',
   ]);
   const cpfExpressions = [];
   const idExpressions = [];
@@ -115,7 +118,20 @@ function uniqueBeneficiaryExpr(columns: string[]) {
       `CAST(s.${quoteIdent('variables')}['patient_id'] AS STRING)`,
       `CAST(s.${quoteIdent('variables')}['patientId'] AS STRING)`,
       `CAST(s.${quoteIdent('variables')}['member_id'] AS STRING)`,
-      `CAST(s.${quoteIdent('variables')}['memberId'] AS STRING)`
+      `CAST(s.${quoteIdent('variables')}['memberId'] AS STRING)`,
+      `CAST(s.${quoteIdent('variables')}['person_id'] AS STRING)`,
+      `CAST(s.${quoteIdent('variables')}['personId'] AS STRING)`,
+      `CAST(s.${quoteIdent('variables')}['individual_id'] AS STRING)`,
+      `CAST(s.${quoteIdent('variables')}['individualId'] AS STRING)`,
+      `CAST(s.${quoteIdent('variables')}['client_id'] AS STRING)`,
+      `CAST(s.${quoteIdent('variables')}['clientId'] AS STRING)`,
+      `CAST(s.${quoteIdent('variables')}['cliente_id'] AS STRING)`,
+      `CAST(s.${quoteIdent('variables')}['id_cliente'] AS STRING)`,
+      `CAST(s.${quoteIdent('variables')}['id_usuario'] AS STRING)`,
+      `CAST(s.${quoteIdent('variables')}['usuario_id'] AS STRING)`,
+      `CAST(s.${quoteIdent('variables')}['id_paciente'] AS STRING)`,
+      `CAST(s.${quoteIdent('variables')}['paciente_id'] AS STRING)`,
+      `CAST(s.${quoteIdent('variables')}['beneficiary_external_id'] AS STRING)`
     );
   }
   if (!cpfExpressions.length && !idExpressions.length) return null;
@@ -125,7 +141,7 @@ function uniqueBeneficiaryExpr(columns: string[]) {
   const idExpr = idExpressions.length
     ? `NULLIF(TRIM(CAST(COALESCE(${idExpressions.join(', ')}) AS STRING)), '')`
     : "CAST(NULL AS STRING)";
-  return `COALESCE(CASE WHEN ${cpfExpr} IS NOT NULL THEN CONCAT('cpf:', ${cpfExpr}) END, CASE WHEN ${idExpr} IS NOT NULL THEN CONCAT('beneficiary:', ${idExpr}) END)`;
+  return `COALESCE(CASE WHEN ${idExpr} IS NOT NULL THEN CONCAT('beneficiary:', ${idExpr}) END, CASE WHEN ${cpfExpr} IS NOT NULL THEN CONCAT('cpf:', ${cpfExpr}) END)`;
 }
 
 function orgIdsSubquery(groupName: unknown, company: unknown) {
