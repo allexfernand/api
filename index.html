@@ -703,7 +703,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
         <div>
           <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;margin-bottom:3px">Total de Sessões · grupo econômico</div>
           <div style="font-size:34px;font-weight:700;color:#0f766e;letter-spacing:-1px;line-height:1" id="bullet-sessoes-eg">—</div>
-          <div style="font-size:11px;color:#94a3b8;margin-top:3px" id="bullet-sessoes-eg-periodo">botmaker_session.economic_group_name · todos os períodos</div>
+          <div style="font-size:11px;color:#94a3b8;margin-top:3px;display:none" id="bullet-sessoes-eg-periodo"></div>
         </div>
       </div>
     </div>
@@ -734,7 +734,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
           <div id="bar-fin-eg-humano" style="background:#6366f1;height:100%;transition:width .4s"></div>
           <div id="bar-fin-eg-ia" style="background:#14b8a6;height:100%;transition:width .4s"></div>
         </div>
-        <div style="font-size:11px;color:#94a3b8;margin-top:10px;text-align:right">Total: <strong id="s-fin-eg-total" style="color:#64748b">—</strong> sessões · mesma base do Q14</div>
+        <div style="font-size:11px;color:#94a3b8;margin-top:10px;text-align:right">Total: <strong id="s-fin-eg-total" style="color:#64748b">—</strong> sessões</div>
         <div style="font-size:11px;color:#f59e0b;margin-top:6px;text-align:right;display:none" id="s-fin-eg-filter-note"></div>
       </div>
     </div>
@@ -765,7 +765,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
 
     <div class="chart-card" data-qtag="#Q15">
       <h2 id="s-top-groups-title" style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Evolução de sessões · top 5 grupos/empresas</h2>
-      <div style="font-size:11px;color:#94a3b8;margin-bottom:14px"><code id="s-top-groups-source">botmaker_session.economic_group_name / organizations.name</code> · <span id="s-top-groups-mode">últimos 12 meses</span></div>
+      <div style="font-size:11px;color:#94a3b8;margin-bottom:14px"><span id="s-top-groups-source"></span><span id="s-top-groups-mode">Últimos 12 meses</span></div>
       <div class="chart-wrap">
         <div class="skeleton" id="skel-s-top-groups"></div>
         <canvas id="sessionsTopGroupsChart" style="display:none"></canvas>
@@ -794,7 +794,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
     <div class="fluid-grid">
       <div class="chart-card" data-qtag="#Q3">
         <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Evolução mensal de finalizações</h2>
-        <div style="font-size:11px;color:#94a3b8;margin-bottom:14px"><code>botmaker_session.creation_time</code> · últimos 12 meses · <span id="s-evol-mode">global</span></div>
+        <div style="font-size:11px;color:#94a3b8;margin-bottom:14px">Últimos 12 meses · <span id="s-evol-mode">global</span></div>
         <div class="chart-wrap">
           <div class="skeleton" id="skel-s-evol"></div>
           <canvas id="sessionsEvolChart" style="display:none"></canvas>
@@ -804,7 +804,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
 
       <div class="chart-card" data-qtag="#Q4">
         <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Evolução mensal do total de sessões</h2>
-        <div style="font-size:11px;color:#94a3b8;margin-bottom:14px"><code>botmaker_session.creation_time</code> · sessões e beneficiários únicos · últimos 12 meses · <span id="s-total-evol-mode">global</span></div>
+        <div style="font-size:11px;color:#94a3b8;margin-bottom:14px">Sessões e beneficiários únicos · últimos 12 meses · <span id="s-total-evol-mode">global</span></div>
         <div class="chart-wrap">
           <div class="skeleton" id="skel-s-total-evol"></div>
           <canvas id="sessionsTotalEvolChart" style="display:none"></canvas>
@@ -829,7 +829,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap">
         <div>
           <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Evolução diária do total de sessões</h2>
-          <div style="font-size:11px;color:#94a3b8"><code>botmaker_session.creation_time</code> · dias do mês · <span id="s-daily-mode">mês atual</span></div>
+          <div style="font-size:11px;color:#94a3b8">Dias do mês · <span id="s-daily-mode">mês atual</span></div>
         </div>
         <div class="filter-group">
           <label for="sessions-daily-month-select">📅 Mês</label>
@@ -846,7 +846,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
     <div class="sessions-appointments-grid">
       <div class="chart-card" data-qtag="#Q8">
         <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Sessões x agendamentos</h2>
-        <div style="font-size:11px;color:#94a3b8;margin-bottom:14px"><code>botmaker_session.creation_time</code> x <code>atendimento_summarized_gold_live.hora_criacao_atendimento</code> · mesmos períodos · <span id="s-attendance-mode">global</span></div>
+        <div style="font-size:11px;color:#94a3b8;margin-bottom:14px">Mesmos períodos · <span id="s-attendance-mode">global</span></div>
         <div class="chart-wrap">
           <div class="skeleton" id="skel-s-attendance"></div>
           <canvas id="sessionsAttendanceChart" style="display:none"></canvas>
@@ -1120,7 +1120,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;flex-wrap:wrap">
         <div>
           <div class="section-title" style="margin-bottom:4px"><i class="fa-solid fa-chart-column" style="margin-right:6px"></i>Volume mensal de qualidade e sessões</div>
-          <div style="font-size:11px;color:#94a3b8"><code>quality_analysis_silver_criteria</code> x <code>botmaker_session.creation_time</code> · conversas únicas · últimos 12 meses</div>
+          <div style="font-size:11px;color:#94a3b8">Conversas únicas · últimos 12 meses</div>
         </div>
         <select class="filter-select" id="quality-volume-evolution-mode" onchange="onQualityVolumeEvolutionModeChange(this.value)" style="min-width:210px">
           <option value="both">Qualidade + sessões</option>
@@ -1919,7 +1919,6 @@ function renderSessionEconomicGroupFinishers(items, opts) {
   if (note) {
     const messages = [];
     if (currentGroup) messages.push(`grupo: ${currentGroup}`);
-    messages.push('mesma base do Q14');
     note.style.display = messages.length ? 'block' : 'none';
     note.textContent = messages.join(' · ');
   }
@@ -2043,7 +2042,7 @@ function renderSessionsTopGroupsEvolution(data) {
   if (mode) {
     const parts = [];
     if (title) title.textContent = isCompanyEvolution ? 'Evolução de sessões · top 5 empresas' : 'Evolução de sessões · top 5 grupos econômicos';
-    if (source) source.textContent = data.source || (isCompanyEvolution ? 'botmaker_session.organization_id + organizations.name' : 'botmaker_session.economic_group_name');
+    if (source) source.textContent = '';
     parts.push(selectedMonths.size ? `${selectedMonths.size} meses selecionados` : 'últimos 12 meses');
     parts.push('top 5 pelo mês mais recente');
     parts.push('sem nulos');
@@ -2362,14 +2361,9 @@ async function loadSessions() {
   if (sessions && !sessions.error) {
     if (economicGroupBullet) economicGroupBullet.textContent = sessions.economic_group_total_error ? 'Erro' : fmt(sessions.economic_group_total || 0);
     if (economicGroupPeriodoLabel) {
-      let economicGroupLabel = sessions.company_sessions_mode === 'company'
-        ? 'Mesmo total do Q14 · empresas do filtro global'
-        : 'Mesmo total do Q14 · grupos econômicos';
-      if (currentGroup) economicGroupLabel += ` · ${currentGroup}`;
-      if (meses.length === 1) { const [y, mm] = meses[0].split('-'); economicGroupLabel += ` · ${mN[mm]}/${y}`; }
-      else if (meses.length > 1) economicGroupLabel += ` · ${meses.length} meses selecionados`;
-      economicGroupPeriodoLabel.textContent = economicGroupLabel;
-      economicGroupPeriodoLabel.title = economicGroupLabel;
+      economicGroupPeriodoLabel.style.display = 'none';
+      economicGroupPeriodoLabel.textContent = '';
+      economicGroupPeriodoLabel.title = '';
     }
     renderSessionEconomicGroupFinishers(sessions.economic_group_finishers || [], {
       error: sessions.economic_group_finishers_error,
@@ -2387,6 +2381,7 @@ async function loadSessions() {
     if (economicGroupBullet) economicGroupBullet.textContent = 'Erro';
     const msg = sessions && sessions.error ? sessions.error : 'Erro ao carregar sessões';
     if (economicGroupPeriodoLabel) {
+      economicGroupPeriodoLabel.style.display = 'block';
       economicGroupPeriodoLabel.textContent = String(msg).slice(0, 220);
       economicGroupPeriodoLabel.title = String(msg);
     }
