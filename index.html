@@ -3214,40 +3214,38 @@ function renderQualityVolumeEvolutionChart(evolution) {
   const datasets = [];
   if (showQuality) {
     datasets.push({
-      type: 'bar',
+      type: 'line',
       label: 'Sessões avaliadas',
       data: items.map(getEvaluatedSessions),
       yAxisID: 'y',
-      backgroundColor: 'rgba(15,118,110,0.78)',
       borderColor: '#0f766e',
-      borderWidth: 1,
-      borderRadius: 6,
-      borderSkipped: false,
-      barPercentage: showSessions ? 0.58 : 0.72,
-      categoryPercentage: 0.72,
+      backgroundColor: 'rgba(15,118,110,0.08)',
+      borderWidth: 2,
+      pointRadius: 3,
+      pointBackgroundColor: '#0f766e',
+      tension: 0.28,
+      fill: false,
     });
   }
   if (showSessions) {
     datasets.push({
-      type: showQuality ? 'line' : 'bar',
+      type: 'line',
       label: 'Sessões',
       data: items.map((item) => Number(item.total_sessions) || 0),
       yAxisID: showQuality ? 'y1' : 'y',
       borderColor: '#6366f1',
-      backgroundColor: showQuality ? '#6366f1' : 'rgba(99,102,241,0.72)',
+      backgroundColor: 'rgba(99,102,241,0.08)',
       borderWidth: 2,
       borderDash: showQuality ? [6, 5] : [],
-      pointRadius: showQuality ? 3 : 0,
+      pointRadius: 3,
       pointBackgroundColor: '#6366f1',
-      borderRadius: showQuality ? 0 : 6,
-      borderSkipped: false,
       tension: 0.28,
       fill: false,
     });
   }
 
   qualityVolumeEvolutionChart = new Chart(canvas, {
-    type: 'bar',
+    type: 'line',
     data: {
       labels: items.map((item) => qualityMonthLabel(item.month)),
       datasets,
