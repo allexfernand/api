@@ -793,7 +793,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
 
       <div class="chart-card" data-qtag="#Q4">
         <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Evolução mensal do total de sessões</h2>
-        <div style="font-size:11px;color:#94a3b8;margin-bottom:14px"><code>botmaker_session.creation_time</code> · últimos 12 meses · <span id="s-total-evol-mode">global</span></div>
+        <div style="font-size:11px;color:#94a3b8;margin-bottom:14px"><code>botmaker_session.creation_time</code> · sessões e CPFs únicos · últimos 12 meses · <span id="s-total-evol-mode">global</span></div>
         <div class="chart-wrap">
           <div class="skeleton" id="skel-s-total-evol"></div>
           <canvas id="sessionsTotalEvolChart" style="display:none"></canvas>
@@ -2646,6 +2646,7 @@ async function loadSessionsEvolution() {
   const humanoValues = series.map((it) => Number(it.humano) || 0);
   const iaValues = series.map((it) => Number(it.ia) || 0);
   const totalValues = series.map((it) => Number(it.total) || ((Number(it.humano) || 0) + (Number(it.ia) || 0)));
+  const uniqueCpfValues = series.map((it) => Number(it.unique_cpfs) || 0);
 
   if (skel) skel.style.display = 'none';
   if (cv && data && !data.error) cv.style.display = 'block';
@@ -2723,27 +2724,41 @@ async function loadSessionsEvolution() {
     type: 'line',
     data: {
       labels,
-      datasets: [{
-        label: 'Total',
-        data: totalValues,
-        borderColor: '#0f766e',
-        backgroundColor: 'rgba(15,118,110,0.08)',
-        borderWidth: 2,
-        pointRadius: 3,
-        pointBackgroundColor: '#0f766e',
-        fill: true,
-        tension: 0.35,
-      }],
+      datasets: [
+        {
+          label: 'Total de sessões',
+          data: totalValues,
+          borderColor: '#0f766e',
+          backgroundColor: 'rgba(15,118,110,0.08)',
+          borderWidth: 2,
+          pointRadius: 3,
+          pointBackgroundColor: '#0f766e',
+          fill: true,
+          tension: 0.35,
+        },
+        {
+          label: 'CPFs únicos',
+          data: uniqueCpfValues,
+          borderColor: '#7c3aed',
+          backgroundColor: 'rgba(124,58,237,0.08)',
+          borderWidth: 2,
+          borderDash: [6, 5],
+          pointRadius: 3,
+          pointBackgroundColor: '#7c3aed',
+          fill: false,
+          tension: 0.35,
+        },
+      ],
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
-        legend: { display: false },
+        legend: { display: true, position: 'top', align: 'end', labels: { boxWidth: 10, boxHeight: 10, color: '#64748b', font: { size: 11 } } },
         tooltip: {
           backgroundColor: '#1e293b', borderColor: '#334155', borderWidth: 1,
           titleColor: '#94a3b8', bodyColor: '#f1f5f9',
-          callbacks: { label: c => `${fmt(c.parsed.y)} sessões` },
+          callbacks: { label: c => `${c.dataset.label}: ${fmt(c.parsed.y)}${c.dataset.label === 'CPFs únicos' ? ' CPFs' : ' sessões'}` },
         },
       },
       scales: {

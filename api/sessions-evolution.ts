@@ -55,6 +55,46 @@ const getCell = (cell: DatabricksCell) => {
 };
 const toInt = (v: DatabricksCell) => { const n = parseInt(String(getCell(v))); return Number.isFinite(n) ? n : 0; };
 
+function pickColumn(columns: string[], candidates: string[]) {
+  const byLower = new Map(columns.map((column) => [column.toLowerCase(), column]));
+  for (const candidate of candidates) {
+    const column = byLower.get(candidate.toLowerCase());
+    if (column) return column;
+  }
+  return null;
+}
+
+async function getColumns(warehouseId: string, tableName: string) {
+  const rows = await runQuery(warehouseId, `DESCRIBE TABLE ${tableName}`);
+  return rows
+    .map((row) => String(getCell(row[0]) || '').trim())
+    .filter((column) => column && !column.startsWith('#'));
+}
+
+function normalizedCpfExpr(columns: string[]) {
+  const directCpfColumn = pickColumn(columns, [
+    'cpf', 'CPF', 'document', 'documento', 'cpf_cnpj', 'cpfCnpj',
+    'beneficiary_cpf', 'beneficiario_cpf', 'cpf_beneficiario',
+  ]);
+  const expressions = [];
+  if (directCpfColumn) {
+    expressions.push(`CAST(s.${quoteIdent(directCpfColumn)} AS STRING)`);
+  }
+  if (columns.some((column) => column.toLowerCase() === 'variables')) {
+    expressions.push(
+      `CAST(s.${quoteIdent('variables')}['cpf'] AS STRING)`,
+      `CAST(s.${quoteIdent('variables')}['CPF'] AS STRING)`,
+      `CAST(s.${quoteIdent('variables')}['document'] AS STRING)`,
+      `CAST(s.${quoteIdent('variables')}['documento'] AS STRING)`,
+      `CAST(s.${quoteIdent('variables')}['cpf_cnpj'] AS STRING)`,
+      `CAST(s.${quoteIdent('variables')}['beneficiary_cpf'] AS STRING)`,
+      `CAST(s.${quoteIdent('variables')}['cpf_beneficiario'] AS STRING)`
+    );
+  }
+  if (!expressions.length) return null;
+  return `NULLIF(regexp_replace(COALESCE(${expressions.join(', ')}), '[^0-9]', ''), '')`;
+}
+
 function orgIdsSubquery(groupName: unknown, company: unknown) {
   if (company) {
     return `(SELECT CAST(id AS STRING) FROM ${ORGANIZATIONS_TABLE} WHERE name = '${escape(company)}')`;
@@ -115,6 +155,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const { warehouses = [] } = await dbFetch("/api/2.0/sql/warehouses") as { warehouses?: Warehouse[] };
     const wh = warehouses.find((w) => w.state === "RUNNING") || warehouses[0];
     if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
+    const sessionColumns = await getColumns(wh.id, SESSION_TABLE);
+    const cpfExpr = normalizedCpfExpr(sessionColumns);
 
     const filters = [granularity === 'day' ? daySqlFilter : monthsSqlFilter];
     if (hasOrgFilter) {
@@ -167,7 +209,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       });
     }
 
-    const rows = await runQuery(wh.id, `
+    const [rows, cpfRows] = await Promise.all([
+      runQuery(wh.id, `
       SELECT
         DATE_FORMAT(${sessionDateExpr}, 'yyyy-MM') AS mes,
         CASE WHEN s.finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END AS tipo_atendimento,
@@ -178,16 +221,28 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         DATE_FORMAT(${sessionDateExpr}, 'yyyy-MM'),
         CASE WHEN s.finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END
       ORDER BY mes
-    `);
+    `),
+      cpfExpr ? runQuery(wh.id, `
+      SELECT
+        DATE_FORMAT(${sessionDateExpr}, 'yyyy-MM') AS mes,
+        COUNT(DISTINCT ${cpfExpr}) AS unique_cpfs
+      FROM ${fromSql}
+      ${where}
+        AND ${cpfExpr} IS NOT NULL
+      GROUP BY DATE_FORMAT(${sessionDateExpr}, 'yyyy-MM')
+      ORDER BY mes
+    `) : Promise.resolve([]),
+    ]);
 
     const byMesTipo = new Map(rows.map((r) => [
       `${String(getCell(r[0]) || '')}|${String(getCell(r[1]) || '').toUpperCase()}`,
       toInt(r[2]),
     ]));
+    const cpfsByMes = new Map(cpfRows.map((r) => [String(getCell(r[0]) || ''), toInt(r[1])]));
     const series = monthList.map((m) => {
       const humano = byMesTipo.get(`${m}|HUMANO`) || 0;
       const ia = byMesTipo.get(`${m}|IA`) || 0;
-      return { mes: m, humano, ia, total: humano + ia };
+      return { mes: m, humano, ia, total: humano + ia, unique_cpfs: cpfsByMes.get(m) || 0 };
     });
 
     res.status(200).json({
@@ -196,6 +251,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       filters: { group_name: groupName, company, type: typeFilter },
       mode,
       source: "botmaker_session.creation_time",
+      cpf_source: cpfExpr ? "botmaker_session.cpf/variables" : null,
     });
   } catch (err) {
     res.status(500).json({ error: (err as { message?: string }).message });
