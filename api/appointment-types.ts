@@ -42,6 +42,7 @@ async function runQuery(warehouseId: string, sql: string): Promise<DatabricksRow
 
 const escape = (s: unknown) => String(s).replace(/'/g, "''");
 const quoteIdent = (s: unknown) => `\`${String(s).replace(/`/g, "``")}\``;
+const normalizedGroupExpr = `UPPER(TRIM(CAST(grupo_economico AS STRING)))`;
 const getCell = (cell: DatabricksCell) => {
   if (cell === null || cell === undefined) return null;
   if (typeof cell === "object" && cell.string_value !== undefined) return cell.string_value;
@@ -86,7 +87,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     AND ${quoteIdent(APPOINTMENTS_DATE_COLUMN)} < '${nextMonth(month)}-01'
   )`).join(' OR ');
   const groupFilter = groupName
-    ? `AND grupo_economico LIKE '%${escape(groupName)}'`
+    ? `AND ${normalizedGroupExpr} LIKE CONCAT('%', UPPER(TRIM('${escape(groupName)}')), '%')`
     : '';
 
   const typeExpr = `CASE

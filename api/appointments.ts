@@ -46,6 +46,7 @@ const getCell = (cell: DatabricksCell) => {
 const toInt = (v: DatabricksCell) => { const n = parseInt(String(getCell(v))); return Number.isFinite(n) ? n : 0; };
 const escape = (s: unknown) => String(s).replace(/'/g, "''");
 const quoteIdent = (s: unknown) => `\`${String(s).replace(/`/g, "``")}\``;
+const normalizedGroupExpr = `UPPER(TRIM(CAST(grupo_economico AS STRING)))`;
 
 function lastNMonthsList(n: number) {
   const out = [];
@@ -83,7 +84,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   )`).join(' OR ');
 
   const groupFilter = groupName
-    ? `AND grupo_economico LIKE '%${escape(groupName)}'`
+    ? `AND ${normalizedGroupExpr} LIKE CONCAT('%', UPPER(TRIM('${escape(groupName)}')), '%')`
     : '';
 
   try {
