@@ -382,11 +382,18 @@ function buildCriteriaOrgCondition(criteriaColumns, scope) {
 
 async function loadQualityVolumeEvolution(warehouseId, criteriaColumns, scope) {
   const criteriaDateColumn = pickColumn(criteriaColumns, DATE_CANDIDATES);
+  const criteriaConversationColumn = pickColumn(criteriaColumns, [
+    "attendance_id", "atendimento_id", "appointment_id", "session_id",
+    "conversation_id", "botmaker_session_id", "ticket_id",
+  ]);
   const months = lastNMonthsList(12);
   const monthList = months.map((month) => `'${escapeSql(month)}'`).join(",");
   const qualityMonthExpr = criteriaDateColumn
     ? `DATE_FORMAT(DATE_TRUNC('MONTH', try_cast(${qcol("c", criteriaDateColumn)} AS TIMESTAMP)), 'yyyy-MM')`
     : null;
+  const qualityVolumeExpr = criteriaConversationColumn
+    ? `COUNT(DISTINCT CAST(${qcol("c", criteriaConversationColumn)} AS STRING))`
+    : "COUNT(*)";
   const sessionMonthExpr = `DATE_FORMAT(DATE_TRUNC('MONTH', try_cast(s.${quoteIdent("creation_time")} AS TIMESTAMP)), 'yyyy-MM')`;
   const criteriaOrgCondition = criteriaDateColumn ? buildCriteriaOrgCondition(criteriaColumns, scope) : "";
   const sessionOrgFilter = scope.company
@@ -400,7 +407,7 @@ async function loadQualityVolumeEvolution(warehouseId, criteriaColumns, scope) {
     criteriaDateColumn ? runQuery(warehouseId, `
       SELECT
         ${qualityMonthExpr} AS month,
-        COUNT(*) AS total_quality_rows
+        ${qualityVolumeExpr} AS total_evaluated_sessions
       FROM ${EVALUATED_CRITERIA_TABLE} c
       WHERE try_cast(${qcol("c", criteriaDateColumn)} AS TIMESTAMP) IS NOT NULL
         AND ${qualityMonthExpr} IN (${monthList})
@@ -427,6 +434,7 @@ async function loadQualityVolumeEvolution(warehouseId, criteriaColumns, scope) {
     months,
     monthly: months.map((month) => ({
       month,
+      total_evaluated_sessions: qualityByMonth.get(month) || 0,
       total_quality_rows: qualityByMonth.get(month) || 0,
       total_sessions: sessionsByMonth.get(month) || 0,
     })),

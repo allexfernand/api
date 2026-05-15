@@ -1097,16 +1097,16 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;flex-wrap:wrap">
         <div>
           <div class="section-title" style="margin-bottom:4px"><i class="fa-solid fa-chart-column" style="margin-right:6px"></i>Volume mensal de qualidade e sessões</div>
-          <div style="font-size:11px;color:#94a3b8"><code>quality_analysis_silver_criteria</code> x <code>botmaker_session.creation_time</code> · últimos 12 meses</div>
+          <div style="font-size:11px;color:#94a3b8"><code>quality_analysis_silver_criteria</code> x <code>botmaker_session.creation_time</code> · conversas únicas · últimos 12 meses</div>
         </div>
         <select class="filter-select" id="quality-volume-evolution-mode" onchange="onQualityVolumeEvolutionModeChange(this.value)" style="min-width:210px">
           <option value="both">Qualidade + sessões</option>
-          <option value="quality">Linhas de qualidade</option>
+          <option value="quality">Sessões avaliadas</option>
           <option value="sessions">Sessões</option>
         </select>
       </div>
       <div class="quality-volume-summary">
-        <div class="quality-volume-chip"><span class="quality-volume-dot" style="background:#0f766e"></span>Qualidade <strong id="quality-volume-total">—</strong></div>
+        <div class="quality-volume-chip"><span class="quality-volume-dot" style="background:#0f766e"></span>Sessões avaliadas <strong id="quality-volume-total">—</strong></div>
         <div class="quality-volume-chip"><span class="quality-volume-dot" style="background:#6366f1"></span>Sessões <strong id="quality-sessions-volume-total">—</strong></div>
       </div>
       <div class="chart-wrap" style="height:320px">
@@ -3193,7 +3193,8 @@ function renderQualityVolumeEvolutionChart(evolution) {
   const sessionsTotalEl = document.getElementById('quality-sessions-volume-total');
   const items = (evolution?.monthly || []).filter((item) => item.month);
   if (modeSelect) modeSelect.value = selectedQualityVolumeEvolutionMode;
-  const totalQualityRows = items.reduce((acc, item) => acc + (Number(item.total_quality_rows) || 0), 0);
+  const getEvaluatedSessions = (item) => Number(item.total_evaluated_sessions ?? item.total_quality_rows) || 0;
+  const totalQualityRows = items.reduce((acc, item) => acc + getEvaluatedSessions(item), 0);
   const totalSessions = items.reduce((acc, item) => acc + (Number(item.total_sessions) || 0), 0);
   if (qualityTotalEl) qualityTotalEl.textContent = fmt(totalQualityRows);
   if (sessionsTotalEl) sessionsTotalEl.textContent = fmt(totalSessions);
@@ -3214,8 +3215,8 @@ function renderQualityVolumeEvolutionChart(evolution) {
   if (showQuality) {
     datasets.push({
       type: 'bar',
-      label: 'Linhas de qualidade',
-      data: items.map((item) => Number(item.total_quality_rows) || 0),
+      label: 'Sessões avaliadas',
+      data: items.map(getEvaluatedSessions),
       yAxisID: 'y',
       backgroundColor: 'rgba(15,118,110,0.78)',
       borderColor: '#0f766e',
