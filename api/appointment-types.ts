@@ -86,6 +86,8 @@ function buildGroupFilter(columns: string[], groupName: unknown) {
   const conditions = [];
   const groupColumn = pickColumn(columns, ['grupo_economico', 'economic_group', 'group_name', 'grupo']);
   const companyColumn = pickColumn(columns, [
+    'nome_conta',
+    'NOME_CONTA',
     'NOME_CLIENTE',
     'nome_cliente',
     'empresa',

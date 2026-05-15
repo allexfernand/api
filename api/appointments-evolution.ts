@@ -82,6 +82,8 @@ function orgNamesSubquery(groupName: unknown) {
 }
 
 const companyColumnCandidates = [
+  'nome_conta',
+  'NOME_CONTA',
   'NOME_CLIENTE',
   'nome_cliente',
   'empresa',
