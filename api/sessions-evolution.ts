@@ -199,6 +199,10 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   const selectedDayMonth = dayMonth || monthList[monthList.length - 1];
   const daySqlFilter = `${sessionDateExpr} >= '${selectedDayMonth}-01'
     AND ${sessionDateExpr} < '${nextMonth(selectedDayMonth)}-01'`;
+  const monthFilterFor = (count: number) => {
+    const scopedMonths = lastNMonthsList(count);
+    return `DATE_FORMAT(${sessionDateExpr}, 'yyyy-MM') IN (${scopedMonths.map((month) => `'${month}'`).join(',')})`;
+  };
 
   try {
     const { warehouses = [] } = await dbFetch("/api/2.0/sql/warehouses") as { warehouses?: Warehouse[] };
@@ -258,7 +262,20 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       });
     }
 
-    const [rows, beneficiaryRows] = await Promise.all([
+    const utilizationQuery = (count: number) => {
+      const scopedFilters = [monthFilterFor(count)];
+      if (hasOrgFilter) {
+        scopedFilters.push(`CAST(o.${quoteIdent('id')} AS STRING) IN ${orgIdsSubquery(groupName, company)}`);
+      }
+      return runQuery(wh.id, `
+        SELECT COUNT(DISTINCT ${beneficiaryExpr}) AS unique_beneficiaries
+        FROM ${fromSql}
+        WHERE ${scopedFilters.join(' AND ')}
+          AND ${beneficiaryExpr} IS NOT NULL
+      `);
+    };
+
+    const [rows, beneficiaryRows, utilizationRows] = await Promise.all([
       runQuery(wh.id, `
       SELECT
         DATE_FORMAT(${sessionDateExpr}, 'yyyy-MM') AS mes,
@@ -281,6 +298,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       GROUP BY DATE_FORMAT(${sessionDateExpr}, 'yyyy-MM')
       ORDER BY mes
     `) : Promise.resolve([]),
+      beneficiaryExpr ? Promise.all([
+        utilizationQuery(3),
+        utilizationQuery(6),
+        utilizationQuery(12),
+      ]) : Promise.resolve([]),
     ]);
 
     const byMesTipo = new Map(rows.map((r) => [
@@ -288,6 +310,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       toInt(r[2]),
     ]));
     const beneficiariesByMes = new Map(beneficiaryRows.map((r) => [String(getCell(r[0]) || ''), toInt(r[1])]));
+    const utilization = {
+      last_3_months: toInt(utilizationRows[0]?.[0]?.[0]),
+      last_6_months: toInt(utilizationRows[1]?.[0]?.[0]),
+      last_12_months: toInt(utilizationRows[2]?.[0]?.[0]),
+    };
     const series = monthList.map((m) => {
       const humano = byMesTipo.get(`${m}|HUMANO`) || 0;
       const ia = byMesTipo.get(`${m}|IA`) || 0;
@@ -298,6 +325,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     res.status(200).json({
       months,
       series,
+      utilization,
       filters: { group_name: groupName, company, type: typeFilter },
       mode,
       source: "botmaker_session.creation_time",
