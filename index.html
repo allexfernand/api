@@ -2396,7 +2396,7 @@ async function loadAppointmentTypes(monthValues, idPrefix='appointment-types') {
   if (content) content.style.display = 'block';
 }
 
-async function renderSessionsAttendanceChart(labels, monthValues, sessionValues, data) {
+async function renderSessionsAttendanceChart(labels, monthValues, sessionValues, data, demographicsData) {
   const skel = document.getElementById('skel-s-attendance');
   const cv = document.getElementById('sessionsAttendanceChart');
   const modeLabel = document.getElementById('s-attendance-mode');
@@ -2418,7 +2418,7 @@ async function renderSessionsAttendanceChart(labels, monthValues, sessionValues,
     showSessionsAttendanceError(appointmentsData);
     return;
   }
-  const demographicsData = await safeGet('/api/demographics' + buildQS());
+  const resolvedDemographicsData = demographicsData || await safeGet('/api/demographics' + buildQS());
 
   const appointmentsSeries = appointmentsData.series || [];
   const appointmentsByMonth = Object.fromEntries(appointmentsSeries.map((it) => [it.mes, Number(it.total) || 0]));
@@ -2430,8 +2430,8 @@ async function renderSessionsAttendanceChart(labels, monthValues, sessionValues,
   const totalSessions = sessionValues.reduce((acc, value) => acc + (Number(value) || 0), 0);
   const totalAppointments = appointmentValues.reduce((acc, value) => acc + (Number(value) || 0), 0);
   const averageRatio = totalAppointments > 0 ? totalSessions / totalAppointments : null;
-  const totalBeneficiaries = demographicsData && !demographicsData.error
-    ? Number(demographicsData.total_beneficiarios ?? demographicsData.total_vidas) || 0
+  const totalBeneficiaries = resolvedDemographicsData && !resolvedDemographicsData.error
+    ? Number(resolvedDemographicsData.total_beneficiarios ?? resolvedDemographicsData.total_vidas) || 0
     : 0;
   const beneficiaryRatioValues = sessionValues.map((sessions) => (
     totalBeneficiaries > 0 ? Number((((Number(sessions) || 0) / totalBeneficiaries) * 100).toFixed(2)) : null
@@ -2689,7 +2689,10 @@ async function loadSessionsEvolution() {
   if (currentGroup)   p.set('group_name', currentGroup);
   const qs = p.toString() ? '?' + p.toString() : '';
 
-  const data = await safeGet('/api/sessions-evolution' + qs);
+  const [data, demographicsData] = await Promise.all([
+    safeGet('/api/sessions-evolution' + qs),
+    safeGet('/api/demographics' + buildQS()),
+  ]);
   if (!data || data.error) {
     if (errorBox) {
       errorBox.style.display = 'block';
@@ -2730,7 +2733,6 @@ async function loadSessionsEvolution() {
     }
   }
 
-  const demographicsData = await safeGet('/api/demographics' + buildQS());
   renderSessionsUtilization(data, demographicsData);
   const series = (data && !data.error ? data.series : []) || [];
   const labels = series.map((it) => {
@@ -2877,7 +2879,7 @@ async function loadSessionsEvolution() {
   });
 
   appointmentTypesBaseMonths = series.map((it) => it.mes);
-  await renderSessionsAttendanceChart(labels, appointmentTypesBaseMonths, totalValues, data);
+  await renderSessionsAttendanceChart(labels, appointmentTypesBaseMonths, totalValues, data, demographicsData);
   await loadSessionAppointmentTypes();
 }
 

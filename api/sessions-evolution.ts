@@ -71,6 +71,14 @@ async function getColumns(warehouseId: string, tableName: string) {
     .filter((column) => column && !column.startsWith('#'));
 }
 
+let sessionColumnsCache: string[] | null = null;
+async function getSessionColumns(warehouseId: string) {
+  if (!sessionColumnsCache) {
+    sessionColumnsCache = await getColumns(warehouseId, SESSION_TABLE);
+  }
+  return sessionColumnsCache;
+}
+
 function uniqueBeneficiaryExpr(columns: string[]) {
   const directCpfColumn = pickColumn(columns, [
     'cpf', 'CPF', 'document', 'documento', 'cpf_cnpj', 'cpfCnpj',
@@ -199,17 +207,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   const selectedDayMonth = dayMonth || monthList[monthList.length - 1];
   const daySqlFilter = `${sessionDateExpr} >= '${selectedDayMonth}-01'
     AND ${sessionDateExpr} < '${nextMonth(selectedDayMonth)}-01'`;
-  const monthFilterFor = (count: number) => {
-    const scopedMonths = lastNMonthsList(count);
-    return `DATE_FORMAT(${sessionDateExpr}, 'yyyy-MM') IN (${scopedMonths.map((month) => `'${month}'`).join(',')})`;
-  };
 
   try {
     const { warehouses = [] } = await dbFetch("/api/2.0/sql/warehouses") as { warehouses?: Warehouse[] };
     const wh = warehouses.find((w) => w.state === "RUNNING") || warehouses[0];
     if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
-    const sessionColumns = await getColumns(wh.id, SESSION_TABLE);
-    const beneficiaryExpr = uniqueBeneficiaryExpr(sessionColumns);
 
     const filters = [granularity === 'day' ? daySqlFilter : monthsSqlFilter];
     if (hasOrgFilter) {
@@ -262,20 +264,10 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       });
     }
 
-    const utilizationQuery = (count: number) => {
-      const scopedFilters = [monthFilterFor(count)];
-      if (hasOrgFilter) {
-        scopedFilters.push(`CAST(o.${quoteIdent('id')} AS STRING) IN ${orgIdsSubquery(groupName, company)}`);
-      }
-      return runQuery(wh.id, `
-        SELECT COUNT(DISTINCT ${beneficiaryExpr}) AS unique_beneficiaries
-        FROM ${fromSql}
-        WHERE ${scopedFilters.join(' AND ')}
-          AND ${beneficiaryExpr} IS NOT NULL
-      `);
-    };
+    const sessionColumns = await getSessionColumns(wh.id);
+    const beneficiaryExpr = uniqueBeneficiaryExpr(sessionColumns);
 
-    const [rows, beneficiaryRows, utilizationRows] = await Promise.all([
+    const [rows, beneficiaryRows] = await Promise.all([
       runQuery(wh.id, `
       SELECT
         DATE_FORMAT(${sessionDateExpr}, 'yyyy-MM') AS mes,
@@ -289,32 +281,49 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       ORDER BY mes
     `),
       beneficiaryExpr ? runQuery(wh.id, `
+      WITH beneficiary_base AS (
+        SELECT
+          DATE_FORMAT(${sessionDateExpr}, 'yyyy-MM') AS mes,
+          ${beneficiaryExpr} AS beneficiary_key
+        FROM ${fromSql}
+        ${where}
+          AND ${beneficiaryExpr} IS NOT NULL
+      )
       SELECT
-        DATE_FORMAT(${sessionDateExpr}, 'yyyy-MM') AS mes,
-        COUNT(DISTINCT ${beneficiaryExpr}) AS unique_beneficiaries
-      FROM ${fromSql}
-      ${where}
-        AND ${beneficiaryExpr} IS NOT NULL
-      GROUP BY DATE_FORMAT(${sessionDateExpr}, 'yyyy-MM')
-      ORDER BY mes
+        mes,
+        COUNT(DISTINCT beneficiary_key) AS unique_beneficiaries
+      FROM beneficiary_base
+      GROUP BY mes
+      UNION ALL
+      SELECT '__last_3_months', COUNT(DISTINCT CASE WHEN mes IN (${lastNMonthsList(3).map((month) => `'${month}'`).join(',')}) THEN beneficiary_key END)
+      FROM beneficiary_base
+      UNION ALL
+      SELECT '__last_6_months', COUNT(DISTINCT CASE WHEN mes IN (${lastNMonthsList(6).map((month) => `'${month}'`).join(',')}) THEN beneficiary_key END)
+      FROM beneficiary_base
+      UNION ALL
+      SELECT '__last_12_months', COUNT(DISTINCT beneficiary_key)
+      FROM beneficiary_base
     `) : Promise.resolve([]),
-      beneficiaryExpr ? Promise.all([
-        utilizationQuery(3),
-        utilizationQuery(6),
-        utilizationQuery(12),
-      ]) : Promise.resolve([]),
     ]);
 
     const byMesTipo = new Map(rows.map((r) => [
       `${String(getCell(r[0]) || '')}|${String(getCell(r[1]) || '').toUpperCase()}`,
       toInt(r[2]),
     ]));
-    const beneficiariesByMes = new Map(beneficiaryRows.map((r) => [String(getCell(r[0]) || ''), toInt(r[1])]));
+    const beneficiariesByMes = new Map();
     const utilization = {
-      last_3_months: toInt(utilizationRows[0]?.[0]?.[0]),
-      last_6_months: toInt(utilizationRows[1]?.[0]?.[0]),
-      last_12_months: toInt(utilizationRows[2]?.[0]?.[0]),
+      last_3_months: 0,
+      last_6_months: 0,
+      last_12_months: 0,
     };
+    beneficiaryRows.forEach((row) => {
+      const key = String(getCell(row[0]) || "");
+      const value = toInt(row[1]);
+      if (key === "__last_3_months") utilization.last_3_months = value;
+      else if (key === "__last_6_months") utilization.last_6_months = value;
+      else if (key === "__last_12_months") utilization.last_12_months = value;
+      else beneficiariesByMes.set(key, value);
+    });
     const series = monthList.map((m) => {
       const humano = byMesTipo.get(`${m}|HUMANO`) || 0;
       const ia = byMesTipo.get(`${m}|IA`) || 0;
