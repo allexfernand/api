@@ -2229,7 +2229,7 @@ function renderSessionsTotalEvolutionChart(labels, totalValues, uniqueBeneficiar
   }];
   if (hasUniqueBeneficiaryData) {
     datasets.push({
-      label: 'Beneficiários únicos',
+      label: 'Beneficiários únicos · média sessões/benef.',
       data: uniqueBeneficiaryValues,
       borderColor: '#7c3aed',
       backgroundColor: 'rgba(124,58,237,0.08)',
@@ -2254,8 +2254,14 @@ function renderSessionsTotalEvolutionChart(labels, totalValues, uniqueBeneficiar
           titleColor: '#94a3b8', bodyColor: '#f1f5f9',
           callbacks: {
             label: c => {
-              const suffix = c.dataset.label === 'Total de sessões' ? ' sessões' : ' beneficiários';
-              return `${c.dataset.label}: ${fmt(c.parsed.y)}${suffix}`;
+              if (String(c.dataset.label || '').startsWith('Beneficiários únicos')) {
+                const sessions = Number(totalValues[c.dataIndex]) || 0;
+                const beneficiaries = Number(c.parsed.y) || 0;
+                const avg = beneficiaries > 0 ? sessions / beneficiaries : null;
+                const avgLabel = avg === null ? '—' : avg.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 2 });
+                return `Beneficiários únicos: ${fmt(beneficiaries)} · média ${avgLabel} sessões/benef.`;
+              }
+              return `${c.dataset.label}: ${fmt(c.parsed.y)} sessões`;
             },
           },
         },
