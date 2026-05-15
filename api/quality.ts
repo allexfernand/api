@@ -338,6 +338,109 @@ function buildSummaryScope(columns, query) {
   };
 }
 
+function lastNMonthsList(count) {
+  const out = [];
+  const date = new Date();
+  date.setUTCDate(1);
+  for (let index = count - 1; index >= 0; index--) {
+    const monthDate = new Date(date);
+    monthDate.setUTCMonth(date.getUTCMonth() - index);
+    out.push(`${monthDate.getUTCFullYear()}-${String(monthDate.getUTCMonth() + 1).padStart(2, "0")}`);
+  }
+  return out;
+}
+
+function orgIdsSubquery(groupName, company) {
+  if (company) {
+    const value = escapeSql(company);
+    return `(SELECT CAST(id AS STRING) FROM ${ORGANIZATIONS_TABLE} WHERE UPPER(TRIM(name)) = UPPER(TRIM('${value}')))`;
+  }
+  const group = escapeSql(groupName);
+  return `(
+    SELECT CAST(id AS STRING) FROM ${ORGANIZATIONS_TABLE} WHERE UPPER(TRIM(name)) = UPPER(TRIM('${group}'))
+    UNION
+    SELECT CAST(id AS STRING) FROM ${ORGANIZATIONS_TABLE}
+    WHERE matriz_id = (
+      SELECT id FROM ${ORGANIZATIONS_TABLE}
+      WHERE UPPER(TRIM(name)) = UPPER(TRIM('${group}'))
+      LIMIT 1
+    )
+  )`;
+}
+
+function buildCriteriaOrgCondition(criteriaColumns, scope) {
+  const orgColumn = pickColumn(criteriaColumns, ORG_CANDIDATES);
+  const groupColumn = pickColumn(criteriaColumns, GROUP_CANDIDATES);
+  if ((scope.groupName || scope.company) && orgColumn) {
+    return `AND UPPER(TRIM(CAST(${qcol("c", orgColumn)} AS STRING))) IN ${orgNamesSubquery(scope.groupName, scope.company)}`;
+  }
+  if (scope.groupName && groupColumn) {
+    return `AND UPPER(TRIM(CAST(${qcol("c", groupColumn)} AS STRING))) = UPPER(TRIM('${escapeSql(scope.groupName)}'))`;
+  }
+  return "";
+}
+
+async function loadQualityVolumeEvolution(warehouseId, criteriaColumns, scope) {
+  const criteriaDateColumn = pickColumn(criteriaColumns, DATE_CANDIDATES);
+  const months = lastNMonthsList(12);
+  const monthList = months.map((month) => `'${escapeSql(month)}'`).join(",");
+  const qualityMonthExpr = criteriaDateColumn
+    ? `DATE_FORMAT(DATE_TRUNC('MONTH', try_cast(${qcol("c", criteriaDateColumn)} AS TIMESTAMP)), 'yyyy-MM')`
+    : null;
+  const sessionMonthExpr = `DATE_FORMAT(DATE_TRUNC('MONTH', try_cast(s.${quoteIdent("creation_time")} AS TIMESTAMP)), 'yyyy-MM')`;
+  const criteriaOrgCondition = criteriaDateColumn ? buildCriteriaOrgCondition(criteriaColumns, scope) : "";
+  const sessionOrgFilter = scope.company
+    ? `CAST(o.${quoteIdent("id")} AS STRING) IN ${orgIdsSubquery(null, scope.company)}`
+    : (scope.groupName ? `CAST(o.${quoteIdent("id")} AS STRING) IN ${orgIdsSubquery(scope.groupName, null)}` : null);
+  const sessionFrom = sessionOrgFilter
+    ? `${SESSION_TABLE} s INNER JOIN ${ORGANIZATIONS_TABLE} o ON CAST(s.${quoteIdent("organization_id")} AS STRING) = CAST(o.${quoteIdent("id")} AS STRING)`
+    : `${SESSION_TABLE} s`;
+
+  const [qualityRows, sessionRows] = await Promise.all([
+    criteriaDateColumn ? runQuery(warehouseId, `
+      SELECT
+        ${qualityMonthExpr} AS month,
+        COUNT(*) AS total_quality_rows
+      FROM ${EVALUATED_CRITERIA_TABLE} c
+      WHERE try_cast(${qcol("c", criteriaDateColumn)} AS TIMESTAMP) IS NOT NULL
+        AND ${qualityMonthExpr} IN (${monthList})
+        ${criteriaOrgCondition}
+      GROUP BY ${qualityMonthExpr}
+      ORDER BY month
+    `) : Promise.resolve([]),
+    runQuery(warehouseId, `
+      SELECT
+        ${sessionMonthExpr} AS month,
+        COUNT(*) AS total_sessions
+      FROM ${sessionFrom}
+      WHERE try_cast(s.${quoteIdent("creation_time")} AS TIMESTAMP) IS NOT NULL
+        AND ${sessionMonthExpr} IN (${monthList})
+        ${sessionOrgFilter ? `AND ${sessionOrgFilter}` : ""}
+      GROUP BY ${sessionMonthExpr}
+      ORDER BY month
+    `),
+  ]);
+
+  const qualityByMonth = new Map(qualityRows.map((row) => [String(getCell(row[0]) || ""), toInt(row[1])]));
+  const sessionsByMonth = new Map(sessionRows.map((row) => [String(getCell(row[0]) || ""), toInt(row[1])]));
+  return {
+    months,
+    monthly: months.map((month) => ({
+      month,
+      total_quality_rows: qualityByMonth.get(month) || 0,
+      total_sessions: sessionsByMonth.get(month) || 0,
+    })),
+    filters: {
+      group_name: scope.groupName,
+      company: scope.company,
+    },
+    source: {
+      quality: EVALUATED_CRITERIA_TABLE,
+      sessions: SESSION_TABLE,
+    },
+  };
+}
+
 function buildEvaluatedVolumeWhere(scope) {
   const conditions = [];
 
@@ -943,7 +1046,7 @@ async function loadStrategic(warehouseId, columns, criteriaColumns, scope, share
   const criteriaAttendanceColumn = pickColumn(criteriaColumns, ["attendance_id", "atendimento_id", "appointment_id"]);
   const strategicCriteriaWhere = buildEvaluatedCriteriaWhere(scope, "", null).replace(/\bq\./g, "c.");
 
-  const [summaryRows, criteriaRows, evaluatedVolume, evaluatedCriteria, overallCriteriaScore, qualityEvolution] = await Promise.all([
+  const [summaryRows, criteriaRows, evaluatedVolume, evaluatedCriteria, overallCriteriaScore, qualityEvolution, volumeEvolution] = await Promise.all([
     runQuery(warehouseId, `
       SELECT
         COUNT(*) AS total,
@@ -970,6 +1073,7 @@ async function loadStrategic(warehouseId, columns, criteriaColumns, scope, share
     loadEvaluatedCriteriaBullets(warehouseId, scope, criteriaFinisher, summarySessionJoin, summaryFinishedByColumn, criteriaFinishedByColumn),
     loadOverallCriteriaScore(warehouseId, scope),
     loadQualityEvolution(warehouseId, criteriaColumns),
+    loadQualityVolumeEvolution(warehouseId, criteriaColumns, scope),
   ]);
 
   const criteriaAgg = aggregateCriteria(criteriaRows);
@@ -1040,6 +1144,7 @@ async function loadStrategic(warehouseId, columns, criteriaColumns, scope, share
     evaluated_criteria: evaluatedCriteria.items,
     criteria_finisher_filter: evaluatedCriteria.filter,
     evolution: qualityEvolution,
+    volume_evolution: volumeEvolution,
     collaborators,
     care_lines: careLines,
     insights: buildInsightCards(criteriaAgg.criteria, criteriaAgg.pillars),

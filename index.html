@@ -273,6 +273,10 @@ body {
 .quality-criteria-bullet-title{font-size:13px;font-weight:700;color:#0f172a;line-height:1.35;min-height:36px}
 .quality-criteria-bullet-value{font-size:28px;font-weight:800;color:#0b3b47;letter-spacing:-.8px;line-height:1;margin-top:12px}
 .quality-criteria-bullet-meta{font-size:11px;color:#64748b;margin-top:6px;line-height:1.4}
+.quality-volume-summary{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.quality-volume-chip{display:flex;align-items:center;gap:8px;border:1px solid var(--border);border-radius:999px;background:#fff;padding:7px 11px;font-size:11px;color:#64748b;font-weight:700}
+.quality-volume-dot{width:9px;height:9px;border-radius:50%;display:inline-block}
+.quality-volume-chip strong{font-size:13px;color:#0f172a}
 
 .quality-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
 .quality-main-grid{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:16px;align-items:start}
@@ -1089,6 +1093,28 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
       </div>
     </div>
 
+    <div class="card-box">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;flex-wrap:wrap">
+        <div>
+          <div class="section-title" style="margin-bottom:4px"><i class="fa-solid fa-chart-column" style="margin-right:6px"></i>Volume mensal de qualidade e sessões</div>
+          <div style="font-size:11px;color:#94a3b8"><code>quality_analysis_silver_criteria</code> x <code>botmaker_session.creation_time</code> · últimos 12 meses</div>
+        </div>
+        <select class="filter-select" id="quality-volume-evolution-mode" onchange="onQualityVolumeEvolutionModeChange(this.value)" style="min-width:210px">
+          <option value="both">Qualidade + sessões</option>
+          <option value="quality">Linhas de qualidade</option>
+          <option value="sessions">Sessões</option>
+        </select>
+      </div>
+      <div class="quality-volume-summary">
+        <div class="quality-volume-chip"><span class="quality-volume-dot" style="background:#0f766e"></span>Qualidade <strong id="quality-volume-total">—</strong></div>
+        <div class="quality-volume-chip"><span class="quality-volume-dot" style="background:#6366f1"></span>Sessões <strong id="quality-sessions-volume-total">—</strong></div>
+      </div>
+      <div class="chart-wrap" style="height:320px">
+        <div class="loading-box" id="quality-volume-evolution-empty" style="display:none">Sem dados de volume disponíveis.</div>
+        <canvas id="qualityVolumeEvolutionChart"></canvas>
+      </div>
+    </div>
+
     <div class="quality-grid-2">
       <div class="card-box" style="margin-bottom:0">
         <div class="section-title"><i class="fa-solid fa-chart-line" style="margin-right:6px"></i>Evolução de qualidade</div>
@@ -1225,7 +1251,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
 const fmt = n => Number(n).toLocaleString('pt-BR');
 const mN = {'01':'Jan','02':'Fev','03':'Mar','04':'Abr','05':'Mai','06':'Jun','07':'Jul','08':'Ago','09':'Set','10':'Out','11':'Nov','12':'Dez'};
 
-let usersData = [], companiesData = [], sessionCompaniesData = [], eChart, agegroupChart, appointmentTypesTrendChart, petitCareLinesChart, sessionsEvolChart, sessionsTotalEvolChart, sessionsAttendanceChart, sessionsDailyChart, sessionsTopGroupsChart, qualityEvolutionChart, qualityCriteriaEvolutionChart;
+let usersData = [], companiesData = [], sessionCompaniesData = [], eChart, agegroupChart, appointmentTypesTrendChart, petitCareLinesChart, sessionsEvolChart, sessionsTotalEvolChart, sessionsAttendanceChart, sessionsDailyChart, sessionsTopGroupsChart, qualityVolumeEvolutionChart, qualityEvolutionChart, qualityCriteriaEvolutionChart;
 let currentGroup = '', currentType = '', currentCompany = '';
 let selectedMonths = new Set();
 let selectedAppointmentTypeMonths = new Set();
@@ -1237,6 +1263,7 @@ let selectedQualitySubcriteriaSort = 'worst';
 let selectedQualitySubcriteriaCriterion = '';
 let selectedQualityFactualCriterion = '';
 let selectedQualityFactualResolved = '';
+let selectedQualityVolumeEvolutionMode = 'both';
 let selectedQualityCollaboratorSort = 'score';
 let selectedQualityCollaboratorSortDir = 'desc';
 let selectedQualityCollaboratorName = '';
@@ -2911,6 +2938,11 @@ function onQualityCollaboratorSortChange(value) {
   renderQualityStrategic();
 }
 
+function onQualityVolumeEvolutionModeChange(value) {
+  selectedQualityVolumeEvolutionMode = ['quality', 'sessions'].includes(value) ? value : 'both';
+  renderQualityVolumeEvolutionChart(qualityData?.strategic?.volume_evolution);
+}
+
 function isMissingQualityCollaborator(name) {
   return String(name || '') === 'Sem close_by preenchido';
 }
@@ -3151,6 +3183,98 @@ function qualityEvolutionTooltipLabel(context) {
   return context.dataset.yAxisID === 'y1'
     ? `${context.dataset.label}: ${fmt(value)} análises`
     : `${context.dataset.label}: ${fmtPct(value)}`;
+}
+
+function renderQualityVolumeEvolutionChart(evolution) {
+  const canvas = document.getElementById('qualityVolumeEvolutionChart');
+  const empty = document.getElementById('quality-volume-evolution-empty');
+  const modeSelect = document.getElementById('quality-volume-evolution-mode');
+  const qualityTotalEl = document.getElementById('quality-volume-total');
+  const sessionsTotalEl = document.getElementById('quality-sessions-volume-total');
+  const items = (evolution?.monthly || []).filter((item) => item.month);
+  if (modeSelect) modeSelect.value = selectedQualityVolumeEvolutionMode;
+  const totalQualityRows = items.reduce((acc, item) => acc + (Number(item.total_quality_rows) || 0), 0);
+  const totalSessions = items.reduce((acc, item) => acc + (Number(item.total_sessions) || 0), 0);
+  if (qualityTotalEl) qualityTotalEl.textContent = fmt(totalQualityRows);
+  if (sessionsTotalEl) sessionsTotalEl.textContent = fmt(totalSessions);
+  if (qualityVolumeEvolutionChart) qualityVolumeEvolutionChart.destroy();
+  if (!canvas) return;
+
+  if (!items.length) {
+    canvas.style.display = 'none';
+    if (empty) empty.style.display = 'block';
+    return;
+  }
+
+  if (empty) empty.style.display = 'none';
+  canvas.style.display = 'block';
+  const showQuality = selectedQualityVolumeEvolutionMode !== 'sessions';
+  const showSessions = selectedQualityVolumeEvolutionMode !== 'quality';
+  const datasets = [];
+  if (showQuality) {
+    datasets.push({
+      type: 'bar',
+      label: 'Linhas de qualidade',
+      data: items.map((item) => Number(item.total_quality_rows) || 0),
+      yAxisID: 'y',
+      backgroundColor: 'rgba(15,118,110,0.78)',
+      borderColor: '#0f766e',
+      borderWidth: 1,
+      borderRadius: 6,
+      borderSkipped: false,
+      barPercentage: showSessions ? 0.58 : 0.72,
+      categoryPercentage: 0.72,
+    });
+  }
+  if (showSessions) {
+    datasets.push({
+      type: showQuality ? 'line' : 'bar',
+      label: 'Sessões',
+      data: items.map((item) => Number(item.total_sessions) || 0),
+      yAxisID: showQuality ? 'y1' : 'y',
+      borderColor: '#6366f1',
+      backgroundColor: showQuality ? '#6366f1' : 'rgba(99,102,241,0.72)',
+      borderWidth: 2,
+      borderDash: showQuality ? [6, 5] : [],
+      pointRadius: showQuality ? 3 : 0,
+      pointBackgroundColor: '#6366f1',
+      borderRadius: showQuality ? 0 : 6,
+      borderSkipped: false,
+      tension: 0.28,
+      fill: false,
+    });
+  }
+
+  qualityVolumeEvolutionChart = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: items.map((item) => qualityMonthLabel(item.month)),
+      datasets,
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'bottom', labels: { boxWidth: 10, usePointStyle: true, font: { size: 10 }, color: '#64748b' } },
+        tooltip: {
+          backgroundColor: '#1e293b',
+          borderColor: '#334155',
+          borderWidth: 1,
+          titleColor: '#cbd5e1',
+          bodyColor: '#f8fafc',
+          callbacks: { label: c => `${c.dataset.label}: ${fmt(Number(c.parsed.y) || 0)}` },
+        },
+      },
+      scales: {
+        x: { ticks: { font: { size: 10 }, color: '#94a3b8' }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } },
+        y: { beginAtZero: true, ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => fmt(v) }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } },
+        y1: showQuality && showSessions
+          ? { position: 'right', beginAtZero: true, ticks: { font: { size: 10 }, color: '#6366f1', callback: v => fmt(v) }, grid: { drawOnChartArea: false }, border: { display: false } }
+          : { display: false },
+      },
+    },
+  });
 }
 
 function renderQualityEvolutionCharts(evolution) {
@@ -3465,6 +3589,7 @@ function renderQualityStrategic() {
     : 'menor score por critério');
   setText('q-kpi-latest', `último registro: ${formatQualityDate(kpis.latest_at)}`);
   setText('quality-criteria-bullets-period', `${period} · is_applicable = true`);
+  renderQualityVolumeEvolutionChart(strategic.volume_evolution || {});
   renderQualityEvolutionCharts(strategic.evolution || {});
 
   const criteriaBulletsEl = document.getElementById('quality-criteria-bullets');
