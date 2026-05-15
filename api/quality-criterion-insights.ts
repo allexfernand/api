@@ -9,7 +9,6 @@ const HEADERS = { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application
 
 const CRITERIA_TABLE = "sanus_databricks.sanus_prod.quality_analysis_silver_criteria";
 const SUMMARY_TABLES = [
-  "sanus_databricks.sanus_prod.quality_analysis_silver_summary",
   "hive_metastore.sanus_prod.quality_analysis_silver_summary",
 ];
 

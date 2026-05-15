@@ -8,7 +8,7 @@ const TOKEN = process.env.DATABRICKS_TOKEN;
 const HEADERS = { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" };
 
 const SUMMARY_TABLE = "hive_metastore.sanus_prod.quality_analysis_silver_summary";
-const EVALUATED_VOLUME_TABLE = "sanus_databricks.sanus_prod.quality_analysis_silver_summary";
+const EVALUATED_VOLUME_TABLE = "hive_metastore.sanus_prod.quality_analysis_silver_summary";
 const CRITERIA_TABLE = "hive_metastore.sanus_prod.quality_analysis_silver_criteria";
 const EVALUATED_CRITERIA_TABLE = "sanus_databricks.sanus_prod.quality_analysis_silver_criteria";
 const SESSION_TABLE = "hive_metastore.sanus_prod.botmaker_session";
