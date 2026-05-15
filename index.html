@@ -2177,31 +2177,35 @@ function renderSessionsUtilization(data, demographicsData) {
     {
       label: 'Utilização · último mês cheio',
       value: unique1,
+      pct: pctLabel(unique1),
       meta: `${periodLabel(periods.last_1_month)} · ${pctLabel(unique1)} da base de ${fmt(base)} beneficiários`,
       progress: unique1,
     },
     {
       label: 'Utilização · 3 meses',
       value: unique3,
+      pct: pctLabel(unique3),
       meta: `${periodLabel(periods.last_3_months)} · ${pctLabel(unique3)} da base de ${fmt(base)} beneficiários`,
       progress: unique3,
     },
     {
       label: 'Utilização · 6 meses',
       value: unique6,
+      pct: pctLabel(unique6),
       meta: `${periodLabel(periods.last_6_months)} · ${pctLabel(unique6)} da base de ${fmt(base)} beneficiários`,
       progress: unique6,
     },
     {
       label: 'Utilização · 12 meses',
       value: unique12,
+      pct: pctLabel(unique12),
       meta: `${periodLabel(periods.last_12_months)} · ${pctLabel(unique12)} da base de ${fmt(base)} beneficiários`,
       progress: unique12,
     },
   ];
   content.innerHTML = cards.map((card) => `<div class="sessions-utilization-card">
     <div class="sessions-utilization-label">${escapeHtml(card.label)}</div>
-    <div class="sessions-utilization-value">${fmt(card.value)}</div>
+    <div class="sessions-utilization-value">${fmt(card.value)} - ${escapeHtml(card.pct)}</div>
     <div class="sessions-utilization-meta">${escapeHtml(card.meta)}</div>
     <div class="sessions-utilization-track"><div class="sessions-utilization-fill" style="width:${width(card.progress)}"></div></div>
   </div>`).join('');
