@@ -81,7 +81,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const [totalRows, rows] = await Promise.all([
       runQuery(wh.id, `
         SELECT COUNT(*) AS total_beneficiarios
-        FROM hive_metastore.sanus_prod.beneficiaries
+        FROM hive_metastore.sanus_prod.beneficiaries b
+        ${groupFilter}
       `),
       runQuery(wh.id, `
       SELECT
