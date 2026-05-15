@@ -177,20 +177,26 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
             AND TRIM(CAST(o.${quoteIdent('name')} AS STRING)) != ''
             ${companySessionsWhere ? `AND ${companySessionsWhere}` : ''}
         ),
+        scoped_session_ids AS (
+          SELECT DISTINCT session_id
+          FROM scoped_sessions
+        ),
         session_has_agent AS (
           SELECT
-            ss.session_id,
+            ssi.session_id,
             MAX(CASE WHEN m.${quoteIdent('sender_type')} = 'agent' THEN 1 ELSE 0 END) AS teve_humano
-          FROM scoped_sessions ss
+          FROM scoped_session_ids ssi
           INNER JOIN ${MESSAGE_TABLE} m
-            ON CAST(m.${quoteIdent('session_id')} AS STRING) = ss.session_id
-          GROUP BY ss.session_id
+            ON CAST(m.${quoteIdent('session_id')} AS STRING) = ssi.session_id
+          GROUP BY ssi.session_id
         )
         SELECT
-          CASE WHEN sa.teve_humano = 1 THEN 'Humano' ELSE 'IA' END AS tipo_atendimento,
+          CASE WHEN COALESCE(sa.teve_humano, 0) = 1 THEN 'Humano' ELSE 'IA' END AS tipo_atendimento,
           COUNT(*) AS total_sessions
-        FROM session_has_agent sa
-        GROUP BY CASE WHEN sa.teve_humano = 1 THEN 'Humano' ELSE 'IA' END
+        FROM scoped_sessions ss
+        LEFT JOIN session_has_agent sa
+          ON sa.session_id = ss.session_id
+        GROUP BY CASE WHEN COALESCE(sa.teve_humano, 0) = 1 THEN 'Humano' ELSE 'IA' END
         ORDER BY total_sessions DESC
       `)
       : runQuery(wh.id, `
@@ -200,20 +206,26 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           FROM ${SESSION_TABLE} s
           ${companySessionsDateFilter ? `WHERE ${companySessionsDateFilter}` : ''}
         ),
+        scoped_session_ids AS (
+          SELECT DISTINCT session_id
+          FROM scoped_sessions
+        ),
         session_has_agent AS (
           SELECT
-            ss.session_id,
+            ssi.session_id,
             MAX(CASE WHEN m.${quoteIdent('sender_type')} = 'agent' THEN 1 ELSE 0 END) AS teve_humano
-          FROM scoped_sessions ss
+          FROM scoped_session_ids ssi
           INNER JOIN ${MESSAGE_TABLE} m
-            ON CAST(m.${quoteIdent('session_id')} AS STRING) = ss.session_id
-          GROUP BY ss.session_id
+            ON CAST(m.${quoteIdent('session_id')} AS STRING) = ssi.session_id
+          GROUP BY ssi.session_id
         )
         SELECT
-          CASE WHEN sa.teve_humano = 1 THEN 'Humano' ELSE 'IA' END AS tipo_atendimento,
+          CASE WHEN COALESCE(sa.teve_humano, 0) = 1 THEN 'Humano' ELSE 'IA' END AS tipo_atendimento,
           COUNT(*) AS total_sessions
-        FROM session_has_agent sa
-        GROUP BY CASE WHEN sa.teve_humano = 1 THEN 'Humano' ELSE 'IA' END
+        FROM scoped_sessions ss
+        LEFT JOIN session_has_agent sa
+          ON sa.session_id = ss.session_id
+        GROUP BY CASE WHEN COALESCE(sa.teve_humano, 0) = 1 THEN 'Humano' ELSE 'IA' END
         ORDER BY total_sessions DESC
       `);
 
