@@ -6,6 +6,7 @@ const TOKEN = process.env.DATABRICKS_TOKEN;
 const HEADERS = { "Authorization": `Bearer ${TOKEN}`, "Content-Type": "application/json" };
 const APPOINTMENTS_TABLE = `hive_metastore.sanus_prod.atendimento_summarized_gold_live`;
 const APPOINTMENTS_DATE_COLUMN = 'hora_criacao_atendimento';
+const ORGANIZATIONS_TABLE = `hive_metastore.sanus_prod.organizations`;
 
 type DbOptions = RequestInit & { headers?: Record<string, string> };
 type DatabricksCell = null | undefined | string | number | boolean | { string_value?: string };
@@ -46,7 +47,60 @@ const getCell = (cell: DatabricksCell) => {
 const toInt = (v: DatabricksCell) => { const n = parseInt(String(getCell(v))); return Number.isFinite(n) ? n : 0; };
 const escape = (s: unknown) => String(s).replace(/'/g, "''");
 const quoteIdent = (s: unknown) => `\`${String(s).replace(/`/g, "``")}\``;
-const normalizedGroupExpr = `UPPER(TRIM(CAST(grupo_economico AS STRING)))`;
+
+function pickColumn(columns: string[], candidates: string[]) {
+  const byLower = new Map(columns.map((column) => [column.toLowerCase(), column]));
+  for (const candidate of candidates) {
+    const column = byLower.get(candidate.toLowerCase());
+    if (column) return column;
+  }
+  return null;
+}
+
+async function getColumns(warehouseId: string, tableName: string) {
+  const rows = await runQuery(warehouseId, `DESCRIBE TABLE ${tableName}`);
+  return rows
+    .map((row) => String(getCell(row[0]) || '').trim())
+    .filter((column) => column && !column.startsWith('#'));
+}
+
+function orgNamesSubquery(groupName: unknown) {
+  const group = escape(groupName);
+  return `(
+    SELECT UPPER(TRIM(name)) FROM ${ORGANIZATIONS_TABLE}
+    WHERE UPPER(TRIM(name)) = UPPER(TRIM('${group}'))
+    UNION
+    SELECT UPPER(TRIM(name)) FROM ${ORGANIZATIONS_TABLE}
+    WHERE matriz_id = (
+      SELECT id FROM ${ORGANIZATIONS_TABLE}
+      WHERE UPPER(TRIM(name)) = UPPER(TRIM('${group}'))
+      LIMIT 1
+    )
+  )`;
+}
+
+function buildGroupFilter(columns: string[], groupName: unknown) {
+  if (!groupName) return '';
+  const conditions = [];
+  const groupColumn = pickColumn(columns, ['grupo_economico', 'economic_group', 'group_name', 'grupo']);
+  const companyColumn = pickColumn(columns, [
+    'NOME_CLIENTE',
+    'nome_cliente',
+    'empresa',
+    'Empresa',
+    'nome_empresa',
+    'NOME_EMPRESA',
+    'company',
+    'company_name',
+  ]);
+  if (groupColumn) {
+    conditions.push(`UPPER(TRIM(CAST(${quoteIdent(groupColumn)} AS STRING))) LIKE CONCAT('%', UPPER(TRIM('${escape(groupName)}')), '%')`);
+  }
+  if (companyColumn) {
+    conditions.push(`UPPER(TRIM(CAST(${quoteIdent(companyColumn)} AS STRING))) IN ${orgNamesSubquery(groupName)}`);
+  }
+  return conditions.length ? `AND (${conditions.join(' OR ')})` : '';
+}
 
 function lastNMonthsList(n: number) {
   const out = [];
@@ -83,14 +137,12 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     AND ${quoteIdent(APPOINTMENTS_DATE_COLUMN)} < '${nextMonth(month)}-01'
   )`).join(' OR ');
 
-  const groupFilter = groupName
-    ? `AND ${normalizedGroupExpr} LIKE CONCAT('%', UPPER(TRIM('${escape(groupName)}')), '%')`
-    : '';
-
   try {
     const { warehouses = [] } = await dbFetch("/api/2.0/sql/warehouses") as { warehouses?: Warehouse[] };
     const wh = warehouses.find((w) => w.state === "RUNNING") || warehouses[0];
     if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
+    const columns = groupName ? await getColumns(wh.id, APPOINTMENTS_TABLE) : [];
+    const groupFilter = buildGroupFilter(columns, groupName);
 
     const rows = await runQuery(wh.id, `
       SELECT COUNT(*) AS total_tickets

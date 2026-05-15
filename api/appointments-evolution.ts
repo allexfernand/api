@@ -8,6 +8,7 @@ const HEADERS = { "Authorization": `Bearer ${TOKEN}`, "Content-Type": "applicati
 
 const APPOINTMENTS_TABLE = `hive_metastore.sanus_prod.atendimento_summarized_gold_live`;
 const APPOINTMENTS_DATE_COLUMN = 'hora_criacao_atendimento';
+const ORGANIZATIONS_TABLE = `hive_metastore.sanus_prod.organizations`;
 
 type DbOptions = RequestInit & { headers?: Record<string, string> };
 type DatabricksCell = null | undefined | string | number | boolean | { string_value?: string };
@@ -42,7 +43,6 @@ async function runQuery(warehouseId: string, sql: string): Promise<DatabricksRow
 
 const escape = (s: unknown) => String(s).replace(/'/g, "''");
 const quoteIdent = (s: unknown) => `\`${String(s).replace(/`/g, "``")}\``;
-const normalizedGroupExpr = `UPPER(TRIM(CAST(grupo_economico AS STRING)))`;
 const getCell = (cell: DatabricksCell) => {
   if (cell === null || cell === undefined) return null;
   if (typeof cell === "object" && cell.string_value !== undefined) return cell.string_value;
@@ -64,6 +64,46 @@ async function getColumns(warehouseId: string, tableName: string) {
   return rows
     .map((row) => String(getCell(row[0]) || '').trim())
     .filter((column) => column && !column.startsWith('#'));
+}
+
+function orgNamesSubquery(groupName: unknown) {
+  const group = escape(groupName);
+  return `(
+    SELECT UPPER(TRIM(name)) FROM ${ORGANIZATIONS_TABLE}
+    WHERE UPPER(TRIM(name)) = UPPER(TRIM('${group}'))
+    UNION
+    SELECT UPPER(TRIM(name)) FROM ${ORGANIZATIONS_TABLE}
+    WHERE matriz_id = (
+      SELECT id FROM ${ORGANIZATIONS_TABLE}
+      WHERE UPPER(TRIM(name)) = UPPER(TRIM('${group}'))
+      LIMIT 1
+    )
+  )`;
+}
+
+const companyColumnCandidates = [
+  'NOME_CLIENTE',
+  'nome_cliente',
+  'empresa',
+  'Empresa',
+  'nome_empresa',
+  'NOME_EMPRESA',
+  'company',
+  'company_name',
+];
+
+function buildGroupFilter(columns: string[], groupName: unknown) {
+  if (!groupName) return '';
+  const conditions = [];
+  const groupColumn = pickColumn(columns, ['grupo_economico', 'economic_group', 'group_name', 'grupo']);
+  const companyColumn = pickColumn(columns, companyColumnCandidates);
+  if (groupColumn) {
+    conditions.push(`UPPER(TRIM(CAST(${quoteIdent(groupColumn)} AS STRING))) LIKE CONCAT('%', UPPER(TRIM('${escape(groupName)}')), '%')`);
+  }
+  if (companyColumn) {
+    conditions.push(`UPPER(TRIM(CAST(${quoteIdent(companyColumn)} AS STRING))) IN ${orgNamesSubquery(groupName)}`);
+  }
+  return conditions.length ? `AND (${conditions.join(' OR ')})` : '';
 }
 
 function lastNMonthsList(n: number) {
@@ -105,9 +145,6 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   )`).join(' OR ');
   const assuntoTextExpr = `UPPER(COALESCE(CAST(assunto AS STRING), ''))`;
   const assuntoNormalizedExpr = `UPPER(TRIM(REGEXP_REPLACE(COALESCE(CAST(assunto AS STRING), ''), '[^A-Za-z0-9]+', ' ')))`;
-  const groupFilter = groupName
-    ? `AND ${normalizedGroupExpr} LIKE CONCAT('%', UPPER(TRIM('${escape(groupName)}')), '%')`
-    : '';
 
   try {
     const { warehouses = [] } = await dbFetch("/api/2.0/sql/warehouses") as { warehouses?: Warehouse[] };
@@ -115,19 +152,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
 
     let companyColumn = null;
-    if (company) {
-      const columns = await getColumns(wh.id, APPOINTMENTS_TABLE);
-      companyColumn = pickColumn(columns, [
-        'NOME_CLIENTE',
-        'nome_cliente',
-        'empresa',
-        'Empresa',
-        'nome_empresa',
-        'NOME_EMPRESA',
-        'company',
-        'company_name',
-      ]);
-    }
+    const columns = (groupName || company) ? await getColumns(wh.id, APPOINTMENTS_TABLE) : [];
+    const groupFilter = buildGroupFilter(columns, groupName);
+    if (company) companyColumn = pickColumn(columns, companyColumnCandidates);
     const companyFilter = company && companyColumn
       ? `AND UPPER(TRIM(CAST(${quoteIdent(companyColumn)} AS STRING))) = UPPER(TRIM('${escape(company)}'))`
       : '';
