@@ -10,6 +10,7 @@ const TOKEN = process.env.DATABRICKS_TOKEN;
 const HEADERS = { "Authorization": `Bearer ${TOKEN}`, "Content-Type": "application/json" };
 
 const SESSION_TABLE       = `hive_metastore.sanus_prod.botmaker_session`;
+const MESSAGE_TABLE       = `hive_metastore.sanus_prod.botmaker_message`;
 const ORGANIZATIONS_TABLE = `hive_metastore.sanus_prod.organizations`;
 
 const SESSION_DATE_COLUMN = 'creation_time';
@@ -278,16 +279,37 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
     const [rows, beneficiaryRows] = await Promise.all([
       onlyBeneficiaries ? Promise.resolve([]) : runQuery(wh.id, `
+      WITH scoped_sessions AS (
+        SELECT
+          DATE_FORMAT(${sessionDateExpr}, 'yyyy-MM') AS mes,
+          CAST(s.${quoteIdent('session_id')} AS STRING) AS session_id
+        FROM ${fromSql}
+        ${where}
+      ),
+      scoped_session_ids AS (
+        SELECT DISTINCT session_id
+        FROM scoped_sessions
+      ),
+      session_has_agent AS (
+        SELECT
+          ssi.session_id,
+          MAX(CASE WHEN m.${quoteIdent('sender_type')} = 'agent' THEN 1 ELSE 0 END) AS teve_humano
+        FROM scoped_session_ids ssi
+        INNER JOIN ${MESSAGE_TABLE} m
+          ON CAST(m.${quoteIdent('session_id')} AS STRING) = ssi.session_id
+        GROUP BY ssi.session_id
+      )
       SELECT
-        DATE_FORMAT(${sessionDateExpr}, 'yyyy-MM') AS mes,
-        CASE WHEN s.finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END AS tipo_atendimento,
+        ss.mes,
+        CASE WHEN COALESCE(sa.teve_humano, 0) = 1 THEN 'Humano' ELSE 'IA' END AS tipo_atendimento,
         COUNT(*) AS total
-      FROM ${fromSql}
-      ${where}
+      FROM scoped_sessions ss
+      LEFT JOIN session_has_agent sa
+        ON sa.session_id = ss.session_id
       GROUP BY
-        DATE_FORMAT(${sessionDateExpr}, 'yyyy-MM'),
-        CASE WHEN s.finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END
-      ORDER BY mes
+        ss.mes,
+        CASE WHEN COALESCE(sa.teve_humano, 0) = 1 THEN 'Humano' ELSE 'IA' END
+      ORDER BY ss.mes
     `),
       beneficiaryExpr ? runQuery(wh.id, `
       WITH beneficiary_base AS (

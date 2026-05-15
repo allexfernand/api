@@ -1990,7 +1990,7 @@ function renderSessionMessageAgentFinishers(items, opts) {
   if (note) {
     const messages = [];
     if (currentGroup) messages.push(`grupo: ${currentGroup}`);
-    messages.push('com mensagem de agente');
+    messages.push('IA = sem interação humana');
     note.style.display = messages.length ? 'block' : 'none';
     note.textContent = messages.join(' · ');
   }
