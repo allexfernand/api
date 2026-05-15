@@ -198,6 +198,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   const granularity = req.query.granularity || 'month';
   const dayMonth = req.query.mes && /^\d{4}-\d{2}$/.test(req.query.mes) ? req.query.mes : null;
   const months = Math.min(Math.max(parseInt(req.query.months) || 12, 1), 24);
+  const includeBeneficiaries = String(req.query.include_beneficiaries || '') === '1';
+  const onlyBeneficiaries = String(req.query.only_beneficiaries || '') === '1';
   const hasOrgFilter = Boolean(groupName || company);
 
   const monthList = lastNMonthsList(months);
@@ -264,11 +266,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       });
     }
 
-    const sessionColumns = await getSessionColumns(wh.id);
-    const beneficiaryExpr = uniqueBeneficiaryExpr(sessionColumns);
+    const sessionColumns = includeBeneficiaries ? await getSessionColumns(wh.id) : [];
+    const beneficiaryExpr = includeBeneficiaries ? uniqueBeneficiaryExpr(sessionColumns) : null;
 
     const [rows, beneficiaryRows] = await Promise.all([
-      runQuery(wh.id, `
+      onlyBeneficiaries ? Promise.resolve([]) : runQuery(wh.id, `
       SELECT
         DATE_FORMAT(${sessionDateExpr}, 'yyyy-MM') AS mes,
         CASE WHEN s.finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END AS tipo_atendimento,
@@ -335,6 +337,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       months,
       series,
       utilization,
+      beneficiaries_included: Boolean(beneficiaryExpr),
       filters: { group_name: groupName, company, type: typeFilter },
       mode,
       source: "botmaker_session.creation_time",

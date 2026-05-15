@@ -1279,6 +1279,7 @@ let selectedAppointmentTypeMonths = new Set();
 let appointmentTypesBaseMonths = [];
 let selectedSessionsDailyMonth = currentMonthValue();
 let selectedSessionTypificationFinisher = '';
+let sessionsEvolutionRequestId = 0;
 let selectedQualityCriteriaSort = 'worst';
 let selectedQualitySubcriteriaSort = 'worst';
 let selectedQualitySubcriteriaCriterion = '';
@@ -2193,6 +2194,87 @@ function renderSessionsUtilization(data, demographicsData) {
   content.style.display = 'grid';
 }
 
+function renderSessionsTotalEvolutionChart(labels, totalValues, uniqueBeneficiaryValues, hasUniqueBeneficiaryData) {
+  const totalSkel = document.getElementById('skel-s-total-evol');
+  const totalCv = document.getElementById('sessionsTotalEvolChart');
+  if (totalSkel) totalSkel.style.display = 'none';
+  if (totalCv) totalCv.style.display = 'block';
+  if (sessionsTotalEvolChart) sessionsTotalEvolChart.destroy();
+  if (!totalCv) return;
+  const datasets = [{
+    label: 'Total de sessões',
+    data: totalValues,
+    borderColor: '#0f766e',
+    backgroundColor: 'rgba(15,118,110,0.08)',
+    borderWidth: 2,
+    pointRadius: 3,
+    pointBackgroundColor: '#0f766e',
+    fill: true,
+    tension: 0.35,
+  }];
+  if (hasUniqueBeneficiaryData) {
+    datasets.push({
+      label: 'Beneficiários únicos',
+      data: uniqueBeneficiaryValues,
+      borderColor: '#7c3aed',
+      backgroundColor: 'rgba(124,58,237,0.08)',
+      borderWidth: 2,
+      borderDash: [6, 5],
+      pointRadius: 3,
+      pointBackgroundColor: '#7c3aed',
+      fill: false,
+      tension: 0.35,
+    });
+  }
+  sessionsTotalEvolChart = new Chart(totalCv, {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: true, position: 'top', align: 'end', labels: { boxWidth: 10, boxHeight: 10, color: '#64748b', font: { size: 11 } } },
+        tooltip: {
+          backgroundColor: '#1e293b', borderColor: '#334155', borderWidth: 1,
+          titleColor: '#94a3b8', bodyColor: '#f1f5f9',
+          callbacks: {
+            label: c => {
+              const suffix = c.dataset.label === 'Total de sessões' ? ' sessões' : ' beneficiários';
+              return `${c.dataset.label}: ${fmt(c.parsed.y)}${suffix}`;
+            },
+          },
+        },
+      },
+      scales: {
+        x: { ticks: { font: { size: 10 }, color: '#94a3b8', maxRotation: 45, autoSkip: true, maxTicksLimit: 14 }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } },
+        y: { beginAtZero: true, ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => fmt(v) }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } },
+      },
+    },
+  });
+}
+
+async function loadSessionsBeneficiaryUtilization(baseParams, demographicsData, labels, totalValues, requestId) {
+  const p = new URLSearchParams(baseParams);
+  p.set('include_beneficiaries', '1');
+  p.set('only_beneficiaries', '1');
+  const data = await safeGet('/api/sessions-evolution?' + p.toString());
+  if (requestId !== sessionsEvolutionRequestId) return;
+  if (!data || data.error) {
+    const errorBox = document.getElementById('sessions-utilization-error');
+    const loading = document.getElementById('sessions-utilization-loading');
+    if (loading) loading.style.display = 'none';
+    if (errorBox) {
+      errorBox.style.display = 'block';
+      errorBox.textContent = data?.error ? String(data.error).slice(0, 220) : 'Erro ao carregar utilização da base';
+    }
+    return;
+  }
+  const series = data.series || [];
+  const uniqueBeneficiaryValues = series.map((it) => Number(it.unique_beneficiaries ?? it.unique_cpfs) || 0);
+  renderSessionsTotalEvolutionChart(labels, totalValues, uniqueBeneficiaryValues, Boolean(data.beneficiaries_included));
+  renderSessionsUtilization(data, demographicsData);
+}
+
 async function loadSessions() {
   buildAppointmentTypesPeriodoOptions();
   buildSessionsDailyMonthOptions();
@@ -2660,6 +2742,7 @@ async function loadSessionsDailyEvolution() {
 }
 
 async function loadSessionsEvolution() {
+  const requestId = ++sessionsEvolutionRequestId;
   const skel = document.getElementById('skel-s-evol');
   const cv = document.getElementById('sessionsEvolChart');
   const modeLabel = document.getElementById('s-evol-mode');
@@ -2733,7 +2816,6 @@ async function loadSessionsEvolution() {
     }
   }
 
-  renderSessionsUtilization(data, demographicsData);
   const series = (data && !data.error ? data.series : []) || [];
   const labels = series.map((it) => {
     const [y, mm] = String(it.mes).split('-');
@@ -2812,75 +2894,14 @@ async function loadSessionsEvolution() {
       },
     },
   });
-  if (totalSkel) totalSkel.style.display = 'none';
-  if (totalCv) totalCv.style.display = 'block';
-
-  if (sessionsTotalEvolChart) sessionsTotalEvolChart.destroy();
-  if (totalCv) sessionsTotalEvolChart = new Chart(totalCv, {
-    type: 'line',
-    data: {
-      labels,
-      datasets: [
-        {
-          label: 'Total de sessões',
-          data: totalValues,
-          borderColor: '#0f766e',
-          backgroundColor: 'rgba(15,118,110,0.08)',
-          borderWidth: 2,
-          pointRadius: 3,
-          pointBackgroundColor: '#0f766e',
-          fill: true,
-          tension: 0.35,
-        },
-        {
-          label: 'Beneficiários únicos',
-          data: uniqueBeneficiaryValues,
-          borderColor: '#7c3aed',
-          backgroundColor: 'rgba(124,58,237,0.08)',
-          borderWidth: 2,
-          borderDash: [6, 5],
-          pointRadius: 3,
-          pointBackgroundColor: '#7c3aed',
-          fill: false,
-          tension: 0.35,
-        },
-      ],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: true, position: 'top', align: 'end', labels: { boxWidth: 10, boxHeight: 10, color: '#64748b', font: { size: 11 } } },
-        tooltip: {
-          backgroundColor: '#1e293b', borderColor: '#334155', borderWidth: 1,
-          titleColor: '#94a3b8', bodyColor: '#f1f5f9',
-          callbacks: {
-            label: c => {
-              const suffix = c.dataset.label === 'Total de sessões'
-                ? ' sessões'
-                : ' beneficiários';
-              return `${c.dataset.label}: ${fmt(c.parsed.y)}${suffix}`;
-            },
-          },
-        },
-      },
-      scales: {
-        x: {
-          ticks: { font: { size: 10 }, color: '#94a3b8', maxRotation: 45, autoSkip: true, maxTicksLimit: 14 },
-          grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false },
-        },
-        y: {
-          beginAtZero: true,
-          ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => fmt(v) },
-          grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false },
-        },
-      },
-    },
-  });
+  renderSessionsTotalEvolutionChart(labels, totalValues, uniqueBeneficiaryValues, Boolean(data.beneficiaries_included));
 
   appointmentTypesBaseMonths = series.map((it) => it.mes);
-  await renderSessionsAttendanceChart(labels, appointmentTypesBaseMonths, totalValues, data, demographicsData);
-  await loadSessionAppointmentTypes();
+  loadSessionsBeneficiaryUtilization(p, demographicsData, labels, totalValues, requestId);
+  await Promise.all([
+    renderSessionsAttendanceChart(labels, appointmentTypesBaseMonths, totalValues, data, demographicsData),
+    loadSessionAppointmentTypes(),
+  ]);
 }
 
 // --- Evolução ---
