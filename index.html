@@ -793,7 +793,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
 
       <div class="chart-card" data-qtag="#Q4">
         <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Evolução mensal do total de sessões</h2>
-        <div style="font-size:11px;color:#94a3b8;margin-bottom:14px"><code>botmaker_session.creation_time</code> · sessões e CPFs únicos · últimos 12 meses · <span id="s-total-evol-mode">global</span></div>
+        <div style="font-size:11px;color:#94a3b8;margin-bottom:14px"><code>botmaker_session.creation_time</code> · sessões e beneficiários únicos · últimos 12 meses · <span id="s-total-evol-mode">global</span></div>
         <div class="chart-wrap">
           <div class="skeleton" id="skel-s-total-evol"></div>
           <canvas id="sessionsTotalEvolChart" style="display:none"></canvas>
@@ -2646,7 +2646,7 @@ async function loadSessionsEvolution() {
   const humanoValues = series.map((it) => Number(it.humano) || 0);
   const iaValues = series.map((it) => Number(it.ia) || 0);
   const totalValues = series.map((it) => Number(it.total) || ((Number(it.humano) || 0) + (Number(it.ia) || 0)));
-  const uniqueCpfValues = series.map((it) => Number(it.unique_cpfs) || 0);
+  const uniqueBeneficiaryValues = series.map((it) => Number(it.unique_beneficiaries ?? it.unique_cpfs) || 0);
 
   if (skel) skel.style.display = 'none';
   if (cv && data && !data.error) cv.style.display = 'block';
@@ -2737,8 +2737,8 @@ async function loadSessionsEvolution() {
           tension: 0.35,
         },
         {
-          label: 'CPFs únicos',
-          data: uniqueCpfValues,
+          label: 'Beneficiários únicos',
+          data: uniqueBeneficiaryValues,
           borderColor: '#7c3aed',
           backgroundColor: 'rgba(124,58,237,0.08)',
           borderWidth: 2,
@@ -2758,7 +2758,7 @@ async function loadSessionsEvolution() {
         tooltip: {
           backgroundColor: '#1e293b', borderColor: '#334155', borderWidth: 1,
           titleColor: '#94a3b8', bodyColor: '#f1f5f9',
-          callbacks: { label: c => `${c.dataset.label}: ${fmt(c.parsed.y)}${c.dataset.label === 'CPFs únicos' ? ' CPFs' : ' sessões'}` },
+          callbacks: { label: c => `${c.dataset.label}: ${fmt(c.parsed.y)}${c.dataset.label === 'Beneficiários únicos' ? ' beneficiários' : ' sessões'}` },
         },
       },
       scales: {

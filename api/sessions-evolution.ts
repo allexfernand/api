@@ -71,28 +71,61 @@ async function getColumns(warehouseId: string, tableName: string) {
     .filter((column) => column && !column.startsWith('#'));
 }
 
-function normalizedCpfExpr(columns: string[]) {
+function uniqueBeneficiaryExpr(columns: string[]) {
   const directCpfColumn = pickColumn(columns, [
     'cpf', 'CPF', 'document', 'documento', 'cpf_cnpj', 'cpfCnpj',
-    'beneficiary_cpf', 'beneficiario_cpf', 'cpf_beneficiario',
+    'document_number', 'numero_documento', 'beneficiary_cpf', 'beneficiario_cpf',
+    'cpf_beneficiario', 'cpf_beneficiary', 'cpf_titular',
   ]);
-  const expressions = [];
+  const directBeneficiaryColumn = pickColumn(columns, [
+    'beneficiary_id', 'beneficiario_id', 'id_beneficiario', 'idBeneficiario',
+    'beneficiaryId', 'user_id', 'userId', 'customer_id', 'customerId',
+    'patient_id', 'patientId', 'member_id', 'memberId', 'health_user_id',
+  ]);
+  const cpfExpressions = [];
+  const idExpressions = [];
   if (directCpfColumn) {
-    expressions.push(`CAST(s.${quoteIdent(directCpfColumn)} AS STRING)`);
+    cpfExpressions.push(`CAST(s.${quoteIdent(directCpfColumn)} AS STRING)`);
+  }
+  if (directBeneficiaryColumn) {
+    idExpressions.push(`CAST(s.${quoteIdent(directBeneficiaryColumn)} AS STRING)`);
   }
   if (columns.some((column) => column.toLowerCase() === 'variables')) {
-    expressions.push(
+    cpfExpressions.push(
       `CAST(s.${quoteIdent('variables')}['cpf'] AS STRING)`,
       `CAST(s.${quoteIdent('variables')}['CPF'] AS STRING)`,
       `CAST(s.${quoteIdent('variables')}['document'] AS STRING)`,
       `CAST(s.${quoteIdent('variables')}['documento'] AS STRING)`,
       `CAST(s.${quoteIdent('variables')}['cpf_cnpj'] AS STRING)`,
+      `CAST(s.${quoteIdent('variables')}['document_number'] AS STRING)`,
       `CAST(s.${quoteIdent('variables')}['beneficiary_cpf'] AS STRING)`,
-      `CAST(s.${quoteIdent('variables')}['cpf_beneficiario'] AS STRING)`
+      `CAST(s.${quoteIdent('variables')}['cpf_beneficiario'] AS STRING)`,
+      `CAST(s.${quoteIdent('variables')}['cpf_beneficiary'] AS STRING)`
+    );
+    idExpressions.push(
+      `CAST(s.${quoteIdent('variables')}['beneficiary_id'] AS STRING)`,
+      `CAST(s.${quoteIdent('variables')}['beneficiaryId'] AS STRING)`,
+      `CAST(s.${quoteIdent('variables')}['beneficiario_id'] AS STRING)`,
+      `CAST(s.${quoteIdent('variables')}['id_beneficiario'] AS STRING)`,
+      `CAST(s.${quoteIdent('variables')}['idBeneficiario'] AS STRING)`,
+      `CAST(s.${quoteIdent('variables')}['user_id'] AS STRING)`,
+      `CAST(s.${quoteIdent('variables')}['userId'] AS STRING)`,
+      `CAST(s.${quoteIdent('variables')}['customer_id'] AS STRING)`,
+      `CAST(s.${quoteIdent('variables')}['customerId'] AS STRING)`,
+      `CAST(s.${quoteIdent('variables')}['patient_id'] AS STRING)`,
+      `CAST(s.${quoteIdent('variables')}['patientId'] AS STRING)`,
+      `CAST(s.${quoteIdent('variables')}['member_id'] AS STRING)`,
+      `CAST(s.${quoteIdent('variables')}['memberId'] AS STRING)`
     );
   }
-  if (!expressions.length) return null;
-  return `NULLIF(regexp_replace(COALESCE(${expressions.join(', ')}), '[^0-9]', ''), '')`;
+  if (!cpfExpressions.length && !idExpressions.length) return null;
+  const cpfExpr = cpfExpressions.length
+    ? `NULLIF(regexp_replace(COALESCE(${cpfExpressions.join(', ')}), '[^0-9]', ''), '')`
+    : "CAST(NULL AS STRING)";
+  const idExpr = idExpressions.length
+    ? `NULLIF(TRIM(CAST(COALESCE(${idExpressions.join(', ')}) AS STRING)), '')`
+    : "CAST(NULL AS STRING)";
+  return `COALESCE(CASE WHEN ${cpfExpr} IS NOT NULL THEN CONCAT('cpf:', ${cpfExpr}) END, CASE WHEN ${idExpr} IS NOT NULL THEN CONCAT('beneficiary:', ${idExpr}) END)`;
 }
 
 function orgIdsSubquery(groupName: unknown, company: unknown) {
@@ -156,7 +189,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const wh = warehouses.find((w) => w.state === "RUNNING") || warehouses[0];
     if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
     const sessionColumns = await getColumns(wh.id, SESSION_TABLE);
-    const cpfExpr = normalizedCpfExpr(sessionColumns);
+    const beneficiaryExpr = uniqueBeneficiaryExpr(sessionColumns);
 
     const filters = [granularity === 'day' ? daySqlFilter : monthsSqlFilter];
     if (hasOrgFilter) {
@@ -209,7 +242,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       });
     }
 
-    const [rows, cpfRows] = await Promise.all([
+    const [rows, beneficiaryRows] = await Promise.all([
       runQuery(wh.id, `
       SELECT
         DATE_FORMAT(${sessionDateExpr}, 'yyyy-MM') AS mes,
@@ -222,13 +255,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         CASE WHEN s.finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END
       ORDER BY mes
     `),
-      cpfExpr ? runQuery(wh.id, `
+      beneficiaryExpr ? runQuery(wh.id, `
       SELECT
         DATE_FORMAT(${sessionDateExpr}, 'yyyy-MM') AS mes,
-        COUNT(DISTINCT ${cpfExpr}) AS unique_cpfs
+        COUNT(DISTINCT ${beneficiaryExpr}) AS unique_beneficiaries
       FROM ${fromSql}
       ${where}
-        AND ${cpfExpr} IS NOT NULL
+        AND ${beneficiaryExpr} IS NOT NULL
       GROUP BY DATE_FORMAT(${sessionDateExpr}, 'yyyy-MM')
       ORDER BY mes
     `) : Promise.resolve([]),
@@ -238,11 +271,12 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       `${String(getCell(r[0]) || '')}|${String(getCell(r[1]) || '').toUpperCase()}`,
       toInt(r[2]),
     ]));
-    const cpfsByMes = new Map(cpfRows.map((r) => [String(getCell(r[0]) || ''), toInt(r[1])]));
+    const beneficiariesByMes = new Map(beneficiaryRows.map((r) => [String(getCell(r[0]) || ''), toInt(r[1])]));
     const series = monthList.map((m) => {
       const humano = byMesTipo.get(`${m}|HUMANO`) || 0;
       const ia = byMesTipo.get(`${m}|IA`) || 0;
-      return { mes: m, humano, ia, total: humano + ia, unique_cpfs: cpfsByMes.get(m) || 0 };
+      const uniqueBeneficiaries = beneficiariesByMes.get(m) || 0;
+      return { mes: m, humano, ia, total: humano + ia, unique_cpfs: uniqueBeneficiaries, unique_beneficiaries: uniqueBeneficiaries };
     });
 
     res.status(200).json({
@@ -251,7 +285,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       filters: { group_name: groupName, company, type: typeFilter },
       mode,
       source: "botmaker_session.creation_time",
-      cpf_source: cpfExpr ? "botmaker_session.cpf/variables" : null,
+      cpf_source: beneficiaryExpr ? "botmaker_session.cpf/beneficiary_id/variables" : null,
     });
   } catch (err) {
     res.status(500).json({ error: (err as { message?: string }).message });
