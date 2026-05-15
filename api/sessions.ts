@@ -47,6 +47,7 @@ const getCell = (cell: DatabricksCell) => {
 const toInt = (v: DatabricksCell) => { const n = parseInt(String(getCell(v))); return Number.isFinite(n) ? n : 0; };
 
 const SESSION_TABLE = `hive_metastore.sanus_prod.botmaker_session`;
+const MESSAGE_TABLE = `hive_metastore.sanus_prod.botmaker_message`;
 const ORGANIZATIONS_TABLE = `hive_metastore.sanus_prod.organizations`;
 
 function sessionTypificationExpr(variablesColumn: string, tableAlias = '') {
@@ -164,6 +165,58 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         ORDER BY total_sessions DESC
       `);
 
+    const messageAgentFinishersPromise = companySessionsMode === "company"
+      ? runQuery(wh.id, `
+        WITH scoped_sessions AS (
+          SELECT
+            CAST(s.${quoteIdent('session_id')} AS STRING) AS session_id
+          FROM ${SESSION_TABLE} s
+          INNER JOIN ${ORGANIZATIONS_TABLE} o
+            ON CAST(s.${quoteIdent('organization_id')} AS STRING) = CAST(o.${quoteIdent('id')} AS STRING)
+          WHERE o.${quoteIdent('name')} IS NOT NULL
+            AND TRIM(CAST(o.${quoteIdent('name')} AS STRING)) != ''
+            ${companySessionsWhere ? `AND ${companySessionsWhere}` : ''}
+        ),
+        session_has_agent AS (
+          SELECT
+            ss.session_id,
+            MAX(CASE WHEN m.${quoteIdent('sender_type')} = 'agent' THEN 1 ELSE 0 END) AS teve_humano
+          FROM scoped_sessions ss
+          INNER JOIN ${MESSAGE_TABLE} m
+            ON CAST(m.${quoteIdent('session_id')} AS STRING) = ss.session_id
+          GROUP BY ss.session_id
+        )
+        SELECT
+          CASE WHEN sa.teve_humano = 1 THEN 'Humano' ELSE 'IA' END AS tipo_atendimento,
+          COUNT(*) AS total_sessions
+        FROM session_has_agent sa
+        GROUP BY CASE WHEN sa.teve_humano = 1 THEN 'Humano' ELSE 'IA' END
+        ORDER BY total_sessions DESC
+      `)
+      : runQuery(wh.id, `
+        WITH scoped_sessions AS (
+          SELECT
+            CAST(s.${quoteIdent('session_id')} AS STRING) AS session_id
+          FROM ${SESSION_TABLE} s
+          ${companySessionsDateFilter ? `WHERE ${companySessionsDateFilter}` : ''}
+        ),
+        session_has_agent AS (
+          SELECT
+            ss.session_id,
+            MAX(CASE WHEN m.${quoteIdent('sender_type')} = 'agent' THEN 1 ELSE 0 END) AS teve_humano
+          FROM scoped_sessions ss
+          INNER JOIN ${MESSAGE_TABLE} m
+            ON CAST(m.${quoteIdent('session_id')} AS STRING) = ss.session_id
+          GROUP BY ss.session_id
+        )
+        SELECT
+          CASE WHEN sa.teve_humano = 1 THEN 'Humano' ELSE 'IA' END AS tipo_atendimento,
+          COUNT(*) AS total_sessions
+        FROM session_has_agent sa
+        GROUP BY CASE WHEN sa.teve_humano = 1 THEN 'Humano' ELSE 'IA' END
+        ORDER BY total_sessions DESC
+      `);
+
     const companySessionsPromise = companySessionsMode === "company"
       ? runQuery(wh.id, `
         SELECT
@@ -258,9 +311,10 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       ORDER BY tg.current_sessions DESC, s.grupo, s.mes
     `);
 
-    const [typificationsSettled, economicGroupFinishersSettled, companySessionsSettled, topGroupsEvolutionSettled] = await Promise.allSettled([
+    const [typificationsSettled, economicGroupFinishersSettled, messageAgentFinishersSettled, companySessionsSettled, topGroupsEvolutionSettled] = await Promise.allSettled([
       typificationsPromise,
       economicGroupFinishersPromise,
+      messageAgentFinishersPromise,
       companySessionsPromise,
       topGroupsEvolutionPromise,
     ]);
@@ -279,6 +333,15 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       : null;
     const economicGroupFinishers = economicGroupFinishersSettled.status === 'fulfilled'
       ? economicGroupFinishersSettled.value.map((r) => ({
+          tipo: String(getCell(r[0]) || "—"),
+          total: toInt(r[1]),
+        }))
+      : [];
+    const messageAgentFinishersError = messageAgentFinishersSettled.status === 'rejected'
+      ? (messageAgentFinishersSettled.reason instanceof Error ? messageAgentFinishersSettled.reason.message : String(messageAgentFinishersSettled.reason))
+      : null;
+    const messageAgentFinishers = messageAgentFinishersSettled.status === 'fulfilled'
+      ? messageAgentFinishersSettled.value.map((r) => ({
           tipo: String(getCell(r[0]) || "—"),
           total: toInt(r[1]),
         }))
@@ -318,6 +381,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       economic_group_finishers: economicGroupFinishers,
       economic_group_finishers_error: economicGroupFinishersError,
       economic_group_finishers_filter_applied: { period: true, organization: true },
+      message_agent_finishers: messageAgentFinishers,
+      message_agent_finishers_error: messageAgentFinishersError,
+      message_agent_finishers_filter_applied: { period: true, organization: true },
       typifications,
       typifications_error: typificationsError,
       typifications_finisher: typificationFinisher,
