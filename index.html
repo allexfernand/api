@@ -2241,7 +2241,7 @@ async function loadTypificationGroupsBreakdown(tipo) {
     return;
   }
 
-  if (content) content.style.display = 'block';
+  if (content) content.style.display = 'flex';
   const max = Number(groups[0].total) || 1;
   if (list) {
     list.innerHTML = groups.map((g) => {
@@ -2313,7 +2313,7 @@ function renderSessionTypifications(items, opts) {
     note.textContent = messages.join(' · ');
   }
   if (loading) loading.style.display = 'none';
-  if (content) content.style.display = 'block';
+  if (content) content.style.display = 'flex';
 }
 
 function renderSessionsUtilization(data, demographicsData, comparison) {
