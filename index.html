@@ -235,6 +235,17 @@ body {
 .sessions-utilization-delta{justify-self:start;font-size:10px;font-weight:800;border-radius:999px;padding:3px 8px;background:#f8fafc;border:1px solid #e2e8f0;color:#64748b}
 .sessions-utilization-delta.positive{background:#ecfdf5;border-color:#bbf7d0;color:#047857}
 .sessions-utilization-delta.negative{background:#fff7ed;border-color:#fed7aa;color:#c2410c}
+.card-box[data-qtag="#Q11"],
+.card-box[data-qtag="#Q11B"]{display:flex;flex-direction:column;max-height:clamp(360px,60vh,560px)}
+.card-box[data-qtag="#Q11"] #session-typifications-content,
+.card-box[data-qtag="#Q11B"] #typification-groups-content{flex:1 1 auto;min-height:0;display:flex;flex-direction:column}
+.card-box[data-qtag="#Q11"] #session-typifications-list,
+.card-box[data-qtag="#Q11B"] #typification-groups-list{flex:1 1 auto;min-height:0;overflow-y:auto;padding-right:6px;scrollbar-width:thin;scrollbar-color:#cbd5e1 transparent}
+.card-box[data-qtag="#Q11"] #session-typifications-list::-webkit-scrollbar,
+.card-box[data-qtag="#Q11B"] #typification-groups-list::-webkit-scrollbar{width:6px}
+.card-box[data-qtag="#Q11"] #session-typifications-list::-webkit-scrollbar-thumb,
+.card-box[data-qtag="#Q11B"] #typification-groups-list::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:999px}
+.card-box[data-qtag="#Q11B"] #typification-groups-empty{flex:1 1 auto}
 .session-typification-list{display:grid;gap:6px}
 .session-typification-row{display:grid;grid-template-columns:minmax(160px,1fr) minmax(120px,2fr) 88px;gap:12px;align-items:center;padding:6px 8px;border-radius:8px;border:1px solid transparent;transition:background .15s ease,border-color .15s ease,box-shadow .15s ease}
 .session-typification-row.is-interactive{cursor:pointer}
