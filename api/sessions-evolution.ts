@@ -235,17 +235,14 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const filters = [granularity === 'day' ? daySqlFilter : monthsSqlFilter];
     if (hasOrgFilter) {
       filters.push(company
-        ? `CAST(o.${quoteIdent('id')} AS STRING) IN ${orgIdsSubquery(groupName, company)}`
-        : `(CAST(o.${quoteIdent('id')} AS STRING) IN ${orgIdsSubquery(groupName, company)} OR ${economicGroupNameCondition(groupName, 's')})`);
+        ? `CAST(s.${quoteIdent('organization_id')} AS STRING) IN ${orgIdsSubquery(groupName, company)}`
+        : economicGroupNameCondition(groupName, 's'));
     }
-    const orgJoinType = company ? 'INNER' : 'LEFT';
     const fromSql = hasOrgFilter
-      ? `${SESSION_TABLE} s
-        ${orgJoinType} JOIN ${ORGANIZATIONS_TABLE} o
-          ON CAST(s.${quoteIdent('organization_id')} AS STRING) = CAST(o.${quoteIdent('id')} AS STRING)`
+      ? `${SESSION_TABLE} s`
       : `${SESSION_TABLE} s`;
     const where = `WHERE ${filters.join(' AND ')}`;
-    const mode = hasOrgFilter ? (company ? "organization_join" : "organization_or_economic_group") : "global";
+    const mode = hasOrgFilter ? (company ? "organization_subquery" : "economic_group_name") : "global";
     if (granularity === 'day') {
       const rows = await runQuery(wh.id, `
         SELECT

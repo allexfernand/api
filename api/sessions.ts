@@ -123,13 +123,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const companySessionsDateFilter = meses.length > 0
       ? `DATE_FORMAT(try_cast(s.${quoteIdent(SESSION_DATE_COLUMN)} AS TIMESTAMP), 'yyyy-MM') IN (${meses.map((m: string) => `'${m}'`).join(',')})`
       : null;
-    const companySessionsOrgFilter = company
-      ? `CAST(o.${quoteIdent('id')} AS STRING) IN ${orgIdsSubquery(null, company)}`
-      : (groupName ? `(CAST(o.${quoteIdent('id')} AS STRING) IN ${orgIdsSubquery(groupName, null)} OR ${economicGroupNameCondition(groupName, 's')})` : null);
-    const companySessionsWhere = [companySessionsDateFilter, companySessionsOrgFilter].filter(Boolean).join(' AND ');
+    const companySessionsScopeFilter = company
+      ? `CAST(s.${quoteIdent('organization_id')} AS STRING) IN ${orgIdsSubquery(null, company)}`
+      : (groupName ? economicGroupNameCondition(groupName, 's') : null);
+    const companySessionsWhere = [companySessionsDateFilter, companySessionsScopeFilter].filter(Boolean).join(' AND ');
     const companySessionsMode = groupName || company ? "company" : "economic_group";
     const companySessionsSource = companySessionsMode === "company"
-      ? "botmaker_session.economic_group_name OR botmaker_session.organization_id + organizations.id/name"
+      ? "botmaker_session.economic_group_name + organizations.name"
       : "botmaker_session.economic_group_name";
     const companySessionsJoinType = company ? 'INNER' : 'LEFT';
     const companySessionsCompanyExpr = company
@@ -150,8 +150,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const topGroupValidFilter = topGroupByCompany
       ? `${topGroupNameExpr} != ''`
       : `s.${quoteIdent('economic_group_name')} IS NOT NULL AND ${topGroupNameExpr} != ''`;
-    const topGroupWhere = [topGroupDateFilter, companySessionsOrgFilter, topGroupValidFilter].filter(Boolean).join(' AND ');
-    const topGroupFromSql = topGroupByCompany || companySessionsOrgFilter
+    const topGroupWhere = [topGroupDateFilter, companySessionsScopeFilter, topGroupValidFilter].filter(Boolean).join(' AND ');
+    const topGroupFromSql = topGroupByCompany || companySessionsScopeFilter
       ? `${SESSION_TABLE} s
         ${company ? 'INNER' : 'LEFT'} JOIN ${ORGANIZATIONS_TABLE} o
           ON CAST(s.${quoteIdent('organization_id')} AS STRING) = CAST(o.${quoteIdent('id')} AS STRING)`
@@ -163,11 +163,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           CASE WHEN s.finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END AS tipo_atendimento,
           COUNT(*) AS total_sessions
         FROM ${SESSION_TABLE} s
-        ${companySessionsJoinType} JOIN ${ORGANIZATIONS_TABLE} o
-          ON CAST(s.${quoteIdent('organization_id')} AS STRING) = CAST(o.${quoteIdent('id')} AS STRING)
-        WHERE 1 = 1
-          ${companySessionsCompanyRequired ? `AND ${companySessionsCompanyRequired}` : ''}
-          ${companySessionsWhere ? `AND ${companySessionsWhere}` : ''}
+        ${companySessionsWhere ? `WHERE ${companySessionsWhere}` : ''}
         GROUP BY CASE WHEN s.finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END
         ORDER BY total_sessions DESC
       `)
@@ -187,11 +183,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           SELECT
             CAST(s.${quoteIdent('session_id')} AS STRING) AS session_id
           FROM ${SESSION_TABLE} s
-          ${companySessionsJoinType} JOIN ${ORGANIZATIONS_TABLE} o
-            ON CAST(s.${quoteIdent('organization_id')} AS STRING) = CAST(o.${quoteIdent('id')} AS STRING)
-          WHERE 1 = 1
-            ${companySessionsCompanyRequired ? `AND ${companySessionsCompanyRequired}` : ''}
-            ${companySessionsWhere ? `AND ${companySessionsWhere}` : ''}
+          ${companySessionsWhere ? `WHERE ${companySessionsWhere}` : ''}
         ),
         scoped_session_ids AS (
           SELECT DISTINCT session_id
@@ -285,12 +277,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           ${aliasedTypificationExpr} AS tipificacao,
           COUNT(*) AS total_sessions
         FROM ${SESSION_TABLE} s
-        ${companySessionsJoinType} JOIN ${ORGANIZATIONS_TABLE} o
-          ON CAST(s.${quoteIdent('organization_id')} AS STRING) = CAST(o.${quoteIdent('id')} AS STRING)
-        WHERE 1 = 1
-          ${companySessionsCompanyRequired ? `AND ${companySessionsCompanyRequired}` : ''}
-          ${companySessionsWhere ? `AND ${companySessionsWhere}` : ''}
-          ${typificationFinisherFilter ? `AND ${typificationFinisherFilter}` : ''}
+        ${[companySessionsWhere, typificationFinisherFilter].filter(Boolean).length ? `WHERE ${[companySessionsWhere, typificationFinisherFilter].filter(Boolean).join(' AND ')}` : ''}
         GROUP BY ${aliasedTypificationExpr}
         ORDER BY total_sessions DESC
         LIMIT 30
