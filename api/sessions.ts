@@ -208,6 +208,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   const typificationFinisher = ['humano', 'ia'].includes(String(req.query.typification_finisher || '').toLowerCase())
     ? String(req.query.typification_finisher).toLowerCase()
     : '';
+  const scope = String(req.query.scope || '').toLowerCase();
+  const typificationValue = req.query.typification_value ? String(req.query.typification_value) : null;
 
   const SESSION_DATE_COLUMN = 'creation_time';
 
@@ -235,6 +237,55 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const typificationFinisherFilter = typificationFinisher === 'humano'
       ? `s.${quoteIdent('tipo_atendimento_agent')} = 'Humano'`
       : (typificationFinisher === 'ia' ? `s.${quoteIdent('tipo_atendimento_agent')} = 'IA'` : null);
+
+    if (scope === 'typification_groups' && typificationValue) {
+      const tipFilter = `s.${quoteIdent('tipificacao')} = '${escape(typificationValue)}'`;
+      const where = [companySessionsDateFilter, companySessionsScopeFilter, typificationFinisherFilter, tipFilter]
+        .filter(Boolean)
+        .join(' AND ');
+      try {
+        const rows = await runQuery(wh.id, `
+          SELECT
+            s.${quoteIdent('economic_group_canonical')} AS grupo,
+            COUNT(*) AS total_sessions
+          FROM ${dashboardSessionsTable} s
+          WHERE ${where}
+            AND s.${quoteIdent('economic_group_canonical')} IS NOT NULL
+            AND TRIM(CAST(s.${quoteIdent('economic_group_canonical')} AS STRING)) != ''
+          GROUP BY s.${quoteIdent('economic_group_canonical')}
+          ORDER BY total_sessions DESC
+          LIMIT 50
+        `);
+        const groups = rows.map((r) => ({
+          grupo: String(getCell(r[0]) || 'Sem grupo'),
+          total: toInt(r[1]),
+        }));
+        const totalSessions = groups.reduce((acc, g) => acc + g.total, 0);
+        return res.status(200).json({
+          scope: 'typification_groups',
+          typification: typificationValue,
+          groups,
+          total: totalSessions,
+          filters_applied: {
+            period: meses.length > 0,
+            organization: Boolean(groupName || company),
+            finisher: Boolean(typificationFinisher),
+          },
+          finisher: typificationFinisher || null,
+          source: 'dashboard_sessions_base_gold.economic_group_canonical',
+        });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        return res.status(200).json({
+          scope: 'typification_groups',
+          typification: typificationValue,
+          groups: [],
+          total: 0,
+          error: msg,
+        });
+      }
+    }
+
     const topGroupMonths = meses.length ? [...meses].sort() : lastNMonthsList(12);
     const topGroupDateFilter = `s.${quoteIdent('mes')} IN (${topGroupMonths.map((m) => `'${m}'`).join(',')})`;
     const topGroupByCompany = Boolean(groupName || company);

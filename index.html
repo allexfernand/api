@@ -235,12 +235,20 @@ body {
 .sessions-utilization-delta{justify-self:start;font-size:10px;font-weight:800;border-radius:999px;padding:3px 8px;background:#f8fafc;border:1px solid #e2e8f0;color:#64748b}
 .sessions-utilization-delta.positive{background:#ecfdf5;border-color:#bbf7d0;color:#047857}
 .sessions-utilization-delta.negative{background:#fff7ed;border-color:#fed7aa;color:#c2410c}
-.session-typification-list{display:grid;gap:10px}
-.session-typification-row{display:grid;grid-template-columns:minmax(160px,1fr) minmax(120px,2fr) 88px;gap:12px;align-items:center}
+.session-typification-list{display:grid;gap:6px}
+.session-typification-row{display:grid;grid-template-columns:minmax(160px,1fr) minmax(120px,2fr) 88px;gap:12px;align-items:center;padding:6px 8px;border-radius:8px;border:1px solid transparent;transition:background .15s ease,border-color .15s ease,box-shadow .15s ease}
+.session-typification-row.is-interactive{cursor:pointer}
+.session-typification-row.is-interactive:hover{background:#f0fdfa;border-color:#a7f3d0}
+.session-typification-row.is-active{background:linear-gradient(90deg,#ecfeff,#f0fdfa);border-color:#14b8a6;box-shadow:0 0 0 1px rgba(20,184,166,.22)}
+.session-typification-row.is-active .session-typification-label{color:#0f766e}
 .session-typification-label{font-size:12px;font-weight:700;color:#334155;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .session-typification-track{height:10px;background:#f1f5f9;border-radius:999px;overflow:hidden}
 .session-typification-bar{height:100%;background:linear-gradient(90deg,#14b8a6,#0f766e);border-radius:999px;min-width:3px}
+.session-typification-row.variant-indigo .session-typification-bar{background:linear-gradient(90deg,#6366f1,#4f46e5)}
+.session-typification-row.variant-indigo .session-typification-value{color:#4f46e5}
 .session-typification-value{text-align:right;font-size:12px;font-weight:800;color:#0f766e}
+.typification-groups-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:36px 16px;color:#94a3b8;font-size:12px;text-align:center;border:1px dashed #e2e8f0;border-radius:12px;background:linear-gradient(180deg,#fafafa,#fff)}
+.typification-groups-empty i{font-size:24px;color:#cbd5e1}
 
 .petit-hero{background:linear-gradient(135deg,#063f4a,#0f766e);color:#fff;border:none;overflow:hidden;position:relative}
 .petit-hero::after{content:"";position:absolute;right:-80px;top:-80px;width:220px;height:220px;border-radius:50%;background:rgba(255,255,255,.08)}
@@ -784,21 +792,40 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
       <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="s-top-groups-error"></div>
     </div>
 
-    <div class="card-box" data-qtag="#Q11">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap">
-        <div class="section-title" style="margin-bottom:0"><i class="fa-solid fa-tags" style="margin-right:6px"></i>Tipos de encerramento de conversas</div>
-        <select class="filter-select" id="session-typification-finisher-select" onchange="onSessionTypificationFinisherChange(this.value)" style="min-width:160px">
-          <option value="">(Humano + IA)</option>
-          <option value="humano">Humano</option>
-          <option value="ia">IA</option>
-        </select>
+    <div class="fluid-grid">
+      <div class="card-box" data-qtag="#Q11">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+          <div class="section-title" style="margin-bottom:0"><i class="fa-solid fa-tags" style="margin-right:6px"></i>Tipos de encerramento de conversas</div>
+          <select class="filter-select" id="session-typification-finisher-select" onchange="onSessionTypificationFinisherChange(this.value)" style="min-width:160px">
+            <option value="">(Humano + IA)</option>
+            <option value="humano">Humano</option>
+            <option value="ia">IA</option>
+          </select>
+        </div>
+        <div class="loading-box" id="session-typifications-loading"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...</div>
+        <div id="session-typifications-content" style="display:none">
+          <div style="font-size:11px;color:#94a3b8;margin-bottom:14px"><code>botmaker_session.variables['typification']</code> · respeita os filtros da aba · clique para detalhar por grupo</div>
+          <div class="session-typification-list" id="session-typifications-list"></div>
+          <div style="font-size:11px;color:#94a3b8;margin-top:12px;text-align:right" id="session-typifications-meta">—</div>
+          <div style="font-size:11px;color:#f59e0b;margin-top:6px;text-align:right;display:none" id="session-typifications-note"></div>
+        </div>
       </div>
-      <div class="loading-box" id="session-typifications-loading"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...</div>
-      <div id="session-typifications-content" style="display:none">
-        <div style="font-size:11px;color:#94a3b8;margin-bottom:14px"><code>botmaker_session.variables['typification']</code> · respeita os filtros da aba</div>
-        <div class="session-typification-list" id="session-typifications-list"></div>
-        <div style="font-size:11px;color:#94a3b8;margin-top:12px;text-align:right" id="session-typifications-meta">—</div>
-        <div style="font-size:11px;color:#f59e0b;margin-top:6px;text-align:right;display:none" id="session-typifications-note"></div>
+
+      <div class="card-box" data-qtag="#Q11B">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+          <div class="section-title" style="margin-bottom:0"><i class="fa-solid fa-building" style="margin-right:6px"></i>Volume por grupo econômico</div>
+          <div id="typification-groups-context" style="font-size:11px;color:#64748b;font-weight:700">—</div>
+        </div>
+        <div class="typification-groups-empty" id="typification-groups-empty">
+          <i class="fa-solid fa-hand-pointer"></i>
+          <div>Selecione um tipo de encerramento ao lado para ver o volume por grupo econômico.</div>
+        </div>
+        <div class="loading-box" id="typification-groups-loading" style="display:none"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...</div>
+        <div id="typification-groups-content" style="display:none">
+          <div class="session-typification-list" id="typification-groups-list"></div>
+          <div style="font-size:11px;color:#94a3b8;margin-top:12px;text-align:right" id="typification-groups-meta">—</div>
+          <div style="font-size:11px;color:#f59e0b;margin-top:6px;text-align:right;display:none" id="typification-groups-note"></div>
+        </div>
       </div>
     </div>
 
@@ -1294,6 +1321,8 @@ let selectedAppointmentTypeMonths = new Set();
 let appointmentTypesBaseMonths = [];
 let selectedSessionsDailyMonth = currentMonthValue();
 let selectedSessionTypificationFinisher = '';
+let selectedTypification = null;
+let typificationGroupsRequestId = 0;
 let sessionsRequestId = 0;
 let sessionsEvolutionRequestId = 0;
 let selectedQualityCriteriaSort = 'worst';
@@ -2106,7 +2135,125 @@ function renderSessionsTopGroupsEvolution(data) {
 
 function onSessionTypificationFinisherChange(value) {
   selectedSessionTypificationFinisher = value || '';
+  selectedTypification = null;
   loadSessions();
+}
+
+function resetTypificationGroupsCard(reason) {
+  const hadSelection = Boolean(selectedTypification);
+  selectedTypification = null;
+  const empty = document.getElementById('typification-groups-empty');
+  const loading = document.getElementById('typification-groups-loading');
+  const content = document.getElementById('typification-groups-content');
+  const context = document.getElementById('typification-groups-context');
+  const list = document.getElementById('typification-groups-list');
+  const meta = document.getElementById('typification-groups-meta');
+  const note = document.getElementById('typification-groups-note');
+  if (loading) loading.style.display = 'none';
+  if (content) content.style.display = 'none';
+  if (list) list.innerHTML = '';
+  if (meta) meta.textContent = '—';
+  if (note) { note.style.display = 'none'; note.textContent = ''; }
+  if (context) context.textContent = '—';
+  if (empty) {
+    empty.style.display = 'flex';
+    if (reason === 'reload' && hadSelection) {
+      empty.innerHTML = '<i class="fa-solid fa-arrows-rotate"></i><div>Os filtros mudaram. Selecione novamente um tipo de encerramento ao lado.</div>';
+    } else {
+      empty.innerHTML = '<i class="fa-solid fa-hand-pointer"></i><div>Selecione um tipo de encerramento ao lado para ver o volume por grupo econômico.</div>';
+    }
+  }
+}
+
+function onSessionTypificationClick(rawTipo) {
+  const tipo = String(rawTipo || '').trim();
+  if (!tipo) return;
+  if (selectedTypification === tipo) {
+    resetTypificationGroupsCard();
+    refreshTypificationActiveState();
+    return;
+  }
+  selectedTypification = tipo;
+  refreshTypificationActiveState();
+  loadTypificationGroupsBreakdown(tipo);
+}
+
+function refreshTypificationActiveState() {
+  document.querySelectorAll('#session-typifications-list .session-typification-row').forEach((row) => {
+    row.classList.toggle('is-active', row.dataset.tipo === selectedTypification);
+  });
+}
+
+async function loadTypificationGroupsBreakdown(tipo) {
+  const requestId = ++typificationGroupsRequestId;
+  const empty = document.getElementById('typification-groups-empty');
+  const loading = document.getElementById('typification-groups-loading');
+  const content = document.getElementById('typification-groups-content');
+  const context = document.getElementById('typification-groups-context');
+  const list = document.getElementById('typification-groups-list');
+  const meta = document.getElementById('typification-groups-meta');
+  const note = document.getElementById('typification-groups-note');
+  if (empty) empty.style.display = 'none';
+  if (content) content.style.display = 'none';
+  if (loading) loading.style.display = 'block';
+  if (context) context.textContent = tipo;
+
+  const meses = [...selectedMonths].sort();
+  const p = new URLSearchParams();
+  p.set('scope', 'typification_groups');
+  p.set('typification_value', tipo);
+  if (meses.length > 0) p.set('meses', meses.join(','));
+  if (currentGroup) p.set('group_name', currentGroup);
+  if (selectedSessionTypificationFinisher) p.set('typification_finisher', selectedSessionTypificationFinisher);
+
+  const data = await safeGet('/api/sessions?' + p.toString());
+  if (requestId !== typificationGroupsRequestId) return;
+  if (selectedTypification !== tipo) return;
+
+  if (loading) loading.style.display = 'none';
+
+  if (!data || data.error) {
+    if (empty) {
+      empty.style.display = 'flex';
+      empty.innerHTML = `<i class="fa-solid fa-triangle-exclamation" style="color:#f87171"></i><div>Erro ao carregar grupos: ${escapeHtml(String((data && data.error) || 'falha de rede').slice(0, 200))}</div>`;
+    }
+    return;
+  }
+
+  const groups = Array.isArray(data.groups) ? data.groups : [];
+  const total = Number(data.total) || groups.reduce((acc, g) => acc + (Number(g.total) || 0), 0);
+  if (!groups.length) {
+    if (empty) {
+      empty.style.display = 'flex';
+      empty.innerHTML = `<i class="fa-solid fa-circle-info"></i><div>Nenhum grupo encontrado para <strong>${escapeHtml(tipo)}</strong> com os filtros atuais.</div>`;
+    }
+    return;
+  }
+
+  if (content) content.style.display = 'block';
+  const max = Number(groups[0].total) || 1;
+  if (list) {
+    list.innerHTML = groups.map((g) => {
+      const value = Number(g.total) || 0;
+      const width = Math.max((value / max) * 100, 2);
+      const pct = total > 0 ? ((value / total) * 100).toFixed(1).replace('.', ',') : '0,0';
+      const label = escapeHtml(g.grupo || 'Sem grupo');
+      return `<div class="session-typification-row variant-indigo" title="${label}">
+        <div class="session-typification-label">${label}</div>
+        <div class="session-typification-track"><div class="session-typification-bar" style="width:${width}%"></div></div>
+        <div class="session-typification-value">${fmt(value)} <span style="color:#94a3b8;font-weight:700">(${pct}%)</span></div>
+      </div>`;
+    }).join('');
+  }
+  if (meta) meta.textContent = `${groups.length} grupos · total ${fmt(total)} sessões`;
+  if (note) {
+    const messages = [];
+    if (currentGroup) messages.push(`recortado por: ${currentGroup}`);
+    if (selectedSessionTypificationFinisher === 'humano') messages.push('finalizadas por Humano');
+    else if (selectedSessionTypificationFinisher === 'ia') messages.push('finalizadas por IA');
+    note.style.display = messages.length ? 'block' : 'none';
+    note.textContent = messages.join(' · ');
+  }
 }
 
 function renderSessionTypifications(items, opts) {
@@ -2133,8 +2280,12 @@ function renderSessionTypifications(items, opts) {
       const value = Number(item.total) || 0;
       const width = Math.max((value / max) * 100, 2);
       const pct = total > 0 ? ((value / total) * 100).toFixed(1).replace('.', ',') : '0,0';
-      const label = escapeHtml(item.tipo || 'Sem tipificação');
-      return `<div class="session-typification-row" title="${label}">
+      const rawTipo = item.tipo || 'Sem tipificação';
+      const label = escapeHtml(rawTipo);
+      const tipoAttr = escapeAttr(rawTipo);
+      const isActive = selectedTypification === rawTipo;
+      const activeClass = isActive ? ' is-active' : '';
+      return `<div class="session-typification-row is-interactive${activeClass}" role="button" tabindex="0" data-tipo="${tipoAttr}" onclick="onSessionTypificationClick(this.dataset.tipo)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();onSessionTypificationClick(this.dataset.tipo);}" title="${label} — clique para detalhar por grupo">
         <div class="session-typification-label">${label}</div>
         <div class="session-typification-track"><div class="session-typification-bar" style="width:${width}%"></div></div>
         <div class="session-typification-value">${fmt(value)} <span style="color:#94a3b8;font-weight:700">(${pct}%)</span></div>
@@ -2365,6 +2516,7 @@ async function loadSessionsBeneficiaryUtilization(baseParams, demographicsData, 
 
 async function loadSessions() {
   const requestId = ++sessionsRequestId;
+  resetTypificationGroupsCard('reload');
   buildAppointmentTypesPeriodoOptions();
   buildSessionsDailyMonthOptions();
   const economicGroupBullet = document.getElementById('bullet-sessoes-eg');
