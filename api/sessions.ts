@@ -245,26 +245,6 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const topGroupWhere = [topGroupDateFilter, companySessionsScopeFilter, topGroupValidFilter].filter(Boolean).join(' AND ');
     const topGroupFromSql = `${dashboardSessionsTable} s`;
 
-    const economicGroupFinishersPromise = companySessionsMode === "company"
-      ? runQuery(wh.id, `
-        SELECT
-          s.${quoteIdent('tipo_finished_by')} AS tipo_atendimento,
-          COUNT(*) AS total_sessions
-        FROM ${dashboardSessionsTable} s
-        ${companySessionsWhere ? `WHERE ${companySessionsWhere}` : ''}
-        GROUP BY s.${quoteIdent('tipo_finished_by')}
-        ORDER BY total_sessions DESC
-      `)
-      : runQuery(wh.id, `
-        SELECT
-          s.${quoteIdent('tipo_finished_by')} AS tipo_atendimento,
-          COUNT(*) AS total_sessions
-        FROM ${dashboardSessionsTable} s
-        ${companySessionsDateFilter ? `WHERE ${companySessionsDateFilter}` : ''}
-        GROUP BY s.${quoteIdent('tipo_finished_by')}
-        ORDER BY total_sessions DESC
-      `);
-
     const messageAgentFinishersPromise = companySessionsMode === "company"
       ? runQuery(wh.id, `
         SELECT
@@ -392,9 +372,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       ORDER BY tg.current_sessions DESC, s.grupo, s.mes
     `);
 
-    const [typificationsSettled, economicGroupFinishersSettled, messageAgentFinishersSettled, companySessionsSettled, topGroupsEvolutionSettled] = await Promise.allSettled([
+    const [typificationsSettled, messageAgentFinishersSettled, companySessionsSettled, topGroupsEvolutionSettled] = await Promise.allSettled([
       typificationsPromise,
-      economicGroupFinishersPromise,
       messageAgentFinishersPromise,
       companySessionsPromise,
       topGroupsEvolutionPromise,
@@ -405,15 +384,6 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       : null;
     const typifications = typificationsSettled.status === 'fulfilled'
       ? typificationsSettled.value.map((r) => ({
-          tipo: String(getCell(r[0]) || "—"),
-          total: toInt(r[1]),
-        }))
-      : [];
-    const economicGroupFinishersError = economicGroupFinishersSettled.status === 'rejected'
-      ? (economicGroupFinishersSettled.reason instanceof Error ? economicGroupFinishersSettled.reason.message : String(economicGroupFinishersSettled.reason))
-      : null;
-    const economicGroupFinishers = economicGroupFinishersSettled.status === 'fulfilled'
-      ? economicGroupFinishersSettled.value.map((r) => ({
           tipo: String(getCell(r[0]) || "—"),
           total: toInt(r[1]),
         }))
@@ -459,9 +429,6 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       company_sessions_error: companySessionsError,
       company_sessions_mode: companySessionsMode,
       company_sessions_source: companySessionsSource,
-      economic_group_finishers: economicGroupFinishers,
-      economic_group_finishers_error: economicGroupFinishersError,
-      economic_group_finishers_filter_applied: { period: true, organization: true },
       message_agent_finishers: messageAgentFinishers,
       message_agent_finishers_error: messageAgentFinishersError,
       message_agent_finishers_filter_applied: { period: true, organization: true },
