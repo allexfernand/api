@@ -128,9 +128,20 @@ function dashboardSessionsInlineSql() {
   )`;
 }
 
+type DashboardSessionsCache = { warehouseId: string; sql: string; usingGold: boolean };
+let dashboardSessionsTableCache: DashboardSessionsCache | null = null;
+
 async function resolveDashboardSessionsTable(warehouseId: string) {
-  void warehouseId;
-  return dashboardSessionsInlineSql();
+  if (dashboardSessionsTableCache && dashboardSessionsTableCache.warehouseId === warehouseId) {
+    return dashboardSessionsTableCache.sql;
+  }
+  try {
+    await runQuery(warehouseId, `SELECT 1 FROM ${DASHBOARD_SESSIONS_TABLE} LIMIT 0`);
+    dashboardSessionsTableCache = { warehouseId, sql: DASHBOARD_SESSIONS_TABLE, usingGold: true };
+  } catch {
+    dashboardSessionsTableCache = { warehouseId, sql: dashboardSessionsInlineSql(), usingGold: false };
+  }
+  return dashboardSessionsTableCache.sql;
 }
 
 function sessionTypificationExpr(variablesColumn: string, tableAlias = '') {

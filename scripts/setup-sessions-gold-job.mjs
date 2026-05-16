@@ -1,0 +1,210 @@
+#!/usr/bin/env node
+// Cria (ou atualiza) o job no Databricks que recria a gold de sessões
+// diariamente às 03h00 (America/Sao_Paulo).
+// - Sobe o arquivo SQL para /Workspace/Shared/sanus-dashboard/
+// - Cria/atualiza um Job (Jobs 2.1) com sql_task.file
+// - Aponta para o mesmo SQL Warehouse usado pela API.
+
+import { execFileSync } from "node:child_process";
+
+const PROFILE = process.env.DATABRICKS_PROFILE || "databricks-sanus";
+const JOB_NAME = "refresh-dashboard-sessions-gold";
+const WORKSPACE_DIR = "/Shared/sanus-dashboard";
+const WORKSPACE_FILE = `${WORKSPACE_DIR}/refresh_sessions_gold.sql`;
+const FQN = "hive_metastore.sanus_prod.dashboard_sessions_base_gold";
+const TZ = "America/Sao_Paulo";
+const CRON = "0 0 3 * * ?"; // diariamente 03:00:00
+
+const SQL_BODY = `-- Refresh job: dashboard_sessions_base_gold
+-- Gerado por scripts/setup-sessions-gold-job.mjs
+
+CREATE OR REPLACE TABLE ${FQN}
+USING DELTA
+AS
+WITH session_has_agent AS (
+  SELECT
+    CAST(session_id AS STRING) AS session_id,
+    MAX(CASE WHEN sender_type = 'agent' THEN 1 ELSE 0 END) AS teve_humano
+  FROM hive_metastore.sanus_prod.botmaker_message
+  GROUP BY CAST(session_id AS STRING)
+),
+sessions_base AS (
+  SELECT
+    CAST(s.session_id AS STRING) AS session_id,
+    try_cast(s.creation_time AS TIMESTAMP) AS creation_ts,
+    DATE_FORMAT(try_cast(s.creation_time AS TIMESTAMP), 'yyyy-MM') AS mes,
+    DATE_FORMAT(try_cast(s.creation_time AS TIMESTAMP), 'yyyy-MM-dd') AS dia,
+    CAST(s.organization_id AS STRING) AS organization_id,
+    NULLIF(TRIM(CAST(o.name AS STRING)), '') AS organization_name,
+    CASE
+      WHEN s.economic_group_name IS NULL OR TRIM(CAST(s.economic_group_name AS STRING)) = ''
+      THEN 'Nulos'
+      ELSE TRIM(CAST(s.economic_group_name AS STRING))
+    END AS economic_group_name,
+    CASE
+      WHEN s.variables['typification'] IS NULL THEN '(NULO)'
+      WHEN TRIM(CAST(s.variables['typification'] AS STRING)) = '' THEN '(VAZIO/BRANCO)'
+      ELSE TRIM(CAST(s.variables['typification'] AS STRING))
+    END AS tipificacao,
+    CASE WHEN s.finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END AS tipo_finished_by,
+    COALESCE(sha.teve_humano, 0) AS teve_humano_agent,
+    CASE WHEN COALESCE(sha.teve_humano, 0) = 1 THEN 'Humano' ELSE 'IA' END AS tipo_atendimento_agent,
+    COALESCE(
+      CASE
+        WHEN NULLIF(TRIM(CAST(COALESCE(
+          s.variables['beneficiary_id'],
+          s.variables['beneficiaryId'],
+          s.variables['beneficiario_id'],
+          s.variables['id_beneficiario'],
+          s.variables['user_id'],
+          s.variables['userId'],
+          s.variables['customer_id'],
+          s.variables['customerId']
+        ) AS STRING)), '') IS NOT NULL
+        THEN CONCAT('beneficiary:', NULLIF(TRIM(CAST(COALESCE(
+          s.variables['beneficiary_id'],
+          s.variables['beneficiaryId'],
+          s.variables['beneficiario_id'],
+          s.variables['id_beneficiario'],
+          s.variables['user_id'],
+          s.variables['userId'],
+          s.variables['customer_id'],
+          s.variables['customerId']
+        ) AS STRING)), ''))
+      END,
+      CASE
+        WHEN NULLIF(REGEXP_REPLACE(CAST(COALESCE(
+          s.variables['cpf'],
+          s.variables['CPF'],
+          s.variables['document'],
+          s.variables['documento'],
+          s.variables['cpf_cnpj'],
+          s.variables['document_number'],
+          s.variables['beneficiary_cpf'],
+          s.variables['cpf_beneficiario'],
+          s.variables['cpf_beneficiary']
+        ) AS STRING), '[^0-9]', ''), '') IS NOT NULL
+        THEN CONCAT('cpf:', NULLIF(REGEXP_REPLACE(CAST(COALESCE(
+          s.variables['cpf'],
+          s.variables['CPF'],
+          s.variables['document'],
+          s.variables['documento'],
+          s.variables['cpf_cnpj'],
+          s.variables['document_number'],
+          s.variables['beneficiary_cpf'],
+          s.variables['cpf_beneficiario'],
+          s.variables['cpf_beneficiary']
+        ) AS STRING), '[^0-9]', ''), ''))
+      END
+    ) AS beneficiary_key,
+    CURRENT_TIMESTAMP() AS refreshed_at
+  FROM hive_metastore.sanus_prod.botmaker_session s
+  LEFT JOIN hive_metastore.sanus_prod.organizations o
+    ON CAST(s.organization_id AS STRING) = CAST(o.id AS STRING)
+  LEFT JOIN session_has_agent sha
+    ON CAST(s.session_id AS STRING) = sha.session_id
+  WHERE s.creation_time IS NOT NULL
+)
+SELECT * FROM sessions_base;
+
+OPTIMIZE ${FQN}
+ZORDER BY (mes, economic_group_name, organization_name);
+
+ANALYZE TABLE ${FQN}
+COMPUTE STATISTICS FOR COLUMNS
+  mes, dia, economic_group_name, organization_name, organization_id,
+  tipo_atendimento_agent, tipo_finished_by, tipificacao;
+`;
+
+function dbApi(method, path, body) {
+  const args = ["api", method, path, "--profile", PROFILE, "--output", "json"];
+  if (body !== undefined) args.push("--json", JSON.stringify(body));
+  const out = execFileSync("databricks", args, { encoding: "utf8" });
+  return out.trim() ? JSON.parse(out) : {};
+}
+
+function pickRunningWarehouse() {
+  const { warehouses = [] } = dbApi("get", "/api/2.0/sql/warehouses");
+  if (!warehouses.length) throw new Error("Nenhum SQL Warehouse disponível.");
+  return warehouses.find((w) => w.state === "RUNNING") || warehouses[0];
+}
+
+function ensureWorkspaceDir(path) {
+  try {
+    dbApi("post", "/api/2.0/workspace/mkdirs", { path });
+  } catch (err) {
+    if (!String(err.message || "").includes("RESOURCE_ALREADY_EXISTS")) throw err;
+  }
+}
+
+function uploadSqlFile(path, content) {
+  dbApi("post", "/api/2.0/workspace/import", {
+    path,
+    format: "AUTO",
+    language: "SQL",
+    content: Buffer.from(content, "utf8").toString("base64"),
+    overwrite: true,
+  });
+}
+
+function findJobIdByName(name) {
+  let pageToken;
+  do {
+    const qs = new URLSearchParams({ name, limit: "25" });
+    if (pageToken) qs.set("page_token", pageToken);
+    const data = dbApi("get", `/api/2.1/jobs/list?${qs.toString()}`);
+    const match = (data.jobs || []).find((j) => j.settings?.name === name);
+    if (match) return match.job_id;
+    pageToken = data.next_page_token;
+  } while (pageToken);
+  return null;
+}
+
+function jobSettings(warehouseId) {
+  return {
+    name: JOB_NAME,
+    timeout_seconds: 3600,
+    max_concurrent_runs: 1,
+    schedule: {
+      quartz_cron_expression: CRON,
+      timezone_id: TZ,
+      pause_status: "UNPAUSED",
+    },
+    tasks: [
+      {
+        task_key: "refresh_gold",
+        sql_task: {
+          file: { path: WORKSPACE_FILE, source: "WORKSPACE" },
+          warehouse_id: warehouseId,
+        },
+        timeout_seconds: 3000,
+      },
+    ],
+  };
+}
+
+(async () => {
+  const wh = pickRunningWarehouse();
+  console.log(`warehouse: ${wh.name} (${wh.id}) — ${wh.state}`);
+
+  ensureWorkspaceDir(WORKSPACE_DIR);
+  uploadSqlFile(WORKSPACE_FILE, SQL_BODY);
+  console.log(`SQL: ${WORKSPACE_FILE}`);
+
+  const settings = jobSettings(wh.id);
+  const existingId = findJobIdByName(JOB_NAME);
+
+  let jobId;
+  if (existingId) {
+    dbApi("post", "/api/2.1/jobs/reset", { job_id: existingId, new_settings: settings });
+    jobId = existingId;
+    console.log(`job atualizado: id=${jobId}`);
+  } else {
+    const created = dbApi("post", "/api/2.1/jobs/create", settings);
+    jobId = created.job_id;
+    console.log(`job criado: id=${jobId}`);
+  }
+
+  console.log(`schedule: "${CRON}" • ${TZ} (diariamente 03h00 BRT)`);
+  console.log(`URL: https://adb-447676991326533.13.azuredatabricks.net/#job/${jobId}`);
+})();
