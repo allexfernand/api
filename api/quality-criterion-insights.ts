@@ -7,7 +7,7 @@ const HOST = process.env.DATABRICKS_HOST;
 const TOKEN = process.env.DATABRICKS_TOKEN;
 const HEADERS = { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" };
 
-const CRITERIA_TABLE = "sanus_databricks.sanus_prod.quality_analysis_silver_criteria";
+const CRITERIA_TABLE = "hive_metastore.sanus_prod.quality_analysis_silver_criteria";
 const SUMMARY_TABLES = [
   "hive_metastore.sanus_prod.quality_analysis_silver_summary",
 ];
