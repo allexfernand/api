@@ -11,6 +11,7 @@ const HEADERS = { "Authorization": `Bearer ${TOKEN}`, "Content-Type": "applicati
 
 const SESSION_TABLE       = `hive_metastore.sanus_prod.botmaker_session`;
 const MESSAGE_TABLE       = `hive_metastore.sanus_prod.botmaker_message`;
+const DASHBOARD_SESSIONS_TABLE = `hive_metastore.sanus_prod.dashboard_sessions_base_gold`;
 const ORGANIZATIONS_TABLE = `hive_metastore.sanus_prod.organizations`;
 
 const SESSION_DATE_COLUMN = 'creation_time';
@@ -169,18 +170,13 @@ function orgIdsSubquery(groupName: unknown, company: unknown) {
 function economicGroupNameCondition(groupName: unknown, tableAlias = 's') {
   const g = escape(groupName);
   const col = `${tableAlias}.${quoteIdent('economic_group_name')}`;
-  const label = `CASE
-    WHEN ${col} IS NULL OR TRIM(CAST(${col} AS STRING)) = ''
-    THEN 'Nulos'
-    ELSE TRIM(CAST(${col} AS STRING))
-  END`;
   if (String(groupName || '').trim().toLowerCase() === 'nulos') {
-    return `(${col} IS NULL OR TRIM(CAST(${col} AS STRING)) = '')`;
+    return `UPPER(TRIM(CAST(${col} AS STRING))) = 'NULOS'`;
   }
   return `(
-    UPPER(${label}) = UPPER(TRIM('${g}'))
-    OR UPPER(${label}) LIKE CONCAT('%', UPPER(TRIM('${g}')), '%')
-    OR UPPER(TRIM('${g}')) LIKE CONCAT('%', UPPER(${label}), '%')
+    UPPER(TRIM(CAST(${col} AS STRING))) = UPPER(TRIM('${g}'))
+    OR UPPER(TRIM(CAST(${col} AS STRING))) LIKE CONCAT('%', UPPER(TRIM('${g}')), '%')
+    OR UPPER(TRIM('${g}')) LIKE CONCAT('%', UPPER(TRIM(CAST(${col} AS STRING))), '%')
   )`;
 }
 
@@ -230,11 +226,10 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     last_12_months: lastNMonthsList(12, false),
   };
   const monthInList = `(${monthList.map((m) => `'${m}'`).join(',')})`;
-  const sessionDateExpr = `try_cast(s.${quoteIdent(SESSION_DATE_COLUMN)} AS TIMESTAMP)`;
-  const monthsSqlFilter = `DATE_FORMAT(${sessionDateExpr}, 'yyyy-MM') IN ${monthInList}`;
+  const monthsSqlFilter = `s.${quoteIdent('mes')} IN ${monthInList}`;
   const selectedDayMonth = dayMonth || monthList[monthList.length - 1];
-  const daySqlFilter = `${sessionDateExpr} >= '${selectedDayMonth}-01'
-    AND ${sessionDateExpr} < '${nextMonth(selectedDayMonth)}-01'`;
+  const daySqlFilter = `s.${quoteIdent('dia')} >= '${selectedDayMonth}-01'
+    AND s.${quoteIdent('dia')} < '${nextMonth(selectedDayMonth)}-01'`;
 
   try {
     const { warehouses = [] } = await dbFetch("/api/2.0/sql/warehouses") as { warehouses?: Warehouse[] };
@@ -244,25 +239,23 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const filters = [granularity === 'day' ? daySqlFilter : monthsSqlFilter];
     if (hasOrgFilter) {
       filters.push(company
-        ? `CAST(s.${quoteIdent('organization_id')} AS STRING) IN ${orgIdsSubquery(groupName, company)}`
+        ? `s.${quoteIdent('organization_name')} = '${escape(company)}'`
         : economicGroupNameCondition(groupName, 's'));
     }
-    const fromSql = hasOrgFilter
-      ? `${SESSION_TABLE} s`
-      : `${SESSION_TABLE} s`;
+    const fromSql = `${DASHBOARD_SESSIONS_TABLE} s`;
     const where = `WHERE ${filters.join(' AND ')}`;
     const mode = hasOrgFilter ? (company ? "organization_subquery" : "economic_group_name") : "global";
     if (granularity === 'day') {
       const rows = await runQuery(wh.id, `
         SELECT
-          DATE_FORMAT(${sessionDateExpr}, 'yyyy-MM-dd') AS dia,
-          CASE WHEN s.finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END AS tipo_atendimento,
+          s.${quoteIdent('dia')} AS dia,
+          s.${quoteIdent('tipo_atendimento_agent')} AS tipo_atendimento,
           COUNT(*) AS total
         FROM ${fromSql}
         ${where}
         GROUP BY
-          DATE_FORMAT(${sessionDateExpr}, 'yyyy-MM-dd'),
-          CASE WHEN s.finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END
+          s.${quoteIdent('dia')},
+          s.${quoteIdent('tipo_atendimento_agent')}
         ORDER BY dia
       `);
 
@@ -288,55 +281,37 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         series,
         filters: { group_name: groupName, company, type: typeFilter },
         mode,
-        source: "botmaker_session.creation_time",
+        source: "dashboard_sessions_base_gold",
       });
     }
-
-    const sessionColumns = includeBeneficiaries ? await getSessionColumns(wh.id) : [];
-    const beneficiaryExpr = includeBeneficiaries ? uniqueBeneficiaryExpr(sessionColumns) : null;
 
     const [rows, beneficiaryRows] = await Promise.all([
       onlyBeneficiaries ? Promise.resolve([]) : runQuery(wh.id, `
       WITH scoped_sessions AS (
         SELECT
-          DATE_FORMAT(${sessionDateExpr}, 'yyyy-MM') AS mes,
-          CAST(s.${quoteIdent('session_id')} AS STRING) AS session_id
+          s.${quoteIdent('mes')} AS mes,
+          s.${quoteIdent('tipo_atendimento_agent')} AS tipo_atendimento
         FROM ${fromSql}
         ${where}
-      ),
-      scoped_session_ids AS (
-        SELECT DISTINCT session_id
-        FROM scoped_sessions
-      ),
-      session_has_agent AS (
-        SELECT
-          ssi.session_id,
-          MAX(CASE WHEN m.${quoteIdent('sender_type')} = 'agent' THEN 1 ELSE 0 END) AS teve_humano
-        FROM scoped_session_ids ssi
-        INNER JOIN ${MESSAGE_TABLE} m
-          ON CAST(m.${quoteIdent('session_id')} AS STRING) = ssi.session_id
-        GROUP BY ssi.session_id
       )
       SELECT
         ss.mes,
-        CASE WHEN COALESCE(sa.teve_humano, 0) = 1 THEN 'Humano' ELSE 'IA' END AS tipo_atendimento,
+        ss.tipo_atendimento,
         COUNT(*) AS total
       FROM scoped_sessions ss
-      LEFT JOIN session_has_agent sa
-        ON sa.session_id = ss.session_id
       GROUP BY
         ss.mes,
-        CASE WHEN COALESCE(sa.teve_humano, 0) = 1 THEN 'Humano' ELSE 'IA' END
+        ss.tipo_atendimento
       ORDER BY ss.mes
     `),
-      beneficiaryExpr ? runQuery(wh.id, `
+      includeBeneficiaries ? runQuery(wh.id, `
       WITH beneficiary_base AS (
         SELECT
-          DATE_FORMAT(${sessionDateExpr}, 'yyyy-MM') AS mes,
-          ${beneficiaryExpr} AS beneficiary_key
+          s.${quoteIdent('mes')} AS mes,
+          s.${quoteIdent('beneficiary_key')} AS beneficiary_key
         FROM ${fromSql}
         ${where}
-          AND ${beneficiaryExpr} IS NOT NULL
+          AND s.${quoteIdent('beneficiary_key')} IS NOT NULL
       )
       SELECT
         mes,
@@ -390,11 +365,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       series,
       utilization,
       utilization_periods: fullMonthScopes,
-      beneficiaries_included: Boolean(beneficiaryExpr),
+      beneficiaries_included: Boolean(includeBeneficiaries),
       filters: { group_name: groupName, company, type: typeFilter },
       mode,
-      source: "botmaker_session.creation_time",
-      cpf_source: beneficiaryExpr ? "botmaker_session.cpf/beneficiary_id/variables" : null,
+      source: "dashboard_sessions_base_gold",
+      cpf_source: includeBeneficiaries ? "dashboard_sessions_base_gold.beneficiary_key" : null,
     });
   } catch (err) {
     res.status(500).json({ error: (err as { message?: string }).message });

@@ -48,6 +48,7 @@ const toInt = (v: DatabricksCell) => { const n = parseInt(String(getCell(v))); r
 
 const SESSION_TABLE = `hive_metastore.sanus_prod.botmaker_session`;
 const MESSAGE_TABLE = `hive_metastore.sanus_prod.botmaker_message`;
+const DASHBOARD_SESSIONS_TABLE = `hive_metastore.sanus_prod.dashboard_sessions_base_gold`;
 const ORGANIZATIONS_TABLE = `hive_metastore.sanus_prod.organizations`;
 
 function sessionTypificationExpr(variablesColumn: string, tableAlias = '') {
@@ -76,18 +77,13 @@ function orgIdsSubquery(groupName: unknown, company: unknown) {
 function economicGroupNameCondition(groupName: unknown, tableAlias = 's') {
   const g = escape(groupName);
   const col = `${tableAlias}.${quoteIdent('economic_group_name')}`;
-  const label = `CASE
-    WHEN ${col} IS NULL OR TRIM(CAST(${col} AS STRING)) = ''
-    THEN 'Nulos'
-    ELSE TRIM(CAST(${col} AS STRING))
-  END`;
   if (String(groupName || '').trim().toLowerCase() === 'nulos') {
-    return `(${col} IS NULL OR TRIM(CAST(${col} AS STRING)) = '')`;
+    return `UPPER(TRIM(CAST(${col} AS STRING))) = 'NULOS'`;
   }
   return `(
-    UPPER(${label}) = UPPER(TRIM('${g}'))
-    OR UPPER(${label}) LIKE CONCAT('%', UPPER(TRIM('${g}')), '%')
-    OR UPPER(TRIM('${g}')) LIKE CONCAT('%', UPPER(${label}), '%')
+    UPPER(TRIM(CAST(${col} AS STRING))) = UPPER(TRIM('${g}'))
+    OR UPPER(TRIM(CAST(${col} AS STRING))) LIKE CONCAT('%', UPPER(TRIM('${g}')), '%')
+    OR UPPER(TRIM('${g}')) LIKE CONCAT('%', UPPER(TRIM(CAST(${col} AS STRING))), '%')
   )`;
 }
 
@@ -127,186 +123,108 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const wh = warehouses.find((w) => w.state === "RUNNING") || warehouses[0];
     if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
 
-    const sessionDateFilter = buildSessionDateFilter(meses);
-    const aliasedTypificationExpr = sessionTypificationExpr('variables', 's');
     const companySessionsDateFilter = meses.length > 0
-      ? `DATE_FORMAT(try_cast(s.${quoteIdent(SESSION_DATE_COLUMN)} AS TIMESTAMP), 'yyyy-MM') IN (${meses.map((m: string) => `'${m}'`).join(',')})`
+      ? `s.${quoteIdent('mes')} IN (${meses.map((m: string) => `'${m}'`).join(',')})`
       : null;
     const companySessionsScopeFilter = company
-      ? `CAST(s.${quoteIdent('organization_id')} AS STRING) IN ${orgIdsSubquery(null, company)}`
+      ? `s.${quoteIdent('organization_name')} = '${escape(company)}'`
       : (groupName ? economicGroupNameCondition(groupName, 's') : null);
     const companySessionsWhere = [companySessionsDateFilter, companySessionsScopeFilter].filter(Boolean).join(' AND ');
     const companySessionsMode = groupName || company ? "company" : "economic_group";
     const companySessionsSource = companySessionsMode === "company"
       ? (company ? "botmaker_session.organization_id + organizations.id/name" : "botmaker_session.economic_group_name")
       : "botmaker_session.economic_group_name";
-    const companySessionsJoinType = company ? 'INNER' : 'LEFT';
-    const companySessionsCompanyExpr = company
-      ? `TRIM(CAST(o.${quoteIdent('name')} AS STRING))`
-      : `COALESCE(NULLIF(TRIM(CAST(o.${quoteIdent('name')} AS STRING)), ''), NULLIF(TRIM(CAST(s.${quoteIdent('economic_group_name')} AS STRING)), ''), 'Sem empresa')`;
-    const companySessionsCompanyRequired = company
-      ? `o.${quoteIdent('name')} IS NOT NULL AND TRIM(CAST(o.${quoteIdent('name')} AS STRING)) != ''`
-      : null;
     const typificationFinisherFilter = typificationFinisher === 'humano'
-      ? 's.finished_by IS NOT NULL'
-      : (typificationFinisher === 'ia' ? 's.finished_by IS NULL' : null);
+      ? `s.${quoteIdent('tipo_finished_by')} = 'Humano'`
+      : (typificationFinisher === 'ia' ? `s.${quoteIdent('tipo_finished_by')} = 'IA'` : null);
     const topGroupMonths = meses.length ? [...meses].sort() : lastNMonthsList(12);
-    const topGroupDateFilter = `DATE_FORMAT(try_cast(s.${quoteIdent(SESSION_DATE_COLUMN)} AS TIMESTAMP), 'yyyy-MM') IN (${topGroupMonths.map((m) => `'${m}'`).join(',')})`;
+    const topGroupDateFilter = `s.${quoteIdent('mes')} IN (${topGroupMonths.map((m) => `'${m}'`).join(',')})`;
     const topGroupByCompany = Boolean(groupName || company);
     const topGroupNameExpr = topGroupByCompany
-      ? `COALESCE(NULLIF(TRIM(CAST(o.${quoteIdent('name')} AS STRING)), ''), NULLIF(TRIM(CAST(s.${quoteIdent('economic_group_name')} AS STRING)), ''), 'Sem empresa')`
+      ? `COALESCE(NULLIF(TRIM(CAST(s.${quoteIdent('organization_name')} AS STRING)), ''), 'Sem empresa')`
       : `TRIM(CAST(s.${quoteIdent('economic_group_name')} AS STRING))`;
-    const topGroupValidFilter = topGroupByCompany
-      ? `${topGroupNameExpr} != ''`
-      : `s.${quoteIdent('economic_group_name')} IS NOT NULL AND ${topGroupNameExpr} != ''`;
+    const topGroupValidFilter = `${topGroupNameExpr} IS NOT NULL AND ${topGroupNameExpr} != ''`;
     const topGroupWhere = [topGroupDateFilter, companySessionsScopeFilter, topGroupValidFilter].filter(Boolean).join(' AND ');
-    const topGroupFromSql = topGroupByCompany || companySessionsScopeFilter
-      ? `${SESSION_TABLE} s
-        ${company ? 'INNER' : 'LEFT'} JOIN ${ORGANIZATIONS_TABLE} o
-          ON CAST(s.${quoteIdent('organization_id')} AS STRING) = CAST(o.${quoteIdent('id')} AS STRING)`
-      : `${SESSION_TABLE} s`;
+    const topGroupFromSql = `${DASHBOARD_SESSIONS_TABLE} s`;
 
     const economicGroupFinishersPromise = companySessionsMode === "company"
       ? runQuery(wh.id, `
         SELECT
-          CASE WHEN s.finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END AS tipo_atendimento,
+          s.${quoteIdent('tipo_finished_by')} AS tipo_atendimento,
           COUNT(*) AS total_sessions
-        FROM ${SESSION_TABLE} s
+        FROM ${DASHBOARD_SESSIONS_TABLE} s
         ${companySessionsWhere ? `WHERE ${companySessionsWhere}` : ''}
-        GROUP BY CASE WHEN s.finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END
+        GROUP BY s.${quoteIdent('tipo_finished_by')}
         ORDER BY total_sessions DESC
       `)
       : runQuery(wh.id, `
         SELECT
-          CASE WHEN s.finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END AS tipo_atendimento,
+          s.${quoteIdent('tipo_finished_by')} AS tipo_atendimento,
           COUNT(*) AS total_sessions
-        FROM ${SESSION_TABLE} s
+        FROM ${DASHBOARD_SESSIONS_TABLE} s
         ${companySessionsDateFilter ? `WHERE ${companySessionsDateFilter}` : ''}
-        GROUP BY CASE WHEN s.finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END
+        GROUP BY s.${quoteIdent('tipo_finished_by')}
         ORDER BY total_sessions DESC
       `);
 
     const messageAgentFinishersPromise = companySessionsMode === "company"
       ? runQuery(wh.id, `
-        WITH scoped_sessions AS (
-          SELECT
-            CAST(s.${quoteIdent('session_id')} AS STRING) AS session_id
-          FROM ${SESSION_TABLE} s
-          ${companySessionsWhere ? `WHERE ${companySessionsWhere}` : ''}
-        ),
-        scoped_session_ids AS (
-          SELECT DISTINCT session_id
-          FROM scoped_sessions
-        ),
-        session_has_agent AS (
-          SELECT
-            ssi.session_id,
-            MAX(CASE WHEN m.${quoteIdent('sender_type')} = 'agent' THEN 1 ELSE 0 END) AS teve_humano
-          FROM scoped_session_ids ssi
-          INNER JOIN ${MESSAGE_TABLE} m
-            ON CAST(m.${quoteIdent('session_id')} AS STRING) = ssi.session_id
-          GROUP BY ssi.session_id
-        )
         SELECT
-          CASE WHEN COALESCE(sa.teve_humano, 0) = 1 THEN 'Humano' ELSE 'IA' END AS tipo_atendimento,
+          s.${quoteIdent('tipo_atendimento_agent')} AS tipo_atendimento,
           COUNT(*) AS total_sessions
-        FROM scoped_sessions ss
-        LEFT JOIN session_has_agent sa
-          ON sa.session_id = ss.session_id
-        GROUP BY CASE WHEN COALESCE(sa.teve_humano, 0) = 1 THEN 'Humano' ELSE 'IA' END
+        FROM ${DASHBOARD_SESSIONS_TABLE} s
+        ${companySessionsWhere ? `WHERE ${companySessionsWhere}` : ''}
+        GROUP BY s.${quoteIdent('tipo_atendimento_agent')}
         ORDER BY total_sessions DESC
       `)
       : runQuery(wh.id, `
-        WITH scoped_sessions AS (
-          SELECT
-            CAST(s.${quoteIdent('session_id')} AS STRING) AS session_id
-          FROM ${SESSION_TABLE} s
-          ${companySessionsDateFilter ? `WHERE ${companySessionsDateFilter}` : ''}
-        ),
-        scoped_session_ids AS (
-          SELECT DISTINCT session_id
-          FROM scoped_sessions
-        ),
-        session_has_agent AS (
-          SELECT
-            ssi.session_id,
-            MAX(CASE WHEN m.${quoteIdent('sender_type')} = 'agent' THEN 1 ELSE 0 END) AS teve_humano
-          FROM scoped_session_ids ssi
-          INNER JOIN ${MESSAGE_TABLE} m
-            ON CAST(m.${quoteIdent('session_id')} AS STRING) = ssi.session_id
-          GROUP BY ssi.session_id
-        )
         SELECT
-          CASE WHEN COALESCE(sa.teve_humano, 0) = 1 THEN 'Humano' ELSE 'IA' END AS tipo_atendimento,
+          s.${quoteIdent('tipo_atendimento_agent')} AS tipo_atendimento,
           COUNT(*) AS total_sessions
-        FROM scoped_sessions ss
-        LEFT JOIN session_has_agent sa
-          ON sa.session_id = ss.session_id
-        GROUP BY CASE WHEN COALESCE(sa.teve_humano, 0) = 1 THEN 'Humano' ELSE 'IA' END
+        FROM ${DASHBOARD_SESSIONS_TABLE} s
+        ${companySessionsDateFilter ? `WHERE ${companySessionsDateFilter}` : ''}
+        GROUP BY s.${quoteIdent('tipo_atendimento_agent')}
         ORDER BY total_sessions DESC
       `);
 
     const companySessionsPromise = companySessionsMode === "company"
       ? runQuery(wh.id, `
-        WITH scoped_sessions AS (
-          SELECT
-            CAST(s.${quoteIdent('organization_id')} AS STRING) AS organization_id,
-            NULLIF(TRIM(CAST(s.${quoteIdent('economic_group_name')} AS STRING)), '') AS economic_group_name
-          FROM ${SESSION_TABLE} s
-          ${companySessionsWhere ? `WHERE ${companySessionsWhere}` : ''}
-        )
         SELECT
-          ${company
-            ? `TRIM(CAST(o.${quoteIdent('name')} AS STRING))`
-            : `COALESCE(NULLIF(TRIM(CAST(o.${quoteIdent('name')} AS STRING)), ''), ss.economic_group_name, 'Sem empresa')`} AS empresa,
+          COALESCE(NULLIF(TRIM(CAST(s.${quoteIdent('organization_name')} AS STRING)), ''), 'Sem empresa') AS empresa,
           COUNT(*) AS total_sessions
-        FROM scoped_sessions ss
-        ${company ? 'INNER' : 'LEFT'} JOIN ${ORGANIZATIONS_TABLE} o
-          ON ss.organization_id = CAST(o.${quoteIdent('id')} AS STRING)
-        ${company ? `WHERE o.${quoteIdent('name')} IS NOT NULL AND TRIM(CAST(o.${quoteIdent('name')} AS STRING)) != ''` : ''}
-        GROUP BY ${company
-          ? `TRIM(CAST(o.${quoteIdent('name')} AS STRING))`
-          : `COALESCE(NULLIF(TRIM(CAST(o.${quoteIdent('name')} AS STRING)), ''), ss.economic_group_name, 'Sem empresa')`}
+        FROM ${DASHBOARD_SESSIONS_TABLE} s
+        ${companySessionsWhere ? `WHERE ${companySessionsWhere}` : ''}
+        GROUP BY COALESCE(NULLIF(TRIM(CAST(s.${quoteIdent('organization_name')} AS STRING)), ''), 'Sem empresa')
         ORDER BY total_sessions DESC
       `)
       : runQuery(wh.id, `
         SELECT
-          CASE
-            WHEN s.${quoteIdent('economic_group_name')} IS NULL
-              OR TRIM(CAST(s.${quoteIdent('economic_group_name')} AS STRING)) = ''
-            THEN 'Nulos'
-            ELSE TRIM(CAST(s.${quoteIdent('economic_group_name')} AS STRING))
-          END AS empresa,
+          s.${quoteIdent('economic_group_name')} AS empresa,
           COUNT(*) AS total_sessions
-        FROM ${SESSION_TABLE} s
+        FROM ${DASHBOARD_SESSIONS_TABLE} s
         ${companySessionsDateFilter ? `WHERE ${companySessionsDateFilter}` : ''}
-        GROUP BY CASE
-          WHEN s.${quoteIdent('economic_group_name')} IS NULL
-            OR TRIM(CAST(s.${quoteIdent('economic_group_name')} AS STRING)) = ''
-          THEN 'Nulos'
-          ELSE TRIM(CAST(s.${quoteIdent('economic_group_name')} AS STRING))
-        END
+        GROUP BY s.${quoteIdent('economic_group_name')}
         ORDER BY total_sessions DESC
       `);
 
     const typificationsPromise = companySessionsMode === "company"
       ? runQuery(wh.id, `
         SELECT
-          ${aliasedTypificationExpr} AS tipificacao,
+          s.${quoteIdent('tipificacao')} AS tipificacao,
           COUNT(*) AS total_sessions
-        FROM ${SESSION_TABLE} s
+        FROM ${DASHBOARD_SESSIONS_TABLE} s
         ${[companySessionsWhere, typificationFinisherFilter].filter(Boolean).length ? `WHERE ${[companySessionsWhere, typificationFinisherFilter].filter(Boolean).join(' AND ')}` : ''}
-        GROUP BY ${aliasedTypificationExpr}
+        GROUP BY s.${quoteIdent('tipificacao')}
         ORDER BY total_sessions DESC
         LIMIT 30
       `)
       : runQuery(wh.id, `
         SELECT
-          ${aliasedTypificationExpr} AS tipificacao,
+          s.${quoteIdent('tipificacao')} AS tipificacao,
           COUNT(*) AS total_sessions
-        FROM ${SESSION_TABLE} s
+        FROM ${DASHBOARD_SESSIONS_TABLE} s
         ${[companySessionsDateFilter, typificationFinisherFilter].filter(Boolean).length ? `WHERE ${[companySessionsDateFilter, typificationFinisherFilter].filter(Boolean).join(' AND ')}` : ''}
-        GROUP BY ${aliasedTypificationExpr}
+        GROUP BY s.${quoteIdent('tipificacao')}
         ORDER BY total_sessions DESC
         LIMIT 30
       `);
@@ -314,51 +232,39 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const topGroupsEvolutionPromise = topGroupByCompany ? runQuery(wh.id, `
       WITH scoped_sessions AS (
         SELECT
-          DATE_FORMAT(try_cast(s.${quoteIdent(SESSION_DATE_COLUMN)} AS TIMESTAMP), 'yyyy-MM') AS mes,
-          CAST(s.${quoteIdent('organization_id')} AS STRING) AS organization_id,
-          NULLIF(TRIM(CAST(s.${quoteIdent('economic_group_name')} AS STRING)), '') AS economic_group_name
-        FROM ${SESSION_TABLE} s
+          s.${quoteIdent('mes')} AS mes,
+          COALESCE(NULLIF(TRIM(CAST(s.${quoteIdent('organization_name')} AS STRING)), ''), 'Sem empresa') AS grupo
+        FROM ${DASHBOARD_SESSIONS_TABLE} s
         WHERE ${[topGroupDateFilter, companySessionsScopeFilter].filter(Boolean).join(' AND ')}
-      ),
-      labeled_sessions AS (
-        SELECT
-          ss.mes,
-          ${company
-            ? `TRIM(CAST(o.${quoteIdent('name')} AS STRING))`
-            : `COALESCE(NULLIF(TRIM(CAST(o.${quoteIdent('name')} AS STRING)), ''), ss.economic_group_name, 'Sem empresa')`} AS grupo
-        FROM scoped_sessions ss
-        ${company ? 'INNER' : 'LEFT'} JOIN ${ORGANIZATIONS_TABLE} o
-          ON ss.organization_id = CAST(o.${quoteIdent('id')} AS STRING)
-        ${company ? `WHERE o.${quoteIdent('name')} IS NOT NULL AND TRIM(CAST(o.${quoteIdent('name')} AS STRING)) != ''` : ''}
       ),
       latest_month AS (
         SELECT MAX(mes) AS mes
-        FROM labeled_sessions
+        FROM scoped_sessions
       ),
       top_groups AS (
         SELECT
-          ls.grupo,
+          ss.grupo,
           COUNT(*) AS current_sessions
-        FROM labeled_sessions ls
-        INNER JOIN latest_month lm ON lm.mes = ls.mes
-        WHERE ls.grupo IS NOT NULL AND ls.grupo != ''
-        GROUP BY ls.grupo
+        FROM scoped_sessions ss
+        INNER JOIN latest_month lm ON lm.mes = ss.mes
+        WHERE ss.grupo IS NOT NULL AND ss.grupo != ''
+        GROUP BY ss.grupo
         ORDER BY current_sessions DESC
         LIMIT 5
       )
       SELECT
-        ls.mes,
-        ls.grupo,
+        ss.mes,
+        ss.grupo,
         COUNT(*) AS total_sessions,
         tg.current_sessions
-      FROM labeled_sessions ls
-      INNER JOIN top_groups tg ON tg.grupo = ls.grupo
-      GROUP BY ls.mes, ls.grupo, tg.current_sessions
-      ORDER BY tg.current_sessions DESC, ls.grupo, ls.mes
+      FROM scoped_sessions ss
+      INNER JOIN top_groups tg ON tg.grupo = ss.grupo
+      GROUP BY ss.mes, ss.grupo, tg.current_sessions
+      ORDER BY tg.current_sessions DESC, ss.grupo, ss.mes
     `) : runQuery(wh.id, `
       WITH scoped_sessions AS (
         SELECT
-          DATE_FORMAT(try_cast(s.${quoteIdent(SESSION_DATE_COLUMN)} AS TIMESTAMP), 'yyyy-MM') AS mes,
+          s.${quoteIdent('mes')} AS mes,
           ${topGroupNameExpr} AS grupo
         FROM ${topGroupFromSql}
         WHERE ${topGroupWhere}

@@ -29,6 +29,105 @@ FOR COLUMNS hora_criacao_atendimento, grupo_economico, tipo_solicitacao;
 -- 3) Aggregated gold tables for the dashboard.
 -- These are the strongest option for fast filters because the UI reads small monthly aggregates.
 
+-- Base leve para a aba Sessões: uma linha por sessão, já com grupo, empresa,
+-- tipificação, Humano/IA por mensagem de agente e chave de beneficiário.
+-- Rode/atualize esta tabela antes de publicar a API apontando para ela.
+CREATE OR REPLACE TABLE hive_metastore.sanus_prod.dashboard_sessions_base_gold
+USING DELTA
+AS
+WITH session_has_agent AS (
+  SELECT
+    CAST(session_id AS STRING) AS session_id,
+    MAX(CASE WHEN sender_type = 'agent' THEN 1 ELSE 0 END) AS teve_humano
+  FROM hive_metastore.sanus_prod.botmaker_message
+  GROUP BY CAST(session_id AS STRING)
+),
+sessions_base AS (
+  SELECT
+    CAST(s.session_id AS STRING) AS session_id,
+    try_cast(s.creation_time AS TIMESTAMP) AS creation_ts,
+    DATE_FORMAT(try_cast(s.creation_time AS TIMESTAMP), 'yyyy-MM') AS mes,
+    DATE_FORMAT(try_cast(s.creation_time AS TIMESTAMP), 'yyyy-MM-dd') AS dia,
+    CAST(s.organization_id AS STRING) AS organization_id,
+    NULLIF(TRIM(CAST(o.name AS STRING)), '') AS organization_name,
+    CASE
+      WHEN s.economic_group_name IS NULL OR TRIM(CAST(s.economic_group_name AS STRING)) = ''
+      THEN 'Nulos'
+      ELSE TRIM(CAST(s.economic_group_name AS STRING))
+    END AS economic_group_name,
+    CASE
+      WHEN s.variables['typification'] IS NULL THEN '(NULO)'
+      WHEN TRIM(CAST(s.variables['typification'] AS STRING)) = '' THEN '(VAZIO/BRANCO)'
+      ELSE TRIM(CAST(s.variables['typification'] AS STRING))
+    END AS tipificacao,
+    CASE WHEN s.finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END AS tipo_finished_by,
+    COALESCE(sha.teve_humano, 0) AS teve_humano_agent,
+    CASE WHEN COALESCE(sha.teve_humano, 0) = 1 THEN 'Humano' ELSE 'IA' END AS tipo_atendimento_agent,
+    COALESCE(
+      CASE
+        WHEN NULLIF(TRIM(CAST(COALESCE(
+          s.variables['beneficiary_id'],
+          s.variables['beneficiaryId'],
+          s.variables['beneficiario_id'],
+          s.variables['id_beneficiario'],
+          s.variables['user_id'],
+          s.variables['userId'],
+          s.variables['customer_id'],
+          s.variables['customerId']
+        ) AS STRING)), '') IS NOT NULL
+        THEN CONCAT('beneficiary:', NULLIF(TRIM(CAST(COALESCE(
+          s.variables['beneficiary_id'],
+          s.variables['beneficiaryId'],
+          s.variables['beneficiario_id'],
+          s.variables['id_beneficiario'],
+          s.variables['user_id'],
+          s.variables['userId'],
+          s.variables['customer_id'],
+          s.variables['customerId']
+        ) AS STRING)), ''))
+      END,
+      CASE
+        WHEN NULLIF(REGEXP_REPLACE(CAST(COALESCE(
+          s.variables['cpf'],
+          s.variables['CPF'],
+          s.variables['document'],
+          s.variables['documento'],
+          s.variables['cpf_cnpj'],
+          s.variables['document_number'],
+          s.variables['beneficiary_cpf'],
+          s.variables['cpf_beneficiario'],
+          s.variables['cpf_beneficiary']
+        ) AS STRING), '[^0-9]', ''), '') IS NOT NULL
+        THEN CONCAT('cpf:', NULLIF(REGEXP_REPLACE(CAST(COALESCE(
+          s.variables['cpf'],
+          s.variables['CPF'],
+          s.variables['document'],
+          s.variables['documento'],
+          s.variables['cpf_cnpj'],
+          s.variables['document_number'],
+          s.variables['beneficiary_cpf'],
+          s.variables['cpf_beneficiario'],
+          s.variables['cpf_beneficiary']
+        ) AS STRING), '[^0-9]', ''), ''))
+      END
+    ) AS beneficiary_key,
+    CURRENT_TIMESTAMP() AS refreshed_at
+  FROM hive_metastore.sanus_prod.botmaker_session s
+  LEFT JOIN hive_metastore.sanus_prod.organizations o
+    ON CAST(s.organization_id AS STRING) = CAST(o.id AS STRING)
+  LEFT JOIN session_has_agent sha
+    ON CAST(s.session_id AS STRING) = sha.session_id
+  WHERE s.creation_time IS NOT NULL
+)
+SELECT *
+FROM sessions_base;
+
+OPTIMIZE hive_metastore.sanus_prod.dashboard_sessions_base_gold
+ZORDER BY (mes, economic_group_name, organization_name);
+
+ANALYZE TABLE hive_metastore.sanus_prod.dashboard_sessions_base_gold COMPUTE STATISTICS
+FOR COLUMNS mes, dia, economic_group_name, organization_name, organization_id, tipo_atendimento_agent, tipo_finished_by, tipificacao;
+
 CREATE OR REPLACE TABLE hive_metastore.sanus_prod.dashboard_sessions_monthly_gold
 USING DELTA
 AS
