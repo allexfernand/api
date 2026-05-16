@@ -76,10 +76,19 @@ function orgIdsSubquery(groupName: unknown, company: unknown) {
 function economicGroupNameCondition(groupName: unknown, tableAlias = 's') {
   const g = escape(groupName);
   const col = `${tableAlias}.${quoteIdent('economic_group_name')}`;
+  const label = `CASE
+    WHEN ${col} IS NULL OR TRIM(CAST(${col} AS STRING)) = ''
+    THEN 'Nulos'
+    ELSE TRIM(CAST(${col} AS STRING))
+  END`;
   if (String(groupName || '').trim().toLowerCase() === 'nulos') {
     return `(${col} IS NULL OR TRIM(CAST(${col} AS STRING)) = '')`;
   }
-  return `UPPER(TRIM(CAST(${col} AS STRING))) = UPPER(TRIM('${g}'))`;
+  return `(
+    UPPER(${label}) = UPPER(TRIM('${g}'))
+    OR UPPER(${label}) LIKE CONCAT('%', UPPER(TRIM('${g}')), '%')
+    OR UPPER(TRIM('${g}')) LIKE CONCAT('%', UPPER(${label}), '%')
+  )`;
 }
 
 function lastNMonthsList(n: number) {
@@ -485,7 +494,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       economic_group_total_error: economicGroupTotalError,
       company_sessions: companySessions,
       company_sessions_error: companySessionsError,
-      company_sessions_mode: companySessionsMode,
+      company_sessions_mode: groupName && !company ? "economic_group" : companySessionsMode,
       company_sessions_source: companySessionsSource,
       economic_group_finishers: economicGroupFinishers,
       economic_group_finishers_error: economicGroupFinishersError,
@@ -502,9 +511,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         groups: topGroups,
         series: topGroupsEvolutionRows,
         error: topGroupsEvolutionError,
-        source: topGroupByCompany ? "botmaker_session.organization_id + organizations.name" : "botmaker_session.economic_group_name",
-        dimension: topGroupByCompany ? "company" : "economic_group",
-        ranking: topGroupByCompany ? "top_5_companies_latest_month_non_null" : "top_5_latest_month_non_null",
+        source: groupName && !company ? "botmaker_session.economic_group_name" : (topGroupByCompany ? "botmaker_session.organization_id + organizations.name" : "botmaker_session.economic_group_name"),
+        dimension: groupName && !company ? "economic_group" : (topGroupByCompany ? "company" : "economic_group"),
+        ranking: groupName && !company ? "selected_economic_group" : (topGroupByCompany ? "top_5_companies_latest_month_non_null" : "top_5_latest_month_non_null"),
       },
       period_filter_applied: meses.length > 0,
     });

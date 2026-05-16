@@ -2211,7 +2211,7 @@ function renderSessionTypifications(items, opts) {
   if (meta) meta.textContent = `${rows.length} tipos · total ${fmt(total)} sessões tipificadas`;
   if (note) {
     const messages = [];
-    if (currentGroup) messages.push('Filtro global aplicado via organization_id/organizations');
+    if (currentGroup) messages.push('Filtro aplicado como no Q14');
     if (selectedSessionTypificationFinisher === 'humano') messages.push('finalizadas por Humano');
     else if (selectedSessionTypificationFinisher === 'ia') messages.push('finalizadas por IA');
     note.style.display = messages.length ? 'block' : 'none';

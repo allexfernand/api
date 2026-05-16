@@ -169,10 +169,19 @@ function orgIdsSubquery(groupName: unknown, company: unknown) {
 function economicGroupNameCondition(groupName: unknown, tableAlias = 's') {
   const g = escape(groupName);
   const col = `${tableAlias}.${quoteIdent('economic_group_name')}`;
+  const label = `CASE
+    WHEN ${col} IS NULL OR TRIM(CAST(${col} AS STRING)) = ''
+    THEN 'Nulos'
+    ELSE TRIM(CAST(${col} AS STRING))
+  END`;
   if (String(groupName || '').trim().toLowerCase() === 'nulos') {
     return `(${col} IS NULL OR TRIM(CAST(${col} AS STRING)) = '')`;
   }
-  return `UPPER(TRIM(CAST(${col} AS STRING))) = UPPER(TRIM('${g}'))`;
+  return `(
+    UPPER(${label}) = UPPER(TRIM('${g}'))
+    OR UPPER(${label}) LIKE CONCAT('%', UPPER(TRIM('${g}')), '%')
+    OR UPPER(TRIM('${g}')) LIKE CONCAT('%', UPPER(${label}), '%')
+  )`;
 }
 
 function lastNMonthsList(n: number, includeCurrentMonth = true) {
