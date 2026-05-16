@@ -246,27 +246,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         ORDER BY total_sessions DESC
       `);
 
-    const companySessionsPromise = groupName && !company
-      ? runQuery(wh.id, `
-        SELECT
-          CASE
-            WHEN s.${quoteIdent('economic_group_name')} IS NULL
-              OR TRIM(CAST(s.${quoteIdent('economic_group_name')} AS STRING)) = ''
-            THEN 'Nulos'
-            ELSE TRIM(CAST(s.${quoteIdent('economic_group_name')} AS STRING))
-          END AS empresa,
-          COUNT(*) AS total_sessions
-        FROM ${SESSION_TABLE} s
-        ${companySessionsWhere ? `WHERE ${companySessionsWhere}` : ''}
-        GROUP BY CASE
-          WHEN s.${quoteIdent('economic_group_name')} IS NULL
-            OR TRIM(CAST(s.${quoteIdent('economic_group_name')} AS STRING)) = ''
-          THEN 'Nulos'
-          ELSE TRIM(CAST(s.${quoteIdent('economic_group_name')} AS STRING))
-        END
-        ORDER BY total_sessions DESC
-      `)
-      : companySessionsMode === "company"
+    const companySessionsPromise = companySessionsMode === "company"
       ? runQuery(wh.id, `
         WITH scoped_sessions AS (
           SELECT
@@ -331,28 +311,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         LIMIT 30
       `);
 
-    const topGroupsEvolutionPromise = groupName && !company ? runQuery(wh.id, `
-      WITH scoped_sessions AS (
-        SELECT
-          DATE_FORMAT(try_cast(s.${quoteIdent(SESSION_DATE_COLUMN)} AS TIMESTAMP), 'yyyy-MM') AS mes,
-          CASE
-            WHEN s.${quoteIdent('economic_group_name')} IS NULL
-              OR TRIM(CAST(s.${quoteIdent('economic_group_name')} AS STRING)) = ''
-            THEN 'Nulos'
-            ELSE TRIM(CAST(s.${quoteIdent('economic_group_name')} AS STRING))
-          END AS grupo
-        FROM ${SESSION_TABLE} s
-        WHERE ${[topGroupDateFilter, companySessionsScopeFilter].filter(Boolean).join(' AND ')}
-      )
-      SELECT
-        mes,
-        grupo,
-        COUNT(*) AS total_sessions,
-        COUNT(*) AS current_sessions
-      FROM scoped_sessions
-      GROUP BY mes, grupo
-      ORDER BY mes
-    `) : topGroupByCompany ? runQuery(wh.id, `
+    const topGroupsEvolutionPromise = topGroupByCompany ? runQuery(wh.id, `
       WITH scoped_sessions AS (
         SELECT
           DATE_FORMAT(try_cast(s.${quoteIdent(SESSION_DATE_COLUMN)} AS TIMESTAMP), 'yyyy-MM') AS mes,
@@ -494,7 +453,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       economic_group_total_error: economicGroupTotalError,
       company_sessions: companySessions,
       company_sessions_error: companySessionsError,
-      company_sessions_mode: groupName && !company ? "economic_group" : companySessionsMode,
+      company_sessions_mode: companySessionsMode,
       company_sessions_source: companySessionsSource,
       economic_group_finishers: economicGroupFinishers,
       economic_group_finishers_error: economicGroupFinishersError,
@@ -511,9 +470,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         groups: topGroups,
         series: topGroupsEvolutionRows,
         error: topGroupsEvolutionError,
-        source: groupName && !company ? "botmaker_session.economic_group_name" : (topGroupByCompany ? "botmaker_session.organization_id + organizations.name" : "botmaker_session.economic_group_name"),
-        dimension: groupName && !company ? "economic_group" : (topGroupByCompany ? "company" : "economic_group"),
-        ranking: groupName && !company ? "selected_economic_group" : (topGroupByCompany ? "top_5_companies_latest_month_non_null" : "top_5_latest_month_non_null"),
+        source: topGroupByCompany ? "botmaker_session.economic_group_name + organizations.name" : "botmaker_session.economic_group_name",
+        dimension: topGroupByCompany ? "company" : "economic_group",
+        ranking: topGroupByCompany ? "top_5_companies_latest_month_non_null" : "top_5_latest_month_non_null",
       },
       period_filter_applied: meses.length > 0,
     });

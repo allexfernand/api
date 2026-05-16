@@ -1322,6 +1322,7 @@ let selectedAppointmentTypeMonths = new Set();
 let appointmentTypesBaseMonths = [];
 let selectedSessionsDailyMonth = currentMonthValue();
 let selectedSessionTypificationFinisher = '';
+let sessionsRequestId = 0;
 let sessionsEvolutionRequestId = 0;
 let selectedQualityCriteriaSort = 'worst';
 let selectedQualitySubcriteriaSort = 'worst';
@@ -2428,6 +2429,7 @@ async function loadSessionsBeneficiaryUtilization(baseParams, demographicsData, 
 }
 
 async function loadSessions() {
+  const requestId = ++sessionsRequestId;
   buildAppointmentTypesPeriodoOptions();
   buildSessionsDailyMonthOptions();
   const economicGroupBullet = document.getElementById('bullet-sessoes-eg');
@@ -2484,6 +2486,7 @@ async function loadSessions() {
   loadSessionsDailyEvolution();
 
   const sessions = await safeGet('/api/sessions' + qs);
+  if (requestId !== sessionsRequestId) return;
   if (sessions && !sessions.error) {
     if (economicGroupBullet) economicGroupBullet.textContent = sessions.economic_group_total_error ? 'Erro' : fmt(sessions.economic_group_total || 0);
     if (economicGroupPeriodoLabel) {
