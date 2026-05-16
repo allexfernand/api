@@ -86,17 +86,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         GROUP BY 1 ORDER BY 1
       `),
       !groupName ? runQuery(wh.id, `
-        SELECT o1.name AS grupo, COUNT(filiais.id) AS total_filiais
-        FROM hive_metastore.sanus_prod.organizations o1
-        LEFT JOIN hive_metastore.sanus_prod.organizations filiais ON filiais.matriz_id = o1.id
-        WHERE o1.active = true
-          AND o1.name IS NOT NULL
-          AND o1.id IN (
-            SELECT matriz_id FROM hive_metastore.sanus_prod.organizations
-            WHERE matriz_id IS NOT NULL
-          )
-        GROUP BY o1.name
-        ORDER BY o1.name ASC
+        SELECT o.name AS grupo, 0 AS total_filiais
+        FROM hive_metastore.sanus_prod.organizations o
+        WHERE o.active = true
+          AND o.name IS NOT NULL
+          AND TRIM(CAST(o.name AS STRING)) != ''
+          AND (o.is_matriz = true OR o.matriz_id IS NULL)
+        ORDER BY o.name ASC
       `) : Promise.resolve(null),
       !groupName ? runQuery(wh.id, `
         SELECT economic_group_canonical AS grupo, COUNT(*) AS total_sessions
