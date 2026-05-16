@@ -1317,6 +1317,8 @@ const mN = {'01':'Jan','02':'Fev','03':'Mar','04':'Abr','05':'Mai','06':'Jun','0
 
 let usersData = [], companiesData = [], sessionCompaniesData = [], eChart, agegroupChart, appointmentTypesTrendChart, petitCareLinesChart, sessionsEvolChart, sessionsTotalEvolChart, sessionsAttendanceChart, sessionsDailyChart, sessionsTopGroupsChart, qualityVolumeEvolutionChart, qualityEvolutionChart, qualityCriteriaEvolutionChart;
 let currentGroup = '', currentType = '', currentCompany = '';
+let groupOptionsCache = { orgs: null, sessions: null };
+let activeGroupSource = 'orgs';
 let selectedMonths = new Set();
 let selectedAppointmentTypeMonths = new Set();
 let appointmentTypesBaseMonths = [];
@@ -1347,6 +1349,7 @@ document.querySelectorAll('.tab').forEach(t => {
     const hasPeriodo = activeTab === 'agendamentos' || activeTab === 'sessoes' || activeTab === 'petit-comite' || activeTab.startsWith('qualidade');
     document.getElementById('filter-periodo').style.display = hasPeriodo ? 'flex' : 'none';
     updateFilterVisibility();
+    ensureGroupOptionsForActiveTab();
     updateFilterInfo();
     if (hasPeriodo) { buildPeriodoOptions(); loadPeriodFilteredTab(); }
   });
@@ -4189,6 +4192,55 @@ async function loadAgeGroups() {
   else document.getElementById('agegroup-loading').innerHTML='<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>Erro ao carregar faixas etárias';
 }
 
+function applyGroupOptions(items, source) {
+  const sel = document.getElementById('group-select');
+  if (!sel || !Array.isArray(items)) return;
+  const previous = currentGroup;
+  const ordered = [...items].sort((a, b) =>
+    String(a.economic_group || '').localeCompare(String(b.economic_group || ''), 'pt-BR', { sensitivity: 'base' })
+  );
+  sel.innerHTML = '<option value="">(Todos os grupos)</option>';
+  ordered.forEach((g) => {
+    if (!g.economic_group) return;
+    const o = document.createElement('option');
+    o.value = g.economic_group;
+    o.textContent = g.economic_group;
+    sel.appendChild(o);
+  });
+  activeGroupSource = source;
+  const stillValid = previous && ordered.some((g) => g.economic_group === previous);
+  sel.value = stillValid ? previous : '';
+  if (!stillValid && previous) {
+    currentGroup = '';
+    updateFilterInfo();
+  }
+}
+
+async function loadSessionsGroupOptions(force = false) {
+  if (!force && groupOptionsCache.sessions) {
+    applyGroupOptions(groupOptionsCache.sessions, 'sessions');
+    return;
+  }
+  try {
+    const res = await fetch('/api/sessions-groups');
+    const json = await res.json();
+    if (!res.ok || json.error) throw new Error(json.error || `HTTP ${res.status}`);
+    groupOptionsCache.sessions = (json.groups || []).map((g) => ({ economic_group: g.economic_group }));
+    applyGroupOptions(groupOptionsCache.sessions, 'sessions');
+  } catch (err) {
+    console.error('[loadSessionsGroupOptions]', err);
+  }
+}
+
+function ensureGroupOptionsForActiveTab() {
+  const activeTab = getActiveTab();
+  if (activeTab === 'sessoes') {
+    if (activeGroupSource !== 'sessions') loadSessionsGroupOptions();
+  } else if (activeGroupSource !== 'orgs' && groupOptionsCache.orgs) {
+    applyGroupOptions(groupOptionsCache.orgs, 'orgs');
+  }
+}
+
 async function loadAll(fetchOrgs=true) {
   setStatus('loading','⏳ Carregando...');
   document.getElementById('skel-e').style.display='block';
@@ -4200,10 +4252,10 @@ async function loadAll(fetchOrgs=true) {
     if(json.error) throw new Error(json.error);
     usersData = json.users||[];
     if(fetchOrgs&&Array.isArray(json.groups)){
-      const sel=document.getElementById('group-select');
-      const ordered=[...json.groups].sort((a,b)=>a.economic_group.localeCompare(b.economic_group,'pt-BR',{sensitivity:'base'}));
-      sel.innerHTML='<option value="">(Todos os grupos)</option>';
-      ordered.forEach(g=>{ const o=document.createElement('option'); o.value=g.economic_group; o.textContent=g.economic_group; sel.appendChild(o); });
+      groupOptionsCache.orgs = json.groups.map((g) => ({ economic_group: g.economic_group }));
+      if (getActiveTab() !== 'sessoes') {
+        applyGroupOptions(groupOptionsCache.orgs, 'orgs');
+      }
     }
     const ut=usersData.reduce((a,[,v])=>a+v,0);
     const bv=document.getElementById('bullet-vidas');

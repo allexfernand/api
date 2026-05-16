@@ -65,6 +65,11 @@ function dashboardSessionsInlineSql() {
         THEN 'Nulos'
         ELSE TRIM(CAST(s.${quoteIdent('economic_group_name')} AS STRING))
       END AS economic_group_name,
+      COALESCE(
+        NULLIF(TRIM(CAST(o.${quoteIdent('name_economic_group')} AS STRING)), ''),
+        NULLIF(TRIM(CAST(s.${quoteIdent('economic_group_name')} AS STRING)), ''),
+        'Nulos'
+      ) AS economic_group_canonical,
       CASE
         WHEN s.${quoteIdent('variables')}['typification'] IS NULL THEN '(NULO)'
         WHEN TRIM(CAST(s.${quoteIdent('variables')}['typification'] AS STRING)) = '' THEN '(VAZIO/BRANCO)'
@@ -169,15 +174,8 @@ function orgIdsSubquery(groupName: unknown, company: unknown) {
 
 function economicGroupNameCondition(groupName: unknown, tableAlias = 's') {
   const g = escape(groupName);
-  const col = `${tableAlias}.${quoteIdent('economic_group_name')}`;
-  if (String(groupName || '').trim().toLowerCase() === 'nulos') {
-    return `UPPER(TRIM(CAST(${col} AS STRING))) = 'NULOS'`;
-  }
-  return `(
-    UPPER(TRIM(CAST(${col} AS STRING))) = UPPER(TRIM('${g}'))
-    OR UPPER(TRIM(CAST(${col} AS STRING))) LIKE CONCAT('%', UPPER(TRIM('${g}')), '%')
-    OR UPPER(TRIM('${g}')) LIKE CONCAT('%', UPPER(TRIM(CAST(${col} AS STRING))), '%')
-  )`;
+  const col = `${tableAlias}.${quoteIdent('economic_group_canonical')}`;
+  return `UPPER(TRIM(CAST(${col} AS STRING))) = UPPER(TRIM('${g}'))`;
 }
 
 function lastNMonthsList(n: number) {
@@ -226,8 +224,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const companySessionsWhere = [companySessionsDateFilter, companySessionsScopeFilter].filter(Boolean).join(' AND ');
     const companySessionsMode = groupName || company ? "company" : "economic_group";
     const companySessionsSource = companySessionsMode === "company"
-      ? (company ? "botmaker_session.organization_id + organizations.id/name" : "botmaker_session.economic_group_name")
-      : "botmaker_session.economic_group_name";
+      ? (company ? "dashboard_sessions_base_gold.organization_name" : "dashboard_sessions_base_gold.economic_group_canonical")
+      : "dashboard_sessions_base_gold.economic_group_canonical";
     const typificationFinisherFilter = typificationFinisher === 'humano'
       ? `s.${quoteIdent('tipo_finished_by')} = 'Humano'`
       : (typificationFinisher === 'ia' ? `s.${quoteIdent('tipo_finished_by')} = 'IA'` : null);
@@ -236,7 +234,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const topGroupByCompany = Boolean(groupName || company);
     const topGroupNameExpr = topGroupByCompany
       ? `COALESCE(NULLIF(TRIM(CAST(s.${quoteIdent('organization_name')} AS STRING)), ''), 'Sem empresa')`
-      : `TRIM(CAST(s.${quoteIdent('economic_group_name')} AS STRING))`;
+      : `TRIM(CAST(s.${quoteIdent('economic_group_canonical')} AS STRING))`;
     const topGroupValidFilter = `${topGroupNameExpr} IS NOT NULL AND ${topGroupNameExpr} != ''`;
     const topGroupWhere = [topGroupDateFilter, companySessionsScopeFilter, topGroupValidFilter].filter(Boolean).join(' AND ');
     const topGroupFromSql = `${dashboardSessionsTable} s`;
@@ -293,11 +291,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       `)
       : runQuery(wh.id, `
         SELECT
-          s.${quoteIdent('economic_group_name')} AS empresa,
+          s.${quoteIdent('economic_group_canonical')} AS empresa,
           COUNT(*) AS total_sessions
         FROM ${dashboardSessionsTable} s
         ${companySessionsDateFilter ? `WHERE ${companySessionsDateFilter}` : ''}
-        GROUP BY s.${quoteIdent('economic_group_name')}
+        GROUP BY s.${quoteIdent('economic_group_canonical')}
         ORDER BY total_sessions DESC
       `);
 

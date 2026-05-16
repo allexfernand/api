@@ -30,6 +30,11 @@ function dashboardSessionsInlineSql() {
         THEN 'Nulos'
         ELSE TRIM(CAST(s.${quoteIdent('economic_group_name')} AS STRING))
       END AS economic_group_name,
+      COALESCE(
+        NULLIF(TRIM(CAST(o.${quoteIdent('name_economic_group')} AS STRING)), ''),
+        NULLIF(TRIM(CAST(s.${quoteIdent('economic_group_name')} AS STRING)), ''),
+        'Nulos'
+      ) AS economic_group_canonical,
       CASE
         WHEN s.${quoteIdent('variables')}['typification'] IS NULL THEN '(NULO)'
         WHEN TRIM(CAST(s.${quoteIdent('variables')}['typification'] AS STRING)) = '' THEN '(VAZIO/BRANCO)'
@@ -262,15 +267,8 @@ function orgIdsSubquery(groupName: unknown, company: unknown) {
 
 function economicGroupNameCondition(groupName: unknown, tableAlias = 's') {
   const g = escape(groupName);
-  const col = `${tableAlias}.${quoteIdent('economic_group_name')}`;
-  if (String(groupName || '').trim().toLowerCase() === 'nulos') {
-    return `UPPER(TRIM(CAST(${col} AS STRING))) = 'NULOS'`;
-  }
-  return `(
-    UPPER(TRIM(CAST(${col} AS STRING))) = UPPER(TRIM('${g}'))
-    OR UPPER(TRIM(CAST(${col} AS STRING))) LIKE CONCAT('%', UPPER(TRIM('${g}')), '%')
-    OR UPPER(TRIM('${g}')) LIKE CONCAT('%', UPPER(TRIM(CAST(${col} AS STRING))), '%')
-  )`;
+  const col = `${tableAlias}.${quoteIdent('economic_group_canonical')}`;
+  return `UPPER(TRIM(CAST(${col} AS STRING))) = UPPER(TRIM('${g}'))`;
 }
 
 function lastNMonthsList(n: number, includeCurrentMonth = true) {

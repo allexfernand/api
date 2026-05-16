@@ -41,6 +41,11 @@ sessions_base AS (
       THEN 'Nulos'
       ELSE TRIM(CAST(s.economic_group_name AS STRING))
     END AS economic_group_name,
+    COALESCE(
+      NULLIF(TRIM(CAST(o.name_economic_group AS STRING)), ''),
+      NULLIF(TRIM(CAST(s.economic_group_name AS STRING)), ''),
+      'Nulos'
+    ) AS economic_group_canonical,
     CASE
       WHEN s.variables['typification'] IS NULL THEN '(NULO)'
       WHEN TRIM(CAST(s.variables['typification'] AS STRING)) = '' THEN '(VAZIO/BRANCO)'
@@ -108,11 +113,12 @@ sessions_base AS (
 SELECT * FROM sessions_base;
 
 OPTIMIZE ${FQN}
-ZORDER BY (mes, economic_group_name, organization_name);
+ZORDER BY (mes, economic_group_canonical, organization_name);
 
 ANALYZE TABLE ${FQN}
 COMPUTE STATISTICS FOR COLUMNS
-  mes, dia, economic_group_name, organization_name, organization_id,
+  mes, dia, economic_group_canonical, economic_group_name,
+  organization_name, organization_id,
   tipo_atendimento_agent, tipo_finished_by, tipificacao;
 `;
 
