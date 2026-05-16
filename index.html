@@ -4216,26 +4216,12 @@ function applyGroupOptions(items, source) {
   }
 }
 
-async function loadSessionsGroupOptions(force = false) {
-  if (!force && groupOptionsCache.sessions) {
-    applyGroupOptions(groupOptionsCache.sessions, 'sessions');
-    return;
-  }
-  try {
-    const res = await fetch('/api/sessions-groups');
-    const json = await res.json();
-    if (!res.ok || json.error) throw new Error(json.error || `HTTP ${res.status}`);
-    groupOptionsCache.sessions = (json.groups || []).map((g) => ({ economic_group: g.economic_group }));
-    applyGroupOptions(groupOptionsCache.sessions, 'sessions');
-  } catch (err) {
-    console.error('[loadSessionsGroupOptions]', err);
-  }
-}
-
 function ensureGroupOptionsForActiveTab() {
   const activeTab = getActiveTab();
   if (activeTab === 'sessoes') {
-    if (activeGroupSource !== 'sessions') loadSessionsGroupOptions();
+    if (groupOptionsCache.sessions && activeGroupSource !== 'sessions') {
+      applyGroupOptions(groupOptionsCache.sessions, 'sessions');
+    }
   } else if (activeGroupSource !== 'orgs' && groupOptionsCache.orgs) {
     applyGroupOptions(groupOptionsCache.orgs, 'orgs');
   }
@@ -4251,9 +4237,17 @@ async function loadAll(fetchOrgs=true) {
     const json = await res.json();
     if(json.error) throw new Error(json.error);
     usersData = json.users||[];
-    if(fetchOrgs&&Array.isArray(json.groups)){
-      groupOptionsCache.orgs = json.groups.map((g) => ({ economic_group: g.economic_group }));
-      if (getActiveTab() !== 'sessoes') {
+    if(fetchOrgs){
+      if (Array.isArray(json.groups)) {
+        groupOptionsCache.orgs = json.groups.map((g) => ({ economic_group: g.economic_group }));
+      }
+      if (Array.isArray(json.sessions_groups)) {
+        groupOptionsCache.sessions = json.sessions_groups.map((g) => ({ economic_group: g.economic_group }));
+      }
+      const activeTab = getActiveTab();
+      if (activeTab === 'sessoes' && groupOptionsCache.sessions) {
+        applyGroupOptions(groupOptionsCache.sessions, 'sessions');
+      } else if (groupOptionsCache.orgs) {
         applyGroupOptions(groupOptionsCache.orgs, 'orgs');
       }
     }

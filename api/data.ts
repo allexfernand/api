@@ -78,7 +78,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const wh = warehouses.find((w) => w.state === "RUNNING") || warehouses[0];
     if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
 
-    const [userRows, groupRows] = await Promise.all([
+    const [userRows, groupRows, sessionGroupRows] = await Promise.all([
       runQuery(wh.id, `
         SELECT DATE_TRUNC('DAY', b.created_at) AS dia, COUNT(DISTINCT b.id) AS n
         FROM hive_metastore.sanus_prod.beneficiaries b
@@ -98,6 +98,14 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         GROUP BY o1.name
         ORDER BY o1.name ASC
       `) : Promise.resolve(null),
+      !groupName ? runQuery(wh.id, `
+        SELECT economic_group_canonical AS grupo, COUNT(*) AS total_sessions
+        FROM hive_metastore.sanus_prod.dashboard_sessions_base_gold
+        WHERE economic_group_canonical IS NOT NULL
+          AND TRIM(economic_group_canonical) != ''
+        GROUP BY economic_group_canonical
+        ORDER BY total_sessions DESC
+      `).catch(() => null) : Promise.resolve(null),
     ]);
 
     const parse = (rows: DatabricksRow[] | null) => (rows || []).map((r) => [toDate(r[0]), toInt(r[1])]);
@@ -107,8 +115,14 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           total_orgs: toInt(r[1]),
         })).filter((g) => g.economic_group)
       : null;
+    const sessions_groups = sessionGroupRows
+      ? sessionGroupRows.map((r) => ({
+          economic_group: getCell(r[0]) ? String(getCell(r[0])).trim() : null,
+          total_sessions: toInt(r[1]),
+        })).filter((g) => g.economic_group)
+      : null;
 
-    res.status(200).json({ users: parse(userRows), groups, updatedAt: new Date().toISOString() });
+    res.status(200).json({ users: parse(userRows), groups, sessions_groups, updatedAt: new Date().toISOString() });
   } catch (err) {
     res.status(500).json({ error: (err as { message?: string }).message });
   }
