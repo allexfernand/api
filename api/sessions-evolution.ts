@@ -166,6 +166,15 @@ function orgIdsSubquery(groupName: unknown, company: unknown) {
   )`;
 }
 
+function economicGroupNameCondition(groupName: unknown, tableAlias = 's') {
+  const g = escape(groupName);
+  const col = `${tableAlias}.${quoteIdent('economic_group_name')}`;
+  if (String(groupName || '').trim().toLowerCase() === 'nulos') {
+    return `(${col} IS NULL OR TRIM(CAST(${col} AS STRING)) = '')`;
+  }
+  return `UPPER(TRIM(CAST(${col} AS STRING))) = UPPER(TRIM('${g}'))`;
+}
+
 function lastNMonthsList(n: number, includeCurrentMonth = true) {
   const out = [];
   const d = new Date();
@@ -225,15 +234,18 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
     const filters = [granularity === 'day' ? daySqlFilter : monthsSqlFilter];
     if (hasOrgFilter) {
-      filters.push(`CAST(o.${quoteIdent('id')} AS STRING) IN ${orgIdsSubquery(groupName, company)}`);
+      filters.push(company
+        ? `CAST(o.${quoteIdent('id')} AS STRING) IN ${orgIdsSubquery(groupName, company)}`
+        : `(CAST(o.${quoteIdent('id')} AS STRING) IN ${orgIdsSubquery(groupName, company)} OR ${economicGroupNameCondition(groupName, 's')})`);
     }
+    const orgJoinType = company ? 'INNER' : 'LEFT';
     const fromSql = hasOrgFilter
       ? `${SESSION_TABLE} s
-        INNER JOIN ${ORGANIZATIONS_TABLE} o
+        ${orgJoinType} JOIN ${ORGANIZATIONS_TABLE} o
           ON CAST(s.${quoteIdent('organization_id')} AS STRING) = CAST(o.${quoteIdent('id')} AS STRING)`
       : `${SESSION_TABLE} s`;
     const where = `WHERE ${filters.join(' AND ')}`;
-    const mode = hasOrgFilter ? "organization_join" : "global";
+    const mode = hasOrgFilter ? (company ? "organization_join" : "organization_or_economic_group") : "global";
     if (granularity === 'day') {
       const rows = await runQuery(wh.id, `
         SELECT

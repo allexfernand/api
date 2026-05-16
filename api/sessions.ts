@@ -73,6 +73,15 @@ function orgIdsSubquery(groupName: unknown, company: unknown) {
   )`;
 }
 
+function economicGroupNameCondition(groupName: unknown, tableAlias = 's') {
+  const g = escape(groupName);
+  const col = `${tableAlias}.${quoteIdent('economic_group_name')}`;
+  if (String(groupName || '').trim().toLowerCase() === 'nulos') {
+    return `(${col} IS NULL OR TRIM(CAST(${col} AS STRING)) = '')`;
+  }
+  return `UPPER(TRIM(CAST(${col} AS STRING))) = UPPER(TRIM('${g}'))`;
+}
+
 function lastNMonthsList(n: number) {
   const out = [];
   const d = new Date();
@@ -116,12 +125,19 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       : null;
     const companySessionsOrgFilter = company
       ? `CAST(o.${quoteIdent('id')} AS STRING) IN ${orgIdsSubquery(null, company)}`
-      : (groupName ? `CAST(o.${quoteIdent('id')} AS STRING) IN ${orgIdsSubquery(groupName, null)}` : null);
+      : (groupName ? `(CAST(o.${quoteIdent('id')} AS STRING) IN ${orgIdsSubquery(groupName, null)} OR ${economicGroupNameCondition(groupName, 's')})` : null);
     const companySessionsWhere = [companySessionsDateFilter, companySessionsOrgFilter].filter(Boolean).join(' AND ');
     const companySessionsMode = groupName || company ? "company" : "economic_group";
     const companySessionsSource = companySessionsMode === "company"
-      ? "botmaker_session.organization_id + organizations.id/name"
+      ? "botmaker_session.economic_group_name OR botmaker_session.organization_id + organizations.id/name"
       : "botmaker_session.economic_group_name";
+    const companySessionsJoinType = company ? 'INNER' : 'LEFT';
+    const companySessionsCompanyExpr = company
+      ? `TRIM(CAST(o.${quoteIdent('name')} AS STRING))`
+      : `COALESCE(NULLIF(TRIM(CAST(o.${quoteIdent('name')} AS STRING)), ''), NULLIF(TRIM(CAST(s.${quoteIdent('economic_group_name')} AS STRING)), ''), 'Sem empresa')`;
+    const companySessionsCompanyRequired = company
+      ? `o.${quoteIdent('name')} IS NOT NULL AND TRIM(CAST(o.${quoteIdent('name')} AS STRING)) != ''`
+      : null;
     const typificationFinisherFilter = typificationFinisher === 'humano'
       ? 's.finished_by IS NOT NULL'
       : (typificationFinisher === 'ia' ? 's.finished_by IS NULL' : null);
@@ -129,15 +145,15 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const topGroupDateFilter = `DATE_FORMAT(try_cast(s.${quoteIdent(SESSION_DATE_COLUMN)} AS TIMESTAMP), 'yyyy-MM') IN (${topGroupMonths.map((m) => `'${m}'`).join(',')})`;
     const topGroupByCompany = Boolean(groupName || company);
     const topGroupNameExpr = topGroupByCompany
-      ? `TRIM(CAST(o.${quoteIdent('name')} AS STRING))`
+      ? `COALESCE(NULLIF(TRIM(CAST(o.${quoteIdent('name')} AS STRING)), ''), NULLIF(TRIM(CAST(s.${quoteIdent('economic_group_name')} AS STRING)), ''), 'Sem empresa')`
       : `TRIM(CAST(s.${quoteIdent('economic_group_name')} AS STRING))`;
     const topGroupValidFilter = topGroupByCompany
-      ? `o.${quoteIdent('name')} IS NOT NULL AND ${topGroupNameExpr} != ''`
+      ? `${topGroupNameExpr} != ''`
       : `s.${quoteIdent('economic_group_name')} IS NOT NULL AND ${topGroupNameExpr} != ''`;
     const topGroupWhere = [topGroupDateFilter, companySessionsOrgFilter, topGroupValidFilter].filter(Boolean).join(' AND ');
     const topGroupFromSql = topGroupByCompany || companySessionsOrgFilter
       ? `${SESSION_TABLE} s
-        INNER JOIN ${ORGANIZATIONS_TABLE} o
+        ${company ? 'INNER' : 'LEFT'} JOIN ${ORGANIZATIONS_TABLE} o
           ON CAST(s.${quoteIdent('organization_id')} AS STRING) = CAST(o.${quoteIdent('id')} AS STRING)`
       : `${SESSION_TABLE} s`;
 
@@ -147,10 +163,10 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           CASE WHEN s.finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END AS tipo_atendimento,
           COUNT(*) AS total_sessions
         FROM ${SESSION_TABLE} s
-        INNER JOIN ${ORGANIZATIONS_TABLE} o
+        ${companySessionsJoinType} JOIN ${ORGANIZATIONS_TABLE} o
           ON CAST(s.${quoteIdent('organization_id')} AS STRING) = CAST(o.${quoteIdent('id')} AS STRING)
-        WHERE o.${quoteIdent('name')} IS NOT NULL
-          AND TRIM(CAST(o.${quoteIdent('name')} AS STRING)) != ''
+        WHERE 1 = 1
+          ${companySessionsCompanyRequired ? `AND ${companySessionsCompanyRequired}` : ''}
           ${companySessionsWhere ? `AND ${companySessionsWhere}` : ''}
         GROUP BY CASE WHEN s.finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END
         ORDER BY total_sessions DESC
@@ -171,10 +187,10 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           SELECT
             CAST(s.${quoteIdent('session_id')} AS STRING) AS session_id
           FROM ${SESSION_TABLE} s
-          INNER JOIN ${ORGANIZATIONS_TABLE} o
+          ${companySessionsJoinType} JOIN ${ORGANIZATIONS_TABLE} o
             ON CAST(s.${quoteIdent('organization_id')} AS STRING) = CAST(o.${quoteIdent('id')} AS STRING)
-          WHERE o.${quoteIdent('name')} IS NOT NULL
-            AND TRIM(CAST(o.${quoteIdent('name')} AS STRING)) != ''
+          WHERE 1 = 1
+            ${companySessionsCompanyRequired ? `AND ${companySessionsCompanyRequired}` : ''}
             ${companySessionsWhere ? `AND ${companySessionsWhere}` : ''}
         ),
         scoped_session_ids AS (
@@ -232,15 +248,15 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const companySessionsPromise = companySessionsMode === "company"
       ? runQuery(wh.id, `
         SELECT
-          TRIM(CAST(o.${quoteIdent('name')} AS STRING)) AS empresa,
+          ${companySessionsCompanyExpr} AS empresa,
           COUNT(*) AS total_sessions
         FROM ${SESSION_TABLE} s
-        INNER JOIN ${ORGANIZATIONS_TABLE} o
+        ${companySessionsJoinType} JOIN ${ORGANIZATIONS_TABLE} o
           ON CAST(s.${quoteIdent('organization_id')} AS STRING) = CAST(o.${quoteIdent('id')} AS STRING)
-        WHERE o.${quoteIdent('name')} IS NOT NULL
-          AND TRIM(CAST(o.${quoteIdent('name')} AS STRING)) != ''
+        WHERE 1 = 1
+          ${companySessionsCompanyRequired ? `AND ${companySessionsCompanyRequired}` : ''}
           ${companySessionsWhere ? `AND ${companySessionsWhere}` : ''}
-        GROUP BY TRIM(CAST(o.${quoteIdent('name')} AS STRING))
+        GROUP BY ${companySessionsCompanyExpr}
         ORDER BY total_sessions DESC
       `)
       : runQuery(wh.id, `
@@ -269,10 +285,10 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           ${aliasedTypificationExpr} AS tipificacao,
           COUNT(*) AS total_sessions
         FROM ${SESSION_TABLE} s
-        INNER JOIN ${ORGANIZATIONS_TABLE} o
+        ${companySessionsJoinType} JOIN ${ORGANIZATIONS_TABLE} o
           ON CAST(s.${quoteIdent('organization_id')} AS STRING) = CAST(o.${quoteIdent('id')} AS STRING)
-        WHERE o.${quoteIdent('name')} IS NOT NULL
-          AND TRIM(CAST(o.${quoteIdent('name')} AS STRING)) != ''
+        WHERE 1 = 1
+          ${companySessionsCompanyRequired ? `AND ${companySessionsCompanyRequired}` : ''}
           ${companySessionsWhere ? `AND ${companySessionsWhere}` : ''}
           ${typificationFinisherFilter ? `AND ${typificationFinisherFilter}` : ''}
         GROUP BY ${aliasedTypificationExpr}
