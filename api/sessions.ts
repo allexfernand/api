@@ -51,6 +51,101 @@ const MESSAGE_TABLE = `hive_metastore.sanus_prod.botmaker_message`;
 const DASHBOARD_SESSIONS_TABLE = `hive_metastore.sanus_prod.dashboard_sessions_base_gold`;
 const ORGANIZATIONS_TABLE = `hive_metastore.sanus_prod.organizations`;
 
+function dashboardSessionsInlineSql() {
+  return `(
+    SELECT
+      CAST(s.${quoteIdent('session_id')} AS STRING) AS session_id,
+      try_cast(s.${quoteIdent('creation_time')} AS TIMESTAMP) AS creation_ts,
+      DATE_FORMAT(try_cast(s.${quoteIdent('creation_time')} AS TIMESTAMP), 'yyyy-MM') AS mes,
+      DATE_FORMAT(try_cast(s.${quoteIdent('creation_time')} AS TIMESTAMP), 'yyyy-MM-dd') AS dia,
+      CAST(s.${quoteIdent('organization_id')} AS STRING) AS organization_id,
+      NULLIF(TRIM(CAST(o.${quoteIdent('name')} AS STRING)), '') AS organization_name,
+      CASE
+        WHEN s.${quoteIdent('economic_group_name')} IS NULL OR TRIM(CAST(s.${quoteIdent('economic_group_name')} AS STRING)) = ''
+        THEN 'Nulos'
+        ELSE TRIM(CAST(s.${quoteIdent('economic_group_name')} AS STRING))
+      END AS economic_group_name,
+      CASE
+        WHEN s.${quoteIdent('variables')}['typification'] IS NULL THEN '(NULO)'
+        WHEN TRIM(CAST(s.${quoteIdent('variables')}['typification'] AS STRING)) = '' THEN '(VAZIO/BRANCO)'
+        ELSE TRIM(CAST(s.${quoteIdent('variables')}['typification'] AS STRING))
+      END AS tipificacao,
+      CASE WHEN s.${quoteIdent('finished_by')} IS NOT NULL THEN 'Humano' ELSE 'IA' END AS tipo_finished_by,
+      COALESCE(sha.teve_humano, 0) AS teve_humano_agent,
+      CASE WHEN COALESCE(sha.teve_humano, 0) = 1 THEN 'Humano' ELSE 'IA' END AS tipo_atendimento_agent,
+      COALESCE(
+        CASE
+          WHEN NULLIF(TRIM(CAST(COALESCE(
+            s.${quoteIdent('variables')}['beneficiary_id'],
+            s.${quoteIdent('variables')}['beneficiaryId'],
+            s.${quoteIdent('variables')}['beneficiario_id'],
+            s.${quoteIdent('variables')}['id_beneficiario'],
+            s.${quoteIdent('variables')}['user_id'],
+            s.${quoteIdent('variables')}['userId'],
+            s.${quoteIdent('variables')}['customer_id'],
+            s.${quoteIdent('variables')}['customerId']
+          ) AS STRING)), '') IS NOT NULL
+          THEN CONCAT('beneficiary:', NULLIF(TRIM(CAST(COALESCE(
+            s.${quoteIdent('variables')}['beneficiary_id'],
+            s.${quoteIdent('variables')}['beneficiaryId'],
+            s.${quoteIdent('variables')}['beneficiario_id'],
+            s.${quoteIdent('variables')}['id_beneficiario'],
+            s.${quoteIdent('variables')}['user_id'],
+            s.${quoteIdent('variables')}['userId'],
+            s.${quoteIdent('variables')}['customer_id'],
+            s.${quoteIdent('variables')}['customerId']
+          ) AS STRING)), ''))
+        END,
+        CASE
+          WHEN NULLIF(REGEXP_REPLACE(CAST(COALESCE(
+            s.${quoteIdent('variables')}['cpf'],
+            s.${quoteIdent('variables')}['CPF'],
+            s.${quoteIdent('variables')}['document'],
+            s.${quoteIdent('variables')}['documento'],
+            s.${quoteIdent('variables')}['cpf_cnpj'],
+            s.${quoteIdent('variables')}['document_number'],
+            s.${quoteIdent('variables')}['beneficiary_cpf'],
+            s.${quoteIdent('variables')}['cpf_beneficiario'],
+            s.${quoteIdent('variables')}['cpf_beneficiary']
+          ) AS STRING), '[^0-9]', ''), '') IS NOT NULL
+          THEN CONCAT('cpf:', NULLIF(REGEXP_REPLACE(CAST(COALESCE(
+            s.${quoteIdent('variables')}['cpf'],
+            s.${quoteIdent('variables')}['CPF'],
+            s.${quoteIdent('variables')}['document'],
+            s.${quoteIdent('variables')}['documento'],
+            s.${quoteIdent('variables')}['cpf_cnpj'],
+            s.${quoteIdent('variables')}['document_number'],
+            s.${quoteIdent('variables')}['beneficiary_cpf'],
+            s.${quoteIdent('variables')}['cpf_beneficiario'],
+            s.${quoteIdent('variables')}['cpf_beneficiary']
+          ) AS STRING), '[^0-9]', ''), ''))
+        END
+      ) AS beneficiary_key
+    FROM ${SESSION_TABLE} s
+    LEFT JOIN ${ORGANIZATIONS_TABLE} o
+      ON CAST(s.${quoteIdent('organization_id')} AS STRING) = CAST(o.${quoteIdent('id')} AS STRING)
+    LEFT JOIN (
+      SELECT
+        CAST(${quoteIdent('session_id')} AS STRING) AS session_id,
+        MAX(CASE WHEN ${quoteIdent('sender_type')} = 'agent' THEN 1 ELSE 0 END) AS teve_humano
+      FROM ${MESSAGE_TABLE}
+      GROUP BY CAST(${quoteIdent('session_id')} AS STRING)
+    ) sha
+      ON CAST(s.${quoteIdent('session_id')} AS STRING) = sha.session_id
+    WHERE s.${quoteIdent('creation_time')} IS NOT NULL
+  )`;
+}
+
+async function resolveDashboardSessionsTable(warehouseId: string) {
+  try {
+    const rows = await runQuery(warehouseId, `SHOW TABLES IN hive_metastore.sanus_prod LIKE 'dashboard_sessions_base_gold'`);
+    if (rows.length > 0) return DASHBOARD_SESSIONS_TABLE;
+  } catch (_) {
+    // Fall back to the source-backed inline shape until the gold table is created.
+  }
+  return dashboardSessionsInlineSql();
+}
+
 function sessionTypificationExpr(variablesColumn: string, tableAlias = '') {
   const prefix = tableAlias ? `${tableAlias}.` : '';
   const raw = `${prefix}${quoteIdent(variablesColumn)}['typification']`;
@@ -122,6 +217,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const { warehouses = [] } = await dbFetch("/api/2.0/sql/warehouses") as { warehouses?: Warehouse[] };
     const wh = warehouses.find((w) => w.state === "RUNNING") || warehouses[0];
     if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
+    const dashboardSessionsTable = await resolveDashboardSessionsTable(wh.id);
 
     const companySessionsDateFilter = meses.length > 0
       ? `s.${quoteIdent('mes')} IN (${meses.map((m: string) => `'${m}'`).join(',')})`
@@ -145,14 +241,14 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       : `TRIM(CAST(s.${quoteIdent('economic_group_name')} AS STRING))`;
     const topGroupValidFilter = `${topGroupNameExpr} IS NOT NULL AND ${topGroupNameExpr} != ''`;
     const topGroupWhere = [topGroupDateFilter, companySessionsScopeFilter, topGroupValidFilter].filter(Boolean).join(' AND ');
-    const topGroupFromSql = `${DASHBOARD_SESSIONS_TABLE} s`;
+    const topGroupFromSql = `${dashboardSessionsTable} s`;
 
     const economicGroupFinishersPromise = companySessionsMode === "company"
       ? runQuery(wh.id, `
         SELECT
           s.${quoteIdent('tipo_finished_by')} AS tipo_atendimento,
           COUNT(*) AS total_sessions
-        FROM ${DASHBOARD_SESSIONS_TABLE} s
+        FROM ${dashboardSessionsTable} s
         ${companySessionsWhere ? `WHERE ${companySessionsWhere}` : ''}
         GROUP BY s.${quoteIdent('tipo_finished_by')}
         ORDER BY total_sessions DESC
@@ -161,7 +257,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         SELECT
           s.${quoteIdent('tipo_finished_by')} AS tipo_atendimento,
           COUNT(*) AS total_sessions
-        FROM ${DASHBOARD_SESSIONS_TABLE} s
+        FROM ${dashboardSessionsTable} s
         ${companySessionsDateFilter ? `WHERE ${companySessionsDateFilter}` : ''}
         GROUP BY s.${quoteIdent('tipo_finished_by')}
         ORDER BY total_sessions DESC
@@ -172,7 +268,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         SELECT
           s.${quoteIdent('tipo_atendimento_agent')} AS tipo_atendimento,
           COUNT(*) AS total_sessions
-        FROM ${DASHBOARD_SESSIONS_TABLE} s
+        FROM ${dashboardSessionsTable} s
         ${companySessionsWhere ? `WHERE ${companySessionsWhere}` : ''}
         GROUP BY s.${quoteIdent('tipo_atendimento_agent')}
         ORDER BY total_sessions DESC
@@ -181,7 +277,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         SELECT
           s.${quoteIdent('tipo_atendimento_agent')} AS tipo_atendimento,
           COUNT(*) AS total_sessions
-        FROM ${DASHBOARD_SESSIONS_TABLE} s
+        FROM ${dashboardSessionsTable} s
         ${companySessionsDateFilter ? `WHERE ${companySessionsDateFilter}` : ''}
         GROUP BY s.${quoteIdent('tipo_atendimento_agent')}
         ORDER BY total_sessions DESC
@@ -192,7 +288,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         SELECT
           COALESCE(NULLIF(TRIM(CAST(s.${quoteIdent('organization_name')} AS STRING)), ''), 'Sem empresa') AS empresa,
           COUNT(*) AS total_sessions
-        FROM ${DASHBOARD_SESSIONS_TABLE} s
+        FROM ${dashboardSessionsTable} s
         ${companySessionsWhere ? `WHERE ${companySessionsWhere}` : ''}
         GROUP BY COALESCE(NULLIF(TRIM(CAST(s.${quoteIdent('organization_name')} AS STRING)), ''), 'Sem empresa')
         ORDER BY total_sessions DESC
@@ -201,7 +297,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         SELECT
           s.${quoteIdent('economic_group_name')} AS empresa,
           COUNT(*) AS total_sessions
-        FROM ${DASHBOARD_SESSIONS_TABLE} s
+        FROM ${dashboardSessionsTable} s
         ${companySessionsDateFilter ? `WHERE ${companySessionsDateFilter}` : ''}
         GROUP BY s.${quoteIdent('economic_group_name')}
         ORDER BY total_sessions DESC
@@ -212,7 +308,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         SELECT
           s.${quoteIdent('tipificacao')} AS tipificacao,
           COUNT(*) AS total_sessions
-        FROM ${DASHBOARD_SESSIONS_TABLE} s
+        FROM ${dashboardSessionsTable} s
         ${[companySessionsWhere, typificationFinisherFilter].filter(Boolean).length ? `WHERE ${[companySessionsWhere, typificationFinisherFilter].filter(Boolean).join(' AND ')}` : ''}
         GROUP BY s.${quoteIdent('tipificacao')}
         ORDER BY total_sessions DESC
@@ -222,7 +318,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         SELECT
           s.${quoteIdent('tipificacao')} AS tipificacao,
           COUNT(*) AS total_sessions
-        FROM ${DASHBOARD_SESSIONS_TABLE} s
+        FROM ${dashboardSessionsTable} s
         ${[companySessionsDateFilter, typificationFinisherFilter].filter(Boolean).length ? `WHERE ${[companySessionsDateFilter, typificationFinisherFilter].filter(Boolean).join(' AND ')}` : ''}
         GROUP BY s.${quoteIdent('tipificacao')}
         ORDER BY total_sessions DESC
@@ -234,7 +330,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         SELECT
           s.${quoteIdent('mes')} AS mes,
           COALESCE(NULLIF(TRIM(CAST(s.${quoteIdent('organization_name')} AS STRING)), ''), 'Sem empresa') AS grupo
-        FROM ${DASHBOARD_SESSIONS_TABLE} s
+        FROM ${dashboardSessionsTable} s
         WHERE ${[topGroupDateFilter, companySessionsScopeFilter].filter(Boolean).join(' AND ')}
       ),
       latest_month AS (

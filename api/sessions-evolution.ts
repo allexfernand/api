@@ -16,6 +16,91 @@ const ORGANIZATIONS_TABLE = `hive_metastore.sanus_prod.organizations`;
 
 const SESSION_DATE_COLUMN = 'creation_time';
 
+function dashboardSessionsInlineSql() {
+  return `(
+    SELECT
+      CAST(s.${quoteIdent('session_id')} AS STRING) AS session_id,
+      try_cast(s.${quoteIdent('creation_time')} AS TIMESTAMP) AS creation_ts,
+      DATE_FORMAT(try_cast(s.${quoteIdent('creation_time')} AS TIMESTAMP), 'yyyy-MM') AS mes,
+      DATE_FORMAT(try_cast(s.${quoteIdent('creation_time')} AS TIMESTAMP), 'yyyy-MM-dd') AS dia,
+      CAST(s.${quoteIdent('organization_id')} AS STRING) AS organization_id,
+      NULLIF(TRIM(CAST(o.${quoteIdent('name')} AS STRING)), '') AS organization_name,
+      CASE
+        WHEN s.${quoteIdent('economic_group_name')} IS NULL OR TRIM(CAST(s.${quoteIdent('economic_group_name')} AS STRING)) = ''
+        THEN 'Nulos'
+        ELSE TRIM(CAST(s.${quoteIdent('economic_group_name')} AS STRING))
+      END AS economic_group_name,
+      CASE
+        WHEN s.${quoteIdent('variables')}['typification'] IS NULL THEN '(NULO)'
+        WHEN TRIM(CAST(s.${quoteIdent('variables')}['typification'] AS STRING)) = '' THEN '(VAZIO/BRANCO)'
+        ELSE TRIM(CAST(s.${quoteIdent('variables')}['typification'] AS STRING))
+      END AS tipificacao,
+      CASE WHEN s.${quoteIdent('finished_by')} IS NOT NULL THEN 'Humano' ELSE 'IA' END AS tipo_finished_by,
+      COALESCE(sha.teve_humano, 0) AS teve_humano_agent,
+      CASE WHEN COALESCE(sha.teve_humano, 0) = 1 THEN 'Humano' ELSE 'IA' END AS tipo_atendimento_agent,
+      COALESCE(
+        CASE
+          WHEN NULLIF(TRIM(CAST(COALESCE(
+            s.${quoteIdent('variables')}['beneficiary_id'],
+            s.${quoteIdent('variables')}['beneficiaryId'],
+            s.${quoteIdent('variables')}['beneficiario_id'],
+            s.${quoteIdent('variables')}['id_beneficiario'],
+            s.${quoteIdent('variables')}['user_id'],
+            s.${quoteIdent('variables')}['userId'],
+            s.${quoteIdent('variables')}['customer_id'],
+            s.${quoteIdent('variables')}['customerId']
+          ) AS STRING)), '') IS NOT NULL
+          THEN CONCAT('beneficiary:', NULLIF(TRIM(CAST(COALESCE(
+            s.${quoteIdent('variables')}['beneficiary_id'],
+            s.${quoteIdent('variables')}['beneficiaryId'],
+            s.${quoteIdent('variables')}['beneficiario_id'],
+            s.${quoteIdent('variables')}['id_beneficiario'],
+            s.${quoteIdent('variables')}['user_id'],
+            s.${quoteIdent('variables')}['userId'],
+            s.${quoteIdent('variables')}['customer_id'],
+            s.${quoteIdent('variables')}['customerId']
+          ) AS STRING)), ''))
+        END,
+        CASE
+          WHEN NULLIF(REGEXP_REPLACE(CAST(COALESCE(
+            s.${quoteIdent('variables')}['cpf'],
+            s.${quoteIdent('variables')}['CPF'],
+            s.${quoteIdent('variables')}['document'],
+            s.${quoteIdent('variables')}['documento'],
+            s.${quoteIdent('variables')}['cpf_cnpj'],
+            s.${quoteIdent('variables')}['document_number'],
+            s.${quoteIdent('variables')}['beneficiary_cpf'],
+            s.${quoteIdent('variables')}['cpf_beneficiario'],
+            s.${quoteIdent('variables')}['cpf_beneficiary']
+          ) AS STRING), '[^0-9]', ''), '') IS NOT NULL
+          THEN CONCAT('cpf:', NULLIF(REGEXP_REPLACE(CAST(COALESCE(
+            s.${quoteIdent('variables')}['cpf'],
+            s.${quoteIdent('variables')}['CPF'],
+            s.${quoteIdent('variables')}['document'],
+            s.${quoteIdent('variables')}['documento'],
+            s.${quoteIdent('variables')}['cpf_cnpj'],
+            s.${quoteIdent('variables')}['document_number'],
+            s.${quoteIdent('variables')}['beneficiary_cpf'],
+            s.${quoteIdent('variables')}['cpf_beneficiario'],
+            s.${quoteIdent('variables')}['cpf_beneficiary']
+          ) AS STRING), '[^0-9]', ''), ''))
+        END
+      ) AS beneficiary_key
+    FROM ${SESSION_TABLE} s
+    LEFT JOIN ${ORGANIZATIONS_TABLE} o
+      ON CAST(s.${quoteIdent('organization_id')} AS STRING) = CAST(o.${quoteIdent('id')} AS STRING)
+    LEFT JOIN (
+      SELECT
+        CAST(${quoteIdent('session_id')} AS STRING) AS session_id,
+        MAX(CASE WHEN ${quoteIdent('sender_type')} = 'agent' THEN 1 ELSE 0 END) AS teve_humano
+      FROM ${MESSAGE_TABLE}
+      GROUP BY CAST(${quoteIdent('session_id')} AS STRING)
+    ) sha
+      ON CAST(s.${quoteIdent('session_id')} AS STRING) = sha.session_id
+    WHERE s.${quoteIdent('creation_time')} IS NOT NULL
+  )`;
+}
+
 type DbOptions = RequestInit & { headers?: Record<string, string> };
 type DatabricksCell = null | undefined | string | number | boolean | { string_value?: string };
 type DatabricksRow = DatabricksCell[];
@@ -79,6 +164,16 @@ async function getSessionColumns(warehouseId: string) {
     sessionColumnsCache = await getColumns(warehouseId, SESSION_TABLE);
   }
   return sessionColumnsCache;
+}
+
+async function resolveDashboardSessionsTable(warehouseId: string) {
+  try {
+    const rows = await runQuery(warehouseId, `SHOW TABLES IN hive_metastore.sanus_prod LIKE 'dashboard_sessions_base_gold'`);
+    if (rows.length > 0) return DASHBOARD_SESSIONS_TABLE;
+  } catch (_) {
+    // Fall back to the source-backed inline shape until the gold table is created.
+  }
+  return dashboardSessionsInlineSql();
 }
 
 function uniqueBeneficiaryExpr(columns: string[]) {
@@ -235,6 +330,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const { warehouses = [] } = await dbFetch("/api/2.0/sql/warehouses") as { warehouses?: Warehouse[] };
     const wh = warehouses.find((w) => w.state === "RUNNING") || warehouses[0];
     if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
+    const dashboardSessionsTable = await resolveDashboardSessionsTable(wh.id);
 
     const filters = [granularity === 'day' ? daySqlFilter : monthsSqlFilter];
     if (hasOrgFilter) {
@@ -242,7 +338,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         ? `s.${quoteIdent('organization_name')} = '${escape(company)}'`
         : economicGroupNameCondition(groupName, 's'));
     }
-    const fromSql = `${DASHBOARD_SESSIONS_TABLE} s`;
+    const fromSql = `${dashboardSessionsTable} s`;
     const where = `WHERE ${filters.join(' AND ')}`;
     const mode = hasOrgFilter ? (company ? "organization_subquery" : "economic_group_name") : "global";
     if (granularity === 'day') {
