@@ -2005,7 +2005,7 @@ function renderSessionMessageAgentFinishers(items, opts) {
   if (note) {
     const messages = [];
     if (currentGroup) messages.push(`grupo: ${currentGroup}`);
-    messages.push('modo leve: finished_by');
+    messages.push("fonte: botmaker_message.sender_type='agent'");
     note.style.display = messages.length ? 'block' : 'none';
     note.textContent = messages.join(' · ');
   }
@@ -4217,12 +4217,7 @@ function applyGroupOptions(items, source) {
 }
 
 function ensureGroupOptionsForActiveTab() {
-  const activeTab = getActiveTab();
-  if (activeTab === 'sessoes') {
-    if (groupOptionsCache.sessions && activeGroupSource !== 'sessions') {
-      applyGroupOptions(groupOptionsCache.sessions, 'sessions');
-    }
-  } else if (activeGroupSource !== 'orgs' && groupOptionsCache.orgs) {
+  if (activeGroupSource !== 'orgs' && groupOptionsCache.orgs) {
     applyGroupOptions(groupOptionsCache.orgs, 'orgs');
   }
 }
@@ -4237,19 +4232,9 @@ async function loadAll(fetchOrgs=true) {
     const json = await res.json();
     if(json.error) throw new Error(json.error);
     usersData = json.users||[];
-    if(fetchOrgs){
-      if (Array.isArray(json.groups)) {
-        groupOptionsCache.orgs = json.groups.map((g) => ({ economic_group: g.economic_group }));
-      }
-      if (Array.isArray(json.sessions_groups)) {
-        groupOptionsCache.sessions = json.sessions_groups.map((g) => ({ economic_group: g.economic_group }));
-      }
-      const activeTab = getActiveTab();
-      if (activeTab === 'sessoes' && groupOptionsCache.sessions) {
-        applyGroupOptions(groupOptionsCache.sessions, 'sessions');
-      } else if (groupOptionsCache.orgs) {
-        applyGroupOptions(groupOptionsCache.orgs, 'orgs');
-      }
+    if(fetchOrgs && Array.isArray(json.groups)){
+      groupOptionsCache.orgs = json.groups.map((g) => ({ economic_group: g.economic_group }));
+      applyGroupOptions(groupOptionsCache.orgs, 'orgs');
     }
     const ut=usersData.reduce((a,[,v])=>a+v,0);
     const bv=document.getElementById('bullet-vidas');

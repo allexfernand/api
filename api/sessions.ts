@@ -175,7 +175,13 @@ function orgIdsSubquery(groupName: unknown, company: unknown) {
 function economicGroupNameCondition(groupName: unknown, tableAlias = 's') {
   const g = escape(groupName);
   const col = `${tableAlias}.${quoteIdent('economic_group_canonical')}`;
-  return `UPPER(TRIM(CAST(${col} AS STRING))) = UPPER(TRIM('${g}'))`;
+  const canonicalLookup = `(
+    SELECT NULLIF(TRIM(CAST(name_economic_group AS STRING)), '')
+    FROM ${ORGANIZATIONS_TABLE}
+    WHERE active = true AND UPPER(TRIM(CAST(name AS STRING))) = UPPER(TRIM('${g}'))
+    LIMIT 1
+  )`;
+  return `UPPER(TRIM(CAST(${col} AS STRING))) = UPPER(TRIM(COALESCE(${canonicalLookup}, '${g}')))`;
 }
 
 function lastNMonthsList(n: number) {
