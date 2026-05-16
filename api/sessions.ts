@@ -233,8 +233,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       ? (company ? "dashboard_sessions_base_gold.organization_name" : "dashboard_sessions_base_gold.economic_group_canonical")
       : "dashboard_sessions_base_gold.economic_group_canonical";
     const typificationFinisherFilter = typificationFinisher === 'humano'
-      ? `s.${quoteIdent('tipo_finished_by')} = 'Humano'`
-      : (typificationFinisher === 'ia' ? `s.${quoteIdent('tipo_finished_by')} = 'IA'` : null);
+      ? `s.${quoteIdent('tipo_atendimento_agent')} = 'Humano'`
+      : (typificationFinisher === 'ia' ? `s.${quoteIdent('tipo_atendimento_agent')} = 'IA'` : null);
     const topGroupMonths = meses.length ? [...meses].sort() : lastNMonthsList(12);
     const topGroupDateFilter = `s.${quoteIdent('mes')} IN (${topGroupMonths.map((m) => `'${m}'`).join(',')})`;
     const topGroupByCompany = Boolean(groupName || company);
