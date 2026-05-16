@@ -2002,7 +2002,7 @@ function renderSessionMessageAgentFinishers(items, opts) {
   if (note) {
     const messages = [];
     if (currentGroup) messages.push(`grupo: ${currentGroup}`);
-    messages.push('IA = sem interação humana');
+    messages.push('modo leve: finished_by');
     note.style.display = messages.length ? 'block' : 'none';
     note.textContent = messages.join(' · ');
   }

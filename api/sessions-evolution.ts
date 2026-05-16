@@ -36,8 +36,8 @@ function dashboardSessionsInlineSql() {
         ELSE TRIM(CAST(s.${quoteIdent('variables')}['typification'] AS STRING))
       END AS tipificacao,
       CASE WHEN s.${quoteIdent('finished_by')} IS NOT NULL THEN 'Humano' ELSE 'IA' END AS tipo_finished_by,
-      COALESCE(sha.teve_humano, 0) AS teve_humano_agent,
-      CASE WHEN COALESCE(sha.teve_humano, 0) = 1 THEN 'Humano' ELSE 'IA' END AS tipo_atendimento_agent,
+      CASE WHEN s.${quoteIdent('finished_by')} IS NOT NULL THEN 1 ELSE 0 END AS teve_humano_agent,
+      CASE WHEN s.${quoteIdent('finished_by')} IS NOT NULL THEN 'Humano' ELSE 'IA' END AS tipo_atendimento_agent,
       COALESCE(
         CASE
           WHEN NULLIF(TRIM(CAST(COALESCE(
@@ -89,14 +89,6 @@ function dashboardSessionsInlineSql() {
     FROM ${SESSION_TABLE} s
     LEFT JOIN ${ORGANIZATIONS_TABLE} o
       ON CAST(s.${quoteIdent('organization_id')} AS STRING) = CAST(o.${quoteIdent('id')} AS STRING)
-    LEFT JOIN (
-      SELECT
-        CAST(${quoteIdent('session_id')} AS STRING) AS session_id,
-        MAX(CASE WHEN ${quoteIdent('sender_type')} = 'agent' THEN 1 ELSE 0 END) AS teve_humano
-      FROM ${MESSAGE_TABLE}
-      GROUP BY CAST(${quoteIdent('session_id')} AS STRING)
-    ) sha
-      ON CAST(s.${quoteIdent('session_id')} AS STRING) = sha.session_id
     WHERE s.${quoteIdent('creation_time')} IS NOT NULL
   )`;
 }
@@ -167,12 +159,7 @@ async function getSessionColumns(warehouseId: string) {
 }
 
 async function resolveDashboardSessionsTable(warehouseId: string) {
-  try {
-    const rows = await runQuery(warehouseId, `SHOW TABLES IN hive_metastore.sanus_prod LIKE 'dashboard_sessions_base_gold'`);
-    if (rows.length > 0) return DASHBOARD_SESSIONS_TABLE;
-  } catch (_) {
-    // Fall back to the source-backed inline shape until the gold table is created.
-  }
+  void warehouseId;
   return dashboardSessionsInlineSql();
 }
 
@@ -377,7 +364,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         series,
         filters: { group_name: groupName, company, type: typeFilter },
         mode,
-        source: "dashboard_sessions_base_gold",
+        source: "botmaker_session.inline",
       });
     }
 
@@ -464,8 +451,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       beneficiaries_included: Boolean(includeBeneficiaries),
       filters: { group_name: groupName, company, type: typeFilter },
       mode,
-      source: "dashboard_sessions_base_gold",
-      cpf_source: includeBeneficiaries ? "dashboard_sessions_base_gold.beneficiary_key" : null,
+      source: "botmaker_session.inline",
+      cpf_source: includeBeneficiaries ? "botmaker_session.variables" : null,
     });
   } catch (err) {
     res.status(500).json({ error: (err as { message?: string }).message });
