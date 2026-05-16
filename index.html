@@ -224,6 +224,17 @@ body {
 .sessions-utilization-meta{font-size:11px;color:#64748b;margin-top:8px;line-height:1.45}
 .sessions-utilization-track{height:8px;background:#f1f5f9;border-radius:999px;overflow:hidden;margin-top:12px}
 .sessions-utilization-fill{height:100%;background:linear-gradient(90deg,var(--accent),color-mix(in srgb,var(--accent) 70%,#ffffff));border-radius:999px}
+.sessions-utilization-grid.is-comparison .sessions-utilization-card{background:linear-gradient(180deg,#fff,var(--tint) 145%)}
+.sessions-utilization-compare{display:grid;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid rgba(148,163,184,.22)}
+.sessions-utilization-compare-row{display:grid;grid-template-columns:minmax(54px,.7fr) minmax(0,1fr) auto;gap:8px;align-items:center}
+.sessions-utilization-compare-label{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.45px;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sessions-utilization-compare-track{height:6px;background:#e2e8f0;border-radius:999px;overflow:hidden}
+.sessions-utilization-compare-fill{height:100%;border-radius:999px;background:linear-gradient(90deg,var(--accent),color-mix(in srgb,var(--accent) 72%,#ffffff))}
+.sessions-utilization-compare-row.global .sessions-utilization-compare-fill{background:linear-gradient(90deg,#94a3b8,#cbd5e1)}
+.sessions-utilization-compare-value{font-size:11px;font-weight:800;color:#334155;text-align:right;white-space:nowrap}
+.sessions-utilization-delta{justify-self:start;font-size:10px;font-weight:800;border-radius:999px;padding:3px 8px;background:#f8fafc;border:1px solid #e2e8f0;color:#64748b}
+.sessions-utilization-delta.positive{background:#ecfdf5;border-color:#bbf7d0;color:#047857}
+.sessions-utilization-delta.negative{background:#fff7ed;border-color:#fed7aa;color:#c2410c}
 .session-typification-list{display:grid;gap:10px}
 .session-typification-row{display:grid;grid-template-columns:minmax(160px,1fr) minmax(120px,2fr) 88px;gap:12px;align-items:center}
 .session-typification-label{font-size:12px;font-weight:700;color:#334155;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -2210,7 +2221,7 @@ function renderSessionTypifications(items, opts) {
   if (content) content.style.display = 'block';
 }
 
-function renderSessionsUtilization(data, demographicsData) {
+function renderSessionsUtilization(data, demographicsData, comparison) {
   const loading = document.getElementById('sessions-utilization-loading');
   const content = document.getElementById('sessions-utilization-content');
   const errorBox = document.getElementById('sessions-utilization-error');
@@ -2221,74 +2232,100 @@ function renderSessionsUtilization(data, demographicsData) {
     : 0;
   const utilization = data?.utilization || {};
   const periods = data?.utilization_periods || {};
-  const unique1 = Number(utilization.last_1_month) || 0;
-  const unique12 = Number(utilization.last_12_months) || 0;
-  const unique6 = Number(utilization.last_6_months) || 0;
-  const unique3 = Number(utilization.last_3_months) || 0;
-  const pct = (value) => base > 0 ? ((value / base) * 100) : null;
-  const pctLabel = (value) => {
-    const ratio = pct(value);
-    return ratio === null ? '—' : fmtPct(ratio);
-  };
-  const width = (value) => `${Math.max(0, Math.min(100, pct(value) || 0))}%`;
+  const comparisonData = comparison?.data && !comparison.data.error ? comparison.data : null;
+  const comparisonBase = comparison?.demographicsData && !comparison.demographicsData.error
+    ? Number(comparison.demographicsData.total_beneficiarios ?? comparison.demographicsData.total_vidas) || 0
+    : 0;
+  const hasComparison = Boolean(currentGroup && comparisonData && comparisonBase > 0);
+  const pct = (value, baseValue) => baseValue > 0 ? ((value / baseValue) * 100) : null;
+  const pctLabel = (ratio) => ratio === null ? '—' : fmtPct(ratio);
+  const width = (ratio) => `${Math.max(0, Math.min(100, ratio || 0))}%`;
+  const valueFor = (source, key) => Number(source?.utilization?.[key]) || 0;
   const periodLabel = (months) => {
     const values = (months || []).filter(Boolean);
     if (!values.length) return 'período indisponível';
     if (values.length === 1) return monthShortLabel(values[0]);
     return `de ${monthShortLabel(values[0])} a ${monthShortLabel(values[values.length - 1])}`;
   };
-  if (context) context.textContent = currentGroup ? `grupo: ${currentGroup}` : 'global';
+  const deltaLabel = (selectedRatio, globalRatio) => {
+    if (selectedRatio === null || globalRatio === null) return 'sem comparativo';
+    const delta = selectedRatio - globalRatio;
+    const sign = delta > 0 ? '+' : '';
+    return `${sign}${delta.toFixed(1).replace('.', ',')} p.p. vs global`;
+  };
+  const deltaClass = (selectedRatio, globalRatio) => {
+    if (selectedRatio === null || globalRatio === null) return '';
+    if (selectedRatio - globalRatio > 0.05) return 'positive';
+    if (selectedRatio - globalRatio < -0.05) return 'negative';
+    return '';
+  };
+  if (context) context.textContent = hasComparison ? `${currentGroup} x global` : (currentGroup ? `grupo: ${currentGroup}` : 'global');
   if (errorBox) {
     const hasError = !base || !data?.utilization;
-    errorBox.style.display = hasError ? 'block' : 'none';
+    const comparisonError = currentGroup && !hasComparison && !hasError;
+    errorBox.style.display = hasError || comparisonError ? 'block' : 'none';
     errorBox.textContent = !base
       ? 'Base total de beneficiários indisponível para o filtro atual.'
-      : (!data?.utilization ? 'Usuários únicos indisponíveis para o schema atual.' : '');
+      : (!data?.utilization
+        ? 'Usuários únicos indisponíveis para o schema atual.'
+        : (comparisonError ? 'Comparativo global indisponível no momento.' : ''));
   }
   const cards = [
     {
+      key: 'last_1_month',
       label: 'Utilização · último mês cheio',
-      value: unique1,
-      pct: pctLabel(unique1),
-      meta: `${periodLabel(periods.last_1_month)} · ${pctLabel(unique1)} da base de ${fmt(base)} beneficiários`,
-      progress: unique1,
+      period: periods.last_1_month,
       accent: '#2563eb',
       tint: '#eff6ff',
     },
     {
+      key: 'last_3_months',
       label: 'Utilização · 3 meses',
-      value: unique3,
-      pct: pctLabel(unique3),
-      meta: `${periodLabel(periods.last_3_months)} · ${pctLabel(unique3)} da base de ${fmt(base)} beneficiários`,
-      progress: unique3,
       accent: '#0f766e',
       tint: '#f0fdfa',
     },
     {
+      key: 'last_6_months',
       label: 'Utilização · 6 meses',
-      value: unique6,
-      pct: pctLabel(unique6),
-      meta: `${periodLabel(periods.last_6_months)} · ${pctLabel(unique6)} da base de ${fmt(base)} beneficiários`,
-      progress: unique6,
       accent: '#7c3aed',
       tint: '#f5f3ff',
     },
     {
+      key: 'last_12_months',
       label: 'Utilização · 12 meses',
-      value: unique12,
-      pct: pctLabel(unique12),
-      meta: `${periodLabel(periods.last_12_months)} · ${pctLabel(unique12)} da base de ${fmt(base)} beneficiários`,
-      progress: unique12,
       accent: '#b45309',
       tint: '#fffbeb',
     },
   ];
-  content.innerHTML = cards.map((card) => `<div class="sessions-utilization-card" style="--accent:${escapeAttr(card.accent)};--tint:${escapeAttr(card.tint)}">
+  content.classList.toggle('is-comparison', hasComparison);
+  content.innerHTML = cards.map((card) => {
+    const selectedValue = valueFor(data, card.key);
+    const selectedRatio = pct(selectedValue, base);
+    const globalValue = hasComparison ? valueFor(comparisonData, card.key) : 0;
+    const globalRatio = hasComparison ? pct(globalValue, comparisonBase) : null;
+    const selectedLabel = currentGroup ? 'Grupo' : 'Global';
+    const comparisonHtml = hasComparison ? `<div class="sessions-utilization-compare">
+      <div class="sessions-utilization-compare-row">
+        <div class="sessions-utilization-compare-label">${escapeHtml(selectedLabel)}</div>
+        <div class="sessions-utilization-compare-track"><div class="sessions-utilization-compare-fill" style="width:${width(selectedRatio)}"></div></div>
+        <div class="sessions-utilization-compare-value">${fmt(selectedValue)} · ${escapeHtml(pctLabel(selectedRatio))}</div>
+      </div>
+      <div class="sessions-utilization-compare-row global">
+        <div class="sessions-utilization-compare-label">Global</div>
+        <div class="sessions-utilization-compare-track"><div class="sessions-utilization-compare-fill" style="width:${width(globalRatio)}"></div></div>
+        <div class="sessions-utilization-compare-value">${fmt(globalValue)} · ${escapeHtml(pctLabel(globalRatio))}</div>
+      </div>
+      <div class="sessions-utilization-delta ${deltaClass(selectedRatio, globalRatio)}">${escapeHtml(deltaLabel(selectedRatio, globalRatio))}</div>
+    </div>` : '';
+    const meta = `${periodLabel(card.period)} · base ${currentGroup ? 'do grupo' : 'global'}: ${fmt(base)} beneficiários`;
+    return `<div class="sessions-utilization-card" style="--accent:${escapeAttr(card.accent)};--tint:${escapeAttr(card.tint)}">
     <div class="sessions-utilization-label">${escapeHtml(card.label)}</div>
-    <div class="sessions-utilization-value"><span>${fmt(card.value)}</span><span class="sessions-utilization-pct">${escapeHtml(card.pct)}</span></div>
-    <div class="sessions-utilization-meta">${escapeHtml(card.meta)}</div>
-    <div class="sessions-utilization-track"><div class="sessions-utilization-fill" style="width:${width(card.progress)}"></div></div>
-  </div>`).join('');
+    <div class="sessions-utilization-value"><span>${fmt(selectedValue)}</span><span class="sessions-utilization-pct">${escapeHtml(pctLabel(selectedRatio))}</span></div>
+    <div class="sessions-utilization-meta">${escapeHtml(meta)}</div>
+    <div class="sessions-utilization-track"><div class="sessions-utilization-fill" style="width:${width(selectedRatio)}"></div></div>
+    ${comparisonHtml}
+  </div>`;
+  }).join('');
   if (loading) loading.style.display = 'none';
   content.style.display = 'grid';
 }
@@ -2362,7 +2399,14 @@ async function loadSessionsBeneficiaryUtilization(baseParams, demographicsData, 
   const p = new URLSearchParams(baseParams);
   p.set('include_beneficiaries', '1');
   p.set('only_beneficiaries', '1');
-  const data = await safeGet('/api/sessions-evolution?' + p.toString());
+  const globalP = new URLSearchParams();
+  globalP.set('include_beneficiaries', '1');
+  globalP.set('only_beneficiaries', '1');
+  const [data, globalData, globalDemographicsData] = await Promise.all([
+    safeGet('/api/sessions-evolution?' + p.toString()),
+    currentGroup ? safeGet('/api/sessions-evolution?' + globalP.toString()) : Promise.resolve(null),
+    currentGroup ? safeGet('/api/demographics') : Promise.resolve(null),
+  ]);
   if (requestId !== sessionsEvolutionRequestId) return;
   if (!data || data.error) {
     const errorBox = document.getElementById('sessions-utilization-error');
@@ -2377,7 +2421,10 @@ async function loadSessionsBeneficiaryUtilization(baseParams, demographicsData, 
   const series = data.series || [];
   const uniqueBeneficiaryValues = series.map((it) => Number(it.unique_beneficiaries ?? it.unique_cpfs) || 0);
   renderSessionsTotalEvolutionChart(labels, totalValues, uniqueBeneficiaryValues, Boolean(data.beneficiaries_included));
-  renderSessionsUtilization(data, demographicsData);
+  renderSessionsUtilization(data, demographicsData, currentGroup ? {
+    data: globalData,
+    demographicsData: globalDemographicsData,
+  } : null);
 }
 
 async function loadSessions() {
