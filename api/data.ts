@@ -36,6 +36,16 @@ async function runQuery(warehouseId: string, sql: string): Promise<DatabricksRow
 }
 
 function escape(s: unknown) { return String(s).replace(/'/g, "''"); }
+function parseGroupNames(query: Record<string, any>) {
+  const raw = query.group_names;
+  if (raw) {
+    try {
+      const parsed = JSON.parse(String(raw));
+      if (Array.isArray(parsed)) return [...new Set(parsed.map((v) => String(v).trim()).filter(Boolean))];
+    } catch {}
+  }
+  return query.group_name ? [String(query.group_name).trim()].filter(Boolean) : [];
+}
 
 const getCell = (cell: DatabricksCell) => {
   if (cell === null || cell === undefined) return null;
@@ -45,14 +55,15 @@ const getCell = (cell: DatabricksCell) => {
 const toInt = (v: DatabricksCell) => { const n = parseInt(String(getCell(v))); return Number.isFinite(n) ? n : 0; };
 const toDate = (v: DatabricksCell) => { const raw = getCell(v); return raw ? String(raw).slice(0, 10) : ""; };
 
-function buildFilters(groupName: unknown, typeFilter: unknown) {
+function buildFilters(groupNames: string[], typeFilter: unknown) {
   const conditions = [`b.created_at IS NOT NULL`];
-  if (groupName) {
+  if (groupNames.length) {
+    const groupList = groupNames.map((group) => `'${escape(group)}'`).join(",");
     conditions.push(`b.organization_id IN (
-      SELECT id FROM hive_metastore.sanus_prod.organizations WHERE name = '${escape(groupName)}'
+      SELECT id FROM hive_metastore.sanus_prod.organizations WHERE name IN (${groupList})
       UNION
       SELECT id FROM hive_metastore.sanus_prod.organizations
-      WHERE matriz_id = (SELECT id FROM hive_metastore.sanus_prod.organizations WHERE name = '${escape(groupName)}' LIMIT 1)
+      WHERE matriz_id IN (SELECT id FROM hive_metastore.sanus_prod.organizations WHERE name IN (${groupList}))
     )`);
   }
   if (typeFilter === 'TITULAR') {
@@ -69,9 +80,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   if (req.method === "OPTIONS") return res.status(200).end();
 
-  const groupName = req.query.group_name || null;
+  const groupNames = parseGroupNames(req.query);
   const typeFilter = req.query.type || null;
-  const groupFilter = buildFilters(groupName, typeFilter);
+  const groupFilter = buildFilters(groupNames, typeFilter);
 
   try {
     const { warehouses = [] } = await dbFetch("/api/2.0/sql/warehouses") as { warehouses?: Warehouse[] };
@@ -85,7 +96,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         ${groupFilter}
         GROUP BY 1 ORDER BY 1
       `),
-      !groupName ? runQuery(wh.id, `
+      !groupNames.length ? runQuery(wh.id, `
         SELECT o.name AS grupo, 0 AS total_filiais
         FROM hive_metastore.sanus_prod.organizations o
         WHERE o.active = true
@@ -94,7 +105,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           AND (o.is_matriz = true OR o.matriz_id IS NULL)
         ORDER BY o.name ASC
       `) : Promise.resolve(null),
-      !groupName ? runQuery(wh.id, `
+      !groupNames.length ? runQuery(wh.id, `
         SELECT economic_group_canonical AS grupo, COUNT(*) AS total_sessions
         FROM hive_metastore.sanus_prod.dashboard_sessions_base_gold
         WHERE economic_group_canonical IS NOT NULL

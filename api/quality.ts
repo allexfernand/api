@@ -289,17 +289,30 @@ function orgNamesSubquery(groupName, company) {
   if (company) {
     return `(SELECT UPPER(TRIM(name)) FROM ${ORGANIZATIONS_TABLE} WHERE name = '${escapeSql(company)}')`;
   }
-  const group = escapeSql(groupName);
+  const groups = (Array.isArray(groupName) ? groupName : [groupName]).map((value) => String(value).trim()).filter(Boolean);
+  const groupList = groups.map((group) => `UPPER(TRIM('${escapeSql(group)}'))`).join(",");
   return `(
-    SELECT UPPER(TRIM(name)) FROM ${ORGANIZATIONS_TABLE} WHERE name = '${group}'
+    SELECT UPPER(TRIM(name)) FROM ${ORGANIZATIONS_TABLE} WHERE UPPER(TRIM(name)) IN (${groupList})
     UNION
     SELECT UPPER(TRIM(name)) FROM ${ORGANIZATIONS_TABLE}
-    WHERE matriz_id = (SELECT id FROM ${ORGANIZATIONS_TABLE} WHERE name = '${group}' LIMIT 1)
+    WHERE matriz_id IN (SELECT id FROM ${ORGANIZATIONS_TABLE} WHERE UPPER(TRIM(name)) IN (${groupList}))
   )`;
 }
 
+function parseGroupNames(query) {
+  const raw = query.group_names;
+  if (raw) {
+    try {
+      const parsed = JSON.parse(String(raw));
+      if (Array.isArray(parsed)) return [...new Set(parsed.map((value) => String(value).trim()).filter(Boolean))];
+    } catch {}
+  }
+  return query.group_name ? [String(query.group_name).trim()].filter(Boolean) : [];
+}
+
 function buildSummaryScope(columns, query) {
-  const groupName = query.group_name || null;
+  const groupNames = parseGroupNames(query);
+  const groupName = groupNames[0] || null;
   const company = query.company || null;
   const months = query.meses ? String(query.meses).split(",").filter((month) => /^\d{4}-\d{2}$/.test(month)) : [];
   const dateColumn = pickColumn(columns, DATE_CANDIDATES);
@@ -318,11 +331,11 @@ function buildSummaryScope(columns, query) {
     filtersApplied.period = true;
   }
 
-  if ((groupName || company) && orgColumn) {
-    conditions.push(`UPPER(TRIM(CAST(${qcol("s", orgColumn)} AS STRING))) IN ${orgNamesSubquery(groupName, company)}`);
+  if ((groupNames.length || company) && orgColumn) {
+    conditions.push(`UPPER(TRIM(CAST(${qcol("s", orgColumn)} AS STRING))) IN ${orgNamesSubquery(groupNames, company)}`);
     filtersApplied.organization = true;
-  } else if (groupName && groupColumn) {
-    conditions.push(`UPPER(TRIM(CAST(${qcol("s", groupColumn)} AS STRING))) = UPPER(TRIM('${escapeSql(groupName)}'))`);
+  } else if (groupNames.length && groupColumn) {
+    conditions.push(`UPPER(TRIM(CAST(${qcol("s", groupColumn)} AS STRING))) IN (${groupNames.map((group) => `UPPER(TRIM('${escapeSql(group)}'))`).join(",")})`);
     filtersApplied.organization = true;
   }
 
@@ -334,6 +347,7 @@ function buildSummaryScope(columns, query) {
     groupColumn,
     filtersApplied,
     groupName,
+    groupNames,
     company,
   };
 }
@@ -355,15 +369,15 @@ function orgIdsSubquery(groupName, company) {
     const value = escapeSql(company);
     return `(SELECT CAST(id AS STRING) FROM ${ORGANIZATIONS_TABLE} WHERE UPPER(TRIM(name)) = UPPER(TRIM('${value}')))`;
   }
-  const group = escapeSql(groupName);
+  const groups = (Array.isArray(groupName) ? groupName : [groupName]).map((value) => String(value).trim()).filter(Boolean);
+  const groupList = groups.map((group) => `UPPER(TRIM('${escapeSql(group)}'))`).join(",");
   return `(
-    SELECT CAST(id AS STRING) FROM ${ORGANIZATIONS_TABLE} WHERE UPPER(TRIM(name)) = UPPER(TRIM('${group}'))
+    SELECT CAST(id AS STRING) FROM ${ORGANIZATIONS_TABLE} WHERE UPPER(TRIM(name)) IN (${groupList})
     UNION
     SELECT CAST(id AS STRING) FROM ${ORGANIZATIONS_TABLE}
-    WHERE matriz_id = (
+    WHERE matriz_id IN (
       SELECT id FROM ${ORGANIZATIONS_TABLE}
-      WHERE UPPER(TRIM(name)) = UPPER(TRIM('${group}'))
-      LIMIT 1
+      WHERE UPPER(TRIM(name)) IN (${groupList})
     )
   )`;
 }
@@ -371,11 +385,11 @@ function orgIdsSubquery(groupName, company) {
 function buildCriteriaOrgCondition(criteriaColumns, scope) {
   const orgColumn = pickColumn(criteriaColumns, ORG_CANDIDATES);
   const groupColumn = pickColumn(criteriaColumns, GROUP_CANDIDATES);
-  if ((scope.groupName || scope.company) && orgColumn) {
-    return `AND UPPER(TRIM(CAST(${qcol("c", orgColumn)} AS STRING))) IN ${orgNamesSubquery(scope.groupName, scope.company)}`;
+  if ((scope.groupNames?.length || scope.company) && orgColumn) {
+    return `AND UPPER(TRIM(CAST(${qcol("c", orgColumn)} AS STRING))) IN ${orgNamesSubquery(scope.groupNames || [], scope.company)}`;
   }
-  if (scope.groupName && groupColumn) {
-    return `AND UPPER(TRIM(CAST(${qcol("c", groupColumn)} AS STRING))) = UPPER(TRIM('${escapeSql(scope.groupName)}'))`;
+  if (scope.groupNames?.length && groupColumn) {
+    return `AND UPPER(TRIM(CAST(${qcol("c", groupColumn)} AS STRING))) IN (${scope.groupNames.map((group) => `UPPER(TRIM('${escapeSql(group)}'))`).join(",")})`;
   }
   return "";
 }
@@ -398,7 +412,7 @@ async function loadQualityVolumeEvolution(warehouseId, criteriaColumns, scope) {
   const criteriaOrgCondition = criteriaDateColumn ? buildCriteriaOrgCondition(criteriaColumns, scope) : "";
   const sessionOrgFilter = scope.company
     ? `CAST(o.${quoteIdent("id")} AS STRING) IN ${orgIdsSubquery(null, scope.company)}`
-    : (scope.groupName ? `CAST(o.${quoteIdent("id")} AS STRING) IN ${orgIdsSubquery(scope.groupName, null)}` : null);
+    : (scope.groupNames?.length ? `CAST(o.${quoteIdent("id")} AS STRING) IN ${orgIdsSubquery(scope.groupNames, null)}` : null);
   const sessionFrom = sessionOrgFilter
     ? `${SESSION_TABLE} s INNER JOIN ${ORGANIZATIONS_TABLE} o ON CAST(s.${quoteIdent("organization_id")} AS STRING) = CAST(o.${quoteIdent("id")} AS STRING)`
     : `${SESSION_TABLE} s`;

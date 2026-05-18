@@ -140,6 +140,19 @@ body {
 }
 .filter-select:focus{border-color:var(--brand)}
 .filter-select:disabled{background:#f8fafc;color:#cbd5e1;cursor:not-allowed}
+.multi-select{position:relative;min-width:240px}
+.multi-select-button{width:100%;max-width:none;text-align:left;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.multi-select-button span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.multi-select-menu{position:absolute;top:calc(100% + 6px);left:0;z-index:30;width:min(360px,calc(100vw - 32px));max-height:320px;background:#fff;border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow-md);padding:8px;display:none}
+.multi-select.open .multi-select-menu{display:block}
+.multi-select-search{width:100%;font-size:12px;padding:7px 10px;border:1px solid var(--border);border-radius:8px;outline:none;margin-bottom:8px;color:var(--text-2)}
+.multi-select-actions{display:flex;justify-content:space-between;gap:8px;margin-bottom:6px}
+.multi-select-actions button{border:0;background:transparent;color:#0f766e;font-size:11px;font-weight:700;cursor:pointer;padding:4px 6px;border-radius:6px}
+.multi-select-actions button:hover{background:#f0fdfa}
+.multi-select-options{display:grid;gap:2px;max-height:230px;overflow:auto;padding-right:4px}
+.multi-select-option{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:8px;font-size:12px;color:#334155;cursor:pointer}
+.multi-select-option:hover{background:#f8fafc}
+.multi-select-option input{accent-color:#0f766e}
 
 .clear-btn {
   font-size: 12px;
@@ -490,7 +503,20 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
 <div class="filterbar">
   <div class="filter-group">
     <label>🏢 Grupo Econômico</label>
-    <select class="filter-select" id="group-select"><option value="">(Todos os grupos)</option></select>
+    <div class="multi-select" id="group-select">
+      <button type="button" class="filter-select multi-select-button" id="group-select-button" onclick="toggleGroupDropdown()">
+        <span id="group-select-label">(Todos os grupos)</span>
+        <i class="fa-solid fa-chevron-down" style="font-size:10px;color:#94a3b8"></i>
+      </button>
+      <div class="multi-select-menu" id="group-select-menu">
+        <input class="multi-select-search" id="group-select-search" type="text" placeholder="Buscar grupo..." oninput="renderGroupOptions()" />
+        <div class="multi-select-actions">
+          <button type="button" onclick="clearGroupSelection()">Limpar</button>
+          <button type="button" onclick="closeGroupDropdown()">Fechar</button>
+        </div>
+        <div class="multi-select-options" id="group-select-options"></div>
+      </div>
+    </div>
   </div>
   <div class="filter-group" id="filter-company-group">
     <label>🏬 Empresa</label>
@@ -1325,6 +1351,7 @@ const mN = {'01':'Jan','02':'Fev','03':'Mar','04':'Abr','05':'Mai','06':'Jun','0
 
 let usersData = [], companiesData = [], sessionCompaniesData = [], eChart, agegroupChart, appointmentTypesTrendChart, petitCareLinesChart, sessionsEvolChart, sessionsTotalEvolChart, sessionsAttendanceChart, sessionsDailyChart, sessionsTopGroupsChart, qualityVolumeEvolutionChart, qualityEvolutionChart, qualityCriteriaEvolutionChart;
 let currentGroup = '', currentType = '', currentCompany = '';
+let currentGroups = [];
 let groupOptionsCache = { orgs: null, sessions: null };
 let activeGroupSource = 'orgs';
 let selectedMonths = new Set();
@@ -1373,7 +1400,7 @@ function updateFilterVisibility() {
   if (activeTab === 'sessoes') {
     currentCompany = '';
     resetCompanySelect();
-  } else if (currentGroup) {
+  } else if (currentGroups.length) {
     loadCompanyOptions();
   }
   if (typeGroup) typeGroup.style.display = (activeTab === 'sessoes' || activeTab === 'petit-comite' || activeTab.startsWith('qualidade')) ? 'none' : 'flex';
@@ -1381,13 +1408,74 @@ function updateFilterVisibility() {
 }
 
 // --- Filtros ---
-document.getElementById('group-select').addEventListener('change', e => {
-  currentGroup = e.target.value;
+function syncCurrentGroup() {
+  currentGroup = currentGroups[0] || '';
+}
+
+function appendGroupParams(params) {
+  const groups = currentGroups.filter(Boolean);
+  if (groups.length > 1) params.set('group_names', JSON.stringify(groups));
+  else if (groups.length === 1) params.set('group_name', groups[0]);
+}
+
+function selectedGroupsLabel() {
+  if (!currentGroups.length) return '(Todos os grupos)';
+  if (currentGroups.length === 1) return currentGroups[0];
+  return `${currentGroups[0]} +${currentGroups.length - 1}`;
+}
+
+function selectedGroupsText() {
+  if (!currentGroups.length) return '';
+  if (currentGroups.length === 1) return currentGroups[0];
+  return `${currentGroups.length} grupos selecionados`;
+}
+
+function updateGroupSelectLabel() {
+  const label = document.getElementById('group-select-label');
+  if (label) {
+    label.textContent = selectedGroupsLabel();
+    label.title = currentGroups.join(' · ');
+  }
+}
+
+function toggleGroupDropdown() {
+  const wrap = document.getElementById('group-select');
+  if (!wrap) return;
+  wrap.classList.toggle('open');
+  if (wrap.classList.contains('open')) {
+    const search = document.getElementById('group-select-search');
+    if (search) setTimeout(() => search.focus(), 0);
+  }
+}
+
+function closeGroupDropdown() {
+  const wrap = document.getElementById('group-select');
+  if (wrap) wrap.classList.remove('open');
+}
+
+function clearGroupSelection() {
+  currentGroups = [];
+  onGroupSelectionChange();
+  renderGroupOptions();
+}
+
+function onGroupCheckboxChange(value, checked) {
+  if (checked) {
+    if (!currentGroups.includes(value)) currentGroups.push(value);
+  } else {
+    currentGroups = currentGroups.filter((group) => group !== value);
+  }
+  onGroupSelectionChange();
+}
+
+function onGroupSelectionChange() {
+  syncCurrentGroup();
   const activeTab = getActiveTab();
   // Ao trocar grupo, limpa empresa e recarrega lista
   currentCompany = '';
   if (activeTab === 'sessoes') resetCompanySelect();
   else loadCompanyOptions();
+  updateGroupSelectLabel();
   updateFilterInfo();
   if (activeTab === 'sessoes') {
     loadSessions();
@@ -1395,6 +1483,11 @@ document.getElementById('group-select').addEventListener('change', e => {
   }
   loadAll(false);
   if (isPeriodFilteredTab()) loadPeriodFilteredTab();
+}
+
+document.addEventListener('click', (event) => {
+  const wrap = document.getElementById('group-select');
+  if (wrap && !wrap.contains(event.target)) closeGroupDropdown();
 });
 
 document.getElementById('company-select').addEventListener('change', e => {
@@ -1419,7 +1512,7 @@ function resetCompanySelect() {
 
 async function loadCompanyOptions() {
   const sel = document.getElementById('company-select');
-  if (!currentGroup) {
+  if (!currentGroups.length) {
     resetCompanySelect();
     return;
   }
@@ -1428,7 +1521,7 @@ async function loadCompanyOptions() {
   sel.disabled = true;
 
   const p = new URLSearchParams();
-  p.set('group_name', currentGroup);
+  appendGroupParams(p);
   const d = await safeGet('/api/companies?' + p.toString());
 
   if (d && !d.error && Array.isArray(d.companies) && d.companies.length > 0) {
@@ -1449,9 +1542,9 @@ function escapeAttr(s){return String(s).replace(/"/g,'&quot;');}
 
 function updateFilterInfo() {
   const parts = [];
-  const gSel = document.getElementById('group-select');
   const activeTab = getActiveTab();
-  if (currentGroup) parts.push(gSel.options[gSel.selectedIndex].text);
+  if (currentGroups.length === 1) parts.push(currentGroups[0]);
+  else if (currentGroups.length > 1) parts.push(`${currentGroups.length} grupos econômicos`);
   if (currentCompany && activeTab !== 'sessoes') parts.push(currentCompany);
   if (currentType && activeTab !== 'sessoes' && activeTab !== 'petit-comite' && !activeTab.startsWith('qualidade')) parts.push(currentType === 'TITULAR' ? 'Titular' : 'Dependente');
   document.getElementById('filter-info').textContent = parts.length ? `Filtrando: ${parts.join(' · ')}` : '';
@@ -1459,9 +1552,10 @@ function updateFilterInfo() {
 
 function clearFilters() {
   const activeTab = getActiveTab();
-  currentGroup = ''; currentType = ''; currentCompany = '';
+  currentGroup = ''; currentGroups = []; currentType = ''; currentCompany = '';
   selectedSessionTypificationFinisher = '';
-  document.getElementById('group-select').value = '';
+  updateGroupSelectLabel();
+  renderGroupOptions();
   document.getElementById('type-select').value  = '';
   const typificationFinisherSelect = document.getElementById('session-typification-finisher-select');
   if (typificationFinisherSelect) typificationFinisherSelect.value = '';
@@ -1479,7 +1573,7 @@ function clearFilters() {
 
 function buildQS() {
   const p = new URLSearchParams();
-  if (currentGroup)   p.set('group_name', currentGroup);
+  appendGroupParams(p);
   const activeTab = getActiveTab();
   if (currentCompany && activeTab !== 'sessoes') p.set('company', currentCompany);
   if (currentType && activeTab !== 'sessoes' && activeTab !== 'petit-comite' && !activeTab.startsWith('qualidade')) p.set('type', currentType);
@@ -1825,7 +1919,7 @@ async function loadAppointmentTypesTrend() {
   const p = new URLSearchParams();
   p.set('meses', months.join(','));
   p.set('group_by', 'month');
-  if (currentGroup) p.set('group_name', currentGroup);
+  appendGroupParams(p);
 
   const data = await safeGet('/api/appointment-types?' + p.toString());
   if (!data || data.error) {
@@ -1920,7 +2014,7 @@ async function loadAppointments() {
   const meses = [...selectedMonths].sort();
   const p = new URLSearchParams();
   if (meses.length > 0)  p.set('meses', meses.join(','));
-  if (currentGroup)      p.set('group_name', currentGroup);
+  appendGroupParams(p);
   if (currentCompany)    p.set('company', currentCompany);
   const qs = p.toString() ? '?' + p.toString() : '';
 
@@ -1973,7 +2067,7 @@ function renderSessionMessageAgentFinishers(items, opts) {
   if (barIa) barIa.style.width = width(ia);
   if (note) {
     const messages = [];
-    if (currentGroup) messages.push(`grupo: ${currentGroup}`);
+    if (currentGroups.length) messages.push(`grupo: ${selectedGroupsText()}`);
     messages.push("fonte: botmaker_message.sender_type='agent'");
     note.style.display = messages.length ? 'block' : 'none';
     note.textContent = messages.join(' · ');
@@ -2032,7 +2126,7 @@ function renderSessionCompanies(items, opts) {
   filterSessionCompanies();
   if (note) {
     const messages = [];
-    if (isCompanyMode && currentGroup) messages.push(`grupo: ${currentGroup}`);
+    if (isCompanyMode && currentGroups.length) messages.push(`grupo: ${selectedGroupsText()}`);
     if (opts.source) messages.push(opts.source);
     note.style.display = messages.length ? 'block' : 'none';
     note.textContent = messages.join(' · ');
@@ -2102,7 +2196,7 @@ function renderSessionsTopGroupsEvolution(data) {
     parts.push(selectedMonths.size ? `${selectedMonths.size} meses selecionados` : 'últimos 12 meses');
     parts.push('top 5 pelo mês mais recente');
     parts.push('sem nulos');
-    if (currentGroup) parts.push(isCompanyEvolution ? `empresas do grupo: ${currentGroup}` : `grupo: ${currentGroup}`);
+    if (currentGroups.length) parts.push(isCompanyEvolution ? `empresas dos grupos: ${selectedGroupsText()}` : `grupo: ${selectedGroupsText()}`);
     if (currentCompany) parts.push(`empresa: ${currentCompany}`);
     mode.textContent = parts.join(' · ');
   }
@@ -2214,7 +2308,7 @@ async function loadTypificationGroupsBreakdown(tipo) {
   p.set('scope', 'typification_groups');
   p.set('typification_value', tipo);
   if (meses.length > 0) p.set('meses', meses.join(','));
-  if (currentGroup) p.set('group_name', currentGroup);
+  appendGroupParams(p);
   if (selectedSessionTypificationFinisher) p.set('typification_finisher', selectedSessionTypificationFinisher);
 
   const data = await safeGet('/api/sessions?' + p.toString());
@@ -2259,7 +2353,7 @@ async function loadTypificationGroupsBreakdown(tipo) {
   if (meta) meta.textContent = `${groups.length} grupos · total ${fmt(total)} sessões`;
   if (note) {
     const messages = [];
-    if (currentGroup) messages.push(`recortado por: ${currentGroup}`);
+    if (currentGroups.length) messages.push(`recortado por: ${selectedGroupsText()}`);
     if (selectedSessionTypificationFinisher === 'humano') messages.push('finalizadas por Humano');
     else if (selectedSessionTypificationFinisher === 'ia') messages.push('finalizadas por IA');
     note.style.display = messages.length ? 'block' : 'none';
@@ -2306,7 +2400,7 @@ function renderSessionTypifications(items, opts) {
   if (meta) meta.textContent = `${rows.length} tipos · total ${fmt(total)} sessões tipificadas`;
   if (note) {
     const messages = [];
-    if (currentGroup) messages.push('Filtro aplicado como no Q14');
+    if (currentGroups.length) messages.push('Filtro aplicado como no Q14');
     if (selectedSessionTypificationFinisher === 'humano') messages.push('finalizadas por Humano');
     else if (selectedSessionTypificationFinisher === 'ia') messages.push('finalizadas por IA');
     note.style.display = messages.length ? 'block' : 'none';
@@ -2331,7 +2425,7 @@ function renderSessionsUtilization(data, demographicsData, comparison) {
   const comparisonBase = comparison?.demographicsData && !comparison.demographicsData.error
     ? Number(comparison.demographicsData.total_beneficiarios ?? comparison.demographicsData.total_vidas) || 0
     : 0;
-  const hasComparison = Boolean(currentGroup && comparisonData && comparisonBase > 0);
+  const hasComparison = Boolean(currentGroups.length && comparisonData && comparisonBase > 0);
   const pct = (value, baseValue) => baseValue > 0 ? ((value / baseValue) * 100) : null;
   const pctLabel = (ratio) => ratio === null ? '—' : fmtPct(ratio);
   const width = (ratio) => `${Math.max(0, Math.min(100, ratio || 0))}%`;
@@ -2354,10 +2448,10 @@ function renderSessionsUtilization(data, demographicsData, comparison) {
     if (selectedRatio - globalRatio < -0.05) return 'negative';
     return '';
   };
-  if (context) context.textContent = hasComparison ? `${currentGroup} x global` : (currentGroup ? `grupo: ${currentGroup}` : 'global');
+  if (context) context.textContent = hasComparison ? `${selectedGroupsText()} x global` : (currentGroups.length ? `grupo: ${selectedGroupsText()}` : 'global');
   if (errorBox) {
     const hasError = !base || !data?.utilization;
-    const comparisonError = currentGroup && !hasComparison && !hasError;
+    const comparisonError = currentGroups.length && !hasComparison && !hasError;
     errorBox.style.display = hasError || comparisonError ? 'block' : 'none';
     errorBox.textContent = !base
       ? 'Base total de beneficiários indisponível para o filtro atual.'
@@ -2401,7 +2495,7 @@ function renderSessionsUtilization(data, demographicsData, comparison) {
     const selectedRatio = pct(selectedValue, base);
     const globalValue = hasComparison ? valueFor(comparisonData, card.key) : 0;
     const globalRatio = hasComparison ? pct(globalValue, comparisonBase) : null;
-    const selectedLabel = currentGroup ? 'Grupo' : 'Global';
+  const selectedLabel = currentGroups.length ? 'Grupo' : 'Global';
     const comparisonHtml = hasComparison ? `<div class="sessions-utilization-compare">
       <div class="sessions-utilization-compare-row">
         <div class="sessions-utilization-compare-label">${escapeHtml(selectedLabel)}</div>
@@ -2415,7 +2509,7 @@ function renderSessionsUtilization(data, demographicsData, comparison) {
       </div>
       <div class="sessions-utilization-delta ${deltaClass(selectedRatio, globalRatio)}">${escapeHtml(deltaLabel(selectedRatio, globalRatio))}</div>
     </div>` : '';
-    const meta = `${periodLabel(card.period)} · base ${currentGroup ? 'do grupo' : 'global'}: ${fmt(base)} beneficiários`;
+    const meta = `${periodLabel(card.period)} · base ${currentGroups.length ? 'do grupo' : 'global'}: ${fmt(base)} beneficiários`;
     return `<div class="sessions-utilization-card" style="--accent:${escapeAttr(card.accent)};--tint:${escapeAttr(card.tint)}">
     <div class="sessions-utilization-label">${escapeHtml(card.label)}</div>
     <div class="sessions-utilization-value"><span>${fmt(selectedValue)}</span><span class="sessions-utilization-pct">${escapeHtml(pctLabel(selectedRatio))}</span></div>
@@ -2502,8 +2596,8 @@ async function loadSessionsBeneficiaryUtilization(baseParams, demographicsData, 
   globalP.set('only_beneficiaries', '1');
   const [data, globalData, globalDemographicsData] = await Promise.all([
     safeGet('/api/sessions-evolution?' + p.toString()),
-    currentGroup ? safeGet('/api/sessions-evolution?' + globalP.toString()) : Promise.resolve(null),
-    currentGroup ? safeGet('/api/demographics') : Promise.resolve(null),
+    currentGroups.length ? safeGet('/api/sessions-evolution?' + globalP.toString()) : Promise.resolve(null),
+    currentGroups.length ? safeGet('/api/demographics') : Promise.resolve(null),
   ]);
   if (requestId !== sessionsEvolutionRequestId) return;
   if (!data || data.error) {
@@ -2519,7 +2613,7 @@ async function loadSessionsBeneficiaryUtilization(baseParams, demographicsData, 
   const series = data.series || [];
   const uniqueBeneficiaryValues = series.map((it) => Number(it.unique_beneficiaries ?? it.unique_cpfs) || 0);
   renderSessionsTotalEvolutionChart(labels, totalValues, uniqueBeneficiaryValues, Boolean(data.beneficiaries_included));
-  renderSessionsUtilization(data, demographicsData, currentGroup ? {
+  renderSessionsUtilization(data, demographicsData, currentGroups.length ? {
     data: globalData,
     demographicsData: globalDemographicsData,
   } : null);
@@ -2569,7 +2663,7 @@ async function loadSessions() {
   const meses = [...selectedMonths].sort();
   const p = new URLSearchParams();
   if (meses.length > 0)  p.set('meses', meses.join(','));
-  if (currentGroup)      p.set('group_name', currentGroup);
+  appendGroupParams(p);
   if (selectedSessionTypificationFinisher) p.set('typification_finisher', selectedSessionTypificationFinisher);
   const qs = p.toString() ? '?' + p.toString() : '';
 
@@ -2698,7 +2792,7 @@ async function loadAppointmentTypes(monthValues, idPrefix='appointment-types') {
   if (content) content.style.display = 'none';
   const p = new URLSearchParams();
   if (monthValues && monthValues.length > 0) p.set('meses', monthValues.join(','));
-  if (currentGroup) p.set('group_name', currentGroup);
+  appendGroupParams(p);
 
   const data = await safeGet('/api/appointment-types' + (p.toString() ? '?' + p.toString() : ''));
   if (!data || data.error) {
@@ -2743,7 +2837,7 @@ async function renderSessionsAttendanceChart(labels, monthValues, sessionValues,
   }
   const p = new URLSearchParams();
   if (monthValues && monthValues.length > 0) p.set('meses', monthValues.join(','));
-  if (currentGroup) p.set('group_name', currentGroup);
+  appendGroupParams(p);
   const appointmentsData = await safeGet('/api/appointments-evolution' + (p.toString() ? '?' + p.toString() : ''));
   if (!appointmentsData || appointmentsData.error) {
     showSessionsAttendanceError(appointmentsData);
@@ -2901,7 +2995,7 @@ async function loadSessionsDailyEvolution() {
   const p = new URLSearchParams();
   p.set('granularity', 'day');
   p.set('mes', selectedSessionsDailyMonth || currentMonthValue());
-  if (currentGroup) p.set('group_name', currentGroup);
+  appendGroupParams(p);
   const data = await safeGet('/api/sessions-evolution?' + p.toString());
   if (!data || data.error) {
     if (errorBox) {
@@ -3018,7 +3112,7 @@ async function loadSessionsEvolution() {
   setSessionsAttendanceLoading();
 
   const p = new URLSearchParams();
-  if (currentGroup)   p.set('group_name', currentGroup);
+  appendGroupParams(p);
   const qs = p.toString() ? '?' + p.toString() : '';
 
   const [data, demographicsData] = await Promise.all([
@@ -3927,7 +4021,7 @@ async function loadQuality() {
   const meses = [...selectedMonths].sort();
   const p = new URLSearchParams();
   if (meses.length > 0) p.set('meses', meses.join(','));
-  if (currentGroup) p.set('group_name', currentGroup);
+  appendGroupParams(p);
   if (currentCompany) p.set('company', currentCompany);
   const data = await safeGet('/api/quality' + (p.toString() ? '?' + p.toString() : ''));
 
@@ -4277,27 +4371,40 @@ async function loadAgeGroups() {
 }
 
 function applyGroupOptions(items, source) {
-  const sel = document.getElementById('group-select');
-  if (!sel || !Array.isArray(items)) return;
-  const previous = currentGroup;
+  if (!Array.isArray(items)) return;
+  const previous = [...currentGroups];
   const ordered = [...items].sort((a, b) =>
     String(a.economic_group || '').localeCompare(String(b.economic_group || ''), 'pt-BR', { sensitivity: 'base' })
   );
-  sel.innerHTML = '<option value="">(Todos os grupos)</option>';
-  ordered.forEach((g) => {
-    if (!g.economic_group) return;
-    const o = document.createElement('option');
-    o.value = g.economic_group;
-    o.textContent = g.economic_group;
-    sel.appendChild(o);
-  });
+  groupOptionsCache[source] = ordered;
   activeGroupSource = source;
-  const stillValid = previous && ordered.some((g) => g.economic_group === previous);
-  sel.value = stillValid ? previous : '';
-  if (!stillValid && previous) {
-    currentGroup = '';
+  const validNames = new Set(ordered.map((g) => g.economic_group).filter(Boolean));
+  currentGroups = previous.filter((group) => validNames.has(group));
+  syncCurrentGroup();
+  renderGroupOptions();
+  updateGroupSelectLabel();
+  if (currentGroups.length !== previous.length) {
     updateFilterInfo();
   }
+}
+
+function renderGroupOptions() {
+  const list = document.getElementById('group-select-options');
+  if (!list) return;
+  const options = groupOptionsCache[activeGroupSource] || [];
+  const search = String(document.getElementById('group-select-search')?.value || '').trim().toLowerCase();
+  const filtered = options.filter((g) => {
+    const name = String(g.economic_group || '');
+    return name && (!search || name.toLowerCase().includes(search));
+  });
+  list.innerHTML = filtered.length ? filtered.map((g) => {
+    const name = String(g.economic_group);
+    const checked = currentGroups.includes(name) ? 'checked' : '';
+    return `<label class="multi-select-option" title="${escapeAttr(name)}">
+      <input type="checkbox" value="${escapeAttr(name)}" ${checked} onchange="onGroupCheckboxChange(this.value,this.checked)" />
+      <span>${escapeHtml(name)}</span>
+    </label>`;
+  }).join('') : '<div style="font-size:12px;color:#94a3b8;padding:10px;text-align:center">Nenhum grupo encontrado.</div>';
 }
 
 function ensureGroupOptionsForActiveTab() {

@@ -38,6 +38,16 @@ async function runQuery(warehouseId: string, sql: string): Promise<DatabricksRow
 
 function escape(s: unknown) { return String(s).replace(/'/g, "''"); }
 function quoteIdent(s: unknown) { return `\`${String(s).replace(/`/g, "``")}\``; }
+function parseGroupNames(query: Record<string, any>) {
+  const raw = query.group_names;
+  if (raw) {
+    try {
+      const parsed = JSON.parse(String(raw));
+      if (Array.isArray(parsed)) return [...new Set(parsed.map((v) => String(v).trim()).filter(Boolean))];
+    } catch {}
+  }
+  return query.group_name ? [String(query.group_name).trim()].filter(Boolean) : [];
+}
 
 const getCell = (cell: DatabricksCell) => {
   if (cell === null || cell === undefined) return null;
@@ -184,6 +194,22 @@ function economicGroupNameCondition(groupName: unknown, tableAlias = 's') {
   return `UPPER(TRIM(CAST(${col} AS STRING))) = UPPER(TRIM(COALESCE(${canonicalLookup}, '${g}')))`;
 }
 
+function economicGroupNamesCondition(groupNames: string[], tableAlias = 's') {
+  const names = groupNames.filter(Boolean);
+  if (!names.length) return null;
+  if (names.length === 1) return economicGroupNameCondition(names[0], tableAlias);
+  const col = `${tableAlias}.${quoteIdent('economic_group_canonical')}`;
+  const nameList = names.map((name) => `UPPER(TRIM('${escape(name)}'))`).join(',');
+  const literalRows = names.map((name, index) => `${index ? 'UNION ALL ' : ''}SELECT UPPER(TRIM('${escape(name)}')) AS group_name`).join('\n    ');
+  return `UPPER(TRIM(CAST(${col} AS STRING))) IN (
+    SELECT UPPER(TRIM(CAST(COALESCE(NULLIF(TRIM(CAST(name_economic_group AS STRING)), ''), name) AS STRING)))
+    FROM ${ORGANIZATIONS_TABLE}
+    WHERE active = true AND UPPER(TRIM(CAST(name AS STRING))) IN (${nameList})
+    UNION
+    ${literalRows}
+  )`;
+}
+
 function lastNMonthsList(n: number) {
   const out = [];
   const d = new Date();
@@ -203,7 +229,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   if (req.method === "OPTIONS") return res.status(200).end();
 
   const meses = req.query.meses ? req.query.meses.split(',').filter((m: string) => /^\d{4}-\d{2}$/.test(m)) : [];
-  const groupName = req.query.group_name || null;
+  const groupNames = parseGroupNames(req.query);
   const company = req.query.company || null;
   const typificationFinisher = ['humano', 'ia'].includes(String(req.query.typification_finisher || '').toLowerCase())
     ? String(req.query.typification_finisher).toLowerCase()
@@ -228,9 +254,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       : null;
     const companySessionsScopeFilter = company
       ? `s.${quoteIdent('organization_name')} = '${escape(company)}'`
-      : (groupName ? economicGroupNameCondition(groupName, 's') : null);
+      : economicGroupNamesCondition(groupNames, 's');
     const companySessionsWhere = [companySessionsDateFilter, companySessionsScopeFilter].filter(Boolean).join(' AND ');
-    const companySessionsMode = groupName || company ? "company" : "economic_group";
+    const companySessionsMode = groupNames.length || company ? "company" : "economic_group";
     const companySessionsSource = companySessionsMode === "company"
       ? (company ? "dashboard_sessions_base_gold.organization_name" : "dashboard_sessions_base_gold.economic_group_canonical")
       : "dashboard_sessions_base_gold.economic_group_canonical";
@@ -268,7 +294,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           total: totalSessions,
           filters_applied: {
             period: meses.length > 0,
-            organization: Boolean(groupName || company),
+            organization: Boolean(groupNames.length || company),
             finisher: Boolean(typificationFinisher),
           },
           finisher: typificationFinisher || null,
@@ -288,7 +314,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
     const topGroupMonths = meses.length ? [...meses].sort() : lastNMonthsList(12);
     const topGroupDateFilter = `s.${quoteIdent('mes')} IN (${topGroupMonths.map((m) => `'${m}'`).join(',')})`;
-    const topGroupByCompany = Boolean(groupName || company);
+    const topGroupByCompany = Boolean(groupNames.length || company);
     const topGroupNameExpr = topGroupByCompany
       ? `COALESCE(NULLIF(TRIM(CAST(s.${quoteIdent('organization_name')} AS STRING)), ''), 'Sem empresa')`
       : `TRIM(CAST(s.${quoteIdent('economic_group_canonical')} AS STRING))`;

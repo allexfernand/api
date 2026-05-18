@@ -131,6 +131,16 @@ async function runQuery(warehouseId: string, sql: string): Promise<DatabricksRow
 
 const escape = (s: unknown) => String(s).replace(/'/g, "''");
 const quoteIdent = (s: unknown) => `\`${String(s).replace(/`/g, "``")}\``;
+function parseGroupNames(query: Record<string, any>) {
+  const raw = query.group_names;
+  if (raw) {
+    try {
+      const parsed = JSON.parse(String(raw));
+      if (Array.isArray(parsed)) return [...new Set(parsed.map((v) => String(v).trim()).filter(Boolean))];
+    } catch {}
+  }
+  return query.group_name ? [String(query.group_name).trim()].filter(Boolean) : [];
+}
 
 const getCell = (cell: DatabricksCell) => {
   if (cell === null || cell === undefined) return null;
@@ -277,6 +287,22 @@ function economicGroupNameCondition(groupName: unknown, tableAlias = 's') {
   return `UPPER(TRIM(CAST(${col} AS STRING))) = UPPER(TRIM(COALESCE(${canonicalLookup}, '${g}')))`;
 }
 
+function economicGroupNamesCondition(groupNames: string[], tableAlias = 's') {
+  const names = groupNames.filter(Boolean);
+  if (!names.length) return null;
+  if (names.length === 1) return economicGroupNameCondition(names[0], tableAlias);
+  const col = `${tableAlias}.${quoteIdent('economic_group_canonical')}`;
+  const nameList = names.map((name) => `UPPER(TRIM('${escape(name)}'))`).join(',');
+  const literalRows = names.map((name, index) => `${index ? 'UNION ALL ' : ''}SELECT UPPER(TRIM('${escape(name)}')) AS group_name`).join('\n    ');
+  return `UPPER(TRIM(CAST(${col} AS STRING))) IN (
+    SELECT UPPER(TRIM(CAST(COALESCE(NULLIF(TRIM(CAST(name_economic_group AS STRING)), ''), name) AS STRING)))
+    FROM ${ORGANIZATIONS_TABLE}
+    WHERE active = true AND UPPER(TRIM(CAST(name AS STRING))) IN (${nameList})
+    UNION
+    ${literalRows}
+  )`;
+}
+
 function lastNMonthsList(n: number, includeCurrentMonth = true) {
   const out = [];
   const d = new Date();
@@ -305,7 +331,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   if (req.method === "OPTIONS") return res.status(200).end();
 
-  const groupName = req.query.group_name || null;
+  const groupNames = parseGroupNames(req.query);
+  const groupName = groupNames[0] || null;
   const company = req.query.company || null;
   const typeFilter = req.query.type || null;
   const granularity = req.query.granularity || 'month';
@@ -313,7 +340,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   const months = Math.min(Math.max(parseInt(req.query.months) || 12, 1), 24);
   const includeBeneficiaries = String(req.query.include_beneficiaries || '') === '1';
   const onlyBeneficiaries = String(req.query.only_beneficiaries || '') === '1';
-  const hasOrgFilter = Boolean(groupName || company);
+  const hasOrgFilter = Boolean(groupNames.length || company);
 
   const monthList = lastNMonthsList(months);
   const fullMonthScopes = {
@@ -338,7 +365,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     if (hasOrgFilter) {
       filters.push(company
         ? `s.${quoteIdent('organization_name')} = '${escape(company)}'`
-        : economicGroupNameCondition(groupName, 's'));
+        : economicGroupNamesCondition(groupNames, 's'));
     }
     const fromSql = `${dashboardSessionsTable} s`;
     const where = `WHERE ${filters.join(' AND ')}`;

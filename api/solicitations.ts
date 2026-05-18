@@ -42,6 +42,16 @@ const getCell = (cell: DatabricksCell) => {
 };
 const toInt   = (v: DatabricksCell) => { const n = parseInt(String(getCell(v)));   return Number.isFinite(n) ? n : 0; };
 const toFloat = (v: DatabricksCell) => { const n = parseFloat(String(getCell(v))); return Number.isFinite(n) ? n : 0; };
+function parseGroupNames(query: Record<string, any>) {
+  const raw = query.group_names;
+  if (raw) {
+    try {
+      const parsed = JSON.parse(String(raw));
+      if (Array.isArray(parsed)) return [...new Set(parsed.map((v) => String(v).trim()).filter(Boolean))];
+    } catch {}
+  }
+  return query.group_name ? [String(query.group_name).trim()].filter(Boolean) : [];
+}
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -50,14 +60,14 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   if (req.method === "OPTIONS") return res.status(200).end();
 
   const meses     = req.query.meses ? req.query.meses.split(',').filter((m: string) => /^\d{4}-\d{2}$/.test(m)) : [];
-  const groupName = req.query.group_name || null;
+  const groupNames = parseGroupNames(req.query);
 
   const periodoFilter = meses.length > 0
     ? `AND DATE_FORMAT(hora_criacao_atendimento, 'yyyy-MM') IN (${meses.map((m: string) => `'${m}'`).join(',')})`
     : '';
 
-  const groupFilter = groupName
-    ? `AND grupo_economico LIKE '%${groupName.replace(/'/g, "''")}'`
+  const groupFilter = groupNames.length
+    ? `AND (${groupNames.map((groupName) => `grupo_economico LIKE '%${groupName.replace(/'/g, "''")}'`).join(' OR ')})`
     : '';
 
   try {
