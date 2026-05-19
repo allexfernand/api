@@ -496,7 +496,8 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
 .pdf-filter-label{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:#94a3b8;margin-bottom:4px}
 .pdf-filter-value{font-size:12px;font-weight:700;color:#334155;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pdf-export-content .tab-content{display:block!important}
-.pdf-export-content canvas{max-width:100%}
+.pdf-export-content canvas{display:none!important}
+.pdf-chart-placeholder{height:220px;border:1px dashed #cbd5e1;border-radius:12px;background:#f8fafc;color:#94a3b8;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;text-align:center;padding:16px}
 </style>
 </head>
 <body>
@@ -1675,18 +1676,39 @@ function copyCanvasAsImages(sourceRoot, cloneRoot) {
   sourceCanvases.forEach((canvas, index) => {
     const cloneCanvas = clonedCanvases[index];
     if (!cloneCanvas) return;
+    const width = canvas.clientWidth || canvas.width || cloneCanvas.clientWidth || cloneCanvas.width;
+    const height = canvas.clientHeight || canvas.height || cloneCanvas.clientHeight || cloneCanvas.height;
+    if (!canvas.width || !canvas.height || !width || !height) {
+      cloneCanvas.replaceWith(createPdfChartPlaceholder('Gráfico indisponível para exportação.'));
+      return;
+    }
     try {
       const img = document.createElement('img');
       img.src = canvas.toDataURL('image/png');
       img.alt = cloneCanvas.getAttribute('aria-label') || 'Gráfico do dashboard';
-      img.style.width = `${canvas.clientWidth || canvas.width}px`;
-      img.style.height = `${canvas.clientHeight || canvas.height}px`;
+      img.style.width = `${width}px`;
+      img.style.height = `${height}px`;
       img.style.maxWidth = '100%';
       img.style.display = 'block';
       cloneCanvas.replaceWith(img);
     } catch (error) {
       console.warn('[pdf] Não foi possível copiar canvas', error);
+      cloneCanvas.replaceWith(createPdfChartPlaceholder('Não foi possível copiar este gráfico.'));
     }
+  });
+  sanitizePdfCanvases(cloneRoot);
+}
+
+function createPdfChartPlaceholder(message) {
+  const placeholder = document.createElement('div');
+  placeholder.className = 'pdf-chart-placeholder';
+  placeholder.textContent = message;
+  return placeholder;
+}
+
+function sanitizePdfCanvases(root) {
+  root.querySelectorAll('canvas').forEach((canvas) => {
+    canvas.replaceWith(createPdfChartPlaceholder('Gráfico omitido por segurança na exportação.'));
   });
 }
 
@@ -1831,6 +1853,7 @@ function buildPdfReport() {
   report.appendChild(header);
   report.appendChild(filters);
   report.appendChild(content);
+  sanitizePdfCanvases(report);
   document.body.appendChild(report);
   return report;
 }
