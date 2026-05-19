@@ -1660,22 +1660,47 @@ function collectPdfFilters() {
   return filters;
 }
 
-function ensureHtml2Pdf() {
-  if (window.html2pdf) return Promise.resolve();
+function loadScriptOnce(id, src, errorMessage) {
   return new Promise((resolve, reject) => {
-    const existing = document.getElementById('html2pdf-script');
+    const existing = document.getElementById(id);
     if (existing) {
-      existing.addEventListener('load', resolve, { once: true });
-      existing.addEventListener('error', reject, { once: true });
+      if (existing.dataset.loaded === '1') resolve();
+      else {
+        existing.addEventListener('load', resolve, { once: true });
+        existing.addEventListener('error', reject, { once: true });
+      }
       return;
     }
     const script = document.createElement('script');
-    script.id = 'html2pdf-script';
-    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
-    script.onload = resolve;
-    script.onerror = () => reject(new Error('Não foi possível carregar a biblioteca de PDF.'));
+    script.id = id;
+    script.src = src;
+    script.onload = () => {
+      script.dataset.loaded = '1';
+      resolve();
+    };
+    script.onerror = () => reject(new Error(errorMessage));
     document.head.appendChild(script);
   });
+}
+
+async function ensurePdfLibraries() {
+  if (!window.html2canvas) {
+    await loadScriptOnce(
+      'html2canvas-script',
+      'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js',
+      'Não foi possível carregar a biblioteca de captura (html2canvas).'
+    );
+  }
+  if (!(window.jspdf?.jsPDF || window.jsPDF)) {
+    await loadScriptOnce(
+      'jspdf-script',
+      'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
+      'Não foi possível carregar a biblioteca de PDF (jsPDF).'
+    );
+  }
+  if (!window.html2canvas || !(window.jspdf?.jsPDF || window.jsPDF)) {
+    throw new Error('Bibliotecas de captura/PDF não disponíveis após carregamento.');
+  }
 }
 
 function copyCanvasAsImages(sourceRoot, cloneRoot) {
@@ -1935,7 +1960,7 @@ async function downloadDashboardPdf() {
     }
     isPdfGenerating = true;
     document.querySelectorAll('.pdf-export-overlay').forEach((node) => node.remove());
-    await withTimeout(ensureHtml2Pdf(), 12000, 'Carregamento do gerador de PDF');
+    await withTimeout(ensurePdfLibraries(), 15000, 'Carregamento das bibliotecas de PDF');
     pdfDom = buildPdfReport();
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     await withTimeout(exportRenderedReportAsPdf(pdfDom.report), 45000, 'Geração do PDF');
