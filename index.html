@@ -83,6 +83,9 @@ body {
 }
 .refresh-btn:hover{background:var(--bg);color:var(--text-2);border-color:#d1d5db;transform:translateY(-1px)}
 .refresh-btn:active{transform:translateY(0)}
+.pdf-btn{font-size:12px;font-weight:600;padding:6px 12px;border-radius:var(--radius-sm);border:1px solid #99f6e4;background:#f0fdfa;color:#0f766e;cursor:pointer;transition:all var(--t) var(--ease);display:flex;align-items:center;gap:6px}
+.pdf-btn:hover{background:#ccfbf1;border-color:#5eead4;transform:translateY(-1px)}
+.pdf-btn:disabled{opacity:.65;cursor:wait;transform:none}
 
 .last-upd{font-size:11px;color:var(--text-faint)}
 
@@ -478,6 +481,16 @@ body {
 body[data-active-tab="sessoes"] #filter-company-group{display:none!important}
 .loading-box{text-align:center;padding:32px;color:var(--text-faint);font-size:13px}
 footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
+.pdf-export-root{position:fixed;left:-10000px;top:0;width:1320px;background:var(--bg);padding:24px 32px;color:var(--text);font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+.pdf-export-header{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;background:#fff;border:1px solid var(--border);border-radius:16px;padding:18px 22px;margin-bottom:16px;box-shadow:var(--shadow-sm)}
+.pdf-export-title{font-size:20px;font-weight:800;color:#0f172a;letter-spacing:-.5px;margin-top:8px}
+.pdf-export-subtitle{font-size:12px;color:#64748b;margin-top:4px}
+.pdf-filter-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:16px}
+.pdf-filter-chip{background:#fff;border:1px solid var(--border);border-radius:12px;padding:10px 12px;min-width:0}
+.pdf-filter-label{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:#94a3b8;margin-bottom:4px}
+.pdf-filter-value{font-size:12px;font-weight:700;color:#334155;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pdf-export-content .tab-content{display:block!important}
+.pdf-export-content canvas{max-width:100%}
 </style>
 </head>
 <body>
@@ -486,6 +499,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
   <div><img src="https://web.sanus.tech/assets/images/logo_sanus.svg" alt="Sanus" style="height:32px;width:auto"/></div>
   <div class="header-right">
     <span class="status loading" id="status">⏳ Carregando...</span>
+    <button class="pdf-btn" id="pdf-download-btn" onclick="downloadDashboardPdf()"><i class="fa-solid fa-file-pdf"></i>Baixar PDF</button>
     <button class="refresh-btn" onclick="reload()">↻ Atualizar</button>
     <span class="last-upd" id="last-upd"></span>
   </div>
@@ -1589,6 +1603,165 @@ function setStatus(type, msg) {
 
 function getActiveTab() {
   return document.querySelector('.tab.active')?.dataset.tab || 'demografica';
+}
+
+function getActiveTabLabel() {
+  return document.querySelector('.tab.active')?.textContent?.trim() || 'Dashboard';
+}
+
+function getSelectedOptionLabel(id, fallback) {
+  const el = document.getElementById(id);
+  if (!el || el.selectedIndex < 0) return fallback;
+  return el.options[el.selectedIndex]?.textContent?.trim() || fallback;
+}
+
+function collectPdfFilters() {
+  const activeTab = getActiveTab();
+  const filters = [
+    { label: 'Aba', value: getActiveTabLabel() },
+    { label: 'Grupo econômico', value: currentGroups.length ? currentGroups.join(' · ') : 'Todos os grupos' },
+  ];
+  if (activeTab !== 'sessoes') {
+    filters.push({ label: 'Empresa', value: currentCompany || 'Todas as empresas' });
+  }
+  if (activeTab !== 'sessoes' && activeTab !== 'petit-comite' && !activeTab.startsWith('qualidade')) {
+    filters.push({ label: 'Tipo beneficiário', value: currentType ? getSelectedOptionLabel('type-select', currentType) : 'Todos' });
+  }
+  const periodFilter = document.getElementById('filter-periodo');
+  if (periodFilter && periodFilter.style.display !== 'none') {
+    filters.push({ label: 'Período', value: document.getElementById('periodo-label')?.textContent?.trim() || 'Todos os meses' });
+  }
+  if (activeTab === 'sessoes') {
+    filters.push({ label: 'Q11 Humano/IA', value: getSelectedOptionLabel('session-typification-finisher-select', 'Humano + IA') });
+  }
+  return filters;
+}
+
+function ensureHtml2Pdf() {
+  if (window.html2pdf) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const existing = document.getElementById('html2pdf-script');
+    if (existing) {
+      existing.addEventListener('load', resolve, { once: true });
+      existing.addEventListener('error', reject, { once: true });
+      return;
+    }
+    const script = document.createElement('script');
+    script.id = 'html2pdf-script';
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+    script.onload = resolve;
+    script.onerror = () => reject(new Error('Não foi possível carregar a biblioteca de PDF.'));
+    document.head.appendChild(script);
+  });
+}
+
+function copyCanvasAsImages(sourceRoot, cloneRoot) {
+  const sourceCanvases = sourceRoot.querySelectorAll('canvas');
+  const clonedCanvases = cloneRoot.querySelectorAll('canvas');
+  sourceCanvases.forEach((canvas, index) => {
+    const cloneCanvas = clonedCanvases[index];
+    if (!cloneCanvas) return;
+    try {
+      const img = document.createElement('img');
+      img.src = canvas.toDataURL('image/png');
+      img.alt = cloneCanvas.getAttribute('aria-label') || 'Gráfico do dashboard';
+      img.style.width = `${canvas.clientWidth || canvas.width}px`;
+      img.style.height = `${canvas.clientHeight || canvas.height}px`;
+      img.style.maxWidth = '100%';
+      img.style.display = 'block';
+      cloneCanvas.replaceWith(img);
+    } catch (error) {
+      console.warn('[pdf] Não foi possível copiar canvas', error);
+    }
+  });
+}
+
+function buildPdfReport() {
+  const activeTabId = getActiveTab();
+  const activeTab = document.getElementById(`tab-${activeTabId}`);
+  if (!activeTab) throw new Error('Aba ativa não encontrada.');
+
+  const report = document.createElement('div');
+  report.className = 'pdf-export-root';
+
+  const header = document.createElement('div');
+  header.className = 'pdf-export-header';
+  const generatedAt = new Date().toLocaleString('pt-BR');
+  header.innerHTML = `
+    <div>
+      <img src="https://web.sanus.tech/assets/images/logo_sanus.svg" alt="Sanus" style="height:32px;width:auto"/>
+      <div class="pdf-export-title">${escapeHtml(getActiveTabLabel())}</div>
+      <div class="pdf-export-subtitle">Dashboard exportado com os filtros aplicados na tela · ${escapeHtml(generatedAt)}</div>
+    </div>
+    <div style="font-size:11px;color:#64748b;text-align:right;font-weight:700">Sanus Dashboard<br/><span style="font-weight:500;color:#94a3b8">PDF automático</span></div>
+  `;
+
+  const filters = document.createElement('div');
+  filters.className = 'pdf-filter-grid';
+  filters.innerHTML = collectPdfFilters().map((filter) => `
+    <div class="pdf-filter-chip" title="${escapeAttr(filter.value)}">
+      <div class="pdf-filter-label">${escapeHtml(filter.label)}</div>
+      <div class="pdf-filter-value">${escapeHtml(filter.value)}</div>
+    </div>
+  `).join('');
+
+  const content = document.createElement('div');
+  content.className = 'pdf-export-content';
+  const activeClone = activeTab.cloneNode(true);
+  activeClone.classList.add('active');
+  copyCanvasAsImages(activeTab, activeClone);
+  content.appendChild(activeClone);
+
+  report.appendChild(header);
+  report.appendChild(filters);
+  report.appendChild(content);
+  document.body.appendChild(report);
+  return report;
+}
+
+function pdfFileName() {
+  const tab = getActiveTabLabel().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'dashboard';
+  const stamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
+  return `sanus-${tab}-${stamp}.pdf`;
+}
+
+async function downloadDashboardPdf() {
+  const btn = document.getElementById('pdf-download-btn');
+  const original = btn ? btn.innerHTML : '';
+  let report = null;
+  try {
+    closeGroupDropdown();
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i>Gerando...';
+    }
+    await ensureHtml2Pdf();
+    report = buildPdfReport();
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    await window.html2pdf().set({
+      margin: [6, 6, 6, 6],
+      filename: pdfFileName(),
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#f7f8fa',
+        logging: false,
+        windowWidth: 1320,
+      },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' },
+      pagebreak: { mode: ['css', 'legacy'], avoid: ['.card-box', '.chart-card', '.metric-card'] },
+    }).from(report).save();
+  } catch (error) {
+    console.error('[pdf]', error);
+    alert('Não foi possível gerar o PDF agora. Tente novamente após os gráficos terminarem de carregar.');
+  } finally {
+    if (report) report.remove();
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = original || '<i class="fa-solid fa-file-pdf"></i>Baixar PDF';
+    }
+  }
 }
 
 function isPeriodFilteredTab() {
