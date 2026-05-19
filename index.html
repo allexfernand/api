@@ -88,8 +88,12 @@ body {
 .pdf-btn:disabled{opacity:.65;cursor:not-allowed;transform:none;background:#f8fafc;border-color:#e2e8f0;color:#94a3b8}
 .pdf-control{display:grid;gap:4px;min-width:132px}
 .petit-pdf-control{min-width:150px}
-.petit-pdf-control .pdf-ready-label{color:rgba(255,255,255,.72)}
-.petit-pdf-control.is-ready .pdf-ready-label{color:#ccfbf1}
+.petit-pdf-control .pdf-btn{background:#fff;color:#00857D;border-color:rgba(255,255,255,.55)}
+.petit-pdf-control .pdf-btn:not(:disabled):hover{background:#E6F6F5;border-color:#fff}
+.petit-pdf-control .pdf-ready-track{background:rgba(255,255,255,.22)}
+.petit-pdf-control .pdf-ready-fill{background:linear-gradient(90deg,#fff,#CCEDEA)}
+.petit-pdf-control .pdf-ready-label{color:rgba(255,255,255,.85)}
+.petit-pdf-control.is-ready .pdf-ready-label{color:#fff;font-weight:800}
 .pdf-ready-track{height:4px;border-radius:999px;background:#e2e8f0;overflow:hidden}
 .pdf-ready-fill{height:100%;width:0%;border-radius:999px;background:linear-gradient(90deg,#14b8a6,#0f766e);transition:width .25s ease}
 .pdf-ready-label{font-size:9px;color:#94a3b8;text-align:center;line-height:1}
@@ -286,34 +290,38 @@ body {
 .typification-groups-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:36px 16px;color:#94a3b8;font-size:12px;text-align:center;border:1px dashed #e2e8f0;border-radius:12px;background:linear-gradient(180deg,#fafafa,#fff)}
 .typification-groups-empty i{font-size:24px;color:#cbd5e1}
 
-.petit-hero{background:linear-gradient(135deg,#063f4a,#0f766e);color:#fff;border:none;overflow:hidden;position:relative}
-.petit-hero::after{content:"";position:absolute;right:-80px;top:-80px;width:220px;height:220px;border-radius:50%;background:rgba(255,255,255,.08)}
+/* Sanus brand palette (sanus.tech) — restrita à aba Petit Comitê */
+#tab-petit-comite{--sanus-brand:#00A69C;--sanus-brand-strong:#00857D;--sanus-brand-deep:#006F68;--sanus-brand-soft:#CCEDEA;--sanus-brand-tint:#E6F6F5;--sanus-brand-ink:#063F3B}
+.petit-hero{background:linear-gradient(135deg,var(--sanus-brand-deep) 0%,var(--sanus-brand-strong) 100%);color:#fff;border:none;overflow:hidden;position:relative}
+.petit-hero::before{content:"";position:absolute;left:-120px;bottom:-140px;width:280px;height:280px;border-radius:50%;background:rgba(255,255,255,.06)}
+.petit-hero::after{content:"";position:absolute;right:-80px;top:-80px;width:220px;height:220px;border-radius:50%;background:rgba(255,255,255,.10)}
 .petit-hero-content{position:relative;z-index:1;display:flex;align-items:center;justify-content:space-between;gap:24px;flex-wrap:wrap}
 .petit-hero-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:flex-end}
-.petit-eyebrow{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.8px;color:#99f6e4;margin-bottom:8px}
+.petit-eyebrow{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.8px;color:rgba(255,255,255,.82);margin-bottom:12px}
+.petit-hero-logo{display:block;height:44px;width:auto;margin-bottom:12px;filter:brightness(0) invert(1)}
 .petit-title{font-size:30px;font-weight:800;letter-spacing:-.8px;line-height:1.05;margin-bottom:8px}
-.petit-subtitle{font-size:13px;line-height:1.5;color:rgba(255,255,255,.78);max-width:680px}
-.petit-period-pill{font-size:12px;font-weight:800;color:#0f4d5c;background:#ccfbf1;border:1px solid rgba(255,255,255,.28);border-radius:999px;padding:8px 12px;white-space:nowrap}
+.petit-subtitle{font-size:13px;line-height:1.5;color:rgba(255,255,255,.82);max-width:680px}
+.petit-period-pill{font-size:12px;font-weight:800;color:var(--sanus-brand-ink);background:#fff;border:1px solid rgba(255,255,255,.4);border-radius:999px;padding:8px 12px;white-space:nowrap;box-shadow:0 1px 2px rgba(0,0,0,.08)}
 .petit-kpi-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:16px}
 .petit-kpi{background:#fff;border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow-sm);padding:18px}
-.petit-kpi-icon{width:36px;height:36px;border-radius:10px;background:#e6fffb;color:#0f766e;display:grid;place-items:center;margin-bottom:12px}
+.petit-kpi-icon{width:36px;height:36px;border-radius:10px;background:var(--sanus-brand-tint);color:var(--sanus-brand-strong);display:grid;place-items:center;margin-bottom:12px}
 .petit-kpi-label{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:#94a3b8;margin-bottom:8px}
 .petit-kpi-value{font-size:30px;font-weight:800;color:#0f172a;letter-spacing:-.8px;line-height:1}
 .petit-kpi-note{font-size:11px;color:#94a3b8;margin-top:8px}
 .petit-grid-2{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(320px,.75fr);gap:16px;margin-bottom:16px}
 .petit-grid-3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-bottom:16px}
 .petit-card-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:16px}
-.petit-chip{font-size:11px;font-weight:800;color:#0f766e;background:#e6fffb;border:1px solid #99f6e4;border-radius:999px;padding:4px 10px;white-space:nowrap}
+.petit-chip{font-size:11px;font-weight:800;color:var(--sanus-brand-strong);background:var(--sanus-brand-tint);border:1px solid var(--sanus-brand-soft);border-radius:999px;padding:4px 10px;white-space:nowrap}
 .petit-dist-list{display:grid;gap:12px}
 .petit-dist-row{display:grid;grid-template-columns:minmax(120px,1fr) minmax(140px,1.6fr) 52px;gap:10px;align-items:center}
 .petit-dist-label{font-size:12px;font-weight:700;color:#334155;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .petit-dist-track{height:10px;background:#f1f5f9;border-radius:999px;overflow:hidden}
-.petit-dist-bar{height:100%;border-radius:999px;background:#0f766e;min-width:3px}
-.petit-dist-value{font-size:12px;font-weight:800;color:#0f766e;text-align:right}
+.petit-dist-bar{height:100%;border-radius:999px;background:var(--sanus-brand);min-width:3px}
+.petit-dist-value{font-size:12px;font-weight:800;color:var(--sanus-brand-strong);text-align:right}
 .petit-placeholder{border:1px dashed #cbd5e1;background:#f8fafc;border-radius:var(--radius-sm);padding:16px;color:#64748b;font-size:12px;line-height:1.5}
 .petit-metric-stack{display:grid;gap:12px}
 .petit-metric{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px;border:1px solid var(--border);border-radius:var(--radius-sm);background:#fff}
-.petit-metric strong{font-size:24px;color:#0f766e;letter-spacing:-.5px}
+.petit-metric strong{font-size:24px;color:var(--sanus-brand-strong);letter-spacing:-.5px}
 .petit-metric span{font-size:12px;color:#64748b;font-weight:700}
 .petit-footnote{font-size:11px;color:#94a3b8;line-height:1.5;margin-top:8px}
 
@@ -1031,7 +1039,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
       <div class="petit-hero-content">
         <div>
           <div class="petit-eyebrow">Resumo executivo</div>
-          <div class="petit-title">Petit Comitê</div>
+          <img class="petit-hero-logo" src="https://web.sanus.tech/assets/images/logo_sanus.svg" alt="Sanus" />
           <div class="petit-subtitle">Visão sintética de usabilidade, linhas de cuidado, solicitações e oportunidades de atuação. Estrutura baseada no material do comitê, adaptada ao design system do dashboard.</div>
         </div>
         <div class="petit-hero-actions">
@@ -1106,7 +1114,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
         <div class="section-title"><i class="fa-solid fa-vial" style="margin-right:6px"></i>Principais exames solicitados</div>
         <div style="font-size:11px;color:#94a3b8;margin-bottom:14px">N = 417 agendamentos</div>
         <div class="petit-dist-list">
-          <div class="petit-dist-row"><div class="petit-dist-label">Ultrassom</div><div class="petit-dist-track"><div class="petit-dist-bar" style="width:60.2%;background:#0f766e"></div></div><div class="petit-dist-value">60,2%</div></div>
+          <div class="petit-dist-row"><div class="petit-dist-label">Ultrassom</div><div class="petit-dist-track"><div class="petit-dist-bar" style="width:60.2%;background:#00A69C"></div></div><div class="petit-dist-value">60,2%</div></div>
           <div class="petit-dist-row"><div class="petit-dist-label">Ressonância</div><div class="petit-dist-track"><div class="petit-dist-bar" style="width:34.8%;background:#2563eb"></div></div><div class="petit-dist-value">34,8%</div></div>
           <div class="petit-dist-row"><div class="petit-dist-label">Eletrocardiograma</div><div class="petit-dist-track"><div class="petit-dist-bar" style="width:2.6%;background:#7c3aed"></div></div><div class="petit-dist-value">2,6%</div></div>
           <div class="petit-dist-row"><div class="petit-dist-label">Terapias</div><div class="petit-dist-track"><div class="petit-dist-bar" style="width:2.4%;background:#be185d"></div></div><div class="petit-dist-value">2,4%</div></div>
@@ -1118,7 +1126,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
         <div style="font-size:11px;color:#94a3b8;margin-bottom:14px">N = 417 agendamentos</div>
         <div class="petit-dist-list">
           <div class="petit-dist-row"><div class="petit-dist-label">Consultas médicas</div><div class="petit-dist-track"><div class="petit-dist-bar" style="width:60.2%;background:#2563eb"></div></div><div class="petit-dist-value">60,2%</div></div>
-          <div class="petit-dist-row"><div class="petit-dist-label">Exames</div><div class="petit-dist-track"><div class="petit-dist-bar" style="width:34.8%;background:#0f766e"></div></div><div class="petit-dist-value">34,8%</div></div>
+          <div class="petit-dist-row"><div class="petit-dist-label">Exames</div><div class="petit-dist-track"><div class="petit-dist-bar" style="width:34.8%;background:#00A69C"></div></div><div class="petit-dist-value">34,8%</div></div>
           <div class="petit-dist-row"><div class="petit-dist-label">Odontologia</div><div class="petit-dist-track"><div class="petit-dist-bar" style="width:2.6%;background:#0891b2"></div></div><div class="petit-dist-value">2,6%</div></div>
           <div class="petit-dist-row"><div class="petit-dist-label">Terapias</div><div class="petit-dist-track"><div class="petit-dist-bar" style="width:2.4%;background:#be185d"></div></div><div class="petit-dist-value">2,4%</div></div>
         </div>
@@ -1127,7 +1135,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
       <div class="card-box">
         <div class="section-title"><i class="fa-solid fa-user-doctor" style="margin-right:6px"></i>Principais especialidades solicitadas</div>
         <div class="petit-dist-list">
-          <div class="petit-dist-row"><div class="petit-dist-label">Clínico geral</div><div class="petit-dist-track"><div class="petit-dist-bar" style="width:25%;background:#0f766e"></div></div><div class="petit-dist-value">25%</div></div>
+          <div class="petit-dist-row"><div class="petit-dist-label">Clínico geral</div><div class="petit-dist-track"><div class="petit-dist-bar" style="width:25%;background:#00A69C"></div></div><div class="petit-dist-value">25%</div></div>
           <div class="petit-dist-row"><div class="petit-dist-label">Cardiologia</div><div class="petit-dist-track"><div class="petit-dist-bar" style="width:25%;background:#2563eb"></div></div><div class="petit-dist-value">25%</div></div>
           <div class="petit-dist-row"><div class="petit-dist-label">Dermatologia</div><div class="petit-dist-track"><div class="petit-dist-bar" style="width:25%;background:#7c3aed"></div></div><div class="petit-dist-value">25%</div></div>
           <div class="petit-dist-row"><div class="petit-dist-label">Psiquiatria</div><div class="petit-dist-track"><div class="petit-dist-bar" style="width:25%;background:#be185d"></div></div><div class="petit-dist-value">25%</div></div>
@@ -2256,7 +2264,7 @@ function renderPetitComite() {
     data: {
       labels: ['JAN/26', 'FEV/26', 'MAR/26'],
       datasets: [
-        { label: 'Saudável', data: [1861, 1886, 2419], backgroundColor: '#0f766e', borderRadius: 6, borderSkipped: false },
+        { label: 'Saudável', data: [1861, 1886, 2419], backgroundColor: '#00A69C', borderRadius: 6, borderSkipped: false },
         { label: 'Situacional', data: [309, 380, 406], backgroundColor: '#2563eb', borderRadius: 6, borderSkipped: false },
         { label: 'Gestantes', data: [120, 154, 167], backgroundColor: '#be185d', borderRadius: 6, borderSkipped: false },
         { label: 'Crônicos', data: [780, 1232, 1403], backgroundColor: '#7c3aed', borderRadius: 6, borderSkipped: false },
