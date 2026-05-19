@@ -85,7 +85,13 @@ body {
 .refresh-btn:active{transform:translateY(0)}
 .pdf-btn{font-size:12px;font-weight:600;padding:6px 12px;border-radius:var(--radius-sm);border:1px solid #99f6e4;background:#f0fdfa;color:#0f766e;cursor:pointer;transition:all var(--t) var(--ease);display:flex;align-items:center;gap:6px}
 .pdf-btn:hover{background:#ccfbf1;border-color:#5eead4;transform:translateY(-1px)}
-.pdf-btn:disabled{opacity:.65;cursor:wait;transform:none}
+.pdf-btn:disabled{opacity:.65;cursor:not-allowed;transform:none;background:#f8fafc;border-color:#e2e8f0;color:#94a3b8}
+.pdf-control{display:grid;gap:4px;min-width:132px}
+.pdf-ready-track{height:4px;border-radius:999px;background:#e2e8f0;overflow:hidden}
+.pdf-ready-fill{height:100%;width:0%;border-radius:999px;background:linear-gradient(90deg,#14b8a6,#0f766e);transition:width .25s ease}
+.pdf-ready-label{font-size:9px;color:#94a3b8;text-align:center;line-height:1}
+.pdf-control.is-ready .pdf-ready-label{color:#0f766e;font-weight:700}
+.pdf-control.is-busy .pdf-ready-fill{background:linear-gradient(90deg,#f59e0b,#14b8a6)}
 
 .last-upd{font-size:11px;color:var(--text-faint)}
 
@@ -499,7 +505,11 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
   <div><img src="https://web.sanus.tech/assets/images/logo_sanus.svg" alt="Sanus" style="height:32px;width:auto"/></div>
   <div class="header-right">
     <span class="status loading" id="status">⏳ Carregando...</span>
-    <button class="pdf-btn" id="pdf-download-btn" onclick="downloadDashboardPdf()"><i class="fa-solid fa-file-pdf"></i>Baixar PDF</button>
+    <div class="pdf-control is-busy" id="pdf-ready-control" title="Aguardando os quadros da aba ativa terminarem de renderizar">
+      <button class="pdf-btn" id="pdf-download-btn" onclick="downloadDashboardPdf()" disabled><i class="fa-solid fa-file-pdf"></i>Baixar PDF</button>
+      <div class="pdf-ready-track"><div class="pdf-ready-fill" id="pdf-ready-fill"></div></div>
+      <div class="pdf-ready-label" id="pdf-ready-label">0% pronto</div>
+    </div>
     <button class="refresh-btn" onclick="reload()">↻ Atualizar</button>
     <span class="last-upd" id="last-upd"></span>
   </div>
@@ -1387,6 +1397,8 @@ let selectedQualityCollaboratorSort = 'score';
 let selectedQualityCollaboratorSortDir = 'desc';
 let selectedQualityCollaboratorName = '';
 let qualityData = null, selectedQualityKey = null;
+let pdfReadinessTimer = null;
+let isPdfGenerating = false;
 
 // --- Tabs ---
 document.querySelectorAll('.tab').forEach(t => {
@@ -1402,6 +1414,7 @@ document.querySelectorAll('.tab').forEach(t => {
     updateFilterVisibility();
     ensureGroupOptionsForActiveTab();
     updateFilterInfo();
+    schedulePdfReadinessUpdate();
     if (hasPeriodo) { buildPeriodoOptions(); loadPeriodFilteredTab(); }
   });
 });
@@ -1599,6 +1612,7 @@ function setStatus(type, msg) {
   const el = document.getElementById('status');
   el.className = 'status ' + type;
   el.textContent = msg;
+  schedulePdfReadinessUpdate();
 }
 
 function getActiveTab() {
@@ -1676,6 +1690,108 @@ function copyCanvasAsImages(sourceRoot, cloneRoot) {
   });
 }
 
+function isElementVisible(el) {
+  if (!el) return false;
+  const style = window.getComputedStyle(el);
+  return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
+}
+
+function isLoadingElementPending(el) {
+  if (!isElementVisible(el)) return false;
+  const text = (el.textContent || '').trim().toLowerCase();
+  if (!text) return true;
+  if (text.includes('carregando') || text.includes('aguarde')) return true;
+  if (el.querySelector('.fa-spin')) return true;
+  return false;
+}
+
+function isCanvasReady(canvas) {
+  if (!isElementVisible(canvas)) return false;
+  if (!canvas.width || !canvas.height) return false;
+  const chart = window.Chart && Chart.getChart ? Chart.getChart(canvas) : null;
+  if (chart) return Boolean(chart.ctx && chart.chartArea && chart.width > 0 && chart.height > 0);
+  const ctx = canvas.getContext && canvas.getContext('2d');
+  if (!ctx) return false;
+  try {
+    const sample = ctx.getImageData(0, 0, Math.min(canvas.width, 8), Math.min(canvas.height, 8)).data;
+    return sample.some((value) => value !== 0);
+  } catch {
+    return true;
+  }
+}
+
+function getPdfReadiness() {
+  const activeTab = document.getElementById(`tab-${getActiveTab()}`);
+  if (!activeTab) return { total: 1, ready: 0, percent: 0, pending: ['Aba ativa'] };
+  const cards = Array.from(activeTab.querySelectorAll('.metric-card,.card-box,.chart-card,.quality-card,.quality-strategy-card'))
+    .filter((card, index, arr) => isElementVisible(card) && !arr.some((other, otherIndex) => otherIndex !== index && other.contains(card)));
+  const targets = cards.length ? cards : [activeTab];
+  let ready = 0;
+  const pending = [];
+  targets.forEach((target, index) => {
+    const label = target.dataset?.qtag || target.querySelector('.section-title,h2')?.textContent?.trim() || `Quadro ${index + 1}`;
+    const hasPendingLoading = Array.from(target.querySelectorAll('.loading-box,.skeleton')).some(isLoadingElementPending);
+    const canvases = Array.from(target.querySelectorAll('canvas')).filter((canvas) => isElementVisible(canvas));
+    const canvasesReady = canvases.every(isCanvasReady);
+    const isReady = !hasPendingLoading && canvasesReady;
+    if (isReady) ready += 1;
+    else pending.push(label);
+  });
+  const total = Math.max(targets.length, 1);
+  return { total, ready, percent: Math.round((ready / total) * 100), pending };
+}
+
+function updatePdfReadiness() {
+  if (isPdfGenerating) return;
+  const state = getPdfReadiness();
+  const isReady = state.ready >= state.total;
+  const btn = document.getElementById('pdf-download-btn');
+  const fill = document.getElementById('pdf-ready-fill');
+  const label = document.getElementById('pdf-ready-label');
+  const control = document.getElementById('pdf-ready-control');
+  if (fill) fill.style.width = `${state.percent}%`;
+  if (label) label.textContent = isReady ? '100% pronto' : `${state.percent}% pronto`;
+  if (btn) {
+    btn.disabled = !isReady;
+    btn.title = isReady ? 'Baixar PDF da aba ativa' : `Aguardando ${state.total - state.ready} de ${state.total} quadros`;
+  }
+  if (control) {
+    control.classList.toggle('is-ready', isReady);
+    control.classList.toggle('is-busy', !isReady);
+    control.title = isReady
+      ? 'Todos os quadros da aba ativa estão prontos para exportação.'
+      : `Pendentes: ${state.pending.slice(0, 4).join(' · ')}${state.pending.length > 4 ? '...' : ''}`;
+  }
+}
+
+function schedulePdfReadinessUpdate() {
+  clearTimeout(pdfReadinessTimer);
+  pdfReadinessTimer = setTimeout(updatePdfReadiness, 120);
+}
+
+function waitForPdfReadiness(timeoutMs = 1000) {
+  const started = Date.now();
+  return new Promise((resolve, reject) => {
+    const check = () => {
+      const state = getPdfReadiness();
+      if (state.ready >= state.total) return resolve(state);
+      if (Date.now() - started > timeoutMs) {
+        return reject(new Error(`Ainda há ${state.total - state.ready} quadro(s) pendente(s).`));
+      }
+      setTimeout(check, 120);
+    };
+    check();
+  });
+}
+
+function withTimeout(promise, timeoutMs, label) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} excedeu ${Math.round(timeoutMs / 1000)}s.`)), timeoutMs);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
 function buildPdfReport() {
   const activeTabId = getActiveTab();
   const activeTab = document.getElementById(`tab-${activeTabId}`);
@@ -1731,14 +1847,17 @@ async function downloadDashboardPdf() {
   let report = null;
   try {
     closeGroupDropdown();
+    await waitForPdfReadiness(1200);
     if (btn) {
       btn.disabled = true;
       btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i>Gerando...';
     }
-    await ensureHtml2Pdf();
+    isPdfGenerating = true;
+    document.querySelectorAll('.pdf-export-root').forEach((node) => node.remove());
+    await withTimeout(ensureHtml2Pdf(), 12000, 'Carregamento do gerador de PDF');
     report = buildPdfReport();
     await new Promise((resolve) => setTimeout(resolve, 250));
-    await window.html2pdf().set({
+    await withTimeout(window.html2pdf().set({
       margin: [6, 6, 6, 6],
       filename: pdfFileName(),
       image: { type: 'jpeg', quality: 0.98 },
@@ -1751,16 +1870,19 @@ async function downloadDashboardPdf() {
       },
       jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' },
       pagebreak: { mode: ['css', 'legacy'], avoid: ['.card-box', '.chart-card', '.metric-card'] },
-    }).from(report).save();
+    }).from(report).save(), 45000, 'Geração do PDF');
   } catch (error) {
     console.error('[pdf]', error);
-    alert('Não foi possível gerar o PDF agora. Tente novamente após os gráficos terminarem de carregar.');
+    alert(error?.message || 'Não foi possível gerar o PDF agora.');
   } finally {
     if (report) report.remove();
+    document.querySelectorAll('.pdf-export-root').forEach((node) => node.remove());
+    isPdfGenerating = false;
     if (btn) {
       btn.disabled = false;
       btn.innerHTML = original || '<i class="fa-solid fa-file-pdf"></i>Baixar PDF';
     }
+    updatePdfReadiness();
   }
 }
 
@@ -4615,7 +4737,15 @@ async function loadAll(fetchOrgs=true) {
 }
 
 function reload() { loadAll(true); }
+if (window.Chart && Chart.register) {
+  Chart.register({
+    id: 'pdfReadinessWatcher',
+    afterRender: () => schedulePdfReadinessUpdate(),
+  });
+}
+setInterval(() => schedulePdfReadinessUpdate(), 1200);
 updateFilterVisibility();
+schedulePdfReadinessUpdate();
 loadAll(true);
 </script>
 </body>
