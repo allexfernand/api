@@ -1823,6 +1823,50 @@ function withTimeout(promise, timeoutMs, label) {
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
+async function exportRenderedReportAsPdf(report) {
+  const JsPdfCtor = window.jspdf?.jsPDF || window.jsPDF;
+  if (!JsPdfCtor) {
+    throw new Error('Bibliotecas de captura/PDF não disponíveis.');
+  }
+  const captureOptions = {
+    scale: 2,
+    useCORS: true,
+    allowTaint: true,
+    backgroundColor: '#f7f8fa',
+    logging: false,
+    width: report.scrollWidth,
+    height: report.scrollHeight,
+    windowWidth: report.scrollWidth,
+    scrollX: 0,
+    scrollY: 0,
+  };
+  const canvas = window.html2canvas
+    ? await window.html2canvas(report, captureOptions)
+    : await window.html2pdf().set({ html2canvas: captureOptions }).from(report).toCanvas().get('canvas');
+  const pdf = new JsPdfCtor({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+  const pageWidth = pdf.internal.pageSize.getWidth();
+  const pageHeight = pdf.internal.pageSize.getHeight();
+  const margin = 6;
+  const contentWidth = pageWidth - margin * 2;
+  const contentHeight = pageHeight - margin * 2;
+  const pageCanvasHeight = Math.floor((contentHeight * canvas.width) / contentWidth);
+  const pageCanvas = document.createElement('canvas');
+  const pageCtx = pageCanvas.getContext('2d');
+  pageCanvas.width = canvas.width;
+
+  for (let y = 0, page = 0; y < canvas.height; y += pageCanvasHeight, page += 1) {
+    const sliceHeight = Math.min(pageCanvasHeight, canvas.height - y);
+    pageCanvas.height = sliceHeight;
+    pageCtx.clearRect(0, 0, pageCanvas.width, pageCanvas.height);
+    pageCtx.drawImage(canvas, 0, y, canvas.width, sliceHeight, 0, 0, canvas.width, sliceHeight);
+    const imgData = pageCanvas.toDataURL('image/jpeg', 0.96);
+    const imgHeight = (sliceHeight * contentWidth) / canvas.width;
+    if (page > 0) pdf.addPage();
+    pdf.addImage(imgData, 'JPEG', margin, margin, contentWidth, imgHeight, undefined, 'FAST');
+  }
+  pdf.save(pdfFileName());
+}
+
 function buildPdfReport() {
   const activeTab = document.getElementById('tab-petit-comite');
   if (!activeTab) throw new Error('Aba Petit Comitê não encontrada.');
@@ -1894,22 +1938,7 @@ async function downloadDashboardPdf() {
     await withTimeout(ensureHtml2Pdf(), 12000, 'Carregamento do gerador de PDF');
     pdfDom = buildPdfReport();
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-    await withTimeout(window.html2pdf().set({
-      margin: [6, 6, 6, 6],
-      filename: pdfFileName(),
-      image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: {
-        scale: 2,
-        useCORS: true,
-        backgroundColor: '#f7f8fa',
-        logging: false,
-        windowWidth: 1320,
-        scrollX: 0,
-        scrollY: 0,
-      },
-      jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' },
-      pagebreak: { mode: ['css', 'legacy'], avoid: ['.card-box', '.chart-card', '.metric-card'] },
-    }).from(pdfDom.report).save(), 45000, 'Geração do PDF');
+    await withTimeout(exportRenderedReportAsPdf(pdfDom.report), 45000, 'Geração do PDF');
   } catch (error) {
     console.error('[pdf]', error);
     alert(error?.message || 'Não foi possível gerar o PDF agora.');
