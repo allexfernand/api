@@ -87,6 +87,9 @@ body {
 .pdf-btn:hover{background:#ccfbf1;border-color:#5eead4;transform:translateY(-1px)}
 .pdf-btn:disabled{opacity:.65;cursor:not-allowed;transform:none;background:#f8fafc;border-color:#e2e8f0;color:#94a3b8}
 .pdf-control{display:grid;gap:4px;min-width:132px}
+.petit-pdf-control{min-width:150px}
+.petit-pdf-control .pdf-ready-label{color:rgba(255,255,255,.72)}
+.petit-pdf-control.is-ready .pdf-ready-label{color:#ccfbf1}
 .pdf-ready-track{height:4px;border-radius:999px;background:#e2e8f0;overflow:hidden}
 .pdf-ready-fill{height:100%;width:0%;border-radius:999px;background:linear-gradient(90deg,#14b8a6,#0f766e);transition:width .25s ease}
 .pdf-ready-label{font-size:9px;color:#94a3b8;text-align:center;line-height:1}
@@ -286,6 +289,7 @@ body {
 .petit-hero{background:linear-gradient(135deg,#063f4a,#0f766e);color:#fff;border:none;overflow:hidden;position:relative}
 .petit-hero::after{content:"";position:absolute;right:-80px;top:-80px;width:220px;height:220px;border-radius:50%;background:rgba(255,255,255,.08)}
 .petit-hero-content{position:relative;z-index:1;display:flex;align-items:center;justify-content:space-between;gap:24px;flex-wrap:wrap}
+.petit-hero-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:flex-end}
 .petit-eyebrow{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.8px;color:#99f6e4;margin-bottom:8px}
 .petit-title{font-size:30px;font-weight:800;letter-spacing:-.8px;line-height:1.05;margin-bottom:8px}
 .petit-subtitle{font-size:13px;line-height:1.5;color:rgba(255,255,255,.78);max-width:680px}
@@ -506,11 +510,6 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
   <div><img src="https://web.sanus.tech/assets/images/logo_sanus.svg" alt="Sanus" style="height:32px;width:auto"/></div>
   <div class="header-right">
     <span class="status loading" id="status">⏳ Carregando...</span>
-    <div class="pdf-control is-busy" id="pdf-ready-control" title="Aguardando os quadros da aba ativa terminarem de renderizar">
-      <button class="pdf-btn" id="pdf-download-btn" onclick="downloadDashboardPdf()" disabled><i class="fa-solid fa-file-pdf"></i>Baixar PDF</button>
-      <div class="pdf-ready-track"><div class="pdf-ready-fill" id="pdf-ready-fill"></div></div>
-      <div class="pdf-ready-label" id="pdf-ready-label">0% pronto</div>
-    </div>
     <button class="refresh-btn" onclick="reload()">↻ Atualizar</button>
     <span class="last-upd" id="last-upd"></span>
   </div>
@@ -1033,7 +1032,14 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
           <div class="petit-title">Petit Comitê</div>
           <div class="petit-subtitle">Visão sintética de usabilidade, linhas de cuidado, solicitações e oportunidades de atuação. Estrutura baseada no material do comitê, adaptada ao design system do dashboard.</div>
         </div>
-        <div class="petit-period-pill" id="petit-period">Período: DD/MM/2026 a DD/MM/2026</div>
+        <div class="petit-hero-actions">
+          <div class="petit-period-pill" id="petit-period">Período: DD/MM/2026 a DD/MM/2026</div>
+          <div class="pdf-control petit-pdf-control is-busy" id="pdf-ready-control" title="Aguardando os quadros do Petit Comitê terminarem de renderizar">
+            <button class="pdf-btn" id="pdf-download-btn" onclick="downloadDashboardPdf()" disabled><i class="fa-solid fa-file-pdf"></i>Baixar PDF</button>
+            <div class="pdf-ready-track"><div class="pdf-ready-fill" id="pdf-ready-fill"></div></div>
+            <div class="pdf-ready-label" id="pdf-ready-label">0% pronto</div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -1743,11 +1749,12 @@ function isCanvasReady(canvas) {
 }
 
 function getPdfReadiness() {
-  const activeTab = document.getElementById(`tab-${getActiveTab()}`);
-  if (!activeTab) return { total: 1, ready: 0, percent: 0, pending: ['Aba ativa'] };
-  const cards = Array.from(activeTab.querySelectorAll('.metric-card,.card-box,.chart-card,.quality-card,.quality-strategy-card'))
+  const petitTab = document.getElementById('tab-petit-comite');
+  if (!petitTab) return { total: 1, ready: 0, percent: 0, pending: ['Petit Comitê'] };
+  if (getActiveTab() !== 'petit-comite') return { total: 1, ready: 0, percent: 0, pending: ['Abra a aba Petit Comitê'] };
+  const cards = Array.from(petitTab.querySelectorAll('.metric-card,.card-box,.chart-card,.quality-card,.quality-strategy-card'))
     .filter((card, index, arr) => isElementVisible(card) && !arr.some((other, otherIndex) => otherIndex !== index && other.contains(card)));
-  const targets = cards.length ? cards : [activeTab];
+  const targets = cards.length ? cards : [petitTab];
   let ready = 0;
   const pending = [];
   targets.forEach((target, index) => {
@@ -1775,13 +1782,13 @@ function updatePdfReadiness() {
   if (label) label.textContent = isReady ? '100% pronto' : `${state.percent}% pronto`;
   if (btn) {
     btn.disabled = !isReady;
-    btn.title = isReady ? 'Baixar PDF da aba ativa' : `Aguardando ${state.total - state.ready} de ${state.total} quadros`;
+    btn.title = isReady ? 'Baixar PDF do Petit Comitê' : `Aguardando ${state.total - state.ready} de ${state.total} quadros`;
   }
   if (control) {
     control.classList.toggle('is-ready', isReady);
     control.classList.toggle('is-busy', !isReady);
     control.title = isReady
-      ? 'Todos os quadros da aba ativa estão prontos para exportação.'
+      ? 'Todos os quadros do Petit Comitê estão prontos para exportação.'
       : `Pendentes: ${state.pending.slice(0, 4).join(' · ')}${state.pending.length > 4 ? '...' : ''}`;
   }
 }
@@ -1815,9 +1822,8 @@ function withTimeout(promise, timeoutMs, label) {
 }
 
 function buildPdfReport() {
-  const activeTabId = getActiveTab();
-  const activeTab = document.getElementById(`tab-${activeTabId}`);
-  if (!activeTab) throw new Error('Aba ativa não encontrada.');
+  const activeTab = document.getElementById('tab-petit-comite');
+  if (!activeTab) throw new Error('Aba Petit Comitê não encontrada.');
 
   const report = document.createElement('div');
   report.className = 'pdf-export-root';
@@ -1869,6 +1875,9 @@ async function downloadDashboardPdf() {
   const original = btn ? btn.innerHTML : '';
   let report = null;
   try {
+    if (getActiveTab() !== 'petit-comite') {
+      throw new Error('O download em PDF está disponível somente na aba Petit Comitê.');
+    }
     closeGroupDropdown();
     await waitForPdfReadiness(1200);
     if (btn) {
