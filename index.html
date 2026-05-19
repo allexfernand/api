@@ -491,7 +491,9 @@ body {
 body[data-active-tab="sessoes"] #filter-company-group{display:none!important}
 .loading-box{text-align:center;padding:32px;color:var(--text-faint);font-size:13px}
 footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
-.pdf-export-root{position:fixed;left:-10000px;top:0;width:1320px;background:var(--bg);padding:24px 32px;color:var(--text);font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+.pdf-export-overlay{position:fixed;inset:0;z-index:10000;background:rgba(15,23,42,.42);display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:24px;backdrop-filter:blur(2px)}
+.pdf-export-overlay::before{content:"Gerando PDF...";position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:10001;background:#0f766e;color:#fff;border-radius:999px;padding:7px 14px;font-size:12px;font-weight:800;box-shadow:var(--shadow-md)}
+.pdf-export-root{width:1320px;min-width:1320px;background:var(--bg);padding:24px 32px;color:var(--text);font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
 .pdf-export-header{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;background:#fff;border:1px solid var(--border);border-radius:16px;padding:18px 22px;margin-bottom:16px;box-shadow:var(--shadow-sm)}
 .pdf-export-title{font-size:20px;font-weight:800;color:#0f172a;letter-spacing:-.5px;margin-top:8px}
 .pdf-export-subtitle{font-size:12px;color:#64748b;margin-top:4px}
@@ -1825,6 +1827,8 @@ function buildPdfReport() {
   const activeTab = document.getElementById('tab-petit-comite');
   if (!activeTab) throw new Error('Aba Petit Comitê não encontrada.');
 
+  const overlay = document.createElement('div');
+  overlay.className = 'pdf-export-overlay';
   const report = document.createElement('div');
   report.className = 'pdf-export-root';
 
@@ -1860,8 +1864,9 @@ function buildPdfReport() {
   report.appendChild(filters);
   report.appendChild(content);
   sanitizePdfCanvases(report);
-  document.body.appendChild(report);
-  return report;
+  overlay.appendChild(report);
+  document.body.appendChild(overlay);
+  return { overlay, report };
 }
 
 function pdfFileName() {
@@ -1873,7 +1878,7 @@ function pdfFileName() {
 async function downloadDashboardPdf() {
   const btn = document.getElementById('pdf-download-btn');
   const original = btn ? btn.innerHTML : '';
-  let report = null;
+  let pdfDom = null;
   try {
     if (getActiveTab() !== 'petit-comite') {
       throw new Error('O download em PDF está disponível somente na aba Petit Comitê.');
@@ -1885,10 +1890,10 @@ async function downloadDashboardPdf() {
       btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i>Gerando...';
     }
     isPdfGenerating = true;
-    document.querySelectorAll('.pdf-export-root').forEach((node) => node.remove());
+    document.querySelectorAll('.pdf-export-overlay').forEach((node) => node.remove());
     await withTimeout(ensureHtml2Pdf(), 12000, 'Carregamento do gerador de PDF');
-    report = buildPdfReport();
-    await new Promise((resolve) => setTimeout(resolve, 250));
+    pdfDom = buildPdfReport();
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     await withTimeout(window.html2pdf().set({
       margin: [6, 6, 6, 6],
       filename: pdfFileName(),
@@ -1899,16 +1904,18 @@ async function downloadDashboardPdf() {
         backgroundColor: '#f7f8fa',
         logging: false,
         windowWidth: 1320,
+        scrollX: 0,
+        scrollY: 0,
       },
       jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' },
       pagebreak: { mode: ['css', 'legacy'], avoid: ['.card-box', '.chart-card', '.metric-card'] },
-    }).from(report).save(), 45000, 'Geração do PDF');
+    }).from(pdfDom.report).save(), 45000, 'Geração do PDF');
   } catch (error) {
     console.error('[pdf]', error);
     alert(error?.message || 'Não foi possível gerar o PDF agora.');
   } finally {
-    if (report) report.remove();
-    document.querySelectorAll('.pdf-export-root').forEach((node) => node.remove());
+    if (pdfDom?.overlay) pdfDom.overlay.remove();
+    document.querySelectorAll('.pdf-export-overlay').forEach((node) => node.remove());
     isPdfGenerating = false;
     if (btn) {
       btn.disabled = false;
