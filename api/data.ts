@@ -54,6 +54,8 @@ const getCell = (cell: DatabricksCell) => {
 };
 const toInt = (v: DatabricksCell) => { const n = parseInt(String(getCell(v))); return Number.isFinite(n) ? n : 0; };
 const toDate = (v: DatabricksCell) => { const raw = getCell(v); return raw ? String(raw).slice(0, 10) : ""; };
+const ORGANIZATIONS_TABLE = `hive_metastore.sanus_prod.organizations`;
+const PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.partner_brokers`;
 
 function buildFilters(groupNames: string[], typeFilter: unknown) {
   const conditions = [`b.created_at IS NOT NULL`];
@@ -82,12 +84,50 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
   const groupNames = parseGroupNames(req.query);
   const typeFilter = req.query.type || null;
+  const scope = String(req.query.scope || '').toLowerCase();
   const groupFilter = buildFilters(groupNames, typeFilter);
 
   try {
     const { warehouses = [] } = await dbFetch("/api/2.0/sql/warehouses") as { warehouses?: Warehouse[] };
     const wh = warehouses.find((w) => w.state === "RUNNING") || warehouses[0];
     if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
+
+    if (scope === 'partners') {
+      const partnerRows = await runQuery(wh.id, `
+        SELECT
+          CAST(pb.id AS STRING) AS broker_id,
+          COALESCE(
+            NULLIF(TRIM(CAST(pb.name AS STRING)), ''),
+            NULLIF(TRIM(CAST(pb.name_secondary AS STRING)), ''),
+            'Sem nome'
+          ) AS broker_name,
+          NULLIF(TRIM(CAST(pb.name_secondary AS STRING)), '') AS broker_name_secondary,
+          pb.active AS broker_active,
+          COUNT(DISTINCT o.id) AS total_orgs
+        FROM ${ORGANIZATIONS_TABLE} o
+        INNER JOIN ${PARTNER_BROKERS_TABLE} pb
+          ON o.cnpj = pb.cnpj
+        WHERE pb.id IS NOT NULL
+        GROUP BY
+          CAST(pb.id AS STRING),
+          COALESCE(
+            NULLIF(TRIM(CAST(pb.name AS STRING)), ''),
+            NULLIF(TRIM(CAST(pb.name_secondary AS STRING)), ''),
+            'Sem nome'
+          ),
+          NULLIF(TRIM(CAST(pb.name_secondary AS STRING)), ''),
+          pb.active
+        ORDER BY broker_name ASC
+      `);
+      const partners = partnerRows.map((r) => ({
+        broker_id: String(getCell(r[0]) || '').trim(),
+        broker_name: String(getCell(r[1]) || 'Sem nome').trim(),
+        broker_name_secondary: getCell(r[2]) ? String(getCell(r[2])).trim() : '',
+        broker_active: String(getCell(r[3])).toLowerCase() === 'true',
+        total_orgs: toInt(r[4]),
+      })).filter((partner) => partner.broker_id);
+      return res.status(200).json({ partners, updatedAt: new Date().toISOString() });
+    }
 
     const [userRows, groupRows, sessionGroupRows] = await Promise.all([
       runQuery(wh.id, `

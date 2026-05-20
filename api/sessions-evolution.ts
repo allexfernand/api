@@ -13,6 +13,7 @@ const SESSION_TABLE       = `hive_metastore.sanus_prod.botmaker_session`;
 const MESSAGE_TABLE       = `hive_metastore.sanus_prod.botmaker_message`;
 const DASHBOARD_SESSIONS_TABLE = `hive_metastore.sanus_prod.dashboard_sessions_base_gold`;
 const ORGANIZATIONS_TABLE = `hive_metastore.sanus_prod.organizations`;
+const PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.partner_brokers`;
 
 const SESSION_DATE_COLUMN = 'creation_time';
 
@@ -303,6 +304,18 @@ function economicGroupNamesCondition(groupNames: string[], tableAlias = 's') {
   )`;
 }
 
+function partnerBrokerCondition(partnerBrokerId: unknown, tableAlias = 's') {
+  const id = String(partnerBrokerId || '').trim();
+  if (!id) return null;
+  return `CAST(${tableAlias}.${quoteIdent('organization_id')} AS STRING) IN (
+    SELECT CAST(o.id AS STRING)
+    FROM ${ORGANIZATIONS_TABLE} o
+    INNER JOIN ${PARTNER_BROKERS_TABLE} pb
+      ON o.cnpj = pb.cnpj
+    WHERE CAST(pb.id AS STRING) = '${escape(id)}'
+  )`;
+}
+
 function lastNMonthsList(n: number, includeCurrentMonth = true) {
   const out = [];
   const d = new Date();
@@ -334,13 +347,14 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   const groupNames = parseGroupNames(req.query);
   const groupName = groupNames[0] || null;
   const company = req.query.company || null;
+  const partnerBrokerId = req.query.partner_broker_id || null;
   const typeFilter = req.query.type || null;
   const granularity = req.query.granularity || 'month';
   const dayMonth = req.query.mes && /^\d{4}-\d{2}$/.test(req.query.mes) ? req.query.mes : null;
   const months = Math.min(Math.max(parseInt(req.query.months) || 12, 1), 24);
   const includeBeneficiaries = String(req.query.include_beneficiaries || '') === '1';
   const onlyBeneficiaries = String(req.query.only_beneficiaries || '') === '1';
-  const hasOrgFilter = Boolean(groupNames.length || company);
+  const hasOrgFilter = Boolean(groupNames.length || company || partnerBrokerId);
 
   const monthList = lastNMonthsList(months);
   const fullMonthScopes = {
@@ -362,14 +376,16 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const dashboardSessionsTable = await resolveDashboardSessionsTable(wh.id);
 
     const filters = [granularity === 'day' ? daySqlFilter : monthsSqlFilter];
-    if (hasOrgFilter) {
-      filters.push(company
-        ? `s.${quoteIdent('organization_name')} = '${escape(company)}'`
-        : economicGroupNamesCondition(groupNames, 's'));
-    }
+    const orgFilters = [
+      company ? `s.${quoteIdent('organization_name')} = '${escape(company)}'` : economicGroupNamesCondition(groupNames, 's'),
+      partnerBrokerCondition(partnerBrokerId, 's'),
+    ].filter(Boolean);
+    filters.push(...orgFilters);
     const fromSql = `${dashboardSessionsTable} s`;
     const where = `WHERE ${filters.join(' AND ')}`;
-    const mode = hasOrgFilter ? (company ? "organization_subquery" : "economic_group_name") : "global";
+    const mode = hasOrgFilter
+      ? (partnerBrokerId ? "partner_broker" : (company ? "organization_subquery" : "economic_group_name"))
+      : "global";
     if (granularity === 'day') {
       const rows = await runQuery(wh.id, `
         SELECT
@@ -404,7 +420,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         granularity: "day",
         month: selectedDayMonth,
         series,
-        filters: { group_name: groupName, company, type: typeFilter },
+        filters: { group_name: groupName, company, type: typeFilter, partner_broker_id: partnerBrokerId },
         mode,
         source: "botmaker_session.inline",
       });
@@ -491,7 +507,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       utilization,
       utilization_periods: fullMonthScopes,
       beneficiaries_included: Boolean(includeBeneficiaries),
-      filters: { group_name: groupName, company, type: typeFilter },
+      filters: { group_name: groupName, company, type: typeFilter, partner_broker_id: partnerBrokerId },
       mode,
       source: "botmaker_session.inline",
       cpf_source: includeBeneficiaries ? "botmaker_session.variables" : null,

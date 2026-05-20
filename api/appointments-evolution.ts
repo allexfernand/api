@@ -9,6 +9,7 @@ const HEADERS = { "Authorization": `Bearer ${TOKEN}`, "Content-Type": "applicati
 const APPOINTMENTS_TABLE = `hive_metastore.sanus_prod.atendimento_summarized_gold_live`;
 const APPOINTMENTS_DATE_COLUMN = 'hora_criacao_atendimento';
 const ORGANIZATIONS_TABLE = `hive_metastore.sanus_prod.organizations`;
+const PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.partner_brokers`;
 
 type DbOptions = RequestInit & { headers?: Record<string, string> };
 type DatabricksCell = null | undefined | string | number | boolean | { string_value?: string };
@@ -119,6 +120,23 @@ function buildGroupFilter(columns: string[], groupNames: string[]) {
   return conditions.length ? `AND (${conditions.join(' OR ')})` : '';
 }
 
+function partnerOrgNamesSubquery(partnerBrokerId: unknown) {
+  return `(
+    SELECT UPPER(TRIM(o.name))
+    FROM ${ORGANIZATIONS_TABLE} o
+    INNER JOIN ${PARTNER_BROKERS_TABLE} pb
+      ON o.cnpj = pb.cnpj
+    WHERE CAST(pb.id AS STRING) = '${escape(partnerBrokerId)}'
+  )`;
+}
+
+function buildPartnerFilter(columns: string[], partnerBrokerId: unknown) {
+  if (!partnerBrokerId) return '';
+  const companyColumn = pickColumn(columns, companyColumnCandidates);
+  if (!companyColumn) return '';
+  return `AND UPPER(TRIM(CAST(${quoteIdent(companyColumn)} AS STRING))) IN ${partnerOrgNamesSubquery(partnerBrokerId)}`;
+}
+
 function lastNMonthsList(n: number) {
   const out = [];
   const d = new Date();
@@ -150,6 +168,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   const groupNames = parseGroupNames(req.query);
   const groupName = groupNames[0] || null;
   const company = req.query.company || null;
+  const partnerBrokerId = req.query.partner_broker_id || null;
   const meses = req.query.meses ? String(req.query.meses).split(',').filter((m) => /^\d{4}-\d{2}$/.test(m)) : [];
   const monthList = meses.length ? meses.sort() : lastNMonthsList(Math.min(Math.max(parseInt(String(req.query.months)) || 12, 1), 24));
   const monthExpr = `DATE_FORMAT(${quoteIdent(APPOINTMENTS_DATE_COLUMN)}, 'yyyy-MM')`;
@@ -166,8 +185,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
 
     let companyColumn = null;
-    const columns = (groupNames.length || company) ? await getColumns(wh.id, APPOINTMENTS_TABLE) : [];
+    const columns = (groupNames.length || company || partnerBrokerId) ? await getColumns(wh.id, APPOINTMENTS_TABLE) : [];
     const groupFilter = buildGroupFilter(columns, groupNames);
+    const partnerFilter = buildPartnerFilter(columns, partnerBrokerId);
     if (company) companyColumn = pickColumn(columns, companyColumnCandidates);
     const companyFilter = company && companyColumn
       ? `AND UPPER(TRIM(CAST(${quoteIdent(companyColumn)} AS STRING))) = UPPER(TRIM('${escape(company)}'))`
@@ -194,6 +214,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         )
         ${groupFilter}
         ${companyFilter}
+        ${partnerFilter}
       GROUP BY ${monthExpr}
       ORDER BY mes
     `);
@@ -205,7 +226,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       months: monthList,
       series,
       source: "atendimento_summarized_gold_live.hora_criacao_atendimento",
-      filters: { group_name: groupName, company },
+      filters: { group_name: groupName, company, partner_broker_id: partnerBrokerId },
       company_column: companyColumn,
       company_filter_applied: !company || Boolean(companyColumn),
     });

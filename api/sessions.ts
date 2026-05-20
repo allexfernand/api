@@ -60,6 +60,7 @@ const SESSION_TABLE = `hive_metastore.sanus_prod.botmaker_session`;
 const MESSAGE_TABLE = `hive_metastore.sanus_prod.botmaker_message`;
 const DASHBOARD_SESSIONS_TABLE = `hive_metastore.sanus_prod.dashboard_sessions_base_gold`;
 const ORGANIZATIONS_TABLE = `hive_metastore.sanus_prod.organizations`;
+const PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.partner_brokers`;
 
 function dashboardSessionsInlineSql() {
   return `(
@@ -210,6 +211,18 @@ function economicGroupNamesCondition(groupNames: string[], tableAlias = 's') {
   )`;
 }
 
+function partnerBrokerCondition(partnerBrokerId: unknown, tableAlias = 's') {
+  const id = String(partnerBrokerId || '').trim();
+  if (!id) return null;
+  return `CAST(${tableAlias}.${quoteIdent('organization_id')} AS STRING) IN (
+    SELECT CAST(o.id AS STRING)
+    FROM ${ORGANIZATIONS_TABLE} o
+    INNER JOIN ${PARTNER_BROKERS_TABLE} pb
+      ON o.cnpj = pb.cnpj
+    WHERE CAST(pb.id AS STRING) = '${escape(id)}'
+  )`;
+}
+
 function lastNMonthsList(n: number) {
   const out = [];
   const d = new Date();
@@ -231,6 +244,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   const meses = req.query.meses ? req.query.meses.split(',').filter((m: string) => /^\d{4}-\d{2}$/.test(m)) : [];
   const groupNames = parseGroupNames(req.query);
   const company = req.query.company || null;
+  const partnerBrokerId = req.query.partner_broker_id || null;
   const typificationFinisher = ['humano', 'ia'].includes(String(req.query.typification_finisher || '').toLowerCase())
     ? String(req.query.typification_finisher).toLowerCase()
     : '';
@@ -252,13 +266,15 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const companySessionsDateFilter = meses.length > 0
       ? `s.${quoteIdent('mes')} IN (${meses.map((m: string) => `'${m}'`).join(',')})`
       : null;
-    const companySessionsScopeFilter = company
-      ? `s.${quoteIdent('organization_name')} = '${escape(company)}'`
-      : economicGroupNamesCondition(groupNames, 's');
+    const scopeFilters = [
+      company ? `s.${quoteIdent('organization_name')} = '${escape(company)}'` : economicGroupNamesCondition(groupNames, 's'),
+      partnerBrokerCondition(partnerBrokerId, 's'),
+    ].filter(Boolean);
+    const companySessionsScopeFilter = scopeFilters.length ? scopeFilters.join(' AND ') : null;
     const companySessionsWhere = [companySessionsDateFilter, companySessionsScopeFilter].filter(Boolean).join(' AND ');
-    const companySessionsMode = groupNames.length || company ? "company" : "economic_group";
+    const companySessionsMode = groupNames.length || company || partnerBrokerId ? "company" : "economic_group";
     const companySessionsSource = companySessionsMode === "company"
-      ? (company ? "dashboard_sessions_base_gold.organization_name" : "dashboard_sessions_base_gold.economic_group_canonical")
+      ? "dashboard_sessions_base_gold.organization_name"
       : "dashboard_sessions_base_gold.economic_group_canonical";
     const typificationFinisherFilter = typificationFinisher === 'humano'
       ? `s.${quoteIdent('tipo_atendimento_agent')} = 'Humano'`
@@ -294,7 +310,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           total: totalSessions,
           filters_applied: {
             period: meses.length > 0,
-            organization: Boolean(groupNames.length || company),
+            organization: Boolean(groupNames.length || company || partnerBrokerId),
             finisher: Boolean(typificationFinisher),
           },
           finisher: typificationFinisher || null,
@@ -314,7 +330,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
     const topGroupMonths = meses.length ? [...meses].sort() : lastNMonthsList(12);
     const topGroupDateFilter = `s.${quoteIdent('mes')} IN (${topGroupMonths.map((m) => `'${m}'`).join(',')})`;
-    const topGroupByCompany = Boolean(groupNames.length || company);
+    const topGroupByCompany = Boolean(groupNames.length || company || partnerBrokerId);
     const topGroupNameExpr = topGroupByCompany
       ? `COALESCE(NULLIF(TRIM(CAST(s.${quoteIdent('organization_name')} AS STRING)), ''), 'Sem empresa')`
       : `TRIM(CAST(s.${quoteIdent('economic_group_canonical')} AS STRING))`;

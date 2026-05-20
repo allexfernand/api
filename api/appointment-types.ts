@@ -9,6 +9,7 @@ const HEADERS = { "Authorization": `Bearer ${TOKEN}`, "Content-Type": "applicati
 const APPOINTMENTS_TABLE = `hive_metastore.sanus_prod.atendimento_summarized_gold_live`;
 const APPOINTMENTS_DATE_COLUMN = 'hora_criacao_atendimento';
 const ORGANIZATIONS_TABLE = `hive_metastore.sanus_prod.organizations`;
+const PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.partner_brokers`;
 
 type DbOptions = RequestInit & { headers?: Record<string, string> };
 type DatabricksCell = null | undefined | string | number | boolean | { string_value?: string };
@@ -117,6 +118,34 @@ function buildGroupFilter(columns: string[], groupNames: string[]) {
   return conditions.length ? `AND (${conditions.join(' OR ')})` : '';
 }
 
+function partnerOrgNamesSubquery(partnerBrokerId: unknown) {
+  return `(
+    SELECT UPPER(TRIM(o.name))
+    FROM ${ORGANIZATIONS_TABLE} o
+    INNER JOIN ${PARTNER_BROKERS_TABLE} pb
+      ON o.cnpj = pb.cnpj
+    WHERE CAST(pb.id AS STRING) = '${escape(partnerBrokerId)}'
+  )`;
+}
+
+function buildPartnerFilter(columns: string[], partnerBrokerId: unknown) {
+  if (!partnerBrokerId) return '';
+  const companyColumn = pickColumn(columns, [
+    'nome_conta',
+    'NOME_CONTA',
+    'NOME_CLIENTE',
+    'nome_cliente',
+    'empresa',
+    'Empresa',
+    'nome_empresa',
+    'NOME_EMPRESA',
+    'company',
+    'company_name',
+  ]);
+  if (!companyColumn) return '';
+  return `AND UPPER(TRIM(CAST(${quoteIdent(companyColumn)} AS STRING))) IN ${partnerOrgNamesSubquery(partnerBrokerId)}`;
+}
+
 function lastNMonthsList(n: number) {
   const out = [];
   const d = new Date();
@@ -147,6 +176,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
   const groupNames = parseGroupNames(req.query);
   const groupName = groupNames[0] || null;
+  const partnerBrokerId = req.query.partner_broker_id || null;
   const meses = req.query.meses ? String(req.query.meses).split(',').filter((m) => /^\d{4}-\d{2}$/.test(m)) : [];
   const groupByMonth = req.query.group_by === 'month';
   const monthList = meses.length ? meses.sort() : lastNMonthsList(Math.min(Math.max(parseInt(String(req.query.months)) || 12, 1), 24));
@@ -178,8 +208,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const { warehouses = [] } = await dbFetch("/api/2.0/sql/warehouses") as { warehouses?: Warehouse[] };
     const wh = warehouses.find((w) => w.state === "RUNNING") || warehouses[0];
     if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
-    const columns = groupNames.length ? await getColumns(wh.id, APPOINTMENTS_TABLE) : [];
+    const columns = (groupNames.length || partnerBrokerId) ? await getColumns(wh.id, APPOINTMENTS_TABLE) : [];
     const groupFilter = buildGroupFilter(columns, groupNames);
+    const partnerFilter = buildPartnerFilter(columns, partnerBrokerId);
 
     const monthExpr = `DATE_FORMAT(${quoteIdent(APPOINTMENTS_DATE_COLUMN)}, 'yyyy-MM')`;
     const rows = await runQuery(wh.id, `
@@ -203,6 +234,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           OR assunto RLIKE '^ [A-Z]'
         )
         ${groupFilter}
+        ${partnerFilter}
       GROUP BY ${groupByMonth ? `${monthExpr}, ` : ''}${typeExpr}
       ORDER BY ${groupByMonth ? 'mes ASC, ' : ''}total DESC
     `);
@@ -216,7 +248,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         })),
         months: monthList,
         source: "atendimento_summarized_gold_live",
-        filters: { group_name: groupName },
+        filters: { group_name: groupName, partner_broker_id: partnerBrokerId },
       });
       return;
     }
@@ -236,7 +268,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       total,
       months: monthList,
       source: "atendimento_summarized_gold_live",
-      filters: { group_name: groupName },
+      filters: { group_name: groupName, partner_broker_id: partnerBrokerId },
     });
   } catch (err) {
     res.status(500).json({ error: (err as { message?: string }).message });

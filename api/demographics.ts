@@ -54,8 +54,10 @@ const getCell = (cell: DatabricksCell) => {
 };
 const toInt = (v: DatabricksCell) => { const n = parseInt(String(getCell(v))); return Number.isFinite(n) ? n : 0; };
 const toNum = (v: DatabricksCell) => { const n = parseFloat(String(getCell(v))); return Number.isFinite(n) ? n : 0; };
+const ORGANIZATIONS_TABLE = `hive_metastore.sanus_prod.organizations`;
+const PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.partner_brokers`;
 
-function buildFilters(groupNames: string[], typeFilter: unknown) {
+function buildFilters(groupNames: string[], typeFilter: unknown, partnerBrokerId: unknown) {
   const conditions = [];
   if (groupNames.length) {
     const groupList = groupNames.map((group) => `'${escape(group)}'`).join(",");
@@ -64,6 +66,15 @@ function buildFilters(groupNames: string[], typeFilter: unknown) {
       UNION
       SELECT id FROM hive_metastore.sanus_prod.organizations
       WHERE matriz_id IN (SELECT id FROM hive_metastore.sanus_prod.organizations WHERE name IN (${groupList}))
+    )`);
+  }
+  if (partnerBrokerId) {
+    conditions.push(`b.organization_id IN (
+      SELECT o.id
+      FROM ${ORGANIZATIONS_TABLE} o
+      INNER JOIN ${PARTNER_BROKERS_TABLE} pb
+        ON o.cnpj = pb.cnpj
+      WHERE CAST(pb.id AS STRING) = '${escape(partnerBrokerId)}'
     )`);
   }
   if (typeFilter === 'TITULAR') {
@@ -82,7 +93,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
   const groupNames = parseGroupNames(req.query);
   const typeFilter = req.query.type || null;
-  const groupFilter = buildFilters(groupNames, typeFilter);
+  const partnerBrokerId = req.query.partner_broker_id || null;
+  const groupFilter = buildFilters(groupNames, typeFilter, partnerBrokerId);
 
   try {
     const { warehouses = [] } = await dbFetch("/api/2.0/sql/warehouses") as { warehouses?: Warehouse[] };

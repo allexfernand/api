@@ -558,6 +558,12 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
       <option value="">(Selecione um grupo primeiro)</option>
     </select>
   </div>
+  <div class="filter-group" id="filter-partner-group" style="display:none">
+    <label>🤝 Parceiro</label>
+    <select class="filter-select" id="partner-select" disabled>
+      <option value="">(Todos os parceiros)</option>
+    </select>
+  </div>
   <div class="filter-group" id="filter-type-group">
     <label>👤 Tipo Beneficiário</label>
     <select class="filter-select" id="type-select">
@@ -1393,6 +1399,8 @@ const mN = {'01':'Jan','02':'Fev','03':'Mar','04':'Abr','05':'Mai','06':'Jun','0
 let usersData = [], companiesData = [], sessionCompaniesData = [], eChart, agegroupChart, appointmentTypesTrendChart, petitCareLinesChart, sessionsEvolChart, sessionsTotalEvolChart, sessionsAttendanceChart, sessionsDailyChart, sessionsTopGroupsChart, qualityVolumeEvolutionChart, qualityEvolutionChart, qualityCriteriaEvolutionChart;
 let currentGroup = '', currentType = '', currentCompany = '';
 let currentGroups = [];
+let currentPartnerBrokerId = '';
+let partnerOptionsCache = [];
 let groupOptionsCache = { orgs: null, sessions: null };
 let activeGroupSource = 'orgs';
 let selectedMonths = new Set();
@@ -1439,6 +1447,7 @@ document.querySelectorAll('.tab').forEach(t => {
 function updateFilterVisibility() {
   const typeGroup = document.getElementById('filter-type-group');
   const companyGroup = document.getElementById('filter-company-group');
+  const partnerGroup = document.getElementById('filter-partner-group');
   const activeTab = getActiveTab();
   document.body.dataset.activeTab = activeTab;
   if (activeTab === 'sessoes') {
@@ -1449,6 +1458,8 @@ function updateFilterVisibility() {
   }
   if (typeGroup) typeGroup.style.display = (activeTab === 'sessoes' || activeTab === 'petit-comite' || activeTab.startsWith('qualidade')) ? 'none' : 'flex';
   if (companyGroup) companyGroup.style.display = activeTab === 'sessoes' ? 'none' : 'flex';
+  if (partnerGroup) partnerGroup.style.display = (activeTab === 'sessoes' || activeTab === 'petit-comite') ? 'flex' : 'none';
+  if (activeTab === 'sessoes' || activeTab === 'petit-comite') loadPartnerOptions();
 }
 
 // --- Filtros ---
@@ -1460,6 +1471,9 @@ function appendGroupParams(params) {
   const groups = currentGroups.filter(Boolean);
   if (groups.length > 1) params.set('group_names', JSON.stringify(groups));
   else if (groups.length === 1) params.set('group_name', groups[0]);
+  if ((getActiveTab() === 'sessoes' || getActiveTab() === 'petit-comite') && currentPartnerBrokerId) {
+    params.set('partner_broker_id', currentPartnerBrokerId);
+  }
 }
 
 function selectedGroupsLabel() {
@@ -1472,6 +1486,13 @@ function selectedGroupsText() {
   if (!currentGroups.length) return '';
   if (currentGroups.length === 1) return currentGroups[0];
   return `${currentGroups.length} grupos selecionados`;
+}
+
+function selectedSessionScopeText() {
+  const parts = [];
+  if (currentGroups.length) parts.push(selectedGroupsText());
+  if (currentPartnerBrokerId) parts.push(`Parceiro: ${selectedPartnerLabel()}`);
+  return parts.join(' · ');
 }
 
 function updateGroupSelectLabel() {
@@ -1546,6 +1567,19 @@ document.getElementById('type-select').addEventListener('change', e => {
   if (isPeriodFilteredTab()) loadPeriodFilteredTab();
 });
 
+document.getElementById('partner-select').addEventListener('change', e => {
+  currentPartnerBrokerId = e.target.value;
+  updateFilterInfo();
+  if (getActiveTab() === 'sessoes') {
+    loadSessions();
+    return;
+  }
+  if (getActiveTab() === 'petit-comite') {
+    renderPetitComite();
+    schedulePdfReadinessUpdate();
+  }
+});
+
 // Carrega empresas do grupo selecionado para o dropdown de empresa
 function resetCompanySelect() {
   const sel = document.getElementById('company-select');
@@ -1581,6 +1615,46 @@ async function loadCompanyOptions() {
   }
 }
 
+function selectedPartnerLabel() {
+  if (!currentPartnerBrokerId) return '';
+  const partner = partnerOptionsCache.find((item) => String(item.broker_id) === String(currentPartnerBrokerId));
+  return partner ? partner.broker_name : currentPartnerBrokerId;
+}
+
+function renderPartnerOptions() {
+  const sel = document.getElementById('partner-select');
+  if (!sel) return;
+  const current = currentPartnerBrokerId;
+  const options = [...partnerOptionsCache].sort((a, b) =>
+    String(a.broker_name || '').localeCompare(String(b.broker_name || ''), 'pt-BR', { sensitivity: 'base' })
+  );
+  sel.innerHTML = '<option value="">(Todos os parceiros)</option>' + options.map((partner) => {
+    const id = String(partner.broker_id || '');
+    const name = partner.broker_name || 'Sem nome';
+    const secondary = partner.broker_name_secondary ? ` · ${partner.broker_name_secondary}` : '';
+    const inactive = partner.broker_active === false ? ' · inativo' : '';
+    const total = Number(partner.total_orgs) || 0;
+    const selected = id === current ? ' selected' : '';
+    return `<option value="${escapeAttr(id)}"${selected}>${escapeHtml(name)}${escapeHtml(secondary)} (${fmt(total)})${escapeHtml(inactive)}</option>`;
+  }).join('');
+  sel.disabled = false;
+}
+
+async function loadPartnerOptions() {
+  const sel = document.getElementById('partner-select');
+  if (!sel || partnerOptionsCache.length) return;
+  sel.innerHTML = '<option value="">⏳ Carregando parceiros...</option>';
+  sel.disabled = true;
+  const data = await safeGet('/api/data?scope=partners');
+  if (data && !data.error && Array.isArray(data.partners)) {
+    partnerOptionsCache = data.partners;
+    renderPartnerOptions();
+  } else {
+    sel.innerHTML = '<option value="">(Erro ao carregar parceiros)</option>';
+    sel.disabled = true;
+  }
+}
+
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function escapeAttr(s){return String(s).replace(/"/g,'&quot;');}
 
@@ -1589,6 +1663,7 @@ function updateFilterInfo() {
   const activeTab = getActiveTab();
   if (currentGroups.length === 1) parts.push(currentGroups[0]);
   else if (currentGroups.length > 1) parts.push(`${currentGroups.length} grupos econômicos`);
+  if ((activeTab === 'sessoes' || activeTab === 'petit-comite') && currentPartnerBrokerId) parts.push(`Parceiro: ${selectedPartnerLabel()}`);
   if (currentCompany && activeTab !== 'sessoes') parts.push(currentCompany);
   if (currentType && activeTab !== 'sessoes' && activeTab !== 'petit-comite' && !activeTab.startsWith('qualidade')) parts.push(currentType === 'TITULAR' ? 'Titular' : 'Dependente');
   document.getElementById('filter-info').textContent = parts.length ? `Filtrando: ${parts.join(' · ')}` : '';
@@ -1597,9 +1672,12 @@ function updateFilterInfo() {
 function clearFilters() {
   const activeTab = getActiveTab();
   currentGroup = ''; currentGroups = []; currentType = ''; currentCompany = '';
+  currentPartnerBrokerId = '';
   selectedSessionTypificationFinisher = '';
   updateGroupSelectLabel();
   renderGroupOptions();
+  const partnerSelect = document.getElementById('partner-select');
+  if (partnerSelect) partnerSelect.value = '';
   document.getElementById('type-select').value  = '';
   const typificationFinisherSelect = document.getElementById('session-typification-finisher-select');
   if (typificationFinisherSelect) typificationFinisherSelect.value = '';
@@ -1651,6 +1729,7 @@ function collectPdfFilters() {
   const filters = [
     { label: 'Aba', value: getActiveTabLabel() },
     { label: 'Grupo econômico', value: currentGroups.length ? currentGroups.join(' · ') : 'Todos os grupos' },
+    { label: 'Parceiro', value: currentPartnerBrokerId ? selectedPartnerLabel() : 'Todos os parceiros' },
   ];
   if (activeTab !== 'sessoes') {
     filters.push({ label: 'Empresa', value: currentCompany || 'Todas as empresas' });
@@ -2496,7 +2575,7 @@ function renderSessionMessageAgentFinishers(items, opts) {
   if (barIa) barIa.style.width = width(ia);
   if (note) {
     const messages = [];
-    if (currentGroups.length) messages.push(`grupo: ${selectedGroupsText()}`);
+    if (selectedSessionScopeText()) messages.push(`recorte: ${selectedSessionScopeText()}`);
     messages.push("fonte: botmaker_message.sender_type='agent'");
     note.style.display = messages.length ? 'block' : 'none';
     note.textContent = messages.join(' · ');
@@ -2555,7 +2634,7 @@ function renderSessionCompanies(items, opts) {
   filterSessionCompanies();
   if (note) {
     const messages = [];
-    if (isCompanyMode && currentGroups.length) messages.push(`grupo: ${selectedGroupsText()}`);
+    if (isCompanyMode && selectedSessionScopeText()) messages.push(`recorte: ${selectedSessionScopeText()}`);
     if (opts.source) messages.push(opts.source);
     note.style.display = messages.length ? 'block' : 'none';
     note.textContent = messages.join(' · ');
@@ -2625,7 +2704,7 @@ function renderSessionsTopGroupsEvolution(data) {
     parts.push(selectedMonths.size ? `${selectedMonths.size} meses selecionados` : 'últimos 12 meses');
     parts.push('top 5 pelo mês mais recente');
     parts.push('sem nulos');
-    if (currentGroups.length) parts.push(isCompanyEvolution ? `empresas dos grupos: ${selectedGroupsText()}` : `grupo: ${selectedGroupsText()}`);
+    if (selectedSessionScopeText()) parts.push(isCompanyEvolution ? `empresas do recorte: ${selectedSessionScopeText()}` : `recorte: ${selectedSessionScopeText()}`);
     if (currentCompany) parts.push(`empresa: ${currentCompany}`);
     mode.textContent = parts.join(' · ');
   }
@@ -2782,7 +2861,7 @@ async function loadTypificationGroupsBreakdown(tipo) {
   if (meta) meta.textContent = `${groups.length} grupos · total ${fmt(total)} sessões`;
   if (note) {
     const messages = [];
-    if (currentGroups.length) messages.push(`recortado por: ${selectedGroupsText()}`);
+    if (selectedSessionScopeText()) messages.push(`recortado por: ${selectedSessionScopeText()}`);
     if (selectedSessionTypificationFinisher === 'humano') messages.push('finalizadas por Humano');
     else if (selectedSessionTypificationFinisher === 'ia') messages.push('finalizadas por IA');
     note.style.display = messages.length ? 'block' : 'none';
@@ -2829,7 +2908,7 @@ function renderSessionTypifications(items, opts) {
   if (meta) meta.textContent = `${rows.length} tipos · total ${fmt(total)} sessões tipificadas`;
   if (note) {
     const messages = [];
-    if (currentGroups.length) messages.push('Filtro aplicado como no Q14');
+    if (selectedSessionScopeText()) messages.push('Filtro aplicado como no Q14');
     if (selectedSessionTypificationFinisher === 'humano') messages.push('finalizadas por Humano');
     else if (selectedSessionTypificationFinisher === 'ia') messages.push('finalizadas por IA');
     note.style.display = messages.length ? 'block' : 'none';
@@ -2854,7 +2933,8 @@ function renderSessionsUtilization(data, demographicsData, comparison) {
   const comparisonBase = comparison?.demographicsData && !comparison.demographicsData.error
     ? Number(comparison.demographicsData.total_beneficiarios ?? comparison.demographicsData.total_vidas) || 0
     : 0;
-  const hasComparison = Boolean(currentGroups.length && comparisonData && comparisonBase > 0);
+  const hasScopedComparison = Boolean(currentGroups.length || currentPartnerBrokerId);
+  const hasComparison = Boolean(hasScopedComparison && comparisonData && comparisonBase > 0);
   const pct = (value, baseValue) => baseValue > 0 ? ((value / baseValue) * 100) : null;
   const pctLabel = (ratio) => ratio === null ? '—' : fmtPct(ratio);
   const width = (ratio) => `${Math.max(0, Math.min(100, ratio || 0))}%`;
@@ -2877,10 +2957,10 @@ function renderSessionsUtilization(data, demographicsData, comparison) {
     if (selectedRatio - globalRatio < -0.05) return 'negative';
     return '';
   };
-  if (context) context.textContent = hasComparison ? `${selectedGroupsText()} x global` : (currentGroups.length ? `grupo: ${selectedGroupsText()}` : 'global');
+  if (context) context.textContent = hasComparison ? `${selectedSessionScopeText()} x global` : (hasScopedComparison ? selectedSessionScopeText() : 'global');
   if (errorBox) {
     const hasError = !base || !data?.utilization;
-    const comparisonError = currentGroups.length && !hasComparison && !hasError;
+    const comparisonError = hasScopedComparison && !hasComparison && !hasError;
     errorBox.style.display = hasError || comparisonError ? 'block' : 'none';
     errorBox.textContent = !base
       ? 'Base total de beneficiários indisponível para o filtro atual.'
@@ -2924,7 +3004,7 @@ function renderSessionsUtilization(data, demographicsData, comparison) {
     const selectedRatio = pct(selectedValue, base);
     const globalValue = hasComparison ? valueFor(comparisonData, card.key) : 0;
     const globalRatio = hasComparison ? pct(globalValue, comparisonBase) : null;
-  const selectedLabel = currentGroups.length ? 'Grupo' : 'Global';
+  const selectedLabel = hasScopedComparison ? 'Recorte' : 'Global';
     const comparisonHtml = hasComparison ? `<div class="sessions-utilization-compare">
       <div class="sessions-utilization-compare-row">
         <div class="sessions-utilization-compare-label">${escapeHtml(selectedLabel)}</div>
@@ -2938,7 +3018,7 @@ function renderSessionsUtilization(data, demographicsData, comparison) {
       </div>
       <div class="sessions-utilization-delta ${deltaClass(selectedRatio, globalRatio)}">${escapeHtml(deltaLabel(selectedRatio, globalRatio))}</div>
     </div>` : '';
-    const meta = `${periodLabel(card.period)} · base ${currentGroups.length ? 'do grupo' : 'global'}: ${fmt(base)} beneficiários`;
+    const meta = `${periodLabel(card.period)} · base ${hasScopedComparison ? 'do recorte' : 'global'}: ${fmt(base)} beneficiários`;
     return `<div class="sessions-utilization-card" style="--accent:${escapeAttr(card.accent)};--tint:${escapeAttr(card.tint)}">
     <div class="sessions-utilization-label">${escapeHtml(card.label)}</div>
     <div class="sessions-utilization-value"><span>${fmt(selectedValue)}</span><span class="sessions-utilization-pct">${escapeHtml(pctLabel(selectedRatio))}</span></div>
@@ -3023,10 +3103,11 @@ async function loadSessionsBeneficiaryUtilization(baseParams, demographicsData, 
   const globalP = new URLSearchParams();
   globalP.set('include_beneficiaries', '1');
   globalP.set('only_beneficiaries', '1');
+  const hasScopedComparison = Boolean(currentGroups.length || currentPartnerBrokerId);
   const [data, globalData, globalDemographicsData] = await Promise.all([
     safeGet('/api/sessions-evolution?' + p.toString()),
-    currentGroups.length ? safeGet('/api/sessions-evolution?' + globalP.toString()) : Promise.resolve(null),
-    currentGroups.length ? safeGet('/api/demographics') : Promise.resolve(null),
+    hasScopedComparison ? safeGet('/api/sessions-evolution?' + globalP.toString()) : Promise.resolve(null),
+    hasScopedComparison ? safeGet('/api/demographics') : Promise.resolve(null),
   ]);
   if (requestId !== sessionsEvolutionRequestId) return;
   if (!data || data.error) {
@@ -3042,7 +3123,7 @@ async function loadSessionsBeneficiaryUtilization(baseParams, demographicsData, 
   const series = data.series || [];
   const uniqueBeneficiaryValues = series.map((it) => Number(it.unique_beneficiaries ?? it.unique_cpfs) || 0);
   renderSessionsTotalEvolutionChart(labels, totalValues, uniqueBeneficiaryValues, Boolean(data.beneficiaries_included));
-  renderSessionsUtilization(data, demographicsData, currentGroups.length ? {
+  renderSessionsUtilization(data, demographicsData, hasScopedComparison ? {
     data: globalData,
     demographicsData: globalDemographicsData,
   } : null);
@@ -3256,9 +3337,10 @@ async function renderSessionsAttendanceChart(labels, monthValues, sessionValues,
   const modeLabel = document.getElementById('s-attendance-mode');
   if (!cv) return;
   if (modeLabel) {
-    if (data.mode === 'cpf_join' || data.mode === 'variables_json_filter' || data.mode === 'organization_join') {
+    if (data.mode === 'cpf_join' || data.mode === 'variables_json_filter' || data.mode === 'organization_join' || data.mode === 'partner_broker' || data.mode === 'economic_group_name') {
       const filterParts = [];
       if (data.filters && data.filters.group_name) filterParts.push(`grupo: ${data.filters.group_name}`);
+      if (data.filters && data.filters.partner_broker_id && selectedPartnerLabel()) filterParts.push(`parceiro: ${selectedPartnerLabel()}`);
       modeLabel.textContent = filterParts.join(' · ') || 'filtrado';
     } else {
       modeLabel.textContent = 'global';
