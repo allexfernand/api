@@ -1458,8 +1458,8 @@ function updateFilterVisibility() {
   }
   if (typeGroup) typeGroup.style.display = (activeTab === 'sessoes' || activeTab === 'petit-comite' || activeTab.startsWith('qualidade')) ? 'none' : 'flex';
   if (companyGroup) companyGroup.style.display = activeTab === 'sessoes' ? 'none' : 'flex';
-  if (partnerGroup) partnerGroup.style.display = (activeTab === 'sessoes' || activeTab === 'petit-comite') ? 'flex' : 'none';
-  if (activeTab === 'sessoes' || activeTab === 'petit-comite') loadPartnerOptions();
+  if (partnerGroup) partnerGroup.style.display = isPartnerFilteredTab(activeTab) ? 'flex' : 'none';
+  if (isPartnerFilteredTab(activeTab)) loadPartnerOptions();
 }
 
 // --- Filtros ---
@@ -1471,9 +1471,13 @@ function appendGroupParams(params) {
   const groups = currentGroups.filter(Boolean);
   if (groups.length > 1) params.set('group_names', JSON.stringify(groups));
   else if (groups.length === 1) params.set('group_name', groups[0]);
-  if ((getActiveTab() === 'sessoes' || getActiveTab() === 'petit-comite') && currentPartnerBrokerId) {
+  if (isPartnerFilteredTab() && currentPartnerBrokerId) {
     params.set('partner_broker_id', currentPartnerBrokerId);
   }
+}
+
+function isPartnerFilteredTab(tab = getActiveTab()) {
+  return tab === 'demografica' || tab === 'sessoes' || tab === 'petit-comite';
 }
 
 function selectedGroupsLabel() {
@@ -1570,11 +1574,16 @@ document.getElementById('type-select').addEventListener('change', e => {
 document.getElementById('partner-select').addEventListener('change', e => {
   currentPartnerBrokerId = e.target.value;
   updateFilterInfo();
-  if (getActiveTab() === 'sessoes') {
+  const activeTab = getActiveTab();
+  if (activeTab === 'sessoes') {
     loadSessions();
     return;
   }
-  if (getActiveTab() === 'petit-comite') {
+  if (activeTab === 'demografica') {
+    loadAll(false);
+    return;
+  }
+  if (activeTab === 'petit-comite') {
     renderPetitComite();
     schedulePdfReadinessUpdate();
   }
@@ -1663,7 +1672,7 @@ function updateFilterInfo() {
   const activeTab = getActiveTab();
   if (currentGroups.length === 1) parts.push(currentGroups[0]);
   else if (currentGroups.length > 1) parts.push(`${currentGroups.length} grupos econômicos`);
-  if ((activeTab === 'sessoes' || activeTab === 'petit-comite') && currentPartnerBrokerId) parts.push(`Parceiro: ${selectedPartnerLabel()}`);
+  if (isPartnerFilteredTab(activeTab) && currentPartnerBrokerId) parts.push(`Parceiro: ${selectedPartnerLabel()}`);
   if (currentCompany && activeTab !== 'sessoes') parts.push(currentCompany);
   if (currentType && activeTab !== 'sessoes' && activeTab !== 'petit-comite' && !activeTab.startsWith('qualidade')) parts.push(currentType === 'TITULAR' ? 'Titular' : 'Dependente');
   document.getElementById('filter-info').textContent = parts.length ? `Filtrando: ${parts.join(' · ')}` : '';
