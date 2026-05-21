@@ -186,6 +186,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   const partnerBrokerId = req.query.partner_broker_id || null;
   const meses = req.query.meses ? String(req.query.meses).split(',').filter((m) => /^\d{4}-\d{2}$/.test(m)) : [];
   const groupByMonth = req.query.group_by === 'month';
+  const scope = String(req.query.scope || '');
   const monthList = meses.length ? meses.sort() : lastNMonthsList(Math.min(Math.max(parseInt(String(req.query.months)) || 12, 1), 24));
   const monthRangeFilter = monthList.map((month) => `(
     ${quoteIdent(APPOINTMENTS_DATE_COLUMN)} >= '${month}-01'
@@ -221,12 +222,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const partnerFilter = buildPartnerFilter(columns, partnerBrokerId);
 
     const monthExpr = `DATE_FORMAT(${quoteIdent(APPOINTMENTS_DATE_COLUMN)}, 'yyyy-MM')`;
-    const rows = await runQuery(wh.id, `
-      SELECT
-        ${groupByMonth ? `${monthExpr} AS mes,` : ''}
-        ${typeExpr} AS tipo_agrupado,
-        COUNT(*) AS total
-      FROM ${APPOINTMENTS_TABLE}
+    const commonWhere = `
       WHERE (${monthRangeFilter})
         AND UPPER(assunto) NOT IN (
           'ATENDIMENTO WHATSAPP',
@@ -243,7 +239,57 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         )
         ${groupFilter}
         ${companyFilter}
-        ${partnerFilter}
+        ${partnerFilter}`;
+    if (scope === 'top_exams') {
+      const examExpr = `COALESCE(NULLIF(TRIM(CAST(assunto AS STRING)), ''), 'Exame sem descrição')`;
+      const rows = await runQuery(wh.id, `
+        WITH filtered_exams AS (
+          SELECT ${examExpr} AS exame
+          FROM ${APPOINTMENTS_TABLE}
+          ${commonWhere}
+            AND ${typeExpr} IN ('Exames', 'Exames - DASA')
+        ),
+        grouped_exams AS (
+          SELECT
+            exame,
+            COUNT(*) AS total
+          FROM filtered_exams
+          GROUP BY exame
+        )
+        SELECT
+          exame,
+          total,
+          SUM(total) OVER () AS total_exames
+        FROM grouped_exams
+        ORDER BY total DESC
+        LIMIT 5
+      `);
+      const total = rows.length ? toInt(rows[0][2]) : 0;
+      const items = rows.map((row) => {
+        const quantidade = toInt(row[1]);
+        return {
+          exame: String(getCell(row[0]) || 'Exame sem descrição'),
+          tipo: String(getCell(row[0]) || 'Exame sem descrição'),
+          total: quantidade,
+          percentual: total > 0 ? Math.round((quantidade / total) * 1000) / 10 : 0,
+        };
+      });
+      res.status(200).json({
+        items,
+        total,
+        months: monthList,
+        source: "atendimento_summarized_gold_live",
+        filters: { group_name: groupName, company, partner_broker_id: partnerBrokerId, scope },
+      });
+      return;
+    }
+    const rows = await runQuery(wh.id, `
+      SELECT
+        ${groupByMonth ? `${monthExpr} AS mes,` : ''}
+        ${typeExpr} AS tipo_agrupado,
+        COUNT(*) AS total
+      FROM ${APPOINTMENTS_TABLE}
+      ${commonWhere}
       GROUP BY ${groupByMonth ? `${monthExpr}, ` : ''}${typeExpr}
       ORDER BY ${groupByMonth ? 'mes ASC, ' : ''}total DESC
     `);

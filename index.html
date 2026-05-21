@@ -1154,12 +1154,11 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
 
       <div class="card-box">
         <div class="section-title"><i class="fa-solid fa-vial" style="margin-right:6px"></i>Principais exames solicitados</div>
-        <div style="font-size:11px;color:#94a3b8;margin-bottom:14px">N = 417 agendamentos</div>
-        <div class="petit-dist-list">
-          <div class="petit-dist-row"><div class="petit-dist-label">Ultrassom</div><div class="petit-dist-track"><div class="petit-dist-bar" style="width:60.2%;background:#3F55E3"></div></div><div class="petit-dist-value">60,2%</div></div>
-          <div class="petit-dist-row"><div class="petit-dist-label">Ressonância</div><div class="petit-dist-track"><div class="petit-dist-bar" style="width:34.8%;background:#2563eb"></div></div><div class="petit-dist-value">34,8%</div></div>
-          <div class="petit-dist-row"><div class="petit-dist-label">Eletrocardiograma</div><div class="petit-dist-track"><div class="petit-dist-bar" style="width:2.6%;background:#7c3aed"></div></div><div class="petit-dist-value">2,6%</div></div>
-          <div class="petit-dist-row"><div class="petit-dist-label">Terapias</div><div class="petit-dist-track"><div class="petit-dist-bar" style="width:2.4%;background:#be185d"></div></div><div class="petit-dist-value">2,4%</div></div>
+        <div class="loading-box" id="petit-top-exams-loading"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...</div>
+        <div id="petit-top-exams-content" style="display:none">
+          <div style="font-size:11px;color:#94a3b8;margin-bottom:14px">Top 5 · tipos Exames e Exames - DASA</div>
+          <div class="petit-dist-list" id="petit-top-exams-list"></div>
+          <div style="font-size:11px;color:#94a3b8;margin-top:10px;text-align:right" id="petit-top-exams-meta">—</div>
         </div>
       </div>
 
@@ -2801,6 +2800,7 @@ async function renderPetitComite() {
   loadPetitUsabilityKpis(requestId);
   loadPetitSessionEvolutionCharts(requestId);
   loadAppointmentTypes([...selectedMonths].sort(), 'petit-appointment-types');
+  loadPetitTopExams([...selectedMonths].sort());
   if (!cv) return;
 
   if (petitCareLinesChart) petitCareLinesChart.destroy();
@@ -3794,6 +3794,55 @@ async function loadAppointmentTypes(monthValues, idPrefix='appointment-types') {
     }).join('') : '<tr><td colspan="3" style="padding:14px 10px;text-align:center;color:#94a3b8">Nenhum tipo encontrado.</td></tr>';
   }
   if (meta) meta.textContent = `${items.length} tipos · total ${fmt(data.total || 0)}`;
+  if (loading) loading.style.display = 'none';
+  if (content) content.style.display = 'block';
+}
+
+async function loadPetitTopExams(monthValues) {
+  const loading = document.getElementById('petit-top-exams-loading');
+  const content = document.getElementById('petit-top-exams-content');
+  const list = document.getElementById('petit-top-exams-list');
+  const meta = document.getElementById('petit-top-exams-meta');
+  if (loading) {
+    loading.style.display = 'block';
+    loading.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...';
+  }
+  if (content) content.style.display = 'none';
+
+  const p = new URLSearchParams();
+  p.set('scope', 'top_exams');
+  if (monthValues && monthValues.length > 0) p.set('meses', monthValues.join(','));
+  appendGroupParams(p);
+  if (currentCompany) p.set('company', currentCompany);
+  const data = await safeGet('/api/appointment-types?' + p.toString());
+  if (!data || data.error) {
+    if (loading) {
+      loading.style.display = 'block';
+      loading.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>' +
+        (data && data.error ? String(data.error).slice(0, 220) : 'Erro ao carregar exames');
+    }
+    if (content) content.style.display = 'none';
+    return;
+  }
+
+  const items = data.items || [];
+  const max = items.reduce((acc, item) => Math.max(acc, Number(item.total) || 0), 0) || 1;
+  if (list) {
+    list.innerHTML = items.length ? items.map((item, index) => {
+      const value = Number(item.total) || 0;
+      const pct = Number(item.percentual) || 0;
+      const width = Math.max((value / max) * 100, 2);
+      const color = ['#3F55E3', '#2563eb', '#7c3aed', '#0891b2', '#be185d'][index] || '#3F55E3';
+      const rawLabel = item.exame || item.tipo || 'Exame sem descrição';
+      const label = escapeHtml(rawLabel);
+      return `<div class="petit-dist-row" title="${escapeAttr(rawLabel)}">
+        <div class="petit-dist-label">${label}</div>
+        <div class="petit-dist-track"><div class="petit-dist-bar" style="width:${width}%;background:${color}"></div></div>
+        <div class="petit-dist-value">${fmt(value)} · ${pct.toFixed(1).replace('.', ',')}%</div>
+      </div>`;
+    }).join('') : '<div style="font-size:13px;color:#94a3b8;text-align:center;padding:14px 0">Nenhum exame encontrado para o filtro atual.</div>';
+  }
+  if (meta) meta.textContent = `${items.length} exames · total ${fmt(data.total || 0)} solicitações de exames`;
   if (loading) loading.style.display = 'none';
   if (content) content.style.display = 'block';
 }
