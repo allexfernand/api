@@ -241,7 +241,18 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         ${companyFilter}
         ${partnerFilter}`;
     if (scope === 'top_exams') {
-      const examExpr = `COALESCE(NULLIF(TRIM(CAST(assunto AS STRING)), ''), 'Exame sem descrição')`;
+      const normalizedAssuntoExpr = `TRIM(REGEXP_REPLACE(TRANSLATE(
+        COALESCE(CAST(assunto AS STRING), ''),
+        'ÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇáàâãäéèêëíìîïóòôõöúùûüç',
+        'AAAAAEEEEIIIIOOOOOUUUUCaaaaaeeeeiiiiooooouuuuc'
+      ), '[^A-Za-z0-9]+', ' '))`;
+      const normalizedUpperExpr = `UPPER(${normalizedAssuntoExpr})`;
+      const examExpr = `CASE
+        WHEN ${normalizedUpperExpr} LIKE '%ANALISES CLINICAS%'
+          OR ${normalizedUpperExpr} LIKE '%ANALISE CLINICA%'
+        THEN 'Análises clínicas'
+        ELSE COALESCE(NULLIF(INITCAP(LOWER(${normalizedAssuntoExpr})), ''), 'Exame sem descrição')
+      END`;
       const rows = await runQuery(wh.id, `
         WITH filtered_exams AS (
           SELECT ${examExpr} AS exame
