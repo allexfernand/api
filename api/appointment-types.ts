@@ -82,6 +82,19 @@ function orgNamesSubquery(groupName: unknown) {
   )`;
 }
 
+const companyColumnCandidates = [
+  'nome_conta',
+  'NOME_CONTA',
+  'NOME_CLIENTE',
+  'nome_cliente',
+  'empresa',
+  'Empresa',
+  'nome_empresa',
+  'NOME_EMPRESA',
+  'company',
+  'company_name',
+];
+
 function parseGroupNames(query: Record<string, any>) {
   const raw = query.group_names;
   if (raw) {
@@ -97,18 +110,7 @@ function buildGroupFilter(columns: string[], groupNames: string[]) {
   if (!groupNames.length) return '';
   const conditions = [];
   const groupColumn = pickColumn(columns, ['grupo_economico', 'economic_group', 'group_name', 'grupo']);
-  const companyColumn = pickColumn(columns, [
-    'nome_conta',
-    'NOME_CONTA',
-    'NOME_CLIENTE',
-    'nome_cliente',
-    'empresa',
-    'Empresa',
-    'nome_empresa',
-    'NOME_EMPRESA',
-    'company',
-    'company_name',
-  ]);
+  const companyColumn = pickColumn(columns, companyColumnCandidates);
   if (groupColumn) {
     conditions.push(`(${groupNames.map((groupName) => `UPPER(TRIM(CAST(${quoteIdent(groupColumn)} AS STRING))) LIKE CONCAT('%', UPPER(TRIM('${escape(groupName)}')), '%')`).join(' OR ')})`);
   }
@@ -138,20 +140,16 @@ function partnerOrgNamesSubquery(partnerBrokerId: unknown) {
 
 function buildPartnerFilter(columns: string[], partnerBrokerId: unknown) {
   if (!partnerBrokerId) return '';
-  const companyColumn = pickColumn(columns, [
-    'nome_conta',
-    'NOME_CONTA',
-    'NOME_CLIENTE',
-    'nome_cliente',
-    'empresa',
-    'Empresa',
-    'nome_empresa',
-    'NOME_EMPRESA',
-    'company',
-    'company_name',
-  ]);
+  const companyColumn = pickColumn(columns, companyColumnCandidates);
   if (!companyColumn) return '';
   return `AND UPPER(TRIM(CAST(${quoteIdent(companyColumn)} AS STRING))) IN ${partnerOrgNamesSubquery(partnerBrokerId)}`;
+}
+
+function buildCompanyFilter(columns: string[], company: unknown) {
+  if (!company) return '';
+  const companyColumn = pickColumn(columns, companyColumnCandidates);
+  if (!companyColumn) return '';
+  return `AND UPPER(TRIM(CAST(${quoteIdent(companyColumn)} AS STRING))) = UPPER(TRIM('${escape(company)}'))`;
 }
 
 function lastNMonthsList(n: number) {
@@ -184,6 +182,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
   const groupNames = parseGroupNames(req.query);
   const groupName = groupNames[0] || null;
+  const company = req.query.company || null;
   const partnerBrokerId = req.query.partner_broker_id || null;
   const meses = req.query.meses ? String(req.query.meses).split(',').filter((m) => /^\d{4}-\d{2}$/.test(m)) : [];
   const groupByMonth = req.query.group_by === 'month';
@@ -216,8 +215,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const { warehouses = [] } = await dbFetch("/api/2.0/sql/warehouses") as { warehouses?: Warehouse[] };
     const wh = warehouses.find((w) => w.state === "RUNNING") || warehouses[0];
     if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
-    const columns = (groupNames.length || partnerBrokerId) ? await getColumns(wh.id, APPOINTMENTS_TABLE) : [];
+    const columns = (groupNames.length || company || partnerBrokerId) ? await getColumns(wh.id, APPOINTMENTS_TABLE) : [];
     const groupFilter = buildGroupFilter(columns, groupNames);
+    const companyFilter = buildCompanyFilter(columns, company);
     const partnerFilter = buildPartnerFilter(columns, partnerBrokerId);
 
     const monthExpr = `DATE_FORMAT(${quoteIdent(APPOINTMENTS_DATE_COLUMN)}, 'yyyy-MM')`;
@@ -242,6 +242,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           OR assunto RLIKE '^ [A-Z]'
         )
         ${groupFilter}
+        ${companyFilter}
         ${partnerFilter}
       GROUP BY ${groupByMonth ? `${monthExpr}, ` : ''}${typeExpr}
       ORDER BY ${groupByMonth ? 'mes ASC, ' : ''}total DESC
@@ -256,7 +257,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         })),
         months: monthList,
         source: "atendimento_summarized_gold_live",
-        filters: { group_name: groupName, partner_broker_id: partnerBrokerId },
+        filters: { group_name: groupName, company, partner_broker_id: partnerBrokerId },
       });
       return;
     }
@@ -276,7 +277,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       total,
       months: monthList,
       source: "atendimento_summarized_gold_live",
-      filters: { group_name: groupName, partner_broker_id: partnerBrokerId },
+      filters: { group_name: groupName, company, partner_broker_id: partnerBrokerId },
     });
   } catch (err) {
     res.status(500).json({ error: (err as { message?: string }).message });
