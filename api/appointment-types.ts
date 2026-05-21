@@ -280,15 +280,15 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         final_exams AS (
           SELECT exame, total, total_exames, rn
           FROM ranked_exams
-          WHERE rn <= 7
+          WHERE rn <= 9
           UNION ALL
           SELECT
             'Outros' AS exame,
             SUM(total) AS total,
             MAX(total_exames) AS total_exames,
-            8 AS rn
+            10 AS rn
           FROM ranked_exams
-          WHERE rn > 7
+          WHERE rn > 9
         )
         SELECT
           exame,
@@ -364,15 +364,15 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         final_consultations AS (
           SELECT especialidade, total, total_consultas, rn
           FROM ranked_consultations
-          WHERE rn <= 7
+          WHERE rn <= 9
           UNION ALL
           SELECT
             'Outros' AS especialidade,
             SUM(total) AS total,
             MAX(total_consultas) AS total_consultas,
-            8 AS rn
+            10 AS rn
           FROM ranked_consultations
-          WHERE rn > 7
+          WHERE rn > 9
         )
         SELECT
           especialidade,

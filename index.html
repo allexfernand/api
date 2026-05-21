@@ -1165,7 +1165,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
         <div class="section-title"><i class="fa-solid fa-vial" style="margin-right:6px"></i>Principais exames solicitados</div>
         <div class="loading-box" id="petit-top-exams-loading"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...</div>
         <div id="petit-top-exams-content" style="display:none">
-          <div style="font-size:11px;color:#94a3b8;margin-bottom:14px">Top 7 + Outros · tipos Exames e Exames - DASA</div>
+          <div style="font-size:11px;color:#94a3b8;margin-bottom:14px">Top 9 + Outros · tipos Exames e Exames - DASA</div>
           <div class="petit-dist-list petit-top-exams-list" id="petit-top-exams-list"></div>
           <div style="font-size:11px;color:#94a3b8;margin-top:10px;text-align:right" id="petit-top-exams-meta">—</div>
         </div>
@@ -1175,7 +1175,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
         <div class="section-title"><i class="fa-solid fa-user-doctor" style="margin-right:6px"></i>Principais especialidades solicitadas</div>
         <div class="loading-box" id="petit-top-consultations-loading"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...</div>
         <div id="petit-top-consultations-content" style="display:none">
-          <div style="font-size:11px;color:#94a3b8;margin-bottom:14px">Top 7 + Outros · tipo Consultas</div>
+          <div style="font-size:11px;color:#94a3b8;margin-bottom:14px">Top 9 + Outros · tipo Consultas</div>
           <div class="petit-dist-list petit-top-exams-list" id="petit-top-consultations-list"></div>
           <div style="font-size:11px;color:#94a3b8;margin-top:10px;text-align:right" id="petit-top-consultations-meta">—</div>
         </div>
@@ -3842,7 +3842,7 @@ async function loadPetitTopExams(monthValues) {
       const value = Number(item.total) || 0;
       const pct = Number(item.percentual) || 0;
       const width = Math.max((value / max) * 100, 2);
-      const color = ['#3F55E3', '#2563eb', '#7c3aed', '#0891b2', '#be185d', '#0f766e', '#1d4ed8', '#64748b'][index] || '#3F55E3';
+      const color = ['#3F55E3', '#2563eb', '#7c3aed', '#0891b2', '#be185d', '#0f766e', '#1d4ed8', '#f59e0b', '#db2777', '#64748b'][index] || '#3F55E3';
       const rawLabel = item.exame || item.tipo || 'Exame sem descrição';
       const label = escapeHtml(rawLabel);
       return `<div class="petit-dist-row" title="${escapeAttr(rawLabel)}">
@@ -3890,7 +3890,7 @@ async function loadPetitTopConsultations(monthValues) {
       const value = Number(item.total) || 0;
       const pct = Number(item.percentual) || 0;
       const width = Math.max((value / max) * 100, 2);
-      const color = ['#3F55E3', '#2563eb', '#7c3aed', '#0891b2', '#be185d', '#0f766e', '#1d4ed8', '#64748b'][index] || '#3F55E3';
+      const color = ['#3F55E3', '#2563eb', '#7c3aed', '#0891b2', '#be185d', '#0f766e', '#1d4ed8', '#f59e0b', '#db2777', '#64748b'][index] || '#3F55E3';
       const rawLabel = item.especialidade || item.tipo || 'Especialidade sem descrição';
       const label = escapeHtml(rawLabel);
       return `<div class="petit-dist-row" title="${escapeAttr(rawLabel)}">
