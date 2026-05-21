@@ -248,6 +248,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       ), '[^A-Za-z0-9]+', ' '))`;
       const normalizedUpperExpr = `UPPER(${normalizedAssuntoExpr})`;
       const examExpr = `CASE
+        WHEN ${normalizedUpperExpr} LIKE '%DASA%'
+        THEN 'DASA'
         WHEN ${normalizedUpperExpr} LIKE '%ANALISES CLINICAS%'
           OR ${normalizedUpperExpr} LIKE '%ANALISE CLINICA%'
         THEN 'Análises clínicas'
