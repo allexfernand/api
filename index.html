@@ -1082,6 +1082,28 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
     </div>
 
     <div class="petit-grid-2">
+      <div class="chart-card" data-qtag="#Q3">
+        <h2 style="font-size:13px;font-weight:700;color:#334155;margin-bottom:4px">Evolução mensal de finalizações</h2>
+        <div style="font-size:11px;color:#94a3b8;margin-bottom:14px">Últimos 12 meses · <span id="petit-s-evol-mode">global</span></div>
+        <div class="chart-wrap">
+          <div class="skeleton" id="skel-petit-s-evol"></div>
+          <canvas id="petitSessionsEvolChart" style="display:none"></canvas>
+        </div>
+        <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="petit-s-evol-error"></div>
+      </div>
+
+      <div class="chart-card" data-qtag="#Q4">
+        <h2 style="font-size:13px;font-weight:700;color:#334155;margin-bottom:4px">Evolução mensal do total de sessões</h2>
+        <div style="font-size:11px;color:#94a3b8;margin-bottom:14px">Sessões e beneficiários únicos · últimos 12 meses · <span id="petit-s-total-evol-mode">global</span></div>
+        <div class="chart-wrap">
+          <div class="skeleton" id="skel-petit-s-total-evol"></div>
+          <canvas id="petitSessionsTotalEvolChart" style="display:none"></canvas>
+        </div>
+        <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="petit-s-total-evol-error"></div>
+      </div>
+    </div>
+
+    <div class="petit-grid-2">
       <div class="chart-card">
         <div class="petit-card-header">
           <div>
@@ -1389,7 +1411,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
 const fmt = n => Number(n).toLocaleString('pt-BR');
 const mN = {'01':'Jan','02':'Fev','03':'Mar','04':'Abr','05':'Mai','06':'Jun','07':'Jul','08':'Ago','09':'Set','10':'Out','11':'Nov','12':'Dez'};
 
-let usersData = [], companiesData = [], sessionCompaniesData = [], eChart, agegroupChart, appointmentTypesTrendChart, petitCareLinesChart, sessionsEvolChart, sessionsTotalEvolChart, sessionsAttendanceChart, sessionsDailyChart, sessionsTopGroupsChart, qualityVolumeEvolutionChart, qualityEvolutionChart, qualityCriteriaEvolutionChart;
+let usersData = [], companiesData = [], sessionCompaniesData = [], eChart, agegroupChart, appointmentTypesTrendChart, petitCareLinesChart, petitSessionsEvolChart, petitSessionsTotalEvolChart, sessionsEvolChart, sessionsTotalEvolChart, sessionsAttendanceChart, sessionsDailyChart, sessionsTopGroupsChart, qualityVolumeEvolutionChart, qualityEvolutionChart, qualityCriteriaEvolutionChart;
 let currentGroup = '', currentType = '', currentCompany = '';
 let currentGroups = [];
 let currentPartnerBrokerId = '';
@@ -2560,6 +2582,203 @@ async function loadPetitUsabilityKpis(requestId) {
   schedulePdfReadinessUpdate();
 }
 
+function petitEvolutionFilterLabel() {
+  const parts = [];
+  if (currentGroups.length) parts.push(selectedGroupsText());
+  if (currentCompany) parts.push(currentCompany);
+  if (currentPartnerBrokerId) parts.push(`Parceiro: ${selectedPartnerLabel()}`);
+  return parts.join(' · ') || 'global';
+}
+
+function renderPetitSessionsTotalEvolutionChart(labels, totalValues, uniqueBeneficiaryValues, hasUniqueBeneficiaryData) {
+  const skel = document.getElementById('skel-petit-s-total-evol');
+  const cv = document.getElementById('petitSessionsTotalEvolChart');
+  if (skel) skel.style.display = 'none';
+  if (cv) cv.style.display = 'block';
+  if (petitSessionsTotalEvolChart) petitSessionsTotalEvolChart.destroy();
+  if (!cv) return;
+  const datasets = [{
+    label: 'Total de sessões',
+    data: totalValues,
+    borderColor: '#3F55E3',
+    backgroundColor: 'rgba(63,85,227,0.10)',
+    borderWidth: 2,
+    pointRadius: 3,
+    pointBackgroundColor: '#3F55E3',
+    fill: true,
+    tension: 0.35,
+  }];
+  if (hasUniqueBeneficiaryData) {
+    datasets.push({
+      label: 'Beneficiários únicos · média sessões/benef.',
+      data: uniqueBeneficiaryValues,
+      borderColor: '#7c3aed',
+      backgroundColor: 'rgba(124,58,237,0.08)',
+      borderWidth: 2,
+      borderDash: [6, 5],
+      pointRadius: 3,
+      pointBackgroundColor: '#7c3aed',
+      fill: false,
+      tension: 0.35,
+    });
+  }
+  petitSessionsTotalEvolChart = new Chart(cv, {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: true, position: 'top', align: 'end', labels: { boxWidth: 10, boxHeight: 10, color: '#64748b', font: { size: 11 } } },
+        tooltip: {
+          backgroundColor: '#1e293b', borderColor: '#334155', borderWidth: 1,
+          titleColor: '#94a3b8', bodyColor: '#f1f5f9',
+          callbacks: {
+            label: c => {
+              if (String(c.dataset.label || '').startsWith('Beneficiários únicos')) {
+                const sessions = Number(totalValues[c.dataIndex]) || 0;
+                const beneficiaries = Number(c.parsed.y) || 0;
+                const avg = beneficiaries > 0 ? sessions / beneficiaries : null;
+                const avgLabel = avg === null ? '—' : avg.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 2 });
+                return `Beneficiários únicos: ${fmt(beneficiaries)} · média ${avgLabel} sessões/benef.`;
+              }
+              return `${c.dataset.label}: ${fmt(c.parsed.y)} sessões`;
+            },
+          },
+        },
+      },
+      scales: {
+        x: { ticks: { font: { size: 10 }, color: '#94a3b8', maxRotation: 45, autoSkip: true, maxTicksLimit: 14 }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } },
+        y: { beginAtZero: true, ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => fmt(v) }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } },
+      },
+    },
+  });
+}
+
+async function loadPetitSessionEvolutionCharts(requestId) {
+  const skel = document.getElementById('skel-petit-s-evol');
+  const cv = document.getElementById('petitSessionsEvolChart');
+  const modeLabel = document.getElementById('petit-s-evol-mode');
+  const errorBox = document.getElementById('petit-s-evol-error');
+  const totalSkel = document.getElementById('skel-petit-s-total-evol');
+  const totalCv = document.getElementById('petitSessionsTotalEvolChart');
+  const totalModeLabel = document.getElementById('petit-s-total-evol-mode');
+  const totalErrorBox = document.getElementById('petit-s-total-evol-error');
+  if (skel) skel.style.display = 'block';
+  if (cv) cv.style.display = 'none';
+  if (errorBox) { errorBox.style.display = 'none'; errorBox.textContent = ''; }
+  if (totalSkel) totalSkel.style.display = 'block';
+  if (totalCv) totalCv.style.display = 'none';
+  if (totalErrorBox) { totalErrorBox.style.display = 'none'; totalErrorBox.textContent = ''; }
+  if (modeLabel) modeLabel.textContent = petitEvolutionFilterLabel();
+  if (totalModeLabel) totalModeLabel.textContent = petitEvolutionFilterLabel();
+
+  const p = new URLSearchParams();
+  p.set('include_beneficiaries', '1');
+  appendGroupParams(p);
+  if (currentCompany) p.set('company', currentCompany);
+  const data = await safeGet('/api/sessions-evolution?' + p.toString());
+  if (requestId !== petitComiteRequestId) return;
+
+  if (!data || data.error) {
+    const message = data?.error ? String(data.error).slice(0, 220) : 'Erro ao carregar evolução';
+    if (errorBox) {
+      errorBox.style.display = 'block';
+      errorBox.textContent = message;
+    }
+    if (totalErrorBox) {
+      totalErrorBox.style.display = 'block';
+      totalErrorBox.textContent = message;
+    }
+    if (skel) skel.style.display = 'none';
+    if (totalSkel) totalSkel.style.display = 'none';
+    schedulePdfReadinessUpdate();
+    return;
+  }
+
+  const series = data.series || [];
+  const labels = series.map((it) => {
+    const [y, mm] = String(it.mes).split('-');
+    return mN[mm] ? `${mN[mm]}/${y.slice(2)}` : it.mes;
+  });
+  const humanoValues = series.map((it) => Number(it.humano) || 0);
+  const iaValues = series.map((it) => Number(it.ia) || 0);
+  const totalValues = series.map((it) => Number(it.total) || ((Number(it.humano) || 0) + (Number(it.ia) || 0)));
+  const uniqueBeneficiaryValues = series.map((it) => Number(it.unique_beneficiaries ?? it.unique_cpfs) || 0);
+
+  if (skel) skel.style.display = 'none';
+  if (cv) cv.style.display = 'block';
+  if (petitSessionsEvolChart) petitSessionsEvolChart.destroy();
+  if (cv) {
+    petitSessionsEvolChart = new Chart(cv, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: 'Total',
+            data: totalValues,
+            borderColor: '#3F55E3',
+            backgroundColor: 'rgba(63,85,227,0.08)',
+            borderWidth: 2,
+            pointRadius: 3,
+            pointBackgroundColor: '#3F55E3',
+            fill: false,
+            tension: 0.35,
+          },
+          {
+            label: 'Humano',
+            data: humanoValues,
+            borderColor: '#2563eb',
+            backgroundColor: 'rgba(37,99,235,0.08)',
+            borderWidth: 2,
+            pointRadius: 3,
+            pointBackgroundColor: '#2563eb',
+            fill: false,
+            tension: 0.35,
+          },
+          {
+            label: 'IA',
+            data: iaValues,
+            borderColor: '#14b8a6',
+            backgroundColor: 'rgba(20,184,166,0.08)',
+            borderWidth: 2,
+            pointRadius: 3,
+            pointBackgroundColor: '#14b8a6',
+            fill: false,
+            tension: 0.35,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: true, position: 'top', align: 'end', labels: { boxWidth: 10, boxHeight: 10, color: '#64748b', font: { size: 11 } } },
+          tooltip: {
+            backgroundColor: '#1e293b', borderColor: '#334155', borderWidth: 1,
+            titleColor: '#94a3b8', bodyColor: '#f1f5f9',
+            callbacks: { label: c => `${c.dataset.label}: ${fmt(c.parsed.y)} sessões` },
+          },
+        },
+        scales: {
+          x: {
+            ticks: { font: { size: 10 }, color: '#94a3b8', maxRotation: 45, autoSkip: true, maxTicksLimit: 14 },
+            grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false },
+          },
+          y: {
+            beginAtZero: true,
+            ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => fmt(v) },
+            grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false },
+          },
+        },
+      },
+    });
+  }
+  renderPetitSessionsTotalEvolutionChart(labels, totalValues, uniqueBeneficiaryValues, Boolean(data.beneficiaries_included));
+  schedulePdfReadinessUpdate();
+}
+
 async function renderPetitComite() {
   const requestId = ++petitComiteRequestId;
   const period = document.getElementById('petit-period');
@@ -2570,6 +2789,7 @@ async function renderPetitComite() {
   loadPetitUsersKpi(requestId);
   loadPetitAppointmentsKpi(requestId);
   loadPetitUsabilityKpis(requestId);
+  loadPetitSessionEvolutionCharts(requestId);
   if (!cv) return;
 
   if (petitCareLinesChart) petitCareLinesChart.destroy();
