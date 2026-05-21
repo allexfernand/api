@@ -1069,8 +1069,8 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
       <div class="petit-kpi">
         <div class="petit-kpi-icon"><i class="fa-solid fa-calendar-check"></i></div>
         <div class="petit-kpi-label">Agendamentos</div>
-        <div class="petit-kpi-value">—</div>
-        <div class="petit-kpi-note">solicitações concluídas · a conectar</div>
+        <div class="petit-kpi-value" id="petit-kpi-appointments">—</div>
+        <div class="petit-kpi-note" id="petit-kpi-appointments-note">mesma regra da aba Agendamentos</div>
       </div>
       <div class="petit-kpi">
         <div class="petit-kpi-icon"><i class="fa-solid fa-chart-line"></i></div>
@@ -1890,11 +1890,15 @@ function getPdfReadiness() {
   const sessionsKpiPending = sessionsKpi && sessionsKpi.textContent?.trim() === '…';
   const usersKpi = document.getElementById('petit-kpi-users');
   const usersKpiPending = usersKpi && usersKpi.textContent?.trim() === '…';
+  const appointmentsKpi = document.getElementById('petit-kpi-appointments');
+  const appointmentsKpiPending = appointmentsKpi && appointmentsKpi.textContent?.trim() === '…';
   if (sessionsKpiPending) pending.push('Atendimentos');
   else ready += 1;
   if (usersKpiPending) pending.push('Usuários');
   else ready += 1;
-  const total = Math.max(targets.length + 2, 1);
+  if (appointmentsKpiPending) pending.push('Agendamentos');
+  else ready += 1;
+  const total = Math.max(targets.length + 3, 1);
   return { total, ready, percent: Math.round((ready / total) * 100), pending };
 }
 
@@ -2408,6 +2412,32 @@ async function loadPetitUsersKpi(requestId) {
   schedulePdfReadinessUpdate();
 }
 
+async function loadPetitAppointmentsKpi(requestId) {
+  const value = document.getElementById('petit-kpi-appointments');
+  const note = document.getElementById('petit-kpi-appointments-note');
+  const filterNote = petitSessionsFilterNote().replace('volume de sessões', 'agendamentos');
+  if (value) value.textContent = '…';
+  if (note) note.textContent = filterNote;
+
+  const meses = [...selectedMonths].sort();
+  const p = new URLSearchParams();
+  if (meses.length > 0) p.set('meses', meses.join(','));
+  appendGroupParams(p);
+  if (currentCompany) p.set('company', currentCompany);
+  const qs = p.toString() ? '?' + p.toString() : '';
+  const data = await safeGet('/api/appointments' + qs);
+  if (requestId !== petitComiteRequestId) return;
+
+  if (data && !data.error) {
+    if (value) value.textContent = fmt(data.total || 0);
+    if (note) note.textContent = filterNote;
+  } else {
+    if (value) value.textContent = 'Erro';
+    if (note) note.textContent = String(data?.error || 'Erro ao carregar agendamentos').slice(0, 140);
+  }
+  schedulePdfReadinessUpdate();
+}
+
 async function renderPetitComite() {
   const requestId = ++petitComiteRequestId;
   const period = document.getElementById('petit-period');
@@ -2415,6 +2445,7 @@ async function renderPetitComite() {
   if (period) period.textContent = petitPeriodLabel();
   loadPetitSessionsKpi(requestId);
   loadPetitUsersKpi(requestId);
+  loadPetitAppointmentsKpi(requestId);
   if (!cv) return;
 
   if (petitCareLinesChart) petitCareLinesChart.destroy();
