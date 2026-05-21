@@ -60,7 +60,7 @@ const SESSION_TABLE = `hive_metastore.sanus_prod.botmaker_session`;
 const MESSAGE_TABLE = `hive_metastore.sanus_prod.botmaker_message`;
 const DASHBOARD_SESSIONS_TABLE = `hive_metastore.sanus_prod.dashboard_sessions_base_gold`;
 const ORGANIZATIONS_TABLE = `hive_metastore.sanus_prod.organizations`;
-const PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.partner_brokers`;
+const ORGANIZATION_PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.organization_partner_brokers`;
 
 function dashboardSessionsInlineSql() {
   return `(
@@ -215,11 +215,10 @@ function partnerBrokerCondition(partnerBrokerId: unknown, tableAlias = 's') {
   const id = String(partnerBrokerId || '').trim();
   if (!id) return null;
   return `CAST(${tableAlias}.${quoteIdent('organization_id')} AS STRING) IN (
-    SELECT CAST(o.id AS STRING)
-    FROM ${ORGANIZATIONS_TABLE} o
-    INNER JOIN ${PARTNER_BROKERS_TABLE} pb
-      ON o.cnpj = pb.cnpj
-    WHERE CAST(pb.id AS STRING) = '${escape(id)}'
+    SELECT CAST(opb.organization_id AS STRING)
+    FROM ${ORGANIZATION_PARTNER_BROKERS_TABLE} opb
+    WHERE CAST(opb.partner_broker_id AS STRING) = '${escape(id)}'
+      AND opb.deleted_at IS NULL
   )`;
 }
 

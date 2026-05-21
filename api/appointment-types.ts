@@ -9,7 +9,7 @@ const HEADERS = { "Authorization": `Bearer ${TOKEN}`, "Content-Type": "applicati
 const APPOINTMENTS_TABLE = `hive_metastore.sanus_prod.atendimento_summarized_gold_live`;
 const APPOINTMENTS_DATE_COLUMN = 'hora_criacao_atendimento';
 const ORGANIZATIONS_TABLE = `hive_metastore.sanus_prod.organizations`;
-const PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.partner_brokers`;
+const ORGANIZATION_PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.organization_partner_brokers`;
 
 type DbOptions = RequestInit & { headers?: Record<string, string> };
 type DatabricksCell = null | undefined | string | number | boolean | { string_value?: string };
@@ -122,9 +122,10 @@ function partnerOrgNamesSubquery(partnerBrokerId: unknown) {
   return `(
     SELECT UPPER(TRIM(o.name))
     FROM ${ORGANIZATIONS_TABLE} o
-    INNER JOIN ${PARTNER_BROKERS_TABLE} pb
-      ON o.cnpj = pb.cnpj
-    WHERE CAST(pb.id AS STRING) = '${escape(partnerBrokerId)}'
+    INNER JOIN ${ORGANIZATION_PARTNER_BROKERS_TABLE} opb
+      ON CAST(o.id AS STRING) = CAST(opb.organization_id AS STRING)
+    WHERE CAST(opb.partner_broker_id AS STRING) = '${escape(partnerBrokerId)}'
+      AND opb.deleted_at IS NULL
   )`;
 }
 

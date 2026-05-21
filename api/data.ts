@@ -56,6 +56,7 @@ const toInt = (v: DatabricksCell) => { const n = parseInt(String(getCell(v))); r
 const toDate = (v: DatabricksCell) => { const raw = getCell(v); return raw ? String(raw).slice(0, 10) : ""; };
 const ORGANIZATIONS_TABLE = `hive_metastore.sanus_prod.organizations`;
 const PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.partner_brokers`;
+const ORGANIZATION_PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.organization_partner_brokers`;
 
 function buildFilters(groupNames: string[], typeFilter: unknown) {
   const conditions = [`b.created_at IS NOT NULL`];
@@ -103,11 +104,12 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           ) AS broker_name,
           NULLIF(TRIM(CAST(pb.name_secondary AS STRING)), '') AS broker_name_secondary,
           pb.active AS broker_active,
-          COUNT(DISTINCT o.id) AS total_orgs
-        FROM ${ORGANIZATIONS_TABLE} o
+          COUNT(DISTINCT opb.organization_id) AS total_orgs
+        FROM ${ORGANIZATION_PARTNER_BROKERS_TABLE} opb
         INNER JOIN ${PARTNER_BROKERS_TABLE} pb
-          ON o.cnpj = pb.cnpj
+          ON opb.partner_broker_id = pb.id
         WHERE pb.id IS NOT NULL
+          AND opb.deleted_at IS NULL
         GROUP BY
           CAST(pb.id AS STRING),
           COALESCE(

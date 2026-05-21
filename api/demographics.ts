@@ -55,7 +55,7 @@ const getCell = (cell: DatabricksCell) => {
 const toInt = (v: DatabricksCell) => { const n = parseInt(String(getCell(v))); return Number.isFinite(n) ? n : 0; };
 const toNum = (v: DatabricksCell) => { const n = parseFloat(String(getCell(v))); return Number.isFinite(n) ? n : 0; };
 const ORGANIZATIONS_TABLE = `hive_metastore.sanus_prod.organizations`;
-const PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.partner_brokers`;
+const ORGANIZATION_PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.organization_partner_brokers`;
 
 function buildFilters(groupNames: string[], typeFilter: unknown, partnerBrokerId: unknown) {
   const conditions = [];
@@ -70,11 +70,10 @@ function buildFilters(groupNames: string[], typeFilter: unknown, partnerBrokerId
   }
   if (partnerBrokerId) {
     conditions.push(`b.organization_id IN (
-      SELECT o.id
-      FROM ${ORGANIZATIONS_TABLE} o
-      INNER JOIN ${PARTNER_BROKERS_TABLE} pb
-        ON o.cnpj = pb.cnpj
-      WHERE CAST(pb.id AS STRING) = '${escape(partnerBrokerId)}'
+      SELECT opb.organization_id
+      FROM ${ORGANIZATION_PARTNER_BROKERS_TABLE} opb
+      WHERE CAST(opb.partner_broker_id AS STRING) = '${escape(partnerBrokerId)}'
+        AND opb.deleted_at IS NULL
     )`);
   }
   if (typeFilter === 'TITULAR') {
