@@ -315,7 +315,8 @@ body {
 .petit-top-exams-list .petit-dist-row{grid-template-columns:minmax(0,1fr) auto;gap:8px 10px;align-items:start}
 .petit-top-exams-list .petit-dist-label{white-space:normal;overflow:visible;text-overflow:clip;line-height:1.35;overflow-wrap:anywhere}
 .petit-top-exams-list .petit-dist-track{grid-column:1 / -1}
-.petit-top-exams-list .petit-dist-value{min-width:92px;white-space:nowrap}
+.petit-top-exams-list .petit-dist-value{min-width:78px;white-space:normal;display:flex;flex-direction:column;align-items:flex-end;gap:2px;line-height:1.1}
+.petit-top-exams-list .petit-dist-value small{font-size:10px;font-weight:800;color:#64748b}
 .petit-placeholder{border:1px dashed #cbd5e1;background:#f8fafc;border-radius:var(--radius-sm);padding:16px;color:#64748b;font-size:12px;line-height:1.5}
 .petit-metric-stack{display:grid;gap:12px}
 .petit-metric{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px;border:1px solid var(--border);border-radius:var(--radius-sm);background:#fff}
@@ -1160,7 +1161,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
         <div class="section-title"><i class="fa-solid fa-vial" style="margin-right:6px"></i>Principais exames solicitados</div>
         <div class="loading-box" id="petit-top-exams-loading"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...</div>
         <div id="petit-top-exams-content" style="display:none">
-          <div style="font-size:11px;color:#94a3b8;margin-bottom:14px">Top 5 · tipos Exames e Exames - DASA</div>
+          <div style="font-size:11px;color:#94a3b8;margin-bottom:14px">Top 7 + Outros · tipos Exames e Exames - DASA</div>
           <div class="petit-dist-list petit-top-exams-list" id="petit-top-exams-list"></div>
           <div style="font-size:11px;color:#94a3b8;margin-top:10px;text-align:right" id="petit-top-exams-meta">—</div>
         </div>
@@ -3836,17 +3837,17 @@ async function loadPetitTopExams(monthValues) {
       const value = Number(item.total) || 0;
       const pct = Number(item.percentual) || 0;
       const width = Math.max((value / max) * 100, 2);
-      const color = ['#3F55E3', '#2563eb', '#7c3aed', '#0891b2', '#be185d'][index] || '#3F55E3';
+      const color = ['#3F55E3', '#2563eb', '#7c3aed', '#0891b2', '#be185d', '#0f766e', '#f59e0b', '#94a3b8'][index] || '#3F55E3';
       const rawLabel = item.exame || item.tipo || 'Exame sem descrição';
       const label = escapeHtml(rawLabel);
       return `<div class="petit-dist-row" title="${escapeAttr(rawLabel)}">
         <div class="petit-dist-label">${label}</div>
         <div class="petit-dist-track"><div class="petit-dist-bar" style="width:${width}%;background:${color}"></div></div>
-        <div class="petit-dist-value">${fmt(value)} · ${pct.toFixed(1).replace('.', ',')}%</div>
+        <div class="petit-dist-value"><span>${fmt(value)}</span><small>${pct.toFixed(1).replace('.', ',')}%</small></div>
       </div>`;
     }).join('') : '<div style="font-size:13px;color:#94a3b8;text-align:center;padding:14px 0">Nenhum exame encontrado para o filtro atual.</div>';
   }
-  if (meta) meta.textContent = `${items.length} exames · total ${fmt(data.total || 0)} solicitações de exames`;
+  if (meta) meta.textContent = `${items.length} linhas · total ${fmt(data.total || 0)} solicitações de exames`;
   if (loading) loading.style.display = 'none';
   if (content) content.style.display = 'block';
 }

@@ -266,14 +266,35 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
             COUNT(*) AS total
           FROM filtered_exams
           GROUP BY exame
+        ),
+        ranked_exams AS (
+          SELECT
+            exame,
+            total,
+            ROW_NUMBER() OVER (ORDER BY total DESC, exame ASC) AS rn,
+            SUM(total) OVER () AS total_exames
+          FROM grouped_exams
+        ),
+        final_exams AS (
+          SELECT exame, total, total_exames, rn
+          FROM ranked_exams
+          WHERE rn <= 7
+          UNION ALL
+          SELECT
+            'Outros' AS exame,
+            SUM(total) AS total,
+            MAX(total_exames) AS total_exames,
+            8 AS rn
+          FROM ranked_exams
+          WHERE rn > 7
         )
         SELECT
           exame,
           total,
-          SUM(total) OVER () AS total_exames
-        FROM grouped_exams
-        ORDER BY total DESC
-        LIMIT 5
+          total_exames
+        FROM final_exams
+        WHERE total > 0
+        ORDER BY rn
       `);
       const total = rows.length ? toInt(rows[0][2]) : 0;
       const items = rows.map((row) => {
