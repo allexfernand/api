@@ -2138,10 +2138,28 @@ function buildPdfReport() {
   return { overlay, report };
 }
 
+function fileNameSlug(value, fallback='') {
+  return String(value || fallback)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '');
+}
+
 function pdfFileName() {
-  const tab = getActiveTabLabel().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'dashboard';
+  const tab = fileNameSlug(getActiveTabLabel(), 'dashboard') || 'dashboard';
+  const filters = [];
+  if (currentGroups.length === 1) filters.push(fileNameSlug(currentGroups[0]));
+  else if (currentGroups.length > 1) filters.push(`${currentGroups.length}-grupos`);
+  if (currentPartnerBrokerId) filters.push(fileNameSlug(selectedPartnerLabel()));
+  if (currentCompany) filters.push(fileNameSlug(currentCompany));
+  const months = [...selectedMonths].sort();
+  if (months.length === 1) filters.push(months[0]);
+  else if (months.length > 1) filters.push(`${months[0]}-a-${months[months.length - 1]}`);
+  const scope = filters.filter(Boolean).slice(0, 4).join('-');
   const stamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
-  return `sanus-${tab}-${stamp}.pdf`;
+  return `sanus-${tab}${scope ? '-' + scope : ''}-${stamp}.pdf`;
 }
 
 async function downloadDashboardPdf() {
