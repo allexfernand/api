@@ -525,6 +525,9 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
 .pdf-filter-value{font-size:12px;font-weight:700;color:#334155;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pdf-export-content .tab-content{display:block!important}
 .pdf-export-content canvas{display:none!important}
+.pdf-sanus-wordmark{display:flex!important;align-items:center;gap:10px;height:44px;width:max-content;margin-bottom:12px;filter:none!important;color:#fff;font-size:31px;font-weight:800;letter-spacing:-1.4px;line-height:1}
+.pdf-sanus-mark{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:3px;width:35px;height:35px}
+.pdf-sanus-mark span{display:block;background:#fff;border-radius:5px}
 .pdf-chart-placeholder{height:220px;border:1px dashed #cbd5e1;border-radius:12px;background:#f8fafc;color:#94a3b8;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;text-align:center;padding:16px}
 </style>
 </head>
@@ -1895,6 +1898,16 @@ function copyCanvasAsImages(sourceRoot, cloneRoot) {
   sanitizePdfCanvases(cloneRoot);
 }
 
+function replacePdfRemoteAssets(root) {
+  root.querySelectorAll('.petit-hero-logo').forEach((logo) => {
+    const wordmark = document.createElement('div');
+    wordmark.className = 'petit-hero-logo pdf-sanus-wordmark';
+    wordmark.setAttribute('aria-label', 'Sanus');
+    wordmark.innerHTML = '<span class="pdf-sanus-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span><span>sanus</span>';
+    logo.replaceWith(wordmark);
+  });
+}
+
 function createPdfChartPlaceholder(message) {
   const placeholder = document.createElement('div');
   placeholder.className = 'pdf-chart-placeholder';
@@ -2121,6 +2134,7 @@ function buildPdfReport() {
   content.className = 'pdf-export-content';
   const activeClone = activeTab.cloneNode(true);
   activeClone.classList.add('active');
+  replacePdfRemoteAssets(activeClone);
   copyCanvasAsImages(activeTab, activeClone);
   content.appendChild(activeClone);
 
