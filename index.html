@@ -1063,8 +1063,8 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
       <div class="petit-kpi">
         <div class="petit-kpi-icon"><i class="fa-solid fa-user-group"></i></div>
         <div class="petit-kpi-label">Usuários</div>
-        <div class="petit-kpi-value">—</div>
-        <div class="petit-kpi-note">usuários únicos no recorte · a conectar</div>
+        <div class="petit-kpi-value" id="petit-kpi-users">—</div>
+        <div class="petit-kpi-note" id="petit-kpi-users-note">usuários únicos · filtros aplicados</div>
       </div>
       <div class="petit-kpi">
         <div class="petit-kpi-icon"><i class="fa-solid fa-calendar-check"></i></div>
@@ -1888,9 +1888,13 @@ function getPdfReadiness() {
   });
   const sessionsKpi = document.getElementById('petit-kpi-sessions');
   const sessionsKpiPending = sessionsKpi && sessionsKpi.textContent?.trim() === '…';
+  const usersKpi = document.getElementById('petit-kpi-users');
+  const usersKpiPending = usersKpi && usersKpi.textContent?.trim() === '…';
   if (sessionsKpiPending) pending.push('Atendimentos');
   else ready += 1;
-  const total = Math.max(targets.length + 1, 1);
+  if (usersKpiPending) pending.push('Usuários');
+  else ready += 1;
+  const total = Math.max(targets.length + 2, 1);
   return { total, ready, percent: Math.round((ready / total) * 100), pending };
 }
 
@@ -2378,12 +2382,39 @@ async function loadPetitSessionsKpi(requestId) {
   schedulePdfReadinessUpdate();
 }
 
+async function loadPetitUsersKpi(requestId) {
+  const value = document.getElementById('petit-kpi-users');
+  const note = document.getElementById('petit-kpi-users-note');
+  if (value) value.textContent = '…';
+  if (note) note.textContent = petitSessionsFilterNote().replace('volume de sessões', 'usuários únicos');
+
+  const meses = [...selectedMonths].sort();
+  const p = new URLSearchParams();
+  p.set('scope', 'unique_users');
+  if (meses.length > 0) p.set('meses', meses.join(','));
+  appendGroupParams(p);
+  if (currentCompany) p.set('company', currentCompany);
+  const qs = p.toString() ? '?' + p.toString() : '';
+  const data = await safeGet('/api/sessions' + qs);
+  if (requestId !== petitComiteRequestId) return;
+
+  if (data && !data.error) {
+    if (value) value.textContent = fmt(data.unique_users || 0);
+    if (note) note.textContent = petitSessionsFilterNote().replace('volume de sessões', 'usuários únicos');
+  } else {
+    if (value) value.textContent = 'Erro';
+    if (note) note.textContent = String(data?.error || 'Erro ao carregar usuários únicos').slice(0, 140);
+  }
+  schedulePdfReadinessUpdate();
+}
+
 async function renderPetitComite() {
   const requestId = ++petitComiteRequestId;
   const period = document.getElementById('petit-period');
   const cv = document.getElementById('petitCareLinesChart');
   if (period) period.textContent = petitPeriodLabel();
   loadPetitSessionsKpi(requestId);
+  loadPetitUsersKpi(requestId);
   if (!cv) return;
 
   if (petitCareLinesChart) petitCareLinesChart.destroy();

@@ -304,6 +304,24 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       });
     }
 
+    if (scope === 'unique_users') {
+      const where = [companySessionsDateFilter, companySessionsScopeFilter].filter(Boolean).join(' AND ');
+      const rows = await runQuery(wh.id, `
+        SELECT COUNT(DISTINCT s.${quoteIdent('beneficiary_key')}) AS unique_users
+        FROM ${dashboardSessionsTable} s
+        ${where ? `WHERE ${where} AND s.${quoteIdent('beneficiary_key')} IS NOT NULL` : `WHERE s.${quoteIdent('beneficiary_key')} IS NOT NULL`}
+      `);
+      return res.status(200).json({
+        scope: 'unique_users',
+        unique_users: toInt(rows[0]?.[0]),
+        filters_applied: {
+          period: meses.length > 0,
+          organization: Boolean(groupNames.length || company || partnerBrokerId),
+        },
+        source: 'dashboard_sessions_base_gold.beneficiary_key',
+      });
+    }
+
     if (scope === 'typification_groups' && typificationValue) {
       const tipFilter = `s.${quoteIdent('tipificacao')} = '${escape(typificationValue)}'`;
       const where = [companySessionsDateFilter, companySessionsScopeFilter, typificationFinisherFilter, tipFilter]
