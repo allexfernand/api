@@ -317,6 +317,87 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       });
       return;
     }
+    if (scope === 'top_consultations') {
+      const normalizedAssuntoExpr = `TRIM(REGEXP_REPLACE(TRANSLATE(
+        COALESCE(CAST(assunto AS STRING), ''),
+        'ÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇáàâãäéèêëíìîïóòôõöúùûüç',
+        'AAAAAEEEEIIIIOOOOOUUUUCaaaaaeeeeiiiiooooouuuuc'
+      ), '[^A-Za-z0-9]+', ' '))`;
+      const normalizedUpperExpr = `UPPER(${normalizedAssuntoExpr})`;
+      const specialtyExpr = `CASE
+        WHEN ${normalizedUpperExpr} LIKE '%CLINICO GERAL%'
+          OR ${normalizedUpperExpr} LIKE '%CLINICA MEDICA%'
+        THEN 'Clínico geral'
+        WHEN ${normalizedUpperExpr} LIKE '%CARDIO%'
+        THEN 'Cardiologia'
+        WHEN ${normalizedUpperExpr} LIKE '%DERMATO%'
+        THEN 'Dermatologia'
+        WHEN ${normalizedUpperExpr} LIKE '%PSIQUIATR%'
+        THEN 'Psiquiatria'
+        ELSE COALESCE(NULLIF(INITCAP(LOWER(TRIM(REGEXP_REPLACE(${normalizedAssuntoExpr}, '^(CONSULTA|CONSULTAS|MEDICO|MEDICA) ', '')))), ''), 'Especialidade sem descrição')
+      END`;
+      const rows = await runQuery(wh.id, `
+        WITH filtered_consultations AS (
+          SELECT ${specialtyExpr} AS especialidade
+          FROM ${APPOINTMENTS_TABLE}
+          ${commonWhere}
+            AND ${typeExpr} = 'Consultas'
+        ),
+        grouped_consultations AS (
+          SELECT
+            especialidade,
+            COUNT(*) AS total
+          FROM filtered_consultations
+          GROUP BY especialidade
+        ),
+        ranked_consultations AS (
+          SELECT
+            especialidade,
+            total,
+            ROW_NUMBER() OVER (ORDER BY total DESC, especialidade ASC) AS rn,
+            SUM(total) OVER () AS total_consultas
+          FROM grouped_consultations
+        ),
+        final_consultations AS (
+          SELECT especialidade, total, total_consultas, rn
+          FROM ranked_consultations
+          WHERE rn <= 7
+          UNION ALL
+          SELECT
+            'Outros' AS especialidade,
+            SUM(total) AS total,
+            MAX(total_consultas) AS total_consultas,
+            8 AS rn
+          FROM ranked_consultations
+          WHERE rn > 7
+        )
+        SELECT
+          especialidade,
+          total,
+          total_consultas
+        FROM final_consultations
+        WHERE total > 0
+        ORDER BY rn
+      `);
+      const total = rows.length ? toInt(rows[0][2]) : 0;
+      const items = rows.map((row) => {
+        const quantidade = toInt(row[1]);
+        return {
+          especialidade: String(getCell(row[0]) || 'Especialidade sem descrição'),
+          tipo: String(getCell(row[0]) || 'Especialidade sem descrição'),
+          total: quantidade,
+          percentual: total > 0 ? Math.round((quantidade / total) * 1000) / 10 : 0,
+        };
+      });
+      res.status(200).json({
+        items,
+        total,
+        months: monthList,
+        source: "atendimento_summarized_gold_live",
+        filters: { group_name: groupName, company, partner_broker_id: partnerBrokerId, scope },
+      });
+      return;
+    }
     const rows = await runQuery(wh.id, `
       SELECT
         ${groupByMonth ? `${monthExpr} AS mes,` : ''}
