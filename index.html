@@ -312,6 +312,10 @@ body {
 .petit-dist-track{height:10px;background:#f1f5f9;border-radius:999px;overflow:hidden}
 .petit-dist-bar{height:100%;border-radius:999px;background:var(--sanus-brand);min-width:3px}
 .petit-dist-value{font-size:12px;font-weight:800;color:var(--sanus-brand-strong);text-align:right}
+.petit-top-exams-list .petit-dist-row{grid-template-columns:minmax(0,1fr) auto;gap:8px 10px;align-items:start}
+.petit-top-exams-list .petit-dist-label{white-space:normal;overflow:visible;text-overflow:clip;line-height:1.35;overflow-wrap:anywhere}
+.petit-top-exams-list .petit-dist-track{grid-column:1 / -1}
+.petit-top-exams-list .petit-dist-value{min-width:92px;white-space:nowrap}
 .petit-placeholder{border:1px dashed #cbd5e1;background:#f8fafc;border-radius:var(--radius-sm);padding:16px;color:#64748b;font-size:12px;line-height:1.5}
 .petit-metric-stack{display:grid;gap:12px}
 .petit-metric{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px;border:1px solid var(--border);border-radius:var(--radius-sm);background:#fff}
@@ -1157,7 +1161,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
         <div class="loading-box" id="petit-top-exams-loading"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...</div>
         <div id="petit-top-exams-content" style="display:none">
           <div style="font-size:11px;color:#94a3b8;margin-bottom:14px">Top 5 · tipos Exames e Exames - DASA</div>
-          <div class="petit-dist-list" id="petit-top-exams-list"></div>
+          <div class="petit-dist-list petit-top-exams-list" id="petit-top-exams-list"></div>
           <div style="font-size:11px;color:#94a3b8;margin-top:10px;text-align:right" id="petit-top-exams-meta">—</div>
         </div>
       </div>
