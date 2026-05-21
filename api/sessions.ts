@@ -219,6 +219,13 @@ function partnerBrokerCondition(partnerBrokerId: unknown, tableAlias = 's') {
     FROM ${ORGANIZATION_PARTNER_BROKERS_TABLE} opb
     WHERE CAST(opb.partner_broker_id AS STRING) = '${escape(id)}'
       AND opb.deleted_at IS NULL
+    UNION
+    SELECT CAST(child.id AS STRING)
+    FROM ${ORGANIZATION_PARTNER_BROKERS_TABLE} opb
+    INNER JOIN ${ORGANIZATIONS_TABLE} child
+      ON CAST(child.matriz_id AS STRING) = CAST(opb.organization_id AS STRING)
+    WHERE CAST(opb.partner_broker_id AS STRING) = '${escape(id)}'
+      AND opb.deleted_at IS NULL
   )`;
 }
 

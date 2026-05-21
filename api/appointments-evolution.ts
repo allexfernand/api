@@ -128,6 +128,13 @@ function partnerOrgNamesSubquery(partnerBrokerId: unknown) {
       ON CAST(o.id AS STRING) = CAST(opb.organization_id AS STRING)
     WHERE CAST(opb.partner_broker_id AS STRING) = '${escape(partnerBrokerId)}'
       AND opb.deleted_at IS NULL
+    UNION
+    SELECT UPPER(TRIM(child.name))
+    FROM ${ORGANIZATION_PARTNER_BROKERS_TABLE} opb
+    INNER JOIN ${ORGANIZATIONS_TABLE} child
+      ON CAST(child.matriz_id AS STRING) = CAST(opb.organization_id AS STRING)
+    WHERE CAST(opb.partner_broker_id AS STRING) = '${escape(partnerBrokerId)}'
+      AND opb.deleted_at IS NULL
   )`;
 }
 

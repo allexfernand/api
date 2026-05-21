@@ -95,6 +95,21 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
     if (scope === 'partners') {
       const partnerRows = await runQuery(wh.id, `
+        WITH partner_orgs AS (
+          SELECT
+            CAST(opb.partner_broker_id AS STRING) AS partner_broker_id,
+            CAST(opb.organization_id AS STRING) AS organization_id
+          FROM ${ORGANIZATION_PARTNER_BROKERS_TABLE} opb
+          WHERE opb.deleted_at IS NULL
+          UNION
+          SELECT
+            CAST(opb.partner_broker_id AS STRING) AS partner_broker_id,
+            CAST(child.id AS STRING) AS organization_id
+          FROM ${ORGANIZATION_PARTNER_BROKERS_TABLE} opb
+          INNER JOIN ${ORGANIZATIONS_TABLE} child
+            ON CAST(child.matriz_id AS STRING) = CAST(opb.organization_id AS STRING)
+          WHERE opb.deleted_at IS NULL
+        )
         SELECT
           CAST(pb.id AS STRING) AS broker_id,
           COALESCE(
@@ -104,12 +119,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           ) AS broker_name,
           NULLIF(TRIM(CAST(pb.name_secondary AS STRING)), '') AS broker_name_secondary,
           pb.active AS broker_active,
-          COUNT(DISTINCT opb.organization_id) AS total_orgs
-        FROM ${ORGANIZATION_PARTNER_BROKERS_TABLE} opb
+          COUNT(DISTINCT po.organization_id) AS total_orgs
+        FROM partner_orgs po
         INNER JOIN ${PARTNER_BROKERS_TABLE} pb
-          ON opb.partner_broker_id = pb.id
+          ON po.partner_broker_id = CAST(pb.id AS STRING)
         WHERE pb.id IS NOT NULL
-          AND opb.deleted_at IS NULL
         GROUP BY
           CAST(pb.id AS STRING),
           COALESCE(
