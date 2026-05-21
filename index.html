@@ -1056,6 +1056,12 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
 
     <div class="petit-kpi-grid">
       <div class="petit-kpi">
+        <div class="petit-kpi-icon"><i class="fa-solid fa-people-group"></i></div>
+        <div class="petit-kpi-label">Beneficiários</div>
+        <div class="petit-kpi-value" id="petit-kpi-beneficiaries">—</div>
+        <div class="petit-kpi-note" id="petit-kpi-beneficiaries-note">beneficiários ativos · filtros aplicados</div>
+      </div>
+      <div class="petit-kpi">
         <div class="petit-kpi-icon"><i class="fa-solid fa-headset"></i></div>
         <div class="petit-kpi-label">Atendimentos</div>
         <div class="petit-kpi-value" id="petit-kpi-sessions">—</div>
@@ -1072,12 +1078,6 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
         <div class="petit-kpi-label">Agendamentos</div>
         <div class="petit-kpi-value" id="petit-kpi-appointments">—</div>
         <div class="petit-kpi-note" id="petit-kpi-appointments-note">mesma regra da aba Agendamentos</div>
-      </div>
-      <div class="petit-kpi">
-        <div class="petit-kpi-icon"><i class="fa-solid fa-chart-line"></i></div>
-        <div class="petit-kpi-label">Usuários que falaram no mês</div>
-        <div class="petit-kpi-value">30%</div>
-        <div class="petit-kpi-note">referência do modelo do comitê</div>
       </div>
     </div>
 
@@ -1885,19 +1885,23 @@ function getPdfReadiness() {
     if (isReady) ready += 1;
     else pending.push(label);
   });
+  const beneficiariesKpi = document.getElementById('petit-kpi-beneficiaries');
+  const beneficiariesKpiPending = beneficiariesKpi && beneficiariesKpi.textContent?.trim() === '…';
   const sessionsKpi = document.getElementById('petit-kpi-sessions');
   const sessionsKpiPending = sessionsKpi && sessionsKpi.textContent?.trim() === '…';
   const usersKpi = document.getElementById('petit-kpi-users');
   const usersKpiPending = usersKpi && usersKpi.textContent?.trim() === '…';
   const appointmentsKpi = document.getElementById('petit-kpi-appointments');
   const appointmentsKpiPending = appointmentsKpi && appointmentsKpi.textContent?.trim() === '…';
+  if (beneficiariesKpiPending) pending.push('Beneficiários');
+  else ready += 1;
   if (sessionsKpiPending) pending.push('Atendimentos');
   else ready += 1;
   if (usersKpiPending) pending.push('Usuários');
   else ready += 1;
   if (appointmentsKpiPending) pending.push('Agendamentos');
   else ready += 1;
-  const total = Math.max(targets.length + 3, 1);
+  const total = Math.max(targets.length + 4, 1);
   return { total, ready, percent: Math.round((ready / total) * 100), pending };
 }
 
@@ -2358,6 +2362,34 @@ function petitSessionsFilterNote() {
   return parts.length ? `volume de sessões · ${parts.join(' · ')}` : 'volume total de sessões';
 }
 
+function petitBeneficiariesFilterNote() {
+  const parts = [];
+  if (currentGroups.length) parts.push(selectedGroupsText());
+  if (currentCompany) parts.push(currentCompany);
+  if (currentPartnerBrokerId) parts.push(`Parceiro: ${selectedPartnerLabel()}`);
+  return parts.length ? `beneficiários ativos · ${parts.join(' · ')}` : 'total de beneficiários ativos';
+}
+
+async function loadPetitBeneficiariesKpi(requestId) {
+  const value = document.getElementById('petit-kpi-beneficiaries');
+  const note = document.getElementById('petit-kpi-beneficiaries-note');
+  if (value) value.textContent = '…';
+  if (note) note.textContent = petitBeneficiariesFilterNote();
+
+  const data = await safeGet('/api/demographics' + buildQS());
+  if (requestId !== petitComiteRequestId) return;
+
+  if (data && !data.error) {
+    const total = Number(data.total_beneficiarios ?? data.total_vidas) || 0;
+    if (value) value.textContent = fmt(total);
+    if (note) note.textContent = petitBeneficiariesFilterNote();
+  } else {
+    if (value) value.textContent = 'Erro';
+    if (note) note.textContent = String(data?.error || 'Erro ao carregar beneficiários').slice(0, 140);
+  }
+  schedulePdfReadinessUpdate();
+}
+
 async function loadPetitSessionsKpi(requestId) {
   const value = document.getElementById('petit-kpi-sessions');
   const note = document.getElementById('petit-kpi-sessions-note');
@@ -2533,6 +2565,7 @@ async function renderPetitComite() {
   const period = document.getElementById('petit-period');
   const cv = document.getElementById('petitCareLinesChart');
   if (period) period.textContent = petitPeriodLabel();
+  loadPetitBeneficiariesKpi(requestId);
   loadPetitSessionsKpi(requestId);
   loadPetitUsersKpi(requestId);
   loadPetitAppointmentsKpi(requestId);
