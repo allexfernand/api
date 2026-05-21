@@ -1057,8 +1057,8 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
       <div class="petit-kpi">
         <div class="petit-kpi-icon"><i class="fa-solid fa-headset"></i></div>
         <div class="petit-kpi-label">Atendimentos</div>
-        <div class="petit-kpi-value">—</div>
-        <div class="petit-kpi-note">números gerais no mês · a conectar</div>
+        <div class="petit-kpi-value" id="petit-kpi-sessions">—</div>
+        <div class="petit-kpi-note" id="petit-kpi-sessions-note">volume de sessões · filtros aplicados</div>
       </div>
       <div class="petit-kpi">
         <div class="petit-kpi-icon"><i class="fa-solid fa-user-group"></i></div>
@@ -1406,6 +1406,7 @@ let selectedTypification = null;
 let typificationGroupsRequestId = 0;
 let sessionsRequestId = 0;
 let sessionsEvolutionRequestId = 0;
+let petitComiteRequestId = 0;
 let selectedQualityCriteriaSort = 'worst';
 let selectedQualitySubcriteriaSort = 'worst';
 let selectedQualitySubcriteriaCriterion = '';
@@ -1885,7 +1886,11 @@ function getPdfReadiness() {
     if (isReady) ready += 1;
     else pending.push(label);
   });
-  const total = Math.max(targets.length, 1);
+  const sessionsKpi = document.getElementById('petit-kpi-sessions');
+  const sessionsKpiPending = sessionsKpi && sessionsKpi.textContent?.trim() === '…';
+  if (sessionsKpiPending) pending.push('Atendimentos');
+  else ready += 1;
+  const total = Math.max(targets.length + 1, 1);
   return { total, ready, percent: Math.round((ready / total) * 100), pending };
 }
 
@@ -2336,10 +2341,49 @@ function petitPeriodLabel() {
   return `Período: ${firstLabel} a ${lastLabel}`;
 }
 
-function renderPetitComite() {
+function petitSessionsFilterNote() {
+  const parts = [];
+  const months = [...selectedMonths].sort();
+  if (months.length) parts.push(months.length === 1 ? monthShortLabel(months[0]) : `${months.length} meses`);
+  if (currentGroups.length) parts.push(selectedGroupsText());
+  if (currentCompany) parts.push(currentCompany);
+  if (currentPartnerBrokerId) parts.push(`Parceiro: ${selectedPartnerLabel()}`);
+  return parts.length ? `volume de sessões · ${parts.join(' · ')}` : 'volume total de sessões';
+}
+
+async function loadPetitSessionsKpi(requestId) {
+  const value = document.getElementById('petit-kpi-sessions');
+  const note = document.getElementById('petit-kpi-sessions-note');
+  if (value) value.textContent = '…';
+  if (note) note.textContent = petitSessionsFilterNote();
+
+  const meses = [...selectedMonths].sort();
+  const p = new URLSearchParams();
+  p.set('scope', 'total');
+  if (meses.length > 0) p.set('meses', meses.join(','));
+  appendGroupParams(p);
+  if (currentCompany) p.set('company', currentCompany);
+  const qs = p.toString() ? '?' + p.toString() : '';
+  const data = await safeGet('/api/sessions' + qs);
+  if (requestId !== petitComiteRequestId) return;
+
+  if (data && !data.error) {
+    const total = Number(data.total_sessions ?? data.economic_group_total) || 0;
+    if (value) value.textContent = fmt(total);
+    if (note) note.textContent = petitSessionsFilterNote();
+  } else {
+    if (value) value.textContent = 'Erro';
+    if (note) note.textContent = String(data?.economic_group_total_error || data?.error || 'Erro ao carregar sessões').slice(0, 140);
+  }
+  schedulePdfReadinessUpdate();
+}
+
+async function renderPetitComite() {
+  const requestId = ++petitComiteRequestId;
   const period = document.getElementById('petit-period');
   const cv = document.getElementById('petitCareLinesChart');
   if (period) period.textContent = petitPeriodLabel();
+  loadPetitSessionsKpi(requestId);
   if (!cv) return;
 
   if (petitCareLinesChart) petitCareLinesChart.destroy();

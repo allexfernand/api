@@ -286,6 +286,24 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       ? `s.${quoteIdent('tipo_atendimento_agent')} = 'Humano'`
       : (typificationFinisher === 'ia' ? `s.${quoteIdent('tipo_atendimento_agent')} = 'IA'` : null);
 
+    if (scope === 'total') {
+      const where = [companySessionsDateFilter, companySessionsScopeFilter].filter(Boolean).join(' AND ');
+      const rows = await runQuery(wh.id, `
+        SELECT COUNT(*) AS total_sessions
+        FROM ${dashboardSessionsTable} s
+        ${where ? `WHERE ${where}` : ''}
+      `);
+      return res.status(200).json({
+        scope: 'total',
+        total_sessions: toInt(rows[0]?.[0]),
+        filters_applied: {
+          period: meses.length > 0,
+          organization: Boolean(groupNames.length || company || partnerBrokerId),
+        },
+        source: 'dashboard_sessions_base_gold',
+      });
+    }
+
     if (scope === 'typification_groups' && typificationValue) {
       const tipFilter = `s.${quoteIdent('tipificacao')} = '${escape(typificationValue)}'`;
       const where = [companySessionsDateFilter, companySessionsScopeFilter, typificationFinisherFilter, tipFilter]
