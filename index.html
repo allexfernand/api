@@ -1133,7 +1133,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
       </div>
 
       <div class="chart-card">
-        <h2 style="font-size:13px;font-weight:700;color:#334155;margin-bottom:4px">Evolução Mensal de Atendimento x Beneficiários Unicos</h2>
+        <h2 style="font-size:13px;font-weight:700;color:#334155;margin-bottom:4px">Evolução mensal de atendimentos x beneficiários únicos</h2>
         <div style="font-size:11px;color:#94a3b8;margin-bottom:14px">Últimos 12 meses · <span id="petit-s-total-evol-mode">global</span></div>
         <div class="chart-wrap">
           <div class="skeleton" id="skel-petit-s-total-evol"></div>
@@ -1175,7 +1175,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
         <div class="section-title"><i class="fa-solid fa-list-check" style="margin-right:6px"></i>Distribuição das solicitações</div>
         <div class="loading-box" id="petit-appointment-types-loading"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...</div>
         <div id="petit-appointment-types-content" style="display:none">
-          <div style="font-size:11px;color:#94a3b8;margin-bottom:10px">Mesma regra do quadro Tipos de consulta · aba Agendamento</div>
+          <div style="font-size:11px;color:#94a3b8;margin-bottom:10px">Mesma regra do quadro Tipos de consulta da aba Agendamentos</div>
           <div class="table-scroll">
             <table class="appointment-types-table">
               <thead>
@@ -1196,7 +1196,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
         <div class="section-title"><i class="fa-solid fa-vial" style="margin-right:6px"></i>Principais exames solicitados</div>
         <div class="loading-box" id="petit-top-exams-loading"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...</div>
         <div class="petit-top-list-content" id="petit-top-exams-content" style="display:none">
-          <div style="font-size:11px;color:#94a3b8;margin-bottom:14px">Top 9 + Outros · tipos Exames e Exames - DASA</div>
+          <div style="font-size:11px;color:#94a3b8;margin-bottom:14px">Top 9 + outros · tipos: Exames e Exames - DASA</div>
           <div class="petit-dist-list petit-top-exams-list" id="petit-top-exams-list"></div>
           <div style="font-size:11px;color:#94a3b8;margin-top:10px;text-align:right" id="petit-top-exams-meta">—</div>
         </div>
@@ -1206,7 +1206,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
         <div class="section-title"><i class="fa-solid fa-user-doctor" style="margin-right:6px"></i>Principais especialidades solicitadas</div>
         <div class="loading-box" id="petit-top-consultations-loading"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...</div>
         <div class="petit-top-list-content" id="petit-top-consultations-content" style="display:none">
-          <div style="font-size:11px;color:#94a3b8;margin-bottom:14px">Top 9 + Outros · tipo Consultas</div>
+          <div style="font-size:11px;color:#94a3b8;margin-bottom:14px">Top 9 + outros · tipo: Consultas</div>
           <div class="petit-dist-list petit-top-exams-list" id="petit-top-consultations-list"></div>
           <div style="font-size:11px;color:#94a3b8;margin-top:10px;text-align:right" id="petit-top-consultations-meta">—</div>
         </div>
@@ -2647,9 +2647,9 @@ async function loadPetitUsabilityKpis(requestId) {
     : petitUsagePeriodLabel(periods.last_1_month);
   const rows = [
     { label: 'Utilização do mês vigente', value: selectedPeriodValue, period: selectedPeriodLabel },
-    { label: 'Utilização - 3 meses', value: Number(utilization.last_3_months) || 0, period: petitUsagePeriodLabel(periods.last_3_months) },
-    { label: 'Utilização - 6 meses', value: Number(utilization.last_6_months) || 0, period: petitUsagePeriodLabel(periods.last_6_months) },
-    { label: 'Utilização - 12 meses', value: Number(utilization.last_12_months) || 0, period: petitUsagePeriodLabel(periods.last_12_months) },
+    { label: 'Utilização · 3 meses', value: Number(utilization.last_3_months) || 0, period: petitUsagePeriodLabel(periods.last_3_months) },
+    { label: 'Utilização · 6 meses', value: Number(utilization.last_6_months) || 0, period: petitUsagePeriodLabel(periods.last_6_months) },
+    { label: 'Utilização · 12 meses', value: Number(utilization.last_12_months) || 0, period: petitUsagePeriodLabel(periods.last_12_months) },
   ];
 
   if (content) {
@@ -3918,7 +3918,7 @@ async function loadPetitTopExams(monthValues) {
       </div>`;
     }).join('') : '<div style="font-size:13px;color:#94a3b8;text-align:center;padding:14px 0">Nenhum exame encontrado para o filtro atual.</div>';
   }
-  if (meta) meta.textContent = `${items.length} linhas · total ${fmt(data.total || 0)} solicitações de exames`;
+  if (meta) meta.textContent = `${items.length} itens · total de ${fmt(data.total || 0)} solicitações de exames`;
   if (loading) loading.style.display = 'none';
   if (content) content.style.display = 'flex';
 }
@@ -3966,7 +3966,7 @@ async function loadPetitTopConsultations(monthValues) {
       </div>`;
     }).join('') : '<div style="font-size:13px;color:#94a3b8;text-align:center;padding:14px 0">Nenhuma consulta encontrada para o filtro atual.</div>';
   }
-  if (meta) meta.textContent = `${items.length} linhas · total ${fmt(data.total || 0)} solicitações de consultas`;
+  if (meta) meta.textContent = `${items.length} itens · total de ${fmt(data.total || 0)} solicitações de consulta`;
   if (loading) loading.style.display = 'none';
   if (content) content.style.display = 'flex';
 }
