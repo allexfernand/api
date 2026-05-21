@@ -83,22 +83,16 @@ body {
 }
 .refresh-btn:hover{background:var(--bg);color:var(--text-2);border-color:#d1d5db;transform:translateY(-1px)}
 .refresh-btn:active{transform:translateY(0)}
-.pdf-btn{font-size:12px;font-weight:600;padding:6px 12px;border-radius:var(--radius-sm);border:1px solid #99f6e4;background:#f0fdfa;color:#0f766e;cursor:pointer;transition:all var(--t) var(--ease);display:flex;align-items:center;gap:6px}
-.pdf-btn:hover{background:#ccfbf1;border-color:#5eead4;transform:translateY(-1px)}
+.pdf-btn{font-size:12px;font-weight:600;padding:6px 12px;border-radius:var(--radius-sm);border:1px solid #c7d2fe;background:#eef2ff;color:#3346c7;cursor:pointer;transition:all var(--t) var(--ease);display:flex;align-items:center;gap:6px}
+.pdf-btn:hover{background:#dbe4ff;border-color:#a5b4fc;transform:translateY(-1px)}
 .pdf-btn:disabled{opacity:.65;cursor:not-allowed;transform:none;background:#f8fafc;border-color:#e2e8f0;color:#94a3b8}
 .pdf-control{display:grid;gap:4px;min-width:132px}
-.petit-pdf-control{min-width:150px}
-.petit-pdf-control .pdf-btn{background:#fff;color:#00857D;border-color:rgba(255,255,255,.55)}
-.petit-pdf-control .pdf-btn:not(:disabled):hover{background:#E6F6F5;border-color:#fff}
-.petit-pdf-control .pdf-ready-track{background:rgba(255,255,255,.22)}
-.petit-pdf-control .pdf-ready-fill{background:linear-gradient(90deg,#fff,#CCEDEA)}
-.petit-pdf-control .pdf-ready-label{color:rgba(255,255,255,.85)}
-.petit-pdf-control.is-ready .pdf-ready-label{color:#fff;font-weight:800}
+.filter-pdf-control{min-width:150px}
 .pdf-ready-track{height:4px;border-radius:999px;background:#e2e8f0;overflow:hidden}
-.pdf-ready-fill{height:100%;width:0%;border-radius:999px;background:linear-gradient(90deg,#14b8a6,#0f766e);transition:width .25s ease}
+.pdf-ready-fill{height:100%;width:0%;border-radius:999px;background:linear-gradient(90deg,#3f55e3,#2234a8);transition:width .25s ease}
 .pdf-ready-label{font-size:9px;color:#94a3b8;text-align:center;line-height:1}
-.pdf-control.is-ready .pdf-ready-label{color:#0f766e;font-weight:700}
-.pdf-control.is-busy .pdf-ready-fill{background:linear-gradient(90deg,#f59e0b,#14b8a6)}
+.pdf-control.is-ready .pdf-ready-label{color:#3346c7;font-weight:700}
+.pdf-control.is-busy .pdf-ready-fill{background:linear-gradient(90deg,#f59e0b,#3f55e3)}
 
 .last-upd{font-size:11px;color:var(--text-faint)}
 
@@ -290,8 +284,8 @@ body {
 .typification-groups-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:36px 16px;color:#94a3b8;font-size:12px;text-align:center;border:1px dashed #e2e8f0;border-radius:12px;background:linear-gradient(180deg,#fafafa,#fff)}
 .typification-groups-empty i{font-size:24px;color:#cbd5e1}
 
-/* Sanus brand palette (sanus.tech) — restrita à aba Petit Comitê */
-#tab-petit-comite{--sanus-brand:#00A69C;--sanus-brand-strong:#00857D;--sanus-brand-deep:#006F68;--sanus-brand-soft:#CCEDEA;--sanus-brand-tint:#E6F6F5;--sanus-brand-ink:#063F3B}
+/* Sanus blue palette (sanus.tech design system) — restrita à aba Petit Comitê */
+#tab-petit-comite{--sanus-brand:#3F55E3;--sanus-brand-strong:#3346C7;--sanus-brand-deep:#2234A8;--sanus-brand-soft:#C7D2FE;--sanus-brand-tint:#EEF2FF;--sanus-brand-ink:#172554}
 .petit-hero{background:linear-gradient(135deg,var(--sanus-brand-deep) 0%,var(--sanus-brand-strong) 100%);color:#fff;border:none;overflow:hidden;position:relative}
 .petit-hero::before{content:"";position:absolute;left:-120px;bottom:-140px;width:280px;height:280px;border-radius:50%;background:rgba(255,255,255,.06)}
 .petit-hero::after{content:"";position:absolute;right:-80px;top:-80px;width:220px;height:220px;border-radius:50%;background:rgba(255,255,255,.10)}
@@ -598,6 +592,11 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
     </div>
   </div>
   <button class="clear-btn" onclick="clearFilters()">✕ Limpar</button>
+  <div class="pdf-control filter-pdf-control is-busy" id="pdf-ready-control" title="Aguardando os quadros do Petit Comitê terminarem de renderizar" style="display:none">
+    <button class="pdf-btn" id="pdf-download-btn" onclick="downloadDashboardPdf()" disabled><i class="fa-solid fa-file-pdf"></i>Baixar PDF</button>
+    <div class="pdf-ready-track"><div class="pdf-ready-fill" id="pdf-ready-fill"></div></div>
+    <div class="pdf-ready-label" id="pdf-ready-label">0% pronto</div>
+  </div>
   <span style="font-size:11px;color:#bbb;margin-left:auto" id="filter-info"></span>
 </div>
 
@@ -1050,11 +1049,6 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
         </div>
         <div class="petit-hero-actions">
           <div class="petit-period-pill" id="petit-period">Período: DD/MM/2026 a DD/MM/2026</div>
-          <div class="pdf-control petit-pdf-control is-busy" id="pdf-ready-control" title="Aguardando os quadros do Petit Comitê terminarem de renderizar">
-            <button class="pdf-btn" id="pdf-download-btn" onclick="downloadDashboardPdf()" disabled><i class="fa-solid fa-file-pdf"></i>Baixar PDF</button>
-            <div class="pdf-ready-track"><div class="pdf-ready-fill" id="pdf-ready-fill"></div></div>
-            <div class="pdf-ready-label" id="pdf-ready-label">0% pronto</div>
-          </div>
         </div>
       </div>
     </div>
@@ -1120,7 +1114,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
         <div class="section-title"><i class="fa-solid fa-vial" style="margin-right:6px"></i>Principais exames solicitados</div>
         <div style="font-size:11px;color:#94a3b8;margin-bottom:14px">N = 417 agendamentos</div>
         <div class="petit-dist-list">
-          <div class="petit-dist-row"><div class="petit-dist-label">Ultrassom</div><div class="petit-dist-track"><div class="petit-dist-bar" style="width:60.2%;background:#00A69C"></div></div><div class="petit-dist-value">60,2%</div></div>
+          <div class="petit-dist-row"><div class="petit-dist-label">Ultrassom</div><div class="petit-dist-track"><div class="petit-dist-bar" style="width:60.2%;background:#3F55E3"></div></div><div class="petit-dist-value">60,2%</div></div>
           <div class="petit-dist-row"><div class="petit-dist-label">Ressonância</div><div class="petit-dist-track"><div class="petit-dist-bar" style="width:34.8%;background:#2563eb"></div></div><div class="petit-dist-value">34,8%</div></div>
           <div class="petit-dist-row"><div class="petit-dist-label">Eletrocardiograma</div><div class="petit-dist-track"><div class="petit-dist-bar" style="width:2.6%;background:#7c3aed"></div></div><div class="petit-dist-value">2,6%</div></div>
           <div class="petit-dist-row"><div class="petit-dist-label">Terapias</div><div class="petit-dist-track"><div class="petit-dist-bar" style="width:2.4%;background:#be185d"></div></div><div class="petit-dist-value">2,4%</div></div>
@@ -1132,7 +1126,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
         <div style="font-size:11px;color:#94a3b8;margin-bottom:14px">N = 417 agendamentos</div>
         <div class="petit-dist-list">
           <div class="petit-dist-row"><div class="petit-dist-label">Consultas médicas</div><div class="petit-dist-track"><div class="petit-dist-bar" style="width:60.2%;background:#2563eb"></div></div><div class="petit-dist-value">60,2%</div></div>
-          <div class="petit-dist-row"><div class="petit-dist-label">Exames</div><div class="petit-dist-track"><div class="petit-dist-bar" style="width:34.8%;background:#00A69C"></div></div><div class="petit-dist-value">34,8%</div></div>
+          <div class="petit-dist-row"><div class="petit-dist-label">Exames</div><div class="petit-dist-track"><div class="petit-dist-bar" style="width:34.8%;background:#3F55E3"></div></div><div class="petit-dist-value">34,8%</div></div>
           <div class="petit-dist-row"><div class="petit-dist-label">Odontologia</div><div class="petit-dist-track"><div class="petit-dist-bar" style="width:2.6%;background:#0891b2"></div></div><div class="petit-dist-value">2,6%</div></div>
           <div class="petit-dist-row"><div class="petit-dist-label">Terapias</div><div class="petit-dist-track"><div class="petit-dist-bar" style="width:2.4%;background:#be185d"></div></div><div class="petit-dist-value">2,4%</div></div>
         </div>
@@ -1141,7 +1135,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
       <div class="card-box">
         <div class="section-title"><i class="fa-solid fa-user-doctor" style="margin-right:6px"></i>Principais especialidades solicitadas</div>
         <div class="petit-dist-list">
-          <div class="petit-dist-row"><div class="petit-dist-label">Clínico geral</div><div class="petit-dist-track"><div class="petit-dist-bar" style="width:25%;background:#00A69C"></div></div><div class="petit-dist-value">25%</div></div>
+          <div class="petit-dist-row"><div class="petit-dist-label">Clínico geral</div><div class="petit-dist-track"><div class="petit-dist-bar" style="width:25%;background:#3F55E3"></div></div><div class="petit-dist-value">25%</div></div>
           <div class="petit-dist-row"><div class="petit-dist-label">Cardiologia</div><div class="petit-dist-track"><div class="petit-dist-bar" style="width:25%;background:#2563eb"></div></div><div class="petit-dist-value">25%</div></div>
           <div class="petit-dist-row"><div class="petit-dist-label">Dermatologia</div><div class="petit-dist-track"><div class="petit-dist-bar" style="width:25%;background:#7c3aed"></div></div><div class="petit-dist-value">25%</div></div>
           <div class="petit-dist-row"><div class="petit-dist-label">Psiquiatria</div><div class="petit-dist-track"><div class="petit-dist-bar" style="width:25%;background:#be185d"></div></div><div class="petit-dist-value">25%</div></div>
@@ -1448,6 +1442,7 @@ function updateFilterVisibility() {
   const typeGroup = document.getElementById('filter-type-group');
   const companyGroup = document.getElementById('filter-company-group');
   const partnerGroup = document.getElementById('filter-partner-group');
+  const pdfControl = document.getElementById('pdf-ready-control');
   const activeTab = getActiveTab();
   document.body.dataset.activeTab = activeTab;
   if (activeTab === 'sessoes') {
@@ -1459,6 +1454,7 @@ function updateFilterVisibility() {
   if (typeGroup) typeGroup.style.display = (activeTab === 'sessoes' || activeTab === 'petit-comite' || activeTab.startsWith('qualidade')) ? 'none' : 'flex';
   if (companyGroup) companyGroup.style.display = activeTab === 'sessoes' ? 'none' : 'flex';
   if (partnerGroup) partnerGroup.style.display = isPartnerFilteredTab(activeTab) ? 'flex' : 'none';
+  if (pdfControl) pdfControl.style.display = activeTab === 'petit-comite' ? 'grid' : 'none';
   if (isPartnerFilteredTab(activeTab)) loadPartnerOptions();
 }
 
@@ -2352,7 +2348,7 @@ function renderPetitComite() {
     data: {
       labels: ['JAN/26', 'FEV/26', 'MAR/26'],
       datasets: [
-        { label: 'Saudável', data: [1861, 1886, 2419], backgroundColor: '#00A69C', borderRadius: 6, borderSkipped: false },
+        { label: 'Saudável', data: [1861, 1886, 2419], backgroundColor: '#3F55E3', borderRadius: 6, borderSkipped: false },
         { label: 'Situacional', data: [309, 380, 406], backgroundColor: '#2563eb', borderRadius: 6, borderSkipped: false },
         { label: 'Gestantes', data: [120, 154, 167], backgroundColor: '#be185d', borderRadius: 6, borderSkipped: false },
         { label: 'Crônicos', data: [780, 1232, 1403], backgroundColor: '#7c3aed', borderRadius: 6, borderSkipped: false },
