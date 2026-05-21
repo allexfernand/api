@@ -312,14 +312,14 @@ body {
 .petit-dist-track{height:10px;background:#f1f5f9;border-radius:999px;overflow:hidden}
 .petit-dist-bar{height:100%;border-radius:999px;background:var(--sanus-brand);min-width:3px}
 .petit-dist-value{font-size:12px;font-weight:800;color:var(--sanus-brand-strong);text-align:right}
-.petit-top-exams-list{max-height:220px;overflow-y:auto;padding-right:4px;scrollbar-width:thin;scrollbar-color:#cbd5e1 transparent}
+.petit-top-exams-list{max-height:220px;overflow-y:auto;padding-right:4px;scrollbar-width:thin;scrollbar-color:#cbd5e1 transparent;gap:8px}
 .petit-top-exams-list::-webkit-scrollbar{width:6px}
 .petit-top-exams-list::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:999px}
-.petit-top-exams-list .petit-dist-row{grid-template-columns:minmax(0,1fr) auto;gap:8px 10px;align-items:start}
-.petit-top-exams-list .petit-dist-label{white-space:normal;overflow:visible;text-overflow:clip;line-height:1.35;overflow-wrap:anywhere}
+.petit-top-exams-list .petit-dist-row{grid-template-columns:minmax(0,1fr) auto;gap:5px 10px;align-items:start}
+.petit-top-exams-list .petit-dist-label{white-space:normal;overflow:visible;text-overflow:clip;line-height:1.22;overflow-wrap:anywhere}
 .petit-top-exams-list .petit-dist-track{grid-column:1 / -1}
-.petit-top-exams-list .petit-dist-value{min-width:78px;white-space:normal;display:flex;flex-direction:column;align-items:flex-end;gap:2px;line-height:1.1}
-.petit-top-exams-list .petit-dist-value small{font-size:10px;font-weight:800;color:#64748b}
+.petit-top-exams-list .petit-dist-value{min-width:104px;white-space:nowrap;line-height:1.15}
+.petit-top-exams-list .petit-dist-value small{font-size:10px;font-weight:800;color:#64748b;margin-left:4px}
 .petit-placeholder{border:1px dashed #cbd5e1;background:#f8fafc;border-radius:var(--radius-sm);padding:16px;color:#64748b;font-size:12px;line-height:1.5}
 .petit-metric-stack{display:grid;gap:12px}
 .petit-metric{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px;border:1px solid var(--border);border-radius:var(--radius-sm);background:#fff}
@@ -3846,7 +3846,7 @@ async function loadPetitTopExams(monthValues) {
       return `<div class="petit-dist-row" title="${escapeAttr(rawLabel)}">
         <div class="petit-dist-label">${label}</div>
         <div class="petit-dist-track"><div class="petit-dist-bar" style="width:${width}%;background:${color}"></div></div>
-        <div class="petit-dist-value"><span>${fmt(value)}</span><small>${pct.toFixed(1).replace('.', ',')}%</small></div>
+        <div class="petit-dist-value">${fmt(value)} <small>${pct.toFixed(1).replace('.', ',')}%</small></div>
       </div>`;
     }).join('') : '<div style="font-size:13px;color:#94a3b8;text-align:center;padding:14px 0">Nenhum exame encontrado para o filtro atual.</div>';
   }
