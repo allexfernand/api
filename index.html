@@ -2117,27 +2117,6 @@ function buildPdfReport() {
   const report = document.createElement('div');
   report.className = 'pdf-export-root';
 
-  const header = document.createElement('div');
-  header.className = 'pdf-export-header';
-  const generatedAt = new Date().toLocaleString('pt-BR');
-  header.innerHTML = `
-    <div>
-      <img src="https://web.sanus.tech/assets/images/logo_sanus.svg" alt="Sanus" style="height:32px;width:auto"/>
-      <div class="pdf-export-title">${escapeHtml(getActiveTabLabel())}</div>
-      <div class="pdf-export-subtitle">Dashboard exportado com os filtros aplicados na tela · ${escapeHtml(generatedAt)}</div>
-    </div>
-    <div style="font-size:11px;color:#64748b;text-align:right;font-weight:700">Sanus Dashboard<br/><span style="font-weight:500;color:#94a3b8">PDF automático</span></div>
-  `;
-
-  const filters = document.createElement('div');
-  filters.className = 'pdf-filter-grid';
-  filters.innerHTML = collectPdfFilters().map((filter) => `
-    <div class="pdf-filter-chip" title="${escapeAttr(filter.value)}">
-      <div class="pdf-filter-label">${escapeHtml(filter.label)}</div>
-      <div class="pdf-filter-value">${escapeHtml(filter.value)}</div>
-    </div>
-  `).join('');
-
   const content = document.createElement('div');
   content.className = 'pdf-export-content';
   const activeClone = activeTab.cloneNode(true);
@@ -2145,8 +2124,6 @@ function buildPdfReport() {
   copyCanvasAsImages(activeTab, activeClone);
   content.appendChild(activeClone);
 
-  report.appendChild(header);
-  report.appendChild(filters);
   report.appendChild(content);
   sanitizePdfCanvases(report);
   overlay.appendChild(report);
