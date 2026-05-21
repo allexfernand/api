@@ -296,12 +296,19 @@ body {
 .petit-title{font-size:30px;font-weight:800;letter-spacing:-.8px;line-height:1.05;margin-bottom:8px}
 .petit-subtitle{font-size:13px;line-height:1.5;color:rgba(255,255,255,.82);max-width:680px}
 .petit-period-pill{font-size:12px;font-weight:800;color:var(--sanus-brand-ink);background:#fff;border:1px solid rgba(255,255,255,.4);border-radius:999px;padding:8px 12px;white-space:nowrap;box-shadow:0 1px 2px rgba(0,0,0,.08)}
-.petit-kpi-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:16px}
+.petit-kpi-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-bottom:16px}
 .petit-kpi{background:#fff;border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow-sm);padding:18px}
 .petit-kpi-icon{width:36px;height:36px;border-radius:10px;background:var(--sanus-brand-tint);color:var(--sanus-brand-strong);display:grid;place-items:center;margin-bottom:12px}
 .petit-kpi-label{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:#94a3b8;margin-bottom:8px}
 .petit-kpi-value{font-size:30px;font-weight:800;color:#0f172a;letter-spacing:-.8px;line-height:1}
 .petit-kpi-note{font-size:11px;color:#94a3b8;margin-top:8px}
+.petit-human-split{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.petit-human-item{border:1px solid #e2e8f0;border-radius:10px;background:#f8fafc;padding:8px}
+.petit-human-label{font-size:10px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.45px;margin-bottom:4px}
+.petit-human-value{font-size:18px;font-weight:800;color:#0f172a;line-height:1}
+.petit-human-pct{font-size:10px;font-weight:800;color:var(--sanus-brand-strong);margin-top:3px}
+.petit-human-bar{height:8px;border-radius:999px;background:#e2e8f0;overflow:hidden;display:flex;margin-top:10px}
+.petit-human-bar span{height:100%;transition:width .35s var(--ease)}
 .petit-grid-2{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(320px,.75fr);gap:16px;margin-bottom:16px}
 .petit-grid-3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-bottom:16px}
 .petit-card-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:16px}
@@ -1078,6 +1085,27 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
         <div class="petit-kpi-label">Atendimentos</div>
         <div class="petit-kpi-value" id="petit-kpi-sessions">—</div>
         <div class="petit-kpi-note" id="petit-kpi-sessions-note">volume de sessões · filtros aplicados</div>
+      </div>
+      <div class="petit-kpi">
+        <div class="petit-kpi-icon"><i class="fa-solid fa-comments"></i></div>
+        <div class="petit-kpi-label">Interação humana</div>
+        <div class="petit-human-split">
+          <div class="petit-human-item">
+            <div class="petit-human-label">Humano</div>
+            <div class="petit-human-value" id="petit-kpi-human-sessions">—</div>
+            <div class="petit-human-pct" id="petit-kpi-human-pct">—</div>
+          </div>
+          <div class="petit-human-item">
+            <div class="petit-human-label">IA</div>
+            <div class="petit-human-value" id="petit-kpi-ia-sessions">—</div>
+            <div class="petit-human-pct" id="petit-kpi-ia-pct">—</div>
+          </div>
+        </div>
+        <div class="petit-human-bar">
+          <span id="petit-kpi-human-bar" style="width:0;background:#6366f1"></span>
+          <span id="petit-kpi-ia-bar" style="width:0;background:#14b8a6"></span>
+        </div>
+        <div class="petit-kpi-note" id="petit-kpi-human-note">mesma regra do Q12B</div>
       </div>
       <div class="petit-kpi">
         <div class="petit-kpi-icon"><i class="fa-solid fa-user-group"></i></div>
@@ -1932,6 +1960,8 @@ function getPdfReadiness() {
   const beneficiariesKpiPending = beneficiariesKpi && beneficiariesKpi.textContent?.trim() === '…';
   const sessionsKpi = document.getElementById('petit-kpi-sessions');
   const sessionsKpiPending = sessionsKpi && sessionsKpi.textContent?.trim() === '…';
+  const humanInteractionKpi = document.getElementById('petit-kpi-human-sessions');
+  const humanInteractionKpiPending = humanInteractionKpi && humanInteractionKpi.textContent?.trim() === '…';
   const usersKpi = document.getElementById('petit-kpi-users');
   const usersKpiPending = usersKpi && usersKpi.textContent?.trim() === '…';
   const appointmentsKpi = document.getElementById('petit-kpi-appointments');
@@ -1940,11 +1970,13 @@ function getPdfReadiness() {
   else ready += 1;
   if (sessionsKpiPending) pending.push('Atendimentos');
   else ready += 1;
+  if (humanInteractionKpiPending) pending.push('Interação humana');
+  else ready += 1;
   if (usersKpiPending) pending.push('Usuários');
   else ready += 1;
   if (appointmentsKpiPending) pending.push('Agendamentos');
   else ready += 1;
-  const total = Math.max(targets.length + 4, 1);
+  const total = Math.max(targets.length + 5, 1);
   return { total, ready, percent: Math.round((ready / total) * 100), pending };
 }
 
@@ -2460,6 +2492,53 @@ async function loadPetitSessionsKpi(requestId) {
   schedulePdfReadinessUpdate();
 }
 
+async function loadPetitHumanInteractionKpi(requestId) {
+  const humanValue = document.getElementById('petit-kpi-human-sessions');
+  const iaValue = document.getElementById('petit-kpi-ia-sessions');
+  const humanPct = document.getElementById('petit-kpi-human-pct');
+  const iaPct = document.getElementById('petit-kpi-ia-pct');
+  const humanBar = document.getElementById('petit-kpi-human-bar');
+  const iaBar = document.getElementById('petit-kpi-ia-bar');
+  const note = document.getElementById('petit-kpi-human-note');
+  if (humanValue) humanValue.textContent = '…';
+  if (iaValue) iaValue.textContent = '…';
+  if (humanPct) humanPct.textContent = '—';
+  if (iaPct) iaPct.textContent = '—';
+  if (humanBar) humanBar.style.width = '0%';
+  if (iaBar) iaBar.style.width = '0%';
+  if (note) note.textContent = petitSessionsFilterNote().replace('volume de sessões', 'sessões por interação');
+
+  const meses = [...selectedMonths].sort();
+  const p = new URLSearchParams();
+  p.set('scope', 'human_interaction');
+  if (meses.length > 0) p.set('meses', meses.join(','));
+  appendGroupParams(p);
+  if (currentCompany) p.set('company', currentCompany);
+  const data = await safeGet('/api/sessions?' + p.toString());
+  if (requestId !== petitComiteRequestId) return;
+
+  if (data && !data.error) {
+    const byTipo = Object.fromEntries((data.message_agent_finishers || []).map((item) => [String(item.tipo || '').toUpperCase(), Number(item.total) || 0]));
+    const humano = byTipo.HUMANO || 0;
+    const ia = byTipo.IA || 0;
+    const total = humano + ia;
+    const pct = (value) => total > 0 ? `${((value / total) * 100).toFixed(1).replace('.', ',')}%` : '—';
+    const width = (value) => total > 0 ? `${((value / total) * 100).toFixed(1)}%` : '0%';
+    if (humanValue) humanValue.textContent = fmt(humano);
+    if (iaValue) iaValue.textContent = fmt(ia);
+    if (humanPct) humanPct.textContent = pct(humano);
+    if (iaPct) iaPct.textContent = pct(ia);
+    if (humanBar) humanBar.style.width = width(humano);
+    if (iaBar) iaBar.style.width = width(ia);
+    if (note) note.textContent = "fonte: sender_type='agent'";
+  } else {
+    if (humanValue) humanValue.textContent = 'Erro';
+    if (iaValue) iaValue.textContent = 'Erro';
+    if (note) note.textContent = String(data?.error || 'Erro ao carregar interação humana').slice(0, 140);
+  }
+  schedulePdfReadinessUpdate();
+}
+
 async function loadPetitUsersKpi(requestId) {
   const value = document.getElementById('petit-kpi-users');
   const note = document.getElementById('petit-kpi-users-note');
@@ -2807,6 +2886,7 @@ async function renderPetitComite() {
   if (period) period.textContent = petitPeriodLabel();
   loadPetitBeneficiariesKpi(requestId);
   loadPetitSessionsKpi(requestId);
+  loadPetitHumanInteractionKpi(requestId);
   loadPetitUsersKpi(requestId);
   loadPetitAppointmentsKpi(requestId);
   loadPetitUsabilityKpis(requestId);

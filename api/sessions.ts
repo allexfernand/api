@@ -322,6 +322,31 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       });
     }
 
+    if (scope === 'human_interaction') {
+      const where = [companySessionsDateFilter, companySessionsScopeFilter].filter(Boolean).join(' AND ');
+      const rows = await runQuery(wh.id, `
+        SELECT
+          s.${quoteIdent('tipo_atendimento_agent')} AS tipo_atendimento,
+          COUNT(*) AS total_sessions
+        FROM ${dashboardSessionsTable} s
+        ${where ? `WHERE ${where}` : ''}
+        GROUP BY s.${quoteIdent('tipo_atendimento_agent')}
+        ORDER BY total_sessions DESC
+      `);
+      return res.status(200).json({
+        scope: 'human_interaction',
+        message_agent_finishers: rows.map((row) => ({
+          tipo: String(getCell(row[0]) || 'IA'),
+          total: toInt(row[1]),
+        })),
+        filters_applied: {
+          period: meses.length > 0,
+          organization: Boolean(groupNames.length || company || partnerBrokerId),
+        },
+        source: "dashboard_sessions_base_gold.tipo_atendimento_agent",
+      });
+    }
+
     if (scope === 'typification_groups' && typificationValue) {
       const tipFilter = `s.${quoteIdent('tipificacao')} = '${escape(typificationValue)}'`;
       const where = [companySessionsDateFilter, companySessionsScopeFilter, typificationFinisherFilter, tipFilter]
