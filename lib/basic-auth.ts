@@ -47,7 +47,6 @@ export function requireBasicAuth(req: AuthRequest, res: AuthResponse) {
     return true;
   }
 
-  res.setHeader("WWW-Authenticate", 'Basic realm="Sanus Dashboard"');
   res.status(401).json({ error: "Usuário ou senha inválidos." });
   return false;
 }

@@ -109,6 +109,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   const typeFilter = req.query.type || null;
   const partnerBrokerId = req.query.partner_broker_id || null;
   const scope = String(req.query.scope || '').toLowerCase();
+  if (scope === 'auth') return res.status(200).json({ ok: true });
   const groupFilter = buildFilters(groupNames, typeFilter, partnerBrokerId);
 
   try {

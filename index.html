@@ -547,9 +547,9 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
 .pdf-chart-placeholder{height:220px;border:1px dashed #cbd5e1;border-radius:12px;background:#f8fafc;color:#94a3b8;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;text-align:center;padding:16px}
 </style>
 </head>
-<body>
+<body class="auth-locked">
 
-<div class="auth-overlay" id="auth-overlay">
+<div class="auth-overlay" id="auth-overlay" style="display:grid">
   <form class="auth-card" onsubmit="submitAuth(event)">
     <img class="auth-logo" src="/assets/logo_sanus.svg" alt="Sanus" />
     <div class="auth-title">Acesso ao dashboard</div>
@@ -1981,17 +1981,42 @@ function handleAuthFailure(message = 'Usuário ou senha inválidos.') {
   showAuthScreen(message);
 }
 
-function submitAuth(event) {
+async function submitAuth(event) {
   event.preventDefault();
   const user = document.getElementById('auth-user')?.value?.trim() || '';
   const password = document.getElementById('auth-password')?.value || '';
+  const submit = document.querySelector('.auth-submit');
   if (!user || !password) {
     setAuthError('Informe usuário e senha.');
     return;
   }
-  localStorage.setItem(AUTH_STORAGE_KEY, `Basic ${btoa(`${user}:${password}`)}`);
-  hideAuthScreen();
-  reload();
+  const token = `Basic ${btoa(`${user}:${password}`)}`;
+  if (submit) {
+    submit.disabled = true;
+    submit.textContent = 'Validando...';
+  }
+  setAuthError('');
+  try {
+    const response = await fetch('/api/data?scope=auth', { headers: { Authorization: token } });
+    let body = null;
+    try { body = await response.json(); } catch(_) {}
+    if (!response.ok || !body?.ok) {
+      localStorage.removeItem(AUTH_STORAGE_KEY);
+      showAuthScreen(body?.error || 'Usuário ou senha inválidos.');
+      return;
+    }
+    localStorage.setItem(AUTH_STORAGE_KEY, token);
+    hideAuthScreen();
+    reload();
+  } catch (error) {
+    localStorage.removeItem(AUTH_STORAGE_KEY);
+    showAuthScreen(error?.message || 'Não foi possível validar o acesso.');
+  } finally {
+    if (submit) {
+      submit.disabled = false;
+      submit.textContent = 'Entrar';
+    }
+  }
 }
 
 function logoutDashboard() {
@@ -6055,6 +6080,7 @@ async function loadAll(fetchOrgs=true) {
     if(!res.ok) throw new Error(`HTTP ${res.status}`);
     const json = await res.json();
     if(json.error) throw new Error(json.error);
+    hideAuthScreen();
     usersData = json.users||[];
     if(fetchOrgs && Array.isArray(json.groups)){
       const groupSource = isPetitMdsTab() ? 'petitMds' : 'orgs';
