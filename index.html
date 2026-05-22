@@ -2072,6 +2072,7 @@ function ensurePetitMdsContent() {
   prefixPetitMdsIds(clone);
   const eyebrow = clone.querySelector('.petit-eyebrow');
   if (eyebrow) eyebrow.textContent = 'Resumo executivo · MDS';
+  clone.querySelector('.petit-hero-logo')?.remove();
   const grids = clone.querySelectorAll('.petit-grid-2');
   const utilizationGrid = grids[1];
   if (utilizationGrid) {
