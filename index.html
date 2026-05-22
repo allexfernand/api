@@ -877,21 +877,42 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
         <div class="petit-kpi-value">—</div>
         <div class="petit-kpi-note">em definição</div>
       </div>
+      <div class="petit-kpi">
+        <div class="petit-kpi-icon"><i class="fa-solid fa-circle"></i></div>
+        <div class="petit-kpi-label">—</div>
+        <div class="petit-kpi-value">—</div>
+        <div class="petit-kpi-note">em definição</div>
+      </div>
     </div>
 
-    <div class="chart-card" data-qtag="#CC01">
-      <div class="petit-card-header">
-        <div>
-          <h2 style="font-size:13px;font-weight:700;color:#334155;margin-bottom:4px">Evolução das linhas de cuidado</h2>
-          <div style="font-size:11px;color:#94a3b8">CPFs únicos por classificação · <span id="care-coordination-filter-context">todos os filtros globais</span></div>
+    <div class="petit-grid-2">
+      <div class="chart-card" data-qtag="#CC01">
+        <div class="petit-card-header">
+          <div>
+            <h2 style="font-size:13px;font-weight:700;color:#334155;margin-bottom:4px">Evolução das linhas de cuidado</h2>
+            <div style="font-size:11px;color:#94a3b8">CPFs únicos por classificação · <span id="care-coordination-filter-context">todos os filtros globais</span></div>
+          </div>
+          <span class="petit-chip">Linhas de cuidado</span>
         </div>
-        <span class="petit-chip">Linhas de cuidado</span>
+        <div class="chart-wrap" style="height:340px">
+          <div class="skeleton" id="skel-care-coordination-lines"></div>
+          <canvas id="careCoordinationLinesChart" style="display:none"></canvas>
+        </div>
+        <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="care-coordination-lines-error"></div>
       </div>
-      <div class="chart-wrap" style="height:340px">
-        <div class="skeleton" id="skel-care-coordination-lines"></div>
-        <canvas id="careCoordinationLinesChart" style="display:none"></canvas>
+
+      <div class="card-box" data-qtag="#CC02">
+        <div class="petit-card-header">
+          <div>
+            <h2 style="font-size:13px;font-weight:700;color:#334155;margin-bottom:4px">Detalhamento das linhas de cuidado</h2>
+            <div style="font-size:11px;color:#94a3b8">Selecione uma linha no CC01 para detalhar</div>
+          </div>
+          <span class="petit-chip">CC02</span>
+        </div>
+        <div class="petit-placeholder" style="min-height:280px;display:flex;align-items:center;justify-content:center;text-align:center">
+          Detalhamento em definição.
+        </div>
       </div>
-      <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="care-coordination-lines-error"></div>
     </div>
   </div>
 
