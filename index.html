@@ -561,6 +561,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
       <div class="multi-select-menu" id="group-select-menu">
         <input class="multi-select-search" id="group-select-search" type="text" placeholder="Buscar grupo..." oninput="renderGroupOptions()" />
         <div class="multi-select-actions">
+          <button type="button" onclick="selectAllGroupSelection()">Selecionar todos</button>
           <button type="button" onclick="clearGroupSelection()">Limpar</button>
           <button type="button" onclick="closeGroupDropdown()">Fechar</button>
         </div>
@@ -1629,6 +1630,13 @@ function closeGroupDropdown() {
 
 function clearGroupSelection() {
   currentGroups = [];
+  onGroupSelectionChange();
+  renderGroupOptions();
+}
+
+function selectAllGroupSelection() {
+  const options = groupOptionsCache[activeGroupSource] || [];
+  currentGroups = [...new Set(options.map((g) => String(g.economic_group || '').trim()).filter(Boolean))];
   onGroupSelectionChange();
   renderGroupOptions();
 }
