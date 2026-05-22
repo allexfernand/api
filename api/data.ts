@@ -172,7 +172,42 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         ${groupFilter}
         GROUP BY 1 ORDER BY 1
       `),
-      !groupNames.length ? runQuery(wh.id, `
+      !groupNames.length ? runQuery(wh.id, partnerBrokerId ? `
+        WITH partner_orgs AS (
+          SELECT CAST(opb.organization_id AS STRING) AS organization_id
+          FROM ${ORGANIZATION_PARTNER_BROKERS_TABLE} opb
+          WHERE CAST(opb.partner_broker_id AS STRING) = '${escape(partnerBrokerId)}'
+            AND opb.deleted_at IS NULL
+          UNION
+          SELECT CAST(child.id AS STRING) AS organization_id
+          FROM ${ORGANIZATION_PARTNER_BROKERS_TABLE} opb
+          INNER JOIN ${ORGANIZATIONS_TABLE} child
+            ON CAST(child.matriz_id AS STRING) = CAST(opb.organization_id AS STRING)
+          WHERE CAST(opb.partner_broker_id AS STRING) = '${escape(partnerBrokerId)}'
+            AND opb.deleted_at IS NULL
+        )
+        SELECT
+          COALESCE(
+            NULLIF(TRIM(CAST(parent.name AS STRING)), ''),
+            NULLIF(TRIM(CAST(o.name AS STRING)), '')
+          ) AS grupo,
+          COUNT(DISTINCT CAST(o.id AS STRING)) AS total_filiais
+        FROM partner_orgs po
+        INNER JOIN ${ORGANIZATIONS_TABLE} o
+          ON CAST(o.id AS STRING) = po.organization_id
+        LEFT JOIN ${ORGANIZATIONS_TABLE} parent
+          ON CAST(parent.id AS STRING) = CAST(o.matriz_id AS STRING)
+        WHERE COALESCE(
+            NULLIF(TRIM(CAST(parent.name AS STRING)), ''),
+            NULLIF(TRIM(CAST(o.name AS STRING)), '')
+          ) IS NOT NULL
+        GROUP BY
+          COALESCE(
+            NULLIF(TRIM(CAST(parent.name AS STRING)), ''),
+            NULLIF(TRIM(CAST(o.name AS STRING)), '')
+          )
+        ORDER BY grupo ASC
+      ` : `
         SELECT o.name AS grupo, 0 AS total_filiais
         FROM hive_metastore.sanus_prod.organizations o
         WHERE o.active = true
