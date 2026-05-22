@@ -1486,7 +1486,7 @@ let currentGroup = '', currentType = '', currentCompany = '';
 let currentGroups = [];
 let currentPartnerBrokerId = '';
 let partnerOptionsCache = [];
-let groupOptionsCache = { orgs: null, sessions: null };
+let groupOptionsCache = { orgs: null, sessions: null, petitMds: null };
 let activeGroupSource = 'orgs';
 let selectedMonths = new Set();
 let selectedAppointmentTypeMonths = new Set();
@@ -1525,10 +1525,17 @@ document.querySelectorAll('.tab').forEach(t => {
     const hasPeriodo = isPeriodFilteredTab(activeTab);
     document.getElementById('filter-periodo').style.display = hasPeriodo ? 'flex' : 'none';
     updateFilterVisibility();
-    ensureGroupOptionsForActiveTab();
-    updateFilterInfo();
-    schedulePdfReadinessUpdate();
-    if (hasPeriodo) { buildPeriodoOptions(); loadPeriodFilteredTab(); }
+    const continueActivation = () => {
+      ensureGroupOptionsForActiveTab();
+      updateFilterInfo();
+      schedulePdfReadinessUpdate();
+      if (hasPeriodo) { buildPeriodoOptions(); loadPeriodFilteredTab(); }
+    };
+    if (isPetitMdsTab(activeTab)) {
+      ensurePetitMdsScope().finally(continueActivation);
+      return;
+    }
+    continueActivation();
   });
 });
 
@@ -1572,6 +1579,10 @@ function isPartnerFilteredTab(tab = getActiveTab()) {
 
 function isPetitTab(tab = getActiveTab()) {
   return tab === 'petit-comite' || tab === 'petit-comite-mds';
+}
+
+function isPetitMdsTab(tab = getActiveTab()) {
+  return tab === 'petit-comite-mds';
 }
 
 function selectedGroupsLabel() {
@@ -1665,10 +1676,16 @@ document.getElementById('type-select').addEventListener('change', e => {
   if (isPeriodFilteredTab()) loadPeriodFilteredTab();
 });
 
-document.getElementById('partner-select').addEventListener('change', e => {
+document.getElementById('partner-select').addEventListener('change', async e => {
   currentPartnerBrokerId = e.target.value;
+  currentCompany = '';
   updateFilterInfo();
   const activeTab = getActiveTab();
+  if (isPetitMdsTab(activeTab)) {
+    await ensurePetitMdsScope();
+  } else if (activeTab !== 'sessoes') {
+    loadCompanyOptions();
+  }
   if (activeTab === 'sessoes') {
     loadSessions();
     return;
@@ -1700,7 +1717,8 @@ function resetCompanySelect() {
 
 async function loadCompanyOptions() {
   const sel = document.getElementById('company-select');
-  if (!currentGroups.length) {
+  const hasPartnerScope = isPartnerFilteredTab() && Boolean(currentPartnerBrokerId);
+  if (!currentGroups.length && !hasPartnerScope) {
     resetCompanySelect();
     return;
   }
@@ -1731,14 +1749,33 @@ function selectedPartnerLabel() {
   return partner ? partner.broker_name : currentPartnerBrokerId;
 }
 
+function isMdsPartner(partner) {
+  const text = `${partner?.broker_name || ''} ${partner?.broker_name_secondary || ''}`
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+  return /(^|[^a-z0-9])mds([^a-z0-9]|$)/.test(text);
+}
+
+function getMdsPartnerOption() {
+  return partnerOptionsCache.find(isMdsPartner) || null;
+}
+
 function renderPartnerOptions() {
   const sel = document.getElementById('partner-select');
   if (!sel) return;
   const current = currentPartnerBrokerId;
-  const options = [...partnerOptionsCache].sort((a, b) =>
+  const scopedOptions = isPetitMdsTab() ? partnerOptionsCache.filter(isMdsPartner) : partnerOptionsCache;
+  const options = [...scopedOptions].sort((a, b) =>
     String(a.broker_name || '').localeCompare(String(b.broker_name || ''), 'pt-BR', { sensitivity: 'base' })
   );
-  sel.innerHTML = '<option value="">(Todos os parceiros)</option>' + options.map((partner) => {
+  if (isPetitMdsTab() && !options.length) {
+    sel.innerHTML = '<option value="">(Parceiro MDS não encontrado)</option>';
+    sel.disabled = true;
+    return;
+  }
+  const allOption = isPetitMdsTab() ? '' : '<option value="">(Todos os parceiros)</option>';
+  sel.innerHTML = allOption + options.map((partner) => {
     const id = String(partner.broker_id || '');
     const name = partner.broker_name || 'Sem nome';
     const secondary = partner.broker_name_secondary ? ` · ${partner.broker_name_secondary}` : '';
@@ -1752,7 +1789,11 @@ function renderPartnerOptions() {
 
 async function loadPartnerOptions() {
   const sel = document.getElementById('partner-select');
-  if (!sel || partnerOptionsCache.length) return;
+  if (!sel) return;
+  if (partnerOptionsCache.length) {
+    renderPartnerOptions();
+    return;
+  }
   sel.innerHTML = '<option value="">⏳ Carregando parceiros...</option>';
   sel.disabled = true;
   const data = await safeGet('/api/data?scope=partners');
@@ -1763,6 +1804,27 @@ async function loadPartnerOptions() {
     sel.innerHTML = '<option value="">(Erro ao carregar parceiros)</option>';
     sel.disabled = true;
   }
+}
+
+async function ensurePetitMdsScope() {
+  if (!isPetitMdsTab()) return false;
+  await loadPartnerOptions();
+  const mdsPartner = getMdsPartnerOption();
+  if (!mdsPartner) {
+    renderPartnerOptions();
+    groupOptionsCache.petitMds = [];
+    applyGroupOptions(groupOptionsCache.petitMds, 'petitMds');
+    resetCompanySelect();
+    return false;
+  }
+  const nextPartnerId = String(mdsPartner.broker_id || '');
+  const changed = currentPartnerBrokerId !== nextPartnerId;
+  currentPartnerBrokerId = nextPartnerId;
+  renderPartnerOptions();
+  await loadPetitMdsGroupOptions();
+  await loadCompanyOptions();
+  updateFilterInfo();
+  return changed;
 }
 
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
@@ -1779,7 +1841,7 @@ function updateFilterInfo() {
   document.getElementById('filter-info').textContent = parts.length ? `Filtrando: ${parts.join(' · ')}` : '';
 }
 
-function clearFilters() {
+async function clearFilters() {
   const activeTab = getActiveTab();
   currentGroup = ''; currentGroups = []; currentType = ''; currentCompany = '';
   currentPartnerBrokerId = '';
@@ -1795,6 +1857,9 @@ function clearFilters() {
   document.getElementById('company-select').disabled = true;
   document.getElementById('filter-info').textContent = '';
   clearPeriodo(false);
+  if (isPetitMdsTab(activeTab)) {
+    await ensurePetitMdsScope();
+  }
   if (activeTab === 'sessoes') {
     loadSessions();
     return;
@@ -5732,7 +5797,23 @@ function renderGroupOptions() {
   }).join('') : '<div style="font-size:12px;color:#94a3b8;padding:10px;text-align:center">Nenhum grupo encontrado.</div>';
 }
 
+async function loadPetitMdsGroupOptions() {
+  if (!currentPartnerBrokerId) return;
+  groupOptionsCache.petitMds = [];
+  const p = new URLSearchParams();
+  p.set('partner_broker_id', currentPartnerBrokerId);
+  const data = await safeGet('/api/data?' + p.toString());
+  if (data && !data.error && Array.isArray(data.groups)) {
+    groupOptionsCache.petitMds = data.groups.map((g) => ({ economic_group: g.economic_group }));
+  }
+  applyGroupOptions(groupOptionsCache.petitMds, 'petitMds');
+}
+
 function ensureGroupOptionsForActiveTab() {
+  if (isPetitMdsTab()) {
+    if (groupOptionsCache.petitMds) applyGroupOptions(groupOptionsCache.petitMds, 'petitMds');
+    return;
+  }
   if (activeGroupSource !== 'orgs' && groupOptionsCache.orgs) {
     applyGroupOptions(groupOptionsCache.orgs, 'orgs');
   }
@@ -5749,8 +5830,9 @@ async function loadAll(fetchOrgs=true) {
     if(json.error) throw new Error(json.error);
     usersData = json.users||[];
     if(fetchOrgs && Array.isArray(json.groups)){
-      groupOptionsCache.orgs = json.groups.map((g) => ({ economic_group: g.economic_group }));
-      applyGroupOptions(groupOptionsCache.orgs, 'orgs');
+      const groupSource = isPetitMdsTab() ? 'petitMds' : 'orgs';
+      groupOptionsCache[groupSource] = json.groups.map((g) => ({ economic_group: g.economic_group }));
+      applyGroupOptions(groupOptionsCache[groupSource], groupSource);
     }
     const ut=usersData.reduce((a,[,v])=>a+v,0);
     const bv=document.getElementById('bullet-vidas');
