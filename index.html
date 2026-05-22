@@ -2043,6 +2043,22 @@ function ensurePetitMdsContent() {
   prefixPetitMdsIds(clone);
   const eyebrow = clone.querySelector('.petit-eyebrow');
   if (eyebrow) eyebrow.textContent = 'Resumo executivo · MDS';
+  const grids = clone.querySelectorAll('.petit-grid-2');
+  const utilizationGrid = grids[1];
+  if (utilizationGrid) {
+    utilizationGrid.innerHTML = `<div class="card-box" style="grid-column:1 / -1">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap">
+        <div>
+          <div class="section-title" style="margin-bottom:4px"><i class="fa-solid fa-users-viewfinder" style="margin-right:6px"></i>Utilização da base de beneficiários</div>
+          <div style="font-size:11px;color:#94a3b8">Mesma regra do Q16 da aba Sessões</div>
+        </div>
+        <div style="font-size:11px;color:#64748b;font-weight:700" id="petit-mds-base-utilization-context">Parceiro: MDS</div>
+      </div>
+      <div class="loading-box" id="petit-mds-base-utilization-loading"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando utilização...</div>
+      <div class="sessions-utilization-grid" id="petit-mds-base-utilization-content" style="display:none"></div>
+      <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="petit-mds-base-utilization-error"></div>
+    </div>`;
+  }
   target.innerHTML = clone.innerHTML;
   petitMdsInitialized = true;
 }
@@ -2834,6 +2850,69 @@ async function loadPetitUsabilityKpis(requestId) {
   schedulePdfReadinessUpdate();
 }
 
+async function loadPetitMdsBaseUtilization(requestId) {
+  const loading = document.getElementById('petit-mds-base-utilization-loading');
+  const content = document.getElementById('petit-mds-base-utilization-content');
+  const errorBox = document.getElementById('petit-mds-base-utilization-error');
+  const context = document.getElementById('petit-mds-base-utilization-context');
+  if (loading) {
+    loading.style.display = 'block';
+    loading.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando utilização...';
+  }
+  if (content) {
+    content.style.display = 'none';
+    content.innerHTML = '';
+    content.classList.remove('is-comparison');
+  }
+  if (errorBox) {
+    errorBox.style.display = 'none';
+    errorBox.textContent = '';
+  }
+  if (context) context.textContent = selectedSessionScopeText() || 'Parceiro: MDS';
+
+  const p = new URLSearchParams();
+  p.set('include_beneficiaries', '1');
+  p.set('only_beneficiaries', '1');
+  appendGroupParams(p);
+  if (currentCompany) p.set('company', currentCompany);
+
+  const hasScopedComparison = Boolean(currentGroups.length || currentPartnerBrokerId);
+  const globalP = new URLSearchParams();
+  globalP.set('include_beneficiaries', '1');
+  globalP.set('only_beneficiaries', '1');
+
+  const [usageData, demographicsData, globalData, globalDemographicsData] = await Promise.all([
+    safeGet('/api/sessions-evolution?' + p.toString()),
+    safeGet('/api/demographics' + buildQS()),
+    hasScopedComparison ? safeGet('/api/sessions-evolution?' + globalP.toString()) : Promise.resolve(null),
+    hasScopedComparison ? safeGet('/api/demographics') : Promise.resolve(null),
+  ]);
+  if (requestId !== petitComiteRequestId) return;
+
+  if (!usageData || usageData.error) {
+    if (loading) loading.style.display = 'none';
+    if (errorBox) {
+      errorBox.style.display = 'block';
+      errorBox.textContent = usageData?.error ? String(usageData.error).slice(0, 220) : 'Erro ao carregar utilização da base';
+    }
+    schedulePdfReadinessUpdate();
+    return;
+  }
+
+  renderUtilizationCards(usageData, demographicsData, hasScopedComparison ? {
+    data: globalData,
+    demographicsData: globalDemographicsData,
+  } : null, {
+    loading,
+    content,
+    errorBox,
+    context,
+    scoped: hasScopedComparison,
+    scopeText: selectedSessionScopeText() || 'Parceiro: MDS',
+  });
+  schedulePdfReadinessUpdate();
+}
+
 function petitEvolutionFilterLabel() {
   const parts = [];
   if (currentGroups.length) parts.push(selectedGroupsText());
@@ -3112,11 +3191,13 @@ async function renderPetitComite() {
   loadPetitHumanInteractionKpi(requestId);
   loadPetitUsersKpi(requestId);
   loadPetitAppointmentsKpi(requestId);
-  loadPetitUsabilityKpis(requestId);
+  if (petitRenderVariant === 'mds') loadPetitMdsBaseUtilization(requestId);
+  else loadPetitUsabilityKpis(requestId);
   loadPetitSessionEvolutionCharts(requestId);
   loadAppointmentTypes([...selectedMonths].sort(), petitAppointmentTypesPrefix());
   loadPetitTopExams([...selectedMonths].sort());
   loadPetitTopConsultations([...selectedMonths].sort());
+  if (petitRenderVariant === 'mds') return;
   if (!cv) return;
 
   if (petitCareLinesChart) petitCareLinesChart.destroy();
@@ -3701,10 +3782,18 @@ function renderSessionTypifications(items, opts) {
 }
 
 function renderSessionsUtilization(data, demographicsData, comparison) {
-  const loading = document.getElementById('sessions-utilization-loading');
-  const content = document.getElementById('sessions-utilization-content');
-  const errorBox = document.getElementById('sessions-utilization-error');
-  const context = document.getElementById('sessions-utilization-context');
+  return renderUtilizationCards(data, demographicsData, comparison, {
+    loading: document.getElementById('sessions-utilization-loading'),
+    content: document.getElementById('sessions-utilization-content'),
+    errorBox: document.getElementById('sessions-utilization-error'),
+    context: document.getElementById('sessions-utilization-context'),
+    scoped: Boolean(currentGroups.length || currentPartnerBrokerId),
+    scopeText: selectedSessionScopeText(),
+  });
+}
+
+function renderUtilizationCards(data, demographicsData, comparison, elements = {}) {
+  const { loading, content, errorBox, context } = elements;
   if (!content) return;
   const base = demographicsData && !demographicsData.error
     ? Number(demographicsData.total_beneficiarios ?? demographicsData.total_vidas) || 0
@@ -3715,7 +3804,8 @@ function renderSessionsUtilization(data, demographicsData, comparison) {
   const comparisonBase = comparison?.demographicsData && !comparison.demographicsData.error
     ? Number(comparison.demographicsData.total_beneficiarios ?? comparison.demographicsData.total_vidas) || 0
     : 0;
-  const hasScopedComparison = Boolean(currentGroups.length || currentPartnerBrokerId);
+  const hasScopedComparison = Boolean(elements.scoped);
+  const scopeText = elements.scopeText || selectedSessionScopeText();
   const hasComparison = Boolean(hasScopedComparison && comparisonData && comparisonBase > 0);
   const pct = (value, baseValue) => baseValue > 0 ? ((value / baseValue) * 100) : null;
   const pctLabel = (ratio) => ratio === null ? '—' : fmtPct(ratio);
@@ -3739,7 +3829,7 @@ function renderSessionsUtilization(data, demographicsData, comparison) {
     if (selectedRatio - globalRatio < -0.05) return 'negative';
     return '';
   };
-  if (context) context.textContent = hasComparison ? `${selectedSessionScopeText()} x global` : (hasScopedComparison ? selectedSessionScopeText() : 'global');
+  if (context) context.textContent = hasComparison ? `${scopeText} x global` : (hasScopedComparison ? scopeText : 'global');
   if (errorBox) {
     const hasError = !base || !data?.utilization;
     const comparisonError = hasScopedComparison && !hasComparison && !hasError;
