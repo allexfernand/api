@@ -855,14 +855,16 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
     <div class="chart-card" data-qtag="#CC01">
       <div class="petit-card-header">
         <div>
-          <h2 style="font-size:13px;font-weight:700;color:#334155;margin-bottom:4px">Evolução trimestral das linhas de cuidado</h2>
-          <div style="font-size:11px;color:#94a3b8">Dados demonstrativos · <span id="care-coordination-filter-context">todos os filtros globais</span></div>
+          <h2 style="font-size:13px;font-weight:700;color:#334155;margin-bottom:4px">Evolução das linhas de cuidado</h2>
+          <div style="font-size:11px;color:#94a3b8">CPFs únicos por classificação · <span id="care-coordination-filter-context">todos os filtros globais</span></div>
         </div>
         <span class="petit-chip">Linhas de cuidado</span>
       </div>
       <div class="chart-wrap" style="height:340px">
-        <canvas id="careCoordinationLinesChart"></canvas>
+        <div class="skeleton" id="skel-care-coordination-lines"></div>
+        <canvas id="careCoordinationLinesChart" style="display:none"></canvas>
       </div>
+      <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="care-coordination-lines-error"></div>
     </div>
   </div>
 
@@ -3100,9 +3102,11 @@ function renderPetitComiteMds() {
   }
 }
 
-function renderCareCoordination() {
+async function renderCareCoordination() {
   const context = document.getElementById('care-coordination-filter-context');
   const canvas = document.getElementById('careCoordinationLinesChart');
+  const skel = document.getElementById('skel-care-coordination-lines');
+  const errorBox = document.getElementById('care-coordination-lines-error');
   if (context) {
     const parts = [];
     const months = [...selectedMonths].sort();
@@ -3114,42 +3118,83 @@ function renderCareCoordination() {
     context.textContent = parts.length ? `filtros globais: ${parts.join(' · ')}` : 'todos os filtros globais';
   }
   if (!canvas) return;
+  if (skel) {
+    skel.style.display = 'block';
+    skel.innerHTML = '';
+  }
+  canvas.style.display = 'none';
+  if (errorBox) {
+    errorBox.style.display = 'none';
+    errorBox.textContent = '';
+  }
+
+  const months = [...selectedMonths].sort();
+  const p = new URLSearchParams();
+  p.set('scope', 'care_lines');
+  if (months.length > 0) p.set('meses', months.join(','));
+  appendGroupParams(p);
+  if (currentCompany) p.set('company', currentCompany);
+  const data = await safeGet('/api/data?' + p.toString());
+
+  if (!data || data.error) {
+    if (skel) skel.style.display = 'none';
+    if (errorBox) {
+      errorBox.style.display = 'block';
+      errorBox.textContent = data?.error ? String(data.error).slice(0, 220) : 'Erro ao carregar linhas de cuidado';
+    }
+    return;
+  }
+
+  const items = (data.items || []).slice(0, 12);
+  const labels = items.map((item) => item.classificacoes || 'Sem classificação');
+  const values = items.map((item) => Number(item.total_cpfs) || 0);
+  const total = Number(data.total) || values.reduce((acc, value) => acc + value, 0);
   if (careCoordinationLinesChart) careCoordinationLinesChart.destroy();
+  if (skel) skel.style.display = 'none';
+  canvas.style.display = 'block';
   careCoordinationLinesChart = new Chart(canvas, {
     type: 'bar',
     data: {
-      labels: ['JAN/26', 'FEV/26', 'MAR/26'],
-      datasets: [
-        { label: 'Saudável', data: [1861, 1886, 2419], backgroundColor: '#3F55E3', borderRadius: 6, borderSkipped: false },
-        { label: 'Situacional', data: [309, 380, 406], backgroundColor: '#2563eb', borderRadius: 6, borderSkipped: false },
-        { label: 'Gestantes', data: [120, 154, 167], backgroundColor: '#be185d', borderRadius: 6, borderSkipped: false },
-        { label: 'Crônicos', data: [780, 1232, 1403], backgroundColor: '#7c3aed', borderRadius: 6, borderSkipped: false },
-      ],
+      labels,
+      datasets: [{
+        label: 'CPFs únicos',
+        data: values,
+        backgroundColor: ['#3F55E3', '#2563eb', '#7c3aed', '#0891b2', '#be185d', '#0f766e', '#1d4ed8', '#f59e0b', '#db2777', '#64748b', '#334155', '#14b8a6'],
+        borderRadius: 7,
+        borderSkipped: false,
+      }],
     },
     options: {
+      indexAxis: 'y',
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
-        legend: { display: true, position: 'top', align: 'end', labels: { boxWidth: 10, boxHeight: 10, color: '#475569', font: { size: 11 } } },
+        legend: { display: false },
         tooltip: {
           backgroundColor: '#1e293b',
           borderColor: '#334155',
           borderWidth: 1,
           titleColor: '#cbd5e1',
           bodyColor: '#f8fafc',
-          callbacks: { label: c => `${c.dataset.label}: ${fmt(c.parsed.y)}` },
+          callbacks: {
+            label: c => {
+              const value = Number(c.parsed.x) || 0;
+              const pct = total > 0 ? (value / total) * 100 : NaN;
+              return `${fmt(value)} CPFs únicos · ${fmtPct(pct)}`;
+            },
+          },
         },
       },
       scales: {
         x: {
           ticks: { color: '#64748b', font: { size: 11, weight: '600' } },
-          grid: { display: false },
+          grid: { color: 'rgba(148,163,184,0.18)' },
           border: { display: false },
         },
         y: {
           beginAtZero: true,
-          ticks: { color: '#94a3b8', font: { size: 10 }, callback: v => fmt(v) },
-          grid: { color: 'rgba(148,163,184,0.18)' },
+          ticks: { color: '#64748b', font: { size: 11, weight: '600' }, callback: v => labels[v] || v },
+          grid: { display: false },
           border: { display: false },
         },
       },
