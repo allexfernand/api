@@ -513,6 +513,21 @@ body {
 body[data-active-tab="sessoes"] #filter-company-group{display:none!important}
 .loading-box{text-align:center;padding:32px;color:var(--text-faint);font-size:13px}
 footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
+.auth-overlay{position:fixed;inset:0;z-index:20000;background:linear-gradient(135deg,#172554,#3346c7);display:none;place-items:center;padding:24px}
+.auth-card{width:min(420px,100%);background:#fff;border:1px solid rgba(255,255,255,.18);border-radius:20px;box-shadow:0 24px 60px rgba(15,23,42,.34);padding:28px}
+.auth-logo{height:34px;width:auto;margin-bottom:18px}
+.auth-title{font-size:24px;font-weight:800;color:#0f172a;letter-spacing:-.6px;margin-bottom:6px}
+.auth-subtitle{font-size:13px;color:#64748b;line-height:1.5;margin-bottom:22px}
+.auth-field{display:grid;gap:7px;margin-bottom:14px}
+.auth-field label{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.55px;color:#64748b}
+.auth-field input{width:100%;height:42px;border:1px solid #cbd5e1;border-radius:10px;padding:0 12px;font-size:14px;color:#0f172a;outline:none}
+.auth-field input:focus{border-color:#3f55e3;box-shadow:0 0 0 3px rgba(63,85,227,.14)}
+.auth-submit{width:100%;height:42px;border:none;border-radius:10px;background:#3f55e3;color:#fff;font-size:13px;font-weight:800;cursor:pointer;box-shadow:0 8px 18px rgba(63,85,227,.24)}
+.auth-submit:hover{background:#3346c7}
+.auth-error{display:none;margin-top:12px;border:1px solid #fecaca;background:#fef2f2;color:#b91c1c;border-radius:10px;padding:10px 12px;font-size:12px;font-weight:700;line-height:1.4}
+.auth-logout{border:1px solid #e2e8f0;background:#fff;color:#64748b;border-radius:8px;padding:7px 10px;font-size:12px;font-weight:800;cursor:pointer}
+.auth-logout:hover{border-color:#cbd5e1;color:#334155}
+body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user-select:none}
 .pdf-export-overlay{position:fixed;inset:0;z-index:10000;background:rgba(15,23,42,.42);display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:24px;backdrop-filter:blur(2px)}
 .pdf-export-overlay::before{content:"Gerando PDF...";position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:10001;background:#0f766e;color:#fff;border-radius:999px;padding:7px 14px;font-size:12px;font-weight:800;box-shadow:var(--shadow-md)}
 .pdf-export-root{width:1320px;min-width:1320px;background:var(--bg);padding:24px 32px;color:var(--text);font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
@@ -534,11 +549,30 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
 </head>
 <body>
 
+<div class="auth-overlay" id="auth-overlay">
+  <form class="auth-card" onsubmit="submitAuth(event)">
+    <img class="auth-logo" src="/assets/logo_sanus.svg" alt="Sanus" />
+    <div class="auth-title">Acesso ao dashboard</div>
+    <div class="auth-subtitle">Informe usuário e senha para carregar os indicadores e proteger as consultas do Databricks.</div>
+    <div class="auth-field">
+      <label for="auth-user">Usuário</label>
+      <input id="auth-user" name="user" autocomplete="username" required />
+    </div>
+    <div class="auth-field">
+      <label for="auth-password">Senha</label>
+      <input id="auth-password" name="password" type="password" autocomplete="current-password" required />
+    </div>
+    <button class="auth-submit" type="submit">Entrar</button>
+    <div class="auth-error" id="auth-error"></div>
+  </form>
+</div>
+
 <div class="header">
   <div><img src="/assets/logo_sanus.svg" alt="Sanus" style="height:32px;width:auto"/></div>
   <div class="header-right">
     <span class="status loading" id="status">⏳ Carregando...</span>
     <button class="refresh-btn" onclick="reload()">↻ Atualizar</button>
+    <button class="auth-logout" onclick="logoutDashboard()">Sair</button>
     <span class="last-upd" id="last-upd"></span>
   </div>
 </div>
@@ -1485,6 +1519,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
 <script>
 const fmt = n => Number(n).toLocaleString('pt-BR');
 const mN = {'01':'Jan','02':'Fev','03':'Mar','04':'Abr','05':'Mai','06':'Jun','07':'Jul','08':'Ago','09':'Set','10':'Out','11':'Nov','12':'Dez'};
+const AUTH_STORAGE_KEY = 'sanus-dashboard-basic-auth';
 
 let usersData = [], companiesData = [], sessionCompaniesData = [], eChart, agegroupChart, appointmentTypesTrendChart, careCoordinationLinesChart, petitCareLinesChart, petitSessionsEvolChart, petitSessionsTotalEvolChart, sessionsEvolChart, sessionsTotalEvolChart, sessionsAttendanceChart, sessionsDailyChart, sessionsTopGroupsChart, qualityVolumeEvolutionChart, qualityEvolutionChart, qualityCriteriaEvolutionChart;
 let currentGroup = '', currentType = '', currentCompany = '';
@@ -1903,6 +1938,65 @@ function getActiveTab() {
 
 function getActiveTabLabel() {
   return document.querySelector('.tab.active')?.textContent?.trim() || 'Dashboard';
+}
+
+function getAuthToken() {
+  return localStorage.getItem(AUTH_STORAGE_KEY) || '';
+}
+
+function setAuthError(message) {
+  const error = document.getElementById('auth-error');
+  if (!error) return;
+  error.textContent = message || '';
+  error.style.display = message ? 'block' : 'none';
+}
+
+function showAuthScreen(message = '') {
+  const overlay = document.getElementById('auth-overlay');
+  if (overlay) overlay.style.display = 'grid';
+  document.body.classList.add('auth-locked');
+  setAuthError(message);
+  setTimeout(() => document.getElementById('auth-user')?.focus(), 0);
+}
+
+function hideAuthScreen() {
+  const overlay = document.getElementById('auth-overlay');
+  if (overlay) overlay.style.display = 'none';
+  document.body.classList.remove('auth-locked');
+  setAuthError('');
+}
+
+function authHeaders() {
+  const token = getAuthToken();
+  return token ? { Authorization: token } : {};
+}
+
+function authFetch(url, options = {}) {
+  const headers = { ...(options.headers || {}), ...authHeaders() };
+  return fetch(url, { ...options, headers });
+}
+
+function handleAuthFailure(message = 'Usuário ou senha inválidos.') {
+  localStorage.removeItem(AUTH_STORAGE_KEY);
+  showAuthScreen(message);
+}
+
+function submitAuth(event) {
+  event.preventDefault();
+  const user = document.getElementById('auth-user')?.value?.trim() || '';
+  const password = document.getElementById('auth-password')?.value || '';
+  if (!user || !password) {
+    setAuthError('Informe usuário e senha.');
+    return;
+  }
+  localStorage.setItem(AUTH_STORAGE_KEY, `Basic ${btoa(`${user}:${password}`)}`);
+  hideAuthScreen();
+  reload();
+}
+
+function logoutDashboard() {
+  localStorage.removeItem(AUTH_STORAGE_KEY);
+  showAuthScreen('Sessão encerrada.');
 }
 
 function getSelectedOptionLabel(id, fallback) {
@@ -4847,9 +4941,13 @@ function renderAgeGroups(data) {
 // --- Cargas ---
 async function safeGet(url) {
   try {
-    const r = await fetch(url);
+    const r = await authFetch(url);
     let body = null;
     try { body = await r.json(); } catch(_) {}
+    if (r.status === 401) {
+      handleAuthFailure(body?.error || 'Usuário ou senha inválidos.');
+      return { error: body?.error || 'Não autorizado' };
+    }
     if (!r.ok) {
       const msg = body && body.error ? body.error : `HTTP ${r.status}`;
       console.error(`[safeGet] ${url} -> ${msg}`);
@@ -5941,11 +6039,19 @@ function ensureGroupOptionsForActiveTab() {
 }
 
 async function loadAll(fetchOrgs=true) {
+  if (!getAuthToken()) {
+    showAuthScreen();
+    return;
+  }
   setStatus('loading','⏳ Carregando...');
   document.getElementById('skel-e').style.display='block';
   document.getElementById('evolChart').style.display='none';
   try {
-    const res = await fetch('/api/data'+buildQS());
+    const res = await authFetch('/api/data'+buildQS());
+    if (res.status === 401) {
+      handleAuthFailure();
+      throw new Error('Não autorizado');
+    }
     if(!res.ok) throw new Error(`HTTP ${res.status}`);
     const json = await res.json();
     if(json.error) throw new Error(json.error);

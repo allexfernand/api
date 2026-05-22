@@ -1,4 +1,6 @@
 // api/appointments.ts
+import { requireBasicAuth } from "../lib/basic-auth";
+
 declare const process: { env: Record<string, string | undefined> };
 
 const HOST  = process.env.DATABRICKS_HOST;
@@ -174,8 +176,9 @@ function nextMonth(month: string) {
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
   if (req.method === "OPTIONS") return res.status(200).end();
+  if (!requireBasicAuth(req, res)) return;
 
   const meses     = req.query.meses ? String(req.query.meses).split(',').filter(m => /^\d{4}-\d{2}$/.test(m)) : [];
   const groupNames = parseGroupNames(req.query);

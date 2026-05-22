@@ -3,6 +3,8 @@
 // - Sem filtro de grupo/empresa: COUNT(*) GROUP BY mês — query rápida.
 // - Com filtro: JOIN por botmaker_session.organization_id x organizations.id.
 // Aceita ?group_name=, ?company=, ?type=, ?months=12.
+import { requireBasicAuth } from "../lib/basic-auth";
+
 declare const process: { env: Record<string, string | undefined> };
 
 const HOST  = process.env.DATABRICKS_HOST;
@@ -347,8 +349,9 @@ function nextMonth(month: string) {
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
   if (req.method === "OPTIONS") return res.status(200).end();
+  if (!requireBasicAuth(req, res)) return;
 
   const groupNames = parseGroupNames(req.query);
   const groupName = groupNames[0] || null;

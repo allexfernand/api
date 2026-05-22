@@ -1,4 +1,6 @@
 // api/data.ts
+import { requireBasicAuth } from "../lib/basic-auth";
+
 declare const process: { env: Record<string, string | undefined> };
 
 const HOST  = process.env.DATABRICKS_HOST;
@@ -99,8 +101,9 @@ function buildFilters(groupNames: string[], typeFilter: unknown, partnerBrokerId
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
   if (req.method === "OPTIONS") return res.status(200).end();
+  if (!requireBasicAuth(req, res)) return;
 
   const groupNames = parseGroupNames(req.query);
   const typeFilter = req.query.type || null;

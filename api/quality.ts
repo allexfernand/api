@@ -1,6 +1,8 @@
 // api/quality.js
 // Visões estratégica e operacional de qualidade a partir das tabelas silver.
 
+import { requireBasicAuth } from "../lib/basic-auth";
+
 declare const process: { env: Record<string, string | undefined> };
 
 const HOST = process.env.DATABRICKS_HOST;
@@ -1279,9 +1281,10 @@ async function loadOperational(warehouseId, columns, criteriaColumns, scope, sha
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
   res.setHeader("Cache-Control", "no-store, max-age=0");
   if (req.method === "OPTIONS") return res.status(200).end();
+  if (!requireBasicAuth(req, res)) return;
 
   try {
     const criteriaFinisher = ["humano", "ia"].includes(String(req.query.criteria_finisher || "").toLowerCase())

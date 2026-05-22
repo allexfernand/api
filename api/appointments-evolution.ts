@@ -1,5 +1,7 @@
 // api/appointments-evolution.ts
 // Evolução mensal de agendamentos na atendimento_summarized_gold_live.
+import { requireBasicAuth } from "../lib/basic-auth";
+
 declare const process: { env: Record<string, string | undefined> };
 
 const HOST  = process.env.DATABRICKS_HOST;
@@ -169,9 +171,10 @@ function nextMonth(month: string) {
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
   res.setHeader("Cache-Control", "no-store, max-age=0");
   if (req.method === "OPTIONS") return res.status(200).end();
+  if (!requireBasicAuth(req, res)) return;
 
   const groupNames = parseGroupNames(req.query);
   const groupName = groupNames[0] || null;
