@@ -1167,9 +1167,9 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
       </div>
       <div class="petit-kpi">
         <div class="petit-kpi-icon"><i class="fa-solid fa-user-group"></i></div>
-        <div class="petit-kpi-label">Usuários</div>
+        <div class="petit-kpi-label">Beneficiários Únicos</div>
         <div class="petit-kpi-value" id="petit-kpi-users">—</div>
-        <div class="petit-kpi-note" id="petit-kpi-users-note">usuários únicos · filtros aplicados</div>
+        <div class="petit-kpi-note" id="petit-kpi-users-note">beneficiários únicos · filtros aplicados</div>
       </div>
       <div class="petit-kpi">
         <div class="petit-kpi-icon"><i class="fa-solid fa-calendar-check"></i></div>
@@ -2879,7 +2879,7 @@ async function loadPetitUsersKpi(requestId) {
   const value = petitElementById('petit-kpi-users');
   const note = petitElementById('petit-kpi-users-note');
   if (value) value.textContent = '…';
-  if (note) note.textContent = petitSessionsFilterNote().replace('volume de sessões', 'usuários únicos');
+  if (note) note.textContent = petitSessionsFilterNote().replace('volume de sessões', 'beneficiários únicos');
 
   const meses = [...selectedMonths].sort();
   const p = new URLSearchParams();
@@ -2893,10 +2893,10 @@ async function loadPetitUsersKpi(requestId) {
 
   if (data && !data.error) {
     if (value) value.textContent = fmt(data.unique_users || 0);
-    if (note) note.textContent = petitSessionsFilterNote().replace('volume de sessões', 'usuários únicos');
+    if (note) note.textContent = petitSessionsFilterNote().replace('volume de sessões', 'beneficiários únicos');
   } else {
     if (value) value.textContent = 'Erro';
-    if (note) note.textContent = String(data?.error || 'Erro ao carregar usuários únicos').slice(0, 140);
+    if (note) note.textContent = String(data?.error || 'Erro ao carregar beneficiários únicos').slice(0, 140);
   }
   schedulePdfReadinessUpdate();
 }
