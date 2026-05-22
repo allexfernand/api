@@ -3145,7 +3145,12 @@ async function renderCareCoordination() {
     return;
   }
 
-  const items = (data.items || []).slice(0, 12);
+  const rawItems = data.items || [];
+  const topItems = rawItems.slice(0, 5);
+  const otherTotal = rawItems.slice(5).reduce((acc, item) => acc + (Number(item.total_cpfs) || 0), 0);
+  const items = otherTotal > 0
+    ? [...topItems, { classificacoes: 'Outros', total_cpfs: otherTotal }]
+    : topItems;
   const labels = items.map((item) => item.classificacoes || 'Sem classificação');
   const values = items.map((item) => Number(item.total_cpfs) || 0);
   const total = Number(data.total) || values.reduce((acc, value) => acc + value, 0);
