@@ -284,8 +284,8 @@ body {
 .typification-groups-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:36px 16px;color:#94a3b8;font-size:12px;text-align:center;border:1px dashed #e2e8f0;border-radius:12px;background:linear-gradient(180deg,#fafafa,#fff)}
 .typification-groups-empty i{font-size:24px;color:#cbd5e1}
 
-/* Sanus blue palette (sanus.tech design system) — restrita à aba Petit Comitê */
-#tab-petit-comite{--sanus-brand:#3F55E3;--sanus-brand-strong:#3346C7;--sanus-brand-deep:#2234A8;--sanus-brand-soft:#C7D2FE;--sanus-brand-tint:#EEF2FF;--sanus-brand-ink:#172554}
+/* Sanus blue palette (sanus.tech design system) — abas executivas */
+#tab-petit-comite,#tab-coordenacao-cuidado{--sanus-brand:#3F55E3;--sanus-brand-strong:#3346C7;--sanus-brand-deep:#2234A8;--sanus-brand-soft:#C7D2FE;--sanus-brand-tint:#EEF2FF;--sanus-brand-ink:#172554}
 .petit-hero{background:linear-gradient(135deg,var(--sanus-brand-deep) 0%,var(--sanus-brand-strong) 100%);color:#fff;border:none;overflow:hidden;position:relative}
 .petit-hero::before{content:"";position:absolute;left:-120px;bottom:-140px;width:280px;height:280px;border-radius:50%;background:rgba(255,255,255,.06)}
 .petit-hero::after{content:"";position:absolute;right:-80px;top:-80px;width:220px;height:220px;border-radius:50%;background:rgba(255,255,255,.10)}
@@ -542,6 +542,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
 <div class="tabs">
   <div class="tab active" data-tab="demografica">Análise Demográfica</div>
   <div class="tab" data-tab="agendamentos">Agendamentos</div>
+  <div class="tab" data-tab="coordenacao-cuidado">Coordenação de Cuidado</div>
   <div class="tab" data-tab="sessoes">Sessões</div>
   <div class="tab" data-tab="petit-comite">Petit Comitê</div>
   <div class="tab" data-tab="qualidade-estrategica">Qualidade · Estratégica</div>
@@ -806,6 +807,22 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
     </div>
 
     <div style="text-align:center;padding:20px;color:#bbb;font-size:13px">Mais dados serão adicionados em breve.</div>
+  </div>
+
+  <!-- Tab: Coordenação de Cuidado -->
+  <div class="tab-content" id="tab-coordenacao-cuidado">
+    <div class="chart-card" data-qtag="#CC01">
+      <div class="petit-card-header">
+        <div>
+          <h2 style="font-size:13px;font-weight:700;color:#334155;margin-bottom:4px">Evolução trimestral das linhas de cuidado</h2>
+          <div style="font-size:11px;color:#94a3b8">Dados demonstrativos · <span id="care-coordination-filter-context">todos os filtros globais</span></div>
+        </div>
+        <span class="petit-chip">Linhas de cuidado</span>
+      </div>
+      <div class="chart-wrap" style="height:340px">
+        <canvas id="careCoordinationLinesChart"></canvas>
+      </div>
+    </div>
   </div>
 
   <!-- Tab: Sessões -->
@@ -1460,7 +1477,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
 const fmt = n => Number(n).toLocaleString('pt-BR');
 const mN = {'01':'Jan','02':'Fev','03':'Mar','04':'Abr','05':'Mai','06':'Jun','07':'Jul','08':'Ago','09':'Set','10':'Out','11':'Nov','12':'Dez'};
 
-let usersData = [], companiesData = [], sessionCompaniesData = [], eChart, agegroupChart, appointmentTypesTrendChart, petitCareLinesChart, petitSessionsEvolChart, petitSessionsTotalEvolChart, sessionsEvolChart, sessionsTotalEvolChart, sessionsAttendanceChart, sessionsDailyChart, sessionsTopGroupsChart, qualityVolumeEvolutionChart, qualityEvolutionChart, qualityCriteriaEvolutionChart;
+let usersData = [], companiesData = [], sessionCompaniesData = [], eChart, agegroupChart, appointmentTypesTrendChart, careCoordinationLinesChart, petitCareLinesChart, petitSessionsEvolChart, petitSessionsTotalEvolChart, sessionsEvolChart, sessionsTotalEvolChart, sessionsAttendanceChart, sessionsDailyChart, sessionsTopGroupsChart, qualityVolumeEvolutionChart, qualityEvolutionChart, qualityCriteriaEvolutionChart;
 let currentGroup = '', currentType = '', currentCompany = '';
 let currentGroups = [];
 let currentPartnerBrokerId = '';
@@ -1499,7 +1516,7 @@ document.querySelectorAll('.tab').forEach(t => {
     document.getElementById('tab-' + t.dataset.tab).classList.add('active');
     const activeTab = t.dataset.tab;
     document.body.dataset.activeTab = activeTab;
-    const hasPeriodo = activeTab === 'agendamentos' || activeTab === 'sessoes' || activeTab === 'petit-comite' || activeTab.startsWith('qualidade');
+    const hasPeriodo = isPeriodFilteredTab(activeTab);
     document.getElementById('filter-periodo').style.display = hasPeriodo ? 'flex' : 'none';
     updateFilterVisibility();
     ensureGroupOptionsForActiveTab();
@@ -1522,7 +1539,7 @@ function updateFilterVisibility() {
   } else if (currentGroups.length) {
     loadCompanyOptions();
   }
-  if (typeGroup) typeGroup.style.display = (activeTab === 'sessoes' || activeTab === 'petit-comite' || activeTab.startsWith('qualidade')) ? 'none' : 'flex';
+  if (typeGroup) typeGroup.style.display = (activeTab === 'sessoes' || activeTab === 'coordenacao-cuidado' || activeTab === 'petit-comite' || activeTab.startsWith('qualidade')) ? 'none' : 'flex';
   if (companyGroup) companyGroup.style.display = activeTab === 'sessoes' ? 'none' : 'flex';
   if (partnerGroup) partnerGroup.style.display = isPartnerFilteredTab(activeTab) ? 'flex' : 'none';
   if (pdfControl) pdfControl.style.display = activeTab === 'petit-comite' ? 'grid' : 'none';
@@ -1544,7 +1561,7 @@ function appendGroupParams(params) {
 }
 
 function isPartnerFilteredTab(tab = getActiveTab()) {
-  return tab === 'demografica' || tab === 'sessoes' || tab === 'petit-comite';
+  return tab === 'demografica' || tab === 'sessoes' || tab === 'coordenacao-cuidado' || tab === 'petit-comite';
 }
 
 function selectedGroupsLabel() {
@@ -1650,6 +1667,10 @@ document.getElementById('partner-select').addEventListener('change', e => {
     loadAll(false);
     return;
   }
+  if (activeTab === 'coordenacao-cuidado') {
+    renderCareCoordination();
+    return;
+  }
   if (activeTab === 'petit-comite') {
     renderPetitComite();
     schedulePdfReadinessUpdate();
@@ -1741,7 +1762,7 @@ function updateFilterInfo() {
   else if (currentGroups.length > 1) parts.push(`${currentGroups.length} grupos econômicos`);
   if (isPartnerFilteredTab(activeTab) && currentPartnerBrokerId) parts.push(`Parceiro: ${selectedPartnerLabel()}`);
   if (currentCompany && activeTab !== 'sessoes') parts.push(currentCompany);
-  if (currentType && activeTab !== 'sessoes' && activeTab !== 'petit-comite' && !activeTab.startsWith('qualidade')) parts.push(currentType === 'TITULAR' ? 'Titular' : 'Dependente');
+  if (currentType && activeTab !== 'sessoes' && activeTab !== 'coordenacao-cuidado' && activeTab !== 'petit-comite' && !activeTab.startsWith('qualidade')) parts.push(currentType === 'TITULAR' ? 'Titular' : 'Dependente');
   document.getElementById('filter-info').textContent = parts.length ? `Filtrando: ${parts.join(' · ')}` : '';
 }
 
@@ -1774,7 +1795,7 @@ function buildQS() {
   appendGroupParams(p);
   const activeTab = getActiveTab();
   if (currentCompany && activeTab !== 'sessoes') p.set('company', currentCompany);
-  if (currentType && activeTab !== 'sessoes' && activeTab !== 'petit-comite' && !activeTab.startsWith('qualidade')) p.set('type', currentType);
+  if (currentType && activeTab !== 'sessoes' && activeTab !== 'coordenacao-cuidado' && activeTab !== 'petit-comite' && !activeTab.startsWith('qualidade')) p.set('type', currentType);
   const s = p.toString();
   return s ? '?' + s : '';
 }
@@ -1810,7 +1831,7 @@ function collectPdfFilters() {
   if (activeTab !== 'sessoes') {
     filters.push({ label: 'Empresa', value: currentCompany || 'Todas as empresas' });
   }
-  if (activeTab !== 'sessoes' && activeTab !== 'petit-comite' && !activeTab.startsWith('qualidade')) {
+  if (activeTab !== 'sessoes' && activeTab !== 'coordenacao-cuidado' && activeTab !== 'petit-comite' && !activeTab.startsWith('qualidade')) {
     filters.push({ label: 'Tipo beneficiário', value: currentType ? getSelectedOptionLabel('type-select', currentType) : 'Todos' });
   }
   const periodFilter = document.getElementById('filter-periodo');
@@ -2197,14 +2218,15 @@ async function downloadDashboardPdf() {
   }
 }
 
-function isPeriodFilteredTab() {
-  const activeTab = getActiveTab();
-  return activeTab === 'agendamentos' || activeTab === 'sessoes' || activeTab === 'petit-comite' || activeTab.startsWith('qualidade');
+function isPeriodFilteredTab(tab = getActiveTab()) {
+  const activeTab = tab;
+  return activeTab === 'agendamentos' || activeTab === 'coordenacao-cuidado' || activeTab === 'sessoes' || activeTab === 'petit-comite' || activeTab.startsWith('qualidade');
 }
 
 function loadPeriodFilteredTab() {
   const activeTab = getActiveTab();
   if (activeTab === 'agendamentos') loadAppointments();
+  else if (activeTab === 'coordenacao-cuidado') renderCareCoordination();
   else if (activeTab === 'sessoes') loadSessions();
   else if (activeTab === 'petit-comite') renderPetitComite();
   else if (activeTab.startsWith('qualidade')) loadQuality();
@@ -2690,6 +2712,63 @@ function petitEvolutionFilterLabel() {
   if (currentCompany) parts.push(currentCompany);
   if (currentPartnerBrokerId) parts.push(`Parceiro: ${selectedPartnerLabel()}`);
   return parts.join(' · ') || 'global';
+}
+
+function renderCareCoordination() {
+  const context = document.getElementById('care-coordination-filter-context');
+  const canvas = document.getElementById('careCoordinationLinesChart');
+  if (context) {
+    const parts = [];
+    const months = [...selectedMonths].sort();
+    if (months.length === 1) parts.push(monthShortLabel(months[0]));
+    else if (months.length > 1) parts.push(`${months.length} meses selecionados`);
+    if (currentGroups.length) parts.push(selectedGroupsText());
+    if (currentCompany) parts.push(currentCompany);
+    if (currentPartnerBrokerId) parts.push(`Parceiro: ${selectedPartnerLabel()}`);
+    context.textContent = parts.length ? `filtros globais: ${parts.join(' · ')}` : 'todos os filtros globais';
+  }
+  if (!canvas) return;
+  if (careCoordinationLinesChart) careCoordinationLinesChart.destroy();
+  careCoordinationLinesChart = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: ['JAN/26', 'FEV/26', 'MAR/26'],
+      datasets: [
+        { label: 'Saudável', data: [1861, 1886, 2419], backgroundColor: '#3F55E3', borderRadius: 6, borderSkipped: false },
+        { label: 'Situacional', data: [309, 380, 406], backgroundColor: '#2563eb', borderRadius: 6, borderSkipped: false },
+        { label: 'Gestantes', data: [120, 154, 167], backgroundColor: '#be185d', borderRadius: 6, borderSkipped: false },
+        { label: 'Crônicos', data: [780, 1232, 1403], backgroundColor: '#7c3aed', borderRadius: 6, borderSkipped: false },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: true, position: 'top', align: 'end', labels: { boxWidth: 10, boxHeight: 10, color: '#475569', font: { size: 11 } } },
+        tooltip: {
+          backgroundColor: '#1e293b',
+          borderColor: '#334155',
+          borderWidth: 1,
+          titleColor: '#cbd5e1',
+          bodyColor: '#f8fafc',
+          callbacks: { label: c => `${c.dataset.label}: ${fmt(c.parsed.y)}` },
+        },
+      },
+      scales: {
+        x: {
+          ticks: { color: '#64748b', font: { size: 11, weight: '600' } },
+          grid: { display: false },
+          border: { display: false },
+        },
+        y: {
+          beginAtZero: true,
+          ticks: { color: '#94a3b8', font: { size: 10 }, callback: v => fmt(v) },
+          grid: { color: 'rgba(148,163,184,0.18)' },
+          border: { display: false },
+        },
+      },
+    },
+  });
 }
 
 function renderPetitSessionsTotalEvolutionChart(labels, totalValues, uniqueBeneficiaryValues, hasUniqueBeneficiaryData) {
