@@ -3,7 +3,7 @@
 // - Sem filtro de grupo/empresa: COUNT(*) GROUP BY mês — query rápida.
 // - Com filtro: JOIN por botmaker_session.organization_id x organizations.id.
 // Aceita ?group_name=, ?company=, ?type=, ?months=12.
-import { requireBasicAuth } from "../lib/basic-auth";
+import { MDS_PARTNER_SCOPE, requireBasicAuth, scopedPartnerBrokerId } from "../lib/basic-auth";
 
 declare const process: { env: Record<string, string | undefined> };
 
@@ -15,6 +15,7 @@ const SESSION_TABLE       = `hive_metastore.sanus_prod.botmaker_session`;
 const MESSAGE_TABLE       = `hive_metastore.sanus_prod.botmaker_message`;
 const DASHBOARD_SESSIONS_TABLE = `hive_metastore.sanus_prod.dashboard_sessions_base_gold`;
 const ORGANIZATIONS_TABLE = `hive_metastore.sanus_prod.organizations`;
+const PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.partner_brokers`;
 const ORGANIZATION_PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.organization_partner_brokers`;
 
 const SESSION_DATE_COLUMN = 'creation_time';
@@ -309,17 +310,25 @@ function economicGroupNamesCondition(groupNames: string[], tableAlias = 's') {
 function partnerBrokerCondition(partnerBrokerId: unknown, tableAlias = 's') {
   const id = String(partnerBrokerId || '').trim();
   if (!id) return null;
+  const partnerCondition = id === MDS_PARTNER_SCOPE
+    ? `CAST(opb.partner_broker_id AS STRING) IN (
+      SELECT CAST(pb.id AS STRING)
+      FROM ${PARTNER_BROKERS_TABLE} pb
+      WHERE UPPER(TRIM(COALESCE(CAST(pb.name AS STRING), ''))) = 'MDS'
+        OR UPPER(TRIM(COALESCE(CAST(pb.name_secondary AS STRING), ''))) = 'MDS'
+    )`
+    : `CAST(opb.partner_broker_id AS STRING) = '${escape(id)}'`;
   return `CAST(${tableAlias}.${quoteIdent('organization_id')} AS STRING) IN (
     SELECT CAST(opb.organization_id AS STRING)
     FROM ${ORGANIZATION_PARTNER_BROKERS_TABLE} opb
-    WHERE CAST(opb.partner_broker_id AS STRING) = '${escape(id)}'
+    WHERE ${partnerCondition}
       AND opb.deleted_at IS NULL
     UNION
     SELECT CAST(child.id AS STRING)
     FROM ${ORGANIZATION_PARTNER_BROKERS_TABLE} opb
     INNER JOIN ${ORGANIZATIONS_TABLE} child
       ON CAST(child.matriz_id AS STRING) = CAST(opb.organization_id AS STRING)
-    WHERE CAST(opb.partner_broker_id AS STRING) = '${escape(id)}'
+    WHERE ${partnerCondition}
       AND opb.deleted_at IS NULL
   )`;
 }
@@ -356,7 +365,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   const groupNames = parseGroupNames(req.query);
   const groupName = groupNames[0] || null;
   const company = req.query.company || null;
-  const partnerBrokerId = req.query.partner_broker_id || null;
+  const partnerBrokerId = scopedPartnerBrokerId(req, req.query.partner_broker_id || null);
   const typeFilter = req.query.type || null;
   const granularity = req.query.granularity || 'month';
   const dayMonth = req.query.mes && /^\d{4}-\d{2}$/.test(req.query.mes) ? req.query.mes : null;

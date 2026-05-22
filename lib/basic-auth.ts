@@ -10,6 +10,8 @@ type AuthResponse = {
   status(code: number): { json(body: unknown): void };
 };
 
+export const MDS_PARTNER_SCOPE = "__SANUS_MDS_PARTNER__";
+
 function headerValue(req: AuthRequest, name: string) {
   const headers = req.headers || {};
   const direct = headers[name] || headers[name.toLowerCase()];
@@ -33,20 +35,62 @@ function decodeBasicAuth(value: string) {
   }
 }
 
+export function getDashboardAuth(req: AuthRequest) {
+  const expectedUser = process.env.DASHBOARD_AUTH_USER;
+  const expectedPassword = process.env.DASHBOARD_AUTH_PASSWORD;
+  const mdsUser = process.env.DASHBOARD_MDS_AUTH_USER;
+  const mdsPassword = process.env.DASHBOARD_MDS_AUTH_PASSWORD;
+  const credentials = decodeBasicAuth(headerValue(req, "authorization"));
+
+  if (
+    credentials &&
+    mdsUser &&
+    mdsPassword &&
+    credentials.user === mdsUser &&
+    credentials.password === mdsPassword
+  ) {
+    return { user: credentials.user, role: "mds" as const };
+  }
+
+  if (credentials?.user === expectedUser && credentials.password === expectedPassword) {
+    return { user: credentials.user, role: credentials.user.toLowerCase() === "mds" ? "mds" as const : "full" as const };
+  }
+
+  return null;
+}
+
 export function requireBasicAuth(req: AuthRequest, res: AuthResponse) {
   const expectedUser = process.env.DASHBOARD_AUTH_USER;
   const expectedPassword = process.env.DASHBOARD_AUTH_PASSWORD;
-
+  const mdsUser = process.env.DASHBOARD_MDS_AUTH_USER;
+  const mdsPassword = process.env.DASHBOARD_MDS_AUTH_PASSWORD;
   if (!expectedUser || !expectedPassword) {
     res.status(500).json({ error: "Autenticação não configurada." });
     return false;
   }
+  if ((mdsUser && !mdsPassword) || (!mdsUser && mdsPassword)) {
+    res.status(500).json({ error: "Autenticação MDS incompleta." });
+    return false;
+  }
 
-  const credentials = decodeBasicAuth(headerValue(req, "authorization"));
-  if (credentials?.user === expectedUser && credentials.password === expectedPassword) {
+  if (getDashboardAuth(req)) {
     return true;
   }
 
   res.status(401).json({ error: "Usuário ou senha inválidos." });
   return false;
+}
+
+export function isMdsAuth(req: AuthRequest) {
+  return getDashboardAuth(req)?.role === "mds";
+}
+
+export function scopedPartnerBrokerId(req: AuthRequest, requestedPartnerBrokerId: unknown) {
+  return isMdsAuth(req) ? MDS_PARTNER_SCOPE : requestedPartnerBrokerId;
+}
+
+export function rejectMdsAuth(req: AuthRequest, res: AuthResponse) {
+  if (!isMdsAuth(req)) return false;
+  res.status(403).json({ error: "Usuário MDS restrito ao dashboard Petit Comitê MDS." });
+  return true;
 }

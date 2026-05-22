@@ -1,5 +1,5 @@
 // api/solicitations.ts
-import { requireBasicAuth } from "../lib/basic-auth";
+import { rejectMdsAuth, requireBasicAuth } from "../lib/basic-auth";
 
 declare const process: { env: Record<string, string | undefined> };
 
@@ -61,6 +61,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
   if (req.method === "OPTIONS") return res.status(200).end();
   if (!requireBasicAuth(req, res)) return;
+  if (rejectMdsAuth(req, res)) return;
 
   const meses     = req.query.meses ? req.query.meses.split(',').filter((m: string) => /^\d{4}-\d{2}$/.test(m)) : [];
   const groupNames = parseGroupNames(req.query);

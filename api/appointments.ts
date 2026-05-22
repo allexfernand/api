@@ -1,5 +1,5 @@
 // api/appointments.ts
-import { requireBasicAuth } from "../lib/basic-auth";
+import { MDS_PARTNER_SCOPE, requireBasicAuth, scopedPartnerBrokerId } from "../lib/basic-auth";
 
 declare const process: { env: Record<string, string | undefined> };
 
@@ -9,6 +9,7 @@ const HEADERS = { "Authorization": `Bearer ${TOKEN}`, "Content-Type": "applicati
 const APPOINTMENTS_TABLE = `hive_metastore.sanus_prod.atendimento_summarized_gold_live`;
 const APPOINTMENTS_DATE_COLUMN = 'hora_criacao_atendimento';
 const ORGANIZATIONS_TABLE = `hive_metastore.sanus_prod.organizations`;
+const PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.partner_brokers`;
 const ORGANIZATION_PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.organization_partner_brokers`;
 
 type DbOptions = RequestInit & { headers?: Record<string, string> };
@@ -121,19 +122,27 @@ function buildGroupFilter(columns: string[], groupNames: string[]) {
 }
 
 function partnerOrgNamesSubquery(partnerBrokerId: unknown) {
+  const partnerCondition = String(partnerBrokerId) === MDS_PARTNER_SCOPE
+    ? `CAST(opb.partner_broker_id AS STRING) IN (
+      SELECT CAST(pb.id AS STRING)
+      FROM ${PARTNER_BROKERS_TABLE} pb
+      WHERE UPPER(TRIM(COALESCE(CAST(pb.name AS STRING), ''))) = 'MDS'
+        OR UPPER(TRIM(COALESCE(CAST(pb.name_secondary AS STRING), ''))) = 'MDS'
+    )`
+    : `CAST(opb.partner_broker_id AS STRING) = '${escape(partnerBrokerId)}'`;
   return `(
     SELECT UPPER(TRIM(o.name))
     FROM ${ORGANIZATIONS_TABLE} o
     INNER JOIN ${ORGANIZATION_PARTNER_BROKERS_TABLE} opb
       ON CAST(o.id AS STRING) = CAST(opb.organization_id AS STRING)
-    WHERE CAST(opb.partner_broker_id AS STRING) = '${escape(partnerBrokerId)}'
+    WHERE ${partnerCondition}
       AND opb.deleted_at IS NULL
     UNION
     SELECT UPPER(TRIM(child.name))
     FROM ${ORGANIZATION_PARTNER_BROKERS_TABLE} opb
     INNER JOIN ${ORGANIZATIONS_TABLE} child
       ON CAST(child.matriz_id AS STRING) = CAST(opb.organization_id AS STRING)
-    WHERE CAST(opb.partner_broker_id AS STRING) = '${escape(partnerBrokerId)}'
+    WHERE ${partnerCondition}
       AND opb.deleted_at IS NULL
   )`;
 }
@@ -184,7 +193,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   const groupNames = parseGroupNames(req.query);
   const groupName = groupNames[0] || null;
   const company = req.query.company || null;
-  const partnerBrokerId = req.query.partner_broker_id || null;
+  const partnerBrokerId = scopedPartnerBrokerId(req, req.query.partner_broker_id || null);
   const monthList = meses.length ? meses.sort() : lastNMonthsList(Math.min(Math.max(parseInt(String(req.query.months)) || 12, 1), 24));
   const monthRangeFilter = monthList.map((month) => `(
     ${quoteIdent(APPOINTMENTS_DATE_COLUMN)} >= '${month}-01'

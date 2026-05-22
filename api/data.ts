@@ -1,5 +1,5 @@
 // api/data.ts
-import { requireBasicAuth } from "../lib/basic-auth";
+import { MDS_PARTNER_SCOPE, getDashboardAuth, requireBasicAuth, scopedPartnerBrokerId } from "../lib/basic-auth";
 
 declare const process: { env: Record<string, string | undefined> };
 
@@ -60,18 +60,31 @@ const ORGANIZATIONS_TABLE = `hive_metastore.sanus_prod.organizations`;
 const PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.partner_brokers`;
 const ORGANIZATION_PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.organization_partner_brokers`;
 
+function partnerBrokerCondition(partnerBrokerId: unknown) {
+  if (String(partnerBrokerId) === MDS_PARTNER_SCOPE) {
+    return `CAST(opb.partner_broker_id AS STRING) IN (
+      SELECT CAST(pb.id AS STRING)
+      FROM ${PARTNER_BROKERS_TABLE} pb
+      WHERE UPPER(TRIM(COALESCE(CAST(pb.name AS STRING), ''))) = 'MDS'
+        OR UPPER(TRIM(COALESCE(CAST(pb.name_secondary AS STRING), ''))) = 'MDS'
+    )`;
+  }
+  return `CAST(opb.partner_broker_id AS STRING) = '${escape(partnerBrokerId)}'`;
+}
+
 function partnerOrgIdsSubquery(partnerBrokerId: unknown) {
+  const partnerCondition = partnerBrokerCondition(partnerBrokerId);
   return `(
     SELECT CAST(opb.organization_id AS STRING)
     FROM ${ORGANIZATION_PARTNER_BROKERS_TABLE} opb
-    WHERE CAST(opb.partner_broker_id AS STRING) = '${escape(partnerBrokerId)}'
+    WHERE ${partnerCondition}
       AND opb.deleted_at IS NULL
     UNION
     SELECT CAST(child.id AS STRING)
     FROM ${ORGANIZATION_PARTNER_BROKERS_TABLE} opb
     INNER JOIN ${ORGANIZATIONS_TABLE} child
       ON CAST(child.matriz_id AS STRING) = CAST(opb.organization_id AS STRING)
-    WHERE CAST(opb.partner_broker_id AS STRING) = '${escape(partnerBrokerId)}'
+    WHERE ${partnerCondition}
       AND opb.deleted_at IS NULL
   )`;
 }
@@ -107,9 +120,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
   const groupNames = parseGroupNames(req.query);
   const typeFilter = req.query.type || null;
-  const partnerBrokerId = req.query.partner_broker_id || null;
+  const partnerBrokerId = scopedPartnerBrokerId(req, req.query.partner_broker_id || null);
   const scope = String(req.query.scope || '').toLowerCase();
-  if (scope === 'auth') return res.status(200).json({ ok: true });
+  if (scope === 'auth') return res.status(200).json({ ok: true, role: getDashboardAuth(req)?.role || 'full' });
   const groupFilter = buildFilters(groupNames, typeFilter, partnerBrokerId);
 
   try {
@@ -148,6 +161,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         INNER JOIN ${PARTNER_BROKERS_TABLE} pb
           ON po.partner_broker_id = CAST(pb.id AS STRING)
         WHERE pb.id IS NOT NULL
+          ${String(partnerBrokerId) === MDS_PARTNER_SCOPE ? "AND (UPPER(TRIM(COALESCE(CAST(pb.name AS STRING), ''))) = 'MDS' OR UPPER(TRIM(COALESCE(CAST(pb.name_secondary AS STRING), ''))) = 'MDS')" : ""}
         GROUP BY
           CAST(pb.id AS STRING),
           COALESCE(
@@ -166,7 +180,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         broker_active: String(getCell(r[3])).toLowerCase() === 'true',
         total_orgs: toInt(r[4]),
       })).filter((partner) => partner.broker_id);
-      return res.status(200).json({ partners, updatedAt: new Date().toISOString() });
+      return res.status(200).json({ partners, auth_role: getDashboardAuth(req)?.role || 'full', updatedAt: new Date().toISOString() });
     }
 
     const [userRows, groupRows, sessionGroupRows] = await Promise.all([
@@ -180,14 +194,14 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         WITH partner_orgs AS (
           SELECT CAST(opb.organization_id AS STRING) AS organization_id
           FROM ${ORGANIZATION_PARTNER_BROKERS_TABLE} opb
-          WHERE CAST(opb.partner_broker_id AS STRING) = '${escape(partnerBrokerId)}'
+          WHERE ${partnerBrokerCondition(partnerBrokerId)}
             AND opb.deleted_at IS NULL
           UNION
           SELECT CAST(child.id AS STRING) AS organization_id
           FROM ${ORGANIZATION_PARTNER_BROKERS_TABLE} opb
           INNER JOIN ${ORGANIZATIONS_TABLE} child
             ON CAST(child.matriz_id AS STRING) = CAST(opb.organization_id AS STRING)
-          WHERE CAST(opb.partner_broker_id AS STRING) = '${escape(partnerBrokerId)}'
+          WHERE ${partnerBrokerCondition(partnerBrokerId)}
             AND opb.deleted_at IS NULL
         )
         SELECT
@@ -244,7 +258,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         })).filter((g) => g.economic_group)
       : null;
 
-    res.status(200).json({ users: parse(userRows), groups, sessions_groups, updatedAt: new Date().toISOString() });
+    res.status(200).json({ users: parse(userRows), groups, sessions_groups, auth_role: getDashboardAuth(req)?.role || 'full', updatedAt: new Date().toISOString() });
   } catch (err) {
     res.status(500).json({ error: (err as { message?: string }).message });
   }

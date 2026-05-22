@@ -1,4 +1,10 @@
 {
+  "rewrites": [
+    {
+      "source": "/mds",
+      "destination": "/index.html"
+    }
+  ],
   "functions": {
     "api/*.ts": {
       "maxDuration": 60

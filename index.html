@@ -511,6 +511,7 @@ body {
 .tab-content{display:none}
 .tab-content.active{display:block}
 body[data-active-tab="sessoes"] #filter-company-group{display:none!important}
+body[data-dashboard-mode="mds"] .tabs{display:none}
 .loading-box{text-align:center;padding:32px;color:var(--text-faint);font-size:13px}
 footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
 .auth-overlay{position:fixed;inset:0;z-index:20000;background:linear-gradient(135deg,#172554,#3346c7);display:none;place-items:center;padding:24px}
@@ -1555,29 +1556,41 @@ let isPdfGenerating = false;
 
 // --- Tabs ---
 document.querySelectorAll('.tab').forEach(t => {
-  t.addEventListener('click', () => {
-    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
-    document.querySelectorAll('.tab-content').forEach(x => x.classList.remove('active'));
-    t.classList.add('active');
-    document.getElementById('tab-' + t.dataset.tab).classList.add('active');
-    const activeTab = t.dataset.tab;
-    document.body.dataset.activeTab = activeTab;
-    const hasPeriodo = isPeriodFilteredTab(activeTab);
-    document.getElementById('filter-periodo').style.display = hasPeriodo ? 'flex' : 'none';
-    updateFilterVisibility();
-    const continueActivation = () => {
-      ensureGroupOptionsForActiveTab();
-      updateFilterInfo();
-      schedulePdfReadinessUpdate();
-      if (hasPeriodo) { buildPeriodoOptions(); loadPeriodFilteredTab(); }
-    };
-    if (isPetitMdsTab(activeTab)) {
-      ensurePetitMdsScope().finally(continueActivation);
-      return;
-    }
-    continueActivation();
-  });
+  t.addEventListener('click', () => activateTab(t.dataset.tab));
 });
+
+async function activateTab(tabName) {
+  const tab = document.querySelector(`.tab[data-tab="${tabName}"]`);
+  const content = document.getElementById('tab-' + tabName);
+  if (!tab || !content) return;
+  document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(x => x.classList.remove('active'));
+  tab.classList.add('active');
+  content.classList.add('active');
+  const activeTab = tabName;
+  document.body.dataset.activeTab = activeTab;
+  const hasPeriodo = isPeriodFilteredTab(activeTab);
+  document.getElementById('filter-periodo').style.display = hasPeriodo ? 'flex' : 'none';
+  updateFilterVisibility();
+  if (isPetitMdsTab(activeTab)) {
+    await ensurePetitMdsScope();
+  }
+  ensureGroupOptionsForActiveTab();
+  updateFilterInfo();
+  schedulePdfReadinessUpdate();
+  if (hasPeriodo) { buildPeriodoOptions(); loadPeriodFilteredTab(); }
+}
+
+function isMdsRoute() {
+  const path = window.location.pathname.replace(/\/+$/, '').toLowerCase();
+  return path === '/mds' || new URLSearchParams(window.location.search).get('dashboard') === 'mds';
+}
+
+async function applyRouteMode() {
+  if (!isMdsRoute()) return;
+  document.body.dataset.dashboardMode = 'mds';
+  await activateTab('petit-comite-mds');
+}
 
 function updateFilterVisibility() {
   const typeGroup = document.getElementById('filter-type-group');
@@ -2006,6 +2019,11 @@ async function submitAuth(event) {
       return;
     }
     localStorage.setItem(AUTH_STORAGE_KEY, token);
+    if (body?.role === 'mds' && !isMdsRoute()) {
+      window.location.href = '/mds';
+      return;
+    }
+    await applyRouteMode();
     hideAuthScreen();
     reload();
   } catch (error) {
@@ -6080,6 +6098,10 @@ async function loadAll(fetchOrgs=true) {
     if(!res.ok) throw new Error(`HTTP ${res.status}`);
     const json = await res.json();
     if(json.error) throw new Error(json.error);
+    if (json.auth_role === 'mds' && !isMdsRoute()) {
+      window.location.href = '/mds';
+      return;
+    }
     hideAuthScreen();
     usersData = json.users||[];
     if(fetchOrgs && Array.isArray(json.groups)){
@@ -6102,6 +6124,13 @@ async function loadAll(fetchOrgs=true) {
 }
 
 function reload() { loadAll(true); }
+async function initializeDashboard() {
+  updateFilterVisibility();
+  if (isMdsRoute()) document.body.dataset.dashboardMode = 'mds';
+  if (getAuthToken()) await applyRouteMode();
+  schedulePdfReadinessUpdate();
+  loadAll(true);
+}
 if (window.Chart && Chart.register) {
   Chart.register({
     id: 'pdfReadinessWatcher',
@@ -6109,9 +6138,7 @@ if (window.Chart && Chart.register) {
   });
 }
 setInterval(() => schedulePdfReadinessUpdate(), 1200);
-updateFilterVisibility();
-schedulePdfReadinessUpdate();
-loadAll(true);
+initializeDashboard();
 </script>
 </body>
 </html>
