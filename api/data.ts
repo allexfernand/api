@@ -251,6 +251,15 @@ function buildCareLineFilters(columns: string[], beneficiaryColumns: string[], q
   return conditions.join(' AND ');
 }
 
+function careCategoryExpr() {
+  const normalized = `LOWER(TRIM(CAST(categoria_atendimento AS STRING)))`;
+  return `CASE
+    WHEN ${normalized} IN ('tabegismo', 'tagabismo', 'tabagismo') THEN 'Tabagismo'
+    WHEN ${normalized} IN ('saude mental', 'saúde mental', 'saude mental descompensada', 'saúde mental descompensada') THEN 'Saúde mental'
+    ELSE TRIM(CAST(categoria_atendimento AS STRING))
+  END`;
+}
+
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
@@ -355,6 +364,45 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           company,
           partner_broker_id: partnerBrokerId,
         },
+        source: HEALTHCOACH_TABLE,
+        auth_role: getDashboardAuth(req)?.role || 'full',
+        updatedAt: new Date().toISOString(),
+      });
+    }
+
+    if (scope === 'care_line_detail') {
+      const classificacao = String(req.query.classificacao || '').trim();
+      if (!classificacao) return res.status(400).json({ error: "Classificação obrigatória." });
+      const [columns, beneficiaryColumns] = await Promise.all([
+        getColumns(wh.id, HEALTHCOACH_TABLE),
+        getColumns(wh.id, BENEFICIARIES_TABLE).catch(() => []),
+      ]);
+      const company = req.query.company || null;
+      const baseWhere = buildCareLineFilters(columns, beneficiaryColumns, req.query, groupNames, company, partnerBrokerId);
+      const category = careCategoryExpr();
+      const rows = await runQuery(wh.id, `
+        SELECT
+          ${category} AS categoria_atendimento,
+          COUNT(DISTINCT REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '')) AS total_cpfs
+        FROM ${HEALTHCOACH_TABLE}
+        WHERE ${baseWhere}
+          AND TRIM(CAST(classificacoes AS STRING)) = '${escape(classificacao)}'
+          AND categoria_atendimento IS NOT NULL
+          AND TRIM(CAST(categoria_atendimento AS STRING)) != ''
+        GROUP BY ${category}
+        ORDER BY total_cpfs DESC
+        LIMIT 50
+      `);
+      const items = rows.map((row) => ({
+        categoria_atendimento: String(getCell(row[0]) || '').trim(),
+        total_cpfs: toInt(row[1]),
+      })).filter((item) => item.categoria_atendimento);
+      const total = items.reduce((acc, item) => acc + item.total_cpfs, 0);
+      return res.status(200).json({
+        scope: 'care_line_detail',
+        classificacao,
+        items,
+        total,
         source: HEALTHCOACH_TABLE,
         auth_role: getDashboardAuth(req)?.role || 'full',
         updatedAt: new Date().toISOString(),

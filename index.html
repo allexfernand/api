@@ -901,17 +901,23 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
         <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="care-coordination-lines-error"></div>
       </div>
 
-      <div class="card-box" data-qtag="#CC02">
+      <div class="card-box" data-qtag="#CC02" style="display:flex;flex-direction:column;min-height:0">
         <div class="petit-card-header">
           <div>
             <h2 style="font-size:13px;font-weight:700;color:#334155;margin-bottom:4px">Detalhamento das linhas de cuidado</h2>
-            <div style="font-size:11px;color:#94a3b8">Selecione uma linha no CC01 para detalhar</div>
+            <div style="font-size:11px;color:#94a3b8" id="care-detail-context">Selecione uma linha no CC01 para detalhar</div>
           </div>
           <span class="petit-chip">CC02</span>
         </div>
-        <div class="petit-placeholder" style="min-height:280px;display:flex;align-items:center;justify-content:center;text-align:center">
-          Detalhamento em definição.
+        <div class="loading-box" id="care-detail-loading" style="display:none"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando detalhamento...</div>
+        <div class="petit-placeholder" id="care-detail-empty" style="min-height:280px;display:flex;align-items:center;justify-content:center;text-align:center">
+          Selecione uma barra no CC01 para carregar as condições.
         </div>
+        <div id="care-detail-content" style="display:none;flex:1;min-height:0">
+          <div class="petit-dist-list petit-top-exams-list" id="care-detail-list" style="max-height:340px"></div>
+          <div style="font-size:11px;color:#94a3b8;margin-top:10px;text-align:right" id="care-detail-meta">—</div>
+        </div>
+        <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="care-detail-error"></div>
       </div>
     </div>
   </div>
@@ -3152,6 +3158,7 @@ function renderPetitComiteMds() {
 
 async function renderCareCoordination() {
   loadCareCoordinationKpis();
+  resetCareCoordinationDetail();
   const context = document.getElementById('care-coordination-filter-context');
   const canvas = document.getElementById('careCoordinationLinesChart');
   const skel = document.getElementById('skel-care-coordination-lines');
@@ -3222,6 +3229,20 @@ async function renderCareCoordination() {
       indexAxis: 'y',
       responsive: true,
       maintainAspectRatio: false,
+      onClick: (_event, elements) => {
+        const element = elements && elements[0];
+        if (!element) return;
+        const item = items[element.index];
+        if (!item) return;
+        if (item.classificacoes === 'Outros') {
+          resetCareCoordinationDetail('Outros acumula classificações fora do Top 5. Clique em uma linha específica para detalhar.');
+          return;
+        }
+        loadCareCoordinationDetail(item.classificacoes);
+      },
+      onHover: (event, elements) => {
+        if (event?.native?.target) event.native.target.style.cursor = elements?.length ? 'pointer' : 'default';
+      },
       plugins: {
         legend: { display: false },
         tooltip: {
@@ -3254,6 +3275,84 @@ async function renderCareCoordination() {
       },
     },
   });
+}
+
+function resetCareCoordinationDetail(message = 'Selecione uma barra no CC01 para carregar as condições.') {
+  const context = document.getElementById('care-detail-context');
+  const loading = document.getElementById('care-detail-loading');
+  const empty = document.getElementById('care-detail-empty');
+  const content = document.getElementById('care-detail-content');
+  const list = document.getElementById('care-detail-list');
+  const meta = document.getElementById('care-detail-meta');
+  const error = document.getElementById('care-detail-error');
+  if (context) context.textContent = 'Selecione uma linha no CC01 para detalhar';
+  if (loading) loading.style.display = 'none';
+  if (content) content.style.display = 'none';
+  if (list) list.innerHTML = '';
+  if (meta) meta.textContent = '—';
+  if (error) {
+    error.style.display = 'none';
+    error.textContent = '';
+  }
+  if (empty) {
+    empty.style.display = 'flex';
+    empty.textContent = message;
+  }
+}
+
+async function loadCareCoordinationDetail(classificacao) {
+  const context = document.getElementById('care-detail-context');
+  const loading = document.getElementById('care-detail-loading');
+  const empty = document.getElementById('care-detail-empty');
+  const content = document.getElementById('care-detail-content');
+  const list = document.getElementById('care-detail-list');
+  const meta = document.getElementById('care-detail-meta');
+  const error = document.getElementById('care-detail-error');
+  if (context) context.textContent = `Condições em ${classificacao}`;
+  if (loading) loading.style.display = 'block';
+  if (empty) empty.style.display = 'none';
+  if (content) content.style.display = 'none';
+  if (error) {
+    error.style.display = 'none';
+    error.textContent = '';
+  }
+
+  const months = [...selectedMonths].sort();
+  const p = new URLSearchParams();
+  p.set('scope', 'care_line_detail');
+  p.set('classificacao', classificacao);
+  if (months.length > 0) p.set('meses', months.join(','));
+  appendGroupParams(p);
+  if (currentCompany) p.set('company', currentCompany);
+  const data = await safeGet('/api/data?' + p.toString());
+  if (loading) loading.style.display = 'none';
+
+  if (!data || data.error) {
+    if (error) {
+      error.style.display = 'block';
+      error.textContent = data?.error ? String(data.error).slice(0, 220) : 'Erro ao carregar detalhamento';
+    }
+    return;
+  }
+
+  const items = data.items || [];
+  const total = Number(data.total) || items.reduce((acc, item) => acc + (Number(item.total_cpfs) || 0), 0);
+  const max = items.reduce((acc, item) => Math.max(acc, Number(item.total_cpfs) || 0), 0) || 1;
+  if (list) {
+    list.innerHTML = items.length ? items.map((item, index) => {
+      const value = Number(item.total_cpfs) || 0;
+      const pct = total > 0 ? (value / total) * 100 : NaN;
+      const width = Math.max((value / max) * 100, 2);
+      const label = item.categoria_atendimento || 'Sem categoria';
+      const color = ['#3F55E3', '#2563eb', '#7c3aed', '#0891b2', '#be185d', '#0f766e', '#1d4ed8', '#f59e0b', '#db2777', '#64748b'][index] || '#3F55E3';
+      return `<div class="petit-dist-row" title="${escapeAttr(label)}">
+        <div class="petit-dist-label">${escapeHtml(label)}</div>
+        <div class="petit-dist-track"><div class="petit-dist-bar" style="width:${width}%;background:${color}"><span class="petit-dist-value">${fmt(value)} <small>${fmtPct(pct)}</small></span></div></div>
+      </div>`;
+    }).join('') : '<div style="font-size:13px;color:#94a3b8;text-align:center;padding:20px 0">Nenhuma condição encontrada para essa linha.</div>';
+  }
+  if (meta) meta.textContent = `${items.length} condições · total ${fmt(total)} CPFs únicos`;
+  if (content) content.style.display = 'block';
 }
 
 async function loadCareCoordinationKpis() {
