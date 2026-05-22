@@ -3272,9 +3272,6 @@ async function loadPetitSessionEvolutionCharts(requestId) {
   const iaValues = series.map((it) => Number(it.ia) || 0);
   const totalValues = series.map((it) => Number(it.total) || ((Number(it.humano) || 0) + (Number(it.ia) || 0)));
   const uniqueBeneficiaryValues = series.map((it) => Number(it.unique_beneficiaries ?? it.unique_cpfs) || 0);
-  const totalLegendLabel = sessionsLegendLabel('Total', totalValues, totalValues);
-  const humanLegendLabel = sessionsLegendLabel('Humano', humanoValues, totalValues);
-  const iaLegendLabel = sessionsLegendLabel('IA', iaValues, totalValues);
 
   if (skel) skel.style.display = 'none';
   if (cv) cv.style.display = 'block';
@@ -3286,7 +3283,7 @@ async function loadPetitSessionEvolutionCharts(requestId) {
         labels,
         datasets: [
           {
-            label: totalLegendLabel,
+            label: 'Total',
             data: totalValues,
             borderColor: '#3F55E3',
             backgroundColor: 'rgba(63,85,227,0.08)',
@@ -3297,7 +3294,7 @@ async function loadPetitSessionEvolutionCharts(requestId) {
             tension: 0.35,
           },
           {
-            label: humanLegendLabel,
+            label: 'Humano',
             data: humanoValues,
             borderColor: '#2563eb',
             backgroundColor: 'rgba(37,99,235,0.08)',
@@ -3308,7 +3305,7 @@ async function loadPetitSessionEvolutionCharts(requestId) {
             tension: 0.35,
           },
           {
-            label: iaLegendLabel,
+            label: 'IA',
             data: iaValues,
             borderColor: '#14b8a6',
             backgroundColor: 'rgba(20,184,166,0.08)',
@@ -3328,7 +3325,7 @@ async function loadPetitSessionEvolutionCharts(requestId) {
           tooltip: {
             backgroundColor: '#1e293b', borderColor: '#334155', borderWidth: 1,
             titleColor: '#94a3b8', bodyColor: '#f1f5f9',
-            callbacks: { label: c => `${String(c.dataset.label || '').replace(/\s+\([^)]*\)$/, '')}: ${fmt(c.parsed.y)} sessões` },
+            callbacks: { label: c => sessionsPointTooltipLabel(c, totalValues) },
           },
         },
         scales: {
@@ -4819,9 +4816,6 @@ async function loadSessionsEvolution() {
   const iaValues = series.map((it) => Number(it.ia) || 0);
   const totalValues = series.map((it) => Number(it.total) || ((Number(it.humano) || 0) + (Number(it.ia) || 0)));
   const uniqueBeneficiaryValues = series.map((it) => Number(it.unique_beneficiaries ?? it.unique_cpfs) || 0);
-  const totalLegendLabel = sessionsLegendLabel('Total', totalValues, totalValues);
-  const humanLegendLabel = sessionsLegendLabel('Humano', humanoValues, totalValues);
-  const iaLegendLabel = sessionsLegendLabel('IA', iaValues, totalValues);
 
   if (skel) skel.style.display = 'none';
   if (cv && data && !data.error) cv.style.display = 'block';
@@ -4833,7 +4827,7 @@ async function loadSessionsEvolution() {
       labels,
       datasets: [
         {
-          label: totalLegendLabel,
+          label: 'Total',
           data: totalValues,
           borderColor: '#0f766e',
           backgroundColor: 'rgba(15,118,110,0.08)',
@@ -4844,7 +4838,7 @@ async function loadSessionsEvolution() {
           tension: 0.35,
         },
         {
-          label: humanLegendLabel,
+          label: 'Humano',
           data: humanoValues,
           borderColor: '#6366f1',
           backgroundColor: 'rgba(99,102,241,0.08)',
@@ -4855,7 +4849,7 @@ async function loadSessionsEvolution() {
           tension: 0.35,
         },
         {
-          label: iaLegendLabel,
+          label: 'IA',
           data: iaValues,
           borderColor: '#14b8a6',
           backgroundColor: 'rgba(20,184,166,0.08)',
@@ -4875,7 +4869,7 @@ async function loadSessionsEvolution() {
         tooltip: {
           backgroundColor: '#1e293b', borderColor: '#334155', borderWidth: 1,
           titleColor: '#94a3b8', bodyColor: '#f1f5f9',
-        callbacks: { label: c => `${String(c.dataset.label || '').replace(/\s+\([^)]*\)$/, '')}: ${fmt(c.parsed.y)} sessões` },
+          callbacks: { label: c => sessionsPointTooltipLabel(c, totalValues) },
         },
       },
       scales: {
@@ -5019,15 +5013,12 @@ function fmtPct(value, fallback='—') {
   return Number.isFinite(n) ? `${n.toFixed(1).replace('.', ',')}%` : fallback;
 }
 
-function seriesTotal(values) {
-  return (values || []).reduce((acc, value) => acc + (Number(value) || 0), 0);
-}
-
-function sessionsLegendLabel(label, values, totalValues) {
-  const total = seriesTotal(totalValues);
-  const value = label === 'Total' ? total : seriesTotal(values);
+function sessionsPointTooltipLabel(context, totalValues) {
+  const label = String(context.dataset.label || '');
+  const value = Number(context.parsed?.y) || 0;
+  const total = Number(totalValues?.[context.dataIndex]) || 0;
   const pct = total > 0 ? (value / total) * 100 : NaN;
-  return `${label} (${fmtPct(pct)})`;
+  return `${label}: ${fmt(value)} sessões · ${fmtPct(pct)}`;
 }
 
 function qualityScoreClass(value) {
