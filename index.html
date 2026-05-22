@@ -285,7 +285,7 @@ body {
 .typification-groups-empty i{font-size:24px;color:#cbd5e1}
 
 /* Sanus blue palette (sanus.tech design system) — abas executivas */
-#tab-petit-comite,#tab-coordenacao-cuidado{--sanus-brand:#3F55E3;--sanus-brand-strong:#3346C7;--sanus-brand-deep:#2234A8;--sanus-brand-soft:#C7D2FE;--sanus-brand-tint:#EEF2FF;--sanus-brand-ink:#172554}
+#tab-petit-comite,#tab-petit-comite-mds,#tab-coordenacao-cuidado{--sanus-brand:#3F55E3;--sanus-brand-strong:#3346C7;--sanus-brand-deep:#2234A8;--sanus-brand-soft:#C7D2FE;--sanus-brand-tint:#EEF2FF;--sanus-brand-ink:#172554}
 .petit-hero{background:linear-gradient(135deg,var(--sanus-brand-deep) 0%,var(--sanus-brand-strong) 100%);color:#fff;border:none;overflow:hidden;position:relative}
 .petit-hero::before{content:"";position:absolute;left:-120px;bottom:-140px;width:280px;height:280px;border-radius:50%;background:rgba(255,255,255,.06)}
 .petit-hero::after{content:"";position:absolute;right:-80px;top:-80px;width:220px;height:220px;border-radius:50%;background:rgba(255,255,255,.10)}
@@ -545,6 +545,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
   <div class="tab" data-tab="coordenacao-cuidado">Coordenação de Cuidado</div>
   <div class="tab" data-tab="sessoes">Sessões</div>
   <div class="tab" data-tab="petit-comite">Petit Comitê</div>
+  <div class="tab" data-tab="petit-comite-mds">Petit Comitê MDS</div>
   <div class="tab" data-tab="qualidade-estrategica">Qualidade · Estratégica</div>
   <div class="tab" data-tab="qualidade-operacional">Qualidade · Operacional</div>
 </div>
@@ -1238,6 +1239,9 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
     </div>
   </div>
 
+  <!-- Tab: Petit Comitê MDS -->
+  <div class="tab-content" id="tab-petit-comite-mds"></div>
+
   <!-- Tab: Qualidade Estratégica -->
   <div class="tab-content" id="tab-qualidade-estrategica">
     <div class="card-box" style="display:flex;align-items:center;gap:20px;padding:20px 28px">
@@ -1494,6 +1498,8 @@ let typificationGroupsRequestId = 0;
 let sessionsRequestId = 0;
 let sessionsEvolutionRequestId = 0;
 let petitComiteRequestId = 0;
+let petitMdsInitialized = false;
+let petitRenderVariant = 'default';
 let selectedQualityCriteriaSort = 'worst';
 let selectedQualitySubcriteriaSort = 'worst';
 let selectedQualitySubcriteriaCriterion = '';
@@ -1539,10 +1545,10 @@ function updateFilterVisibility() {
   } else if (currentGroups.length) {
     loadCompanyOptions();
   }
-  if (typeGroup) typeGroup.style.display = (activeTab === 'sessoes' || activeTab === 'coordenacao-cuidado' || activeTab === 'petit-comite' || activeTab.startsWith('qualidade')) ? 'none' : 'flex';
+  if (typeGroup) typeGroup.style.display = (activeTab === 'sessoes' || activeTab === 'coordenacao-cuidado' || isPetitTab(activeTab) || activeTab.startsWith('qualidade')) ? 'none' : 'flex';
   if (companyGroup) companyGroup.style.display = activeTab === 'sessoes' ? 'none' : 'flex';
   if (partnerGroup) partnerGroup.style.display = isPartnerFilteredTab(activeTab) ? 'flex' : 'none';
-  if (pdfControl) pdfControl.style.display = activeTab === 'petit-comite' ? 'grid' : 'none';
+  if (pdfControl) pdfControl.style.display = isPetitTab(activeTab) ? 'grid' : 'none';
   if (isPartnerFilteredTab(activeTab)) loadPartnerOptions();
 }
 
@@ -1561,7 +1567,11 @@ function appendGroupParams(params) {
 }
 
 function isPartnerFilteredTab(tab = getActiveTab()) {
-  return tab === 'demografica' || tab === 'sessoes' || tab === 'coordenacao-cuidado' || tab === 'petit-comite';
+  return tab === 'demografica' || tab === 'sessoes' || tab === 'coordenacao-cuidado' || isPetitTab(tab);
+}
+
+function isPetitTab(tab = getActiveTab()) {
+  return tab === 'petit-comite' || tab === 'petit-comite-mds';
 }
 
 function selectedGroupsLabel() {
@@ -1674,6 +1684,9 @@ document.getElementById('partner-select').addEventListener('change', e => {
   if (activeTab === 'petit-comite') {
     renderPetitComite();
     schedulePdfReadinessUpdate();
+  } else if (activeTab === 'petit-comite-mds') {
+    renderPetitComiteMds();
+    schedulePdfReadinessUpdate();
   }
 });
 
@@ -1762,7 +1775,7 @@ function updateFilterInfo() {
   else if (currentGroups.length > 1) parts.push(`${currentGroups.length} grupos econômicos`);
   if (isPartnerFilteredTab(activeTab) && currentPartnerBrokerId) parts.push(`Parceiro: ${selectedPartnerLabel()}`);
   if (currentCompany && activeTab !== 'sessoes') parts.push(currentCompany);
-  if (currentType && activeTab !== 'sessoes' && activeTab !== 'coordenacao-cuidado' && activeTab !== 'petit-comite' && !activeTab.startsWith('qualidade')) parts.push(currentType === 'TITULAR' ? 'Titular' : 'Dependente');
+  if (currentType && activeTab !== 'sessoes' && activeTab !== 'coordenacao-cuidado' && !isPetitTab(activeTab) && !activeTab.startsWith('qualidade')) parts.push(currentType === 'TITULAR' ? 'Titular' : 'Dependente');
   document.getElementById('filter-info').textContent = parts.length ? `Filtrando: ${parts.join(' · ')}` : '';
 }
 
@@ -1795,7 +1808,7 @@ function buildQS() {
   appendGroupParams(p);
   const activeTab = getActiveTab();
   if (currentCompany && activeTab !== 'sessoes') p.set('company', currentCompany);
-  if (currentType && activeTab !== 'sessoes' && activeTab !== 'coordenacao-cuidado' && activeTab !== 'petit-comite' && !activeTab.startsWith('qualidade')) p.set('type', currentType);
+  if (currentType && activeTab !== 'sessoes' && activeTab !== 'coordenacao-cuidado' && !isPetitTab(activeTab) && !activeTab.startsWith('qualidade')) p.set('type', currentType);
   const s = p.toString();
   return s ? '?' + s : '';
 }
@@ -1831,7 +1844,7 @@ function collectPdfFilters() {
   if (activeTab !== 'sessoes') {
     filters.push({ label: 'Empresa', value: currentCompany || 'Todas as empresas' });
   }
-  if (activeTab !== 'sessoes' && activeTab !== 'coordenacao-cuidado' && activeTab !== 'petit-comite' && !activeTab.startsWith('qualidade')) {
+  if (activeTab !== 'sessoes' && activeTab !== 'coordenacao-cuidado' && !isPetitTab(activeTab) && !activeTab.startsWith('qualidade')) {
     filters.push({ label: 'Tipo beneficiário', value: currentType ? getSelectedOptionLabel('type-select', currentType) : 'Todos' });
   }
   const periodFilter = document.getElementById('filter-periodo');
@@ -1922,6 +1935,53 @@ function replacePdfRemoteAssets(root) {
   });
 }
 
+function mapPetitMdsId(id) {
+  const chartIds = {
+    petitCareLinesChart: 'petitMdsCareLinesChart',
+    petitSessionsEvolChart: 'petitMdsSessionsEvolChart',
+    petitSessionsTotalEvolChart: 'petitMdsSessionsTotalEvolChart',
+  };
+  if (chartIds[id]) return chartIds[id];
+  if (id.startsWith('skel-petit-')) return id.replace('skel-petit-', 'skel-petit-mds-');
+  if (id.startsWith('petit-')) return id.replace('petit-', 'petit-mds-');
+  return id;
+}
+
+function activePetitDomId(id) {
+  return getActiveTab() === 'petit-comite-mds' ? mapPetitMdsId(id) : id;
+}
+
+function petitElementById(id) {
+  return document.getElementById(petitRenderVariant === 'mds' ? mapPetitMdsId(id) : id);
+}
+
+function petitAppointmentTypesPrefix() {
+  return petitRenderVariant === 'mds' ? 'petit-mds-appointment-types' : 'petit-appointment-types';
+}
+
+function prefixPetitMdsIds(root) {
+  root.querySelectorAll('[id]').forEach((el) => {
+    el.id = mapPetitMdsId(el.id);
+  });
+  root.querySelectorAll('[for]').forEach((el) => {
+    el.setAttribute('for', mapPetitMdsId(el.getAttribute('for')));
+  });
+}
+
+function ensurePetitMdsContent() {
+  const target = document.getElementById('tab-petit-comite-mds');
+  const source = document.getElementById('tab-petit-comite');
+  if (!target || !source || petitMdsInitialized) return;
+  const clone = source.cloneNode(true);
+  clone.removeAttribute('id');
+  clone.classList.remove('active');
+  prefixPetitMdsIds(clone);
+  const eyebrow = clone.querySelector('.petit-eyebrow');
+  if (eyebrow) eyebrow.textContent = 'Resumo executivo · MDS';
+  target.innerHTML = clone.innerHTML;
+  petitMdsInitialized = true;
+}
+
 function createPdfChartPlaceholder(message) {
   const placeholder = document.createElement('div');
   placeholder.className = 'pdf-chart-placeholder';
@@ -1966,9 +2026,10 @@ function isCanvasReady(canvas) {
 }
 
 function getPdfReadiness() {
-  const petitTab = document.getElementById('tab-petit-comite');
+  if (!isPetitTab()) return { total: 1, ready: 0, percent: 0, pending: ['Abra uma aba Petit Comitê'] };
+  if (getActiveTab() === 'petit-comite-mds') ensurePetitMdsContent();
+  const petitTab = document.getElementById('tab-' + getActiveTab());
   if (!petitTab) return { total: 1, ready: 0, percent: 0, pending: ['Petit Comitê'] };
-  if (getActiveTab() !== 'petit-comite') return { total: 1, ready: 0, percent: 0, pending: ['Abra a aba Petit Comitê'] };
   const cards = Array.from(petitTab.querySelectorAll('.metric-card,.card-box,.chart-card,.quality-card,.quality-strategy-card'))
     .filter((card, index, arr) => isElementVisible(card) && !arr.some((other, otherIndex) => otherIndex !== index && other.contains(card)));
   const targets = cards.length ? cards : [petitTab];
@@ -1983,15 +2044,15 @@ function getPdfReadiness() {
     if (isReady) ready += 1;
     else pending.push(label);
   });
-  const beneficiariesKpi = document.getElementById('petit-kpi-beneficiaries');
+  const beneficiariesKpi = document.getElementById(activePetitDomId('petit-kpi-beneficiaries'));
   const beneficiariesKpiPending = beneficiariesKpi && beneficiariesKpi.textContent?.trim() === '…';
-  const sessionsKpi = document.getElementById('petit-kpi-sessions');
+  const sessionsKpi = document.getElementById(activePetitDomId('petit-kpi-sessions'));
   const sessionsKpiPending = sessionsKpi && sessionsKpi.textContent?.trim() === '…';
-  const humanInteractionKpi = document.getElementById('petit-kpi-human-sessions');
+  const humanInteractionKpi = document.getElementById(activePetitDomId('petit-kpi-human-sessions'));
   const humanInteractionKpiPending = humanInteractionKpi && humanInteractionKpi.textContent?.trim() === '…';
-  const usersKpi = document.getElementById('petit-kpi-users');
+  const usersKpi = document.getElementById(activePetitDomId('petit-kpi-users'));
   const usersKpiPending = usersKpi && usersKpi.textContent?.trim() === '…';
-  const appointmentsKpi = document.getElementById('petit-kpi-appointments');
+  const appointmentsKpi = document.getElementById(activePetitDomId('petit-kpi-appointments'));
   const appointmentsKpiPending = appointmentsKpi && appointmentsKpi.textContent?.trim() === '…';
   if (beneficiariesKpiPending) pending.push('Beneficiários');
   else ready += 1;
@@ -2136,8 +2197,9 @@ async function exportRenderedReportAsPdf(report) {
 }
 
 function buildPdfReport() {
-  const activeTab = document.getElementById('tab-petit-comite');
-  if (!activeTab) throw new Error('Aba Petit Comitê não encontrada.');
+  if (getActiveTab() === 'petit-comite-mds') ensurePetitMdsContent();
+  const activeTab = document.getElementById('tab-' + getActiveTab());
+  if (!activeTab || !isPetitTab()) throw new Error('Aba Petit Comitê não encontrada.');
 
   const overlay = document.createElement('div');
   overlay.className = 'pdf-export-overlay';
@@ -2188,8 +2250,8 @@ async function downloadDashboardPdf() {
   const original = btn ? btn.innerHTML : '';
   let pdfDom = null;
   try {
-    if (getActiveTab() !== 'petit-comite') {
-      throw new Error('O download em PDF está disponível somente na aba Petit Comitê.');
+    if (!isPetitTab()) {
+      throw new Error('O download em PDF está disponível somente nas abas Petit Comitê.');
     }
     closeGroupDropdown();
     await waitForPdfReadiness(1200);
@@ -2220,7 +2282,7 @@ async function downloadDashboardPdf() {
 
 function isPeriodFilteredTab(tab = getActiveTab()) {
   const activeTab = tab;
-  return activeTab === 'agendamentos' || activeTab === 'coordenacao-cuidado' || activeTab === 'sessoes' || activeTab === 'petit-comite' || activeTab.startsWith('qualidade');
+  return activeTab === 'agendamentos' || activeTab === 'coordenacao-cuidado' || activeTab === 'sessoes' || isPetitTab(activeTab) || activeTab.startsWith('qualidade');
 }
 
 function loadPeriodFilteredTab() {
@@ -2229,6 +2291,7 @@ function loadPeriodFilteredTab() {
   else if (activeTab === 'coordenacao-cuidado') renderCareCoordination();
   else if (activeTab === 'sessoes') loadSessions();
   else if (activeTab === 'petit-comite') renderPetitComite();
+  else if (activeTab === 'petit-comite-mds') renderPetitComiteMds();
   else if (activeTab.startsWith('qualidade')) loadQuality();
 }
 
@@ -2470,8 +2533,8 @@ function petitBeneficiariesFilterNote() {
 }
 
 async function loadPetitBeneficiariesKpi(requestId) {
-  const value = document.getElementById('petit-kpi-beneficiaries');
-  const note = document.getElementById('petit-kpi-beneficiaries-note');
+  const value = petitElementById('petit-kpi-beneficiaries');
+  const note = petitElementById('petit-kpi-beneficiaries-note');
   if (value) value.textContent = '…';
   if (note) note.textContent = petitBeneficiariesFilterNote();
 
@@ -2490,8 +2553,8 @@ async function loadPetitBeneficiariesKpi(requestId) {
 }
 
 async function loadPetitSessionsKpi(requestId) {
-  const value = document.getElementById('petit-kpi-sessions');
-  const note = document.getElementById('petit-kpi-sessions-note');
+  const value = petitElementById('petit-kpi-sessions');
+  const note = petitElementById('petit-kpi-sessions-note');
   if (value) value.textContent = '…';
   if (note) note.textContent = petitSessionsFilterNote();
 
@@ -2517,13 +2580,13 @@ async function loadPetitSessionsKpi(requestId) {
 }
 
 async function loadPetitHumanInteractionKpi(requestId) {
-  const humanValue = document.getElementById('petit-kpi-human-sessions');
-  const iaValue = document.getElementById('petit-kpi-ia-sessions');
-  const humanPct = document.getElementById('petit-kpi-human-pct');
-  const iaPct = document.getElementById('petit-kpi-ia-pct');
-  const humanBar = document.getElementById('petit-kpi-human-bar');
-  const iaBar = document.getElementById('petit-kpi-ia-bar');
-  const note = document.getElementById('petit-kpi-human-note');
+  const humanValue = petitElementById('petit-kpi-human-sessions');
+  const iaValue = petitElementById('petit-kpi-ia-sessions');
+  const humanPct = petitElementById('petit-kpi-human-pct');
+  const iaPct = petitElementById('petit-kpi-ia-pct');
+  const humanBar = petitElementById('petit-kpi-human-bar');
+  const iaBar = petitElementById('petit-kpi-ia-bar');
+  const note = petitElementById('petit-kpi-human-note');
   if (humanValue) humanValue.textContent = '…';
   if (iaValue) iaValue.textContent = '…';
   if (humanPct) humanPct.textContent = '—';
@@ -2564,8 +2627,8 @@ async function loadPetitHumanInteractionKpi(requestId) {
 }
 
 async function loadPetitUsersKpi(requestId) {
-  const value = document.getElementById('petit-kpi-users');
-  const note = document.getElementById('petit-kpi-users-note');
+  const value = petitElementById('petit-kpi-users');
+  const note = petitElementById('petit-kpi-users-note');
   if (value) value.textContent = '…';
   if (note) note.textContent = petitSessionsFilterNote().replace('volume de sessões', 'usuários únicos');
 
@@ -2590,8 +2653,8 @@ async function loadPetitUsersKpi(requestId) {
 }
 
 async function loadPetitAppointmentsKpi(requestId) {
-  const value = document.getElementById('petit-kpi-appointments');
-  const note = document.getElementById('petit-kpi-appointments-note');
+  const value = petitElementById('petit-kpi-appointments');
+  const note = petitElementById('petit-kpi-appointments-note');
   const filterNote = petitSessionsFilterNote().replace('volume de sessões', 'agendamentos');
   if (value) value.textContent = '…';
   if (note) note.textContent = filterNote;
@@ -2623,9 +2686,9 @@ function petitUsagePeriodLabel(months) {
 }
 
 async function loadPetitUsabilityKpis(requestId) {
-  const loading = document.getElementById('petit-usability-loading');
-  const content = document.getElementById('petit-usability-content');
-  const error = document.getElementById('petit-usability-error');
+  const loading = petitElementById('petit-usability-loading');
+  const content = petitElementById('petit-usability-content');
+  const error = petitElementById('petit-usability-error');
   if (loading) {
     loading.style.display = 'block';
     loading.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando utilização...';
@@ -2714,6 +2777,17 @@ function petitEvolutionFilterLabel() {
   return parts.join(' · ') || 'global';
 }
 
+function renderPetitComiteMds() {
+  ensurePetitMdsContent();
+  const previousVariant = petitRenderVariant;
+  petitRenderVariant = 'mds';
+  try {
+    renderPetitComite();
+  } finally {
+    petitRenderVariant = previousVariant;
+  }
+}
+
 function renderCareCoordination() {
   const context = document.getElementById('care-coordination-filter-context');
   const canvas = document.getElementById('careCoordinationLinesChart');
@@ -2771,9 +2845,9 @@ function renderCareCoordination() {
   });
 }
 
-function renderPetitSessionsTotalEvolutionChart(labels, totalValues, uniqueBeneficiaryValues, hasUniqueBeneficiaryData) {
-  const skel = document.getElementById('skel-petit-s-total-evol');
-  const cv = document.getElementById('petitSessionsTotalEvolChart');
+function renderPetitSessionsTotalEvolutionChart(labels, totalValues, uniqueBeneficiaryValues, hasUniqueBeneficiaryData, elements = {}) {
+  const skel = elements.skel || document.getElementById(activePetitDomId('skel-petit-s-total-evol'));
+  const cv = elements.canvas || document.getElementById(activePetitDomId('petitSessionsTotalEvolChart'));
   if (skel) skel.style.display = 'none';
   if (cv) cv.style.display = 'block';
   if (petitSessionsTotalEvolChart) petitSessionsTotalEvolChart.destroy();
@@ -2837,14 +2911,14 @@ function renderPetitSessionsTotalEvolutionChart(labels, totalValues, uniqueBenef
 }
 
 async function loadPetitSessionEvolutionCharts(requestId) {
-  const skel = document.getElementById('skel-petit-s-evol');
-  const cv = document.getElementById('petitSessionsEvolChart');
-  const modeLabel = document.getElementById('petit-s-evol-mode');
-  const errorBox = document.getElementById('petit-s-evol-error');
-  const totalSkel = document.getElementById('skel-petit-s-total-evol');
-  const totalCv = document.getElementById('petitSessionsTotalEvolChart');
-  const totalModeLabel = document.getElementById('petit-s-total-evol-mode');
-  const totalErrorBox = document.getElementById('petit-s-total-evol-error');
+  const skel = petitElementById('skel-petit-s-evol');
+  const cv = petitElementById('petitSessionsEvolChart');
+  const modeLabel = petitElementById('petit-s-evol-mode');
+  const errorBox = petitElementById('petit-s-evol-error');
+  const totalSkel = petitElementById('skel-petit-s-total-evol');
+  const totalCv = petitElementById('petitSessionsTotalEvolChart');
+  const totalModeLabel = petitElementById('petit-s-total-evol-mode');
+  const totalErrorBox = petitElementById('petit-s-total-evol-error');
   if (skel) skel.style.display = 'block';
   if (cv) cv.style.display = 'none';
   if (errorBox) { errorBox.style.display = 'none'; errorBox.textContent = ''; }
@@ -2956,14 +3030,17 @@ async function loadPetitSessionEvolutionCharts(requestId) {
       },
     });
   }
-  renderPetitSessionsTotalEvolutionChart(labels, totalValues, uniqueBeneficiaryValues, Boolean(data.beneficiaries_included));
+  renderPetitSessionsTotalEvolutionChart(labels, totalValues, uniqueBeneficiaryValues, Boolean(data.beneficiaries_included), {
+    skel: totalSkel,
+    canvas: totalCv,
+  });
   schedulePdfReadinessUpdate();
 }
 
 async function renderPetitComite() {
   const requestId = ++petitComiteRequestId;
-  const period = document.getElementById('petit-period');
-  const cv = document.getElementById('petitCareLinesChart');
+  const period = petitElementById('petit-period');
+  const cv = petitElementById('petitCareLinesChart');
   if (period) period.textContent = petitPeriodLabel();
   loadPetitBeneficiariesKpi(requestId);
   loadPetitSessionsKpi(requestId);
@@ -2972,7 +3049,7 @@ async function renderPetitComite() {
   loadPetitAppointmentsKpi(requestId);
   loadPetitUsabilityKpis(requestId);
   loadPetitSessionEvolutionCharts(requestId);
-  loadAppointmentTypes([...selectedMonths].sort(), 'petit-appointment-types');
+  loadAppointmentTypes([...selectedMonths].sort(), petitAppointmentTypesPrefix());
   loadPetitTopExams([...selectedMonths].sort());
   loadPetitTopConsultations([...selectedMonths].sort());
   if (!cv) return;
@@ -3973,10 +4050,10 @@ async function loadAppointmentTypes(monthValues, idPrefix='appointment-types') {
 }
 
 async function loadPetitTopExams(monthValues) {
-  const loading = document.getElementById('petit-top-exams-loading');
-  const content = document.getElementById('petit-top-exams-content');
-  const list = document.getElementById('petit-top-exams-list');
-  const meta = document.getElementById('petit-top-exams-meta');
+  const loading = petitElementById('petit-top-exams-loading');
+  const content = petitElementById('petit-top-exams-content');
+  const list = petitElementById('petit-top-exams-list');
+  const meta = petitElementById('petit-top-exams-meta');
   if (loading) {
     loading.style.display = 'block';
     loading.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...';
@@ -4021,10 +4098,10 @@ async function loadPetitTopExams(monthValues) {
 }
 
 async function loadPetitTopConsultations(monthValues) {
-  const loading = document.getElementById('petit-top-consultations-loading');
-  const content = document.getElementById('petit-top-consultations-content');
-  const list = document.getElementById('petit-top-consultations-list');
-  const meta = document.getElementById('petit-top-consultations-meta');
+  const loading = petitElementById('petit-top-consultations-loading');
+  const content = petitElementById('petit-top-consultations-content');
+  const list = petitElementById('petit-top-consultations-list');
+  const meta = petitElementById('petit-top-consultations-meta');
   if (loading) {
     loading.style.display = 'block';
     loading.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...';
