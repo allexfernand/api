@@ -326,6 +326,7 @@ body {
 .petit-grid-2{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(320px,.75fr);gap:16px;margin-bottom:16px}
 .petit-grid-2.care-evolution-grid{grid-template-columns:repeat(2,minmax(0,1fr));align-items:stretch}
 .care-evolution-card{display:flex;flex-direction:column;min-height:560px;margin-bottom:0}
+.care-evolution-card-wide{grid-column:1 / -1}
 .care-evolution-card .chart-wrap{flex:0 0 320px}
 .care-evolution-card .petit-metric-stack{min-height:108px}
 .care-evolution-card .petit-metric{min-height:78px;box-sizing:border-box}
@@ -965,11 +966,11 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
     </div>
 
     <div class="petit-grid-2 care-evolution-grid">
-      <div class="chart-card care-evolution-card" data-qtag="#CC07">
+      <div class="chart-card care-evolution-card care-evolution-card-wide" data-qtag="#CC07">
         <div class="petit-card-header">
           <div>
             <h2 style="font-size:13px;font-weight:700;color:#334155;margin-bottom:4px">Composição mensal das classificações</h2>
-            <div style="font-size:11px;color:#94a3b8">Últimos 3 meses · ativos no mês · mesmas classificações exibidas no CC01</div>
+            <div style="font-size:11px;color:#94a3b8">Últimos 3 meses · último registro do CPF no mês diferente de fechado · mesmas classificações exibidas no CC01</div>
           </div>
           <span class="petit-chip">CC07</span>
         </div>
@@ -979,22 +980,6 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
         </div>
         <div class="petit-metric-stack" id="care-lines-evolution-summary" style="display:none;margin-top:14px;grid-template-columns:repeat(3,minmax(0,1fr))"></div>
         <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="care-lines-evolution-error"></div>
-      </div>
-
-      <div class="chart-card care-evolution-card" data-qtag="#CC08">
-        <div class="petit-card-header">
-          <div>
-            <h2 style="font-size:13px;font-weight:700;color:#334155;margin-bottom:4px">Volume ativo mensal</h2>
-            <div style="font-size:11px;color:#94a3b8">Últimos 3 meses · último registro do CPF no mês diferente de fechado</div>
-          </div>
-          <span class="petit-chip">CC08</span>
-        </div>
-        <div class="chart-wrap" style="height:320px">
-          <div class="skeleton" id="skel-care-lines-volume"></div>
-          <canvas id="careLinesVolumeChart" style="display:none"></canvas>
-        </div>
-        <div class="petit-metric-stack" id="care-lines-volume-summary" style="display:none;margin-top:14px;grid-template-columns:repeat(3,minmax(0,1fr))"></div>
-        <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="care-lines-volume-error"></div>
       </div>
     </div>
 
@@ -1705,7 +1690,7 @@ const fmt = n => Number(n).toLocaleString('pt-BR');
 const mN = {'01':'Jan','02':'Fev','03':'Mar','04':'Abr','05':'Mai','06':'Jun','07':'Jul','08':'Ago','09':'Set','10':'Out','11':'Nov','12':'Dez'};
 const AUTH_STORAGE_KEY = 'sanus-dashboard-basic-auth';
 
-let usersData = [], companiesData = [], sessionCompaniesData = [], eChart, agegroupChart, appointmentTypesTrendChart, careCoordinationLinesChart, careLinesEvolutionChart, careLinesVolumeChart, careComplementChart, careActiveComplementChart, petitCareLinesChart, petitSessionsEvolChart, petitSessionsTotalEvolChart, sessionsEvolChart, sessionsTotalEvolChart, sessionsAttendanceChart, sessionsDailyChart, sessionsTopGroupsChart, qualityVolumeEvolutionChart, qualityEvolutionChart, qualityCriteriaEvolutionChart;
+let usersData = [], companiesData = [], sessionCompaniesData = [], eChart, agegroupChart, appointmentTypesTrendChart, careCoordinationLinesChart, careLinesEvolutionChart, careComplementChart, careActiveComplementChart, petitCareLinesChart, petitSessionsEvolChart, petitSessionsTotalEvolChart, sessionsEvolChart, sessionsTotalEvolChart, sessionsAttendanceChart, sessionsDailyChart, sessionsTopGroupsChart, qualityVolumeEvolutionChart, qualityEvolutionChart, qualityCriteriaEvolutionChart;
 let currentGroup = '', currentType = '', currentCompany = '';
 let currentGroups = [];
 let currentPartnerBrokerId = '';
@@ -3497,26 +3482,12 @@ function resetCareLinesEvolution(message = '') {
   const canvas = document.getElementById('careLinesEvolutionChart');
   const summary = document.getElementById('care-lines-evolution-summary');
   const error = document.getElementById('care-lines-evolution-error');
-  const volumeSkel = document.getElementById('skel-care-lines-volume');
-  const volumeCanvas = document.getElementById('careLinesVolumeChart');
-  const volumeSummary = document.getElementById('care-lines-volume-summary');
-  const volumeError = document.getElementById('care-lines-volume-error');
   if (careLinesEvolutionChart) {
     careLinesEvolutionChart.destroy();
     careLinesEvolutionChart = null;
   }
-  if (careLinesVolumeChart) {
-    careLinesVolumeChart.destroy();
-    careLinesVolumeChart = null;
-  }
   if (skel) skel.style.display = message ? 'none' : 'block';
   if (canvas) canvas.style.display = 'none';
-  if (volumeSkel) volumeSkel.style.display = message ? 'none' : 'block';
-  if (volumeCanvas) volumeCanvas.style.display = 'none';
-  if (volumeSummary) {
-    volumeSummary.style.display = 'none';
-    volumeSummary.innerHTML = '';
-  }
   if (summary) {
     summary.style.display = 'none';
     summary.innerHTML = '';
@@ -3524,10 +3495,6 @@ function resetCareLinesEvolution(message = '') {
   if (error) {
     error.style.display = message ? 'block' : 'none';
     error.textContent = message;
-  }
-  if (volumeError) {
-    volumeError.style.display = message ? 'block' : 'none';
-    volumeError.textContent = message;
   }
 }
 
@@ -3603,16 +3570,9 @@ async function loadCareLinesEvolution(classNames, includeOthers) {
 
   if (!data || data.error) {
     if (skel) skel.style.display = 'none';
-    const volumeSkel = document.getElementById('skel-care-lines-volume');
-    const volumeError = document.getElementById('care-lines-volume-error');
-    if (volumeSkel) volumeSkel.style.display = 'none';
     if (error) {
       error.style.display = 'block';
       error.textContent = data?.error ? String(data.error).slice(0, 220) : 'Erro ao carregar evolução das classificações';
-    }
-    if (volumeError) {
-      volumeError.style.display = 'block';
-      volumeError.textContent = data?.error ? String(data.error).slice(0, 220) : 'Erro ao carregar volume mensal';
     }
     return;
   }
@@ -3705,108 +3665,7 @@ async function loadCareLinesEvolution(classNames, includeOthers) {
     },
   });
 
-  renderCareLinesVolumeChart(labels, series, monthlyTotals, palette);
 }
-
-function renderCareLinesVolumeChart(labels, series, monthlyTotals, palette) {
-  const skel = document.getElementById('skel-care-lines-volume');
-  const canvas = document.getElementById('careLinesVolumeChart');
-  const summary = document.getElementById('care-lines-volume-summary');
-  const error = document.getElementById('care-lines-volume-error');
-  if (!canvas) return;
-  if (!labels.length || !series.length) {
-    if (skel) skel.style.display = 'none';
-    if (canvas) canvas.style.display = 'none';
-    if (error) {
-      error.style.display = 'block';
-      error.textContent = 'Sem dados para montar o volume mensal.';
-    }
-    return;
-  }
-  if (careLinesVolumeChart) careLinesVolumeChart.destroy();
-  if (skel) skel.style.display = 'none';
-  if (error) {
-    error.style.display = 'none';
-    error.textContent = '';
-  }
-  canvas.style.display = 'block';
-  const datasets = series.map((item, index) => ({
-    type: 'bar',
-    label: item.classificacao || 'Sem classificação',
-    data: item.values || [],
-    backgroundColor: palette[index] || '#3F55E3',
-    borderColor: '#ffffff',
-    borderWidth: 1,
-    borderRadius: 6,
-    borderSkipped: false,
-    barPercentage: 0.82,
-    categoryPercentage: 0.72,
-  }));
-  datasets.push({
-    type: 'line',
-    label: 'Total do mês',
-    data: monthlyTotals,
-    borderColor: '#0f172a',
-    backgroundColor: 'rgba(15,23,42,0.08)',
-    borderWidth: 2,
-    borderDash: [6, 4],
-    pointRadius: 4,
-    pointBackgroundColor: '#0f172a',
-    fill: false,
-    tension: 0.3,
-    yAxisID: 'yTotal',
-  });
-  careLinesVolumeChart = new Chart(canvas, {
-    type: 'bar',
-    data: { labels, datasets },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: true, position: 'top', align: 'end', labels: { boxWidth: 10, boxHeight: 10, color: '#64748b', font: { size: 11 } } },
-        tooltip: {
-          backgroundColor: '#1e293b',
-          borderColor: '#334155',
-          borderWidth: 1,
-          titleColor: '#cbd5e1',
-          bodyColor: '#f8fafc',
-          callbacks: {
-            label: c => {
-              const value = Number(c.parsed.y) || 0;
-              if (c.dataset.type === 'line') return `Total do mês: ${fmt(value)} CPFs ativos`;
-              const total = monthlyTotals[c.dataIndex] || 0;
-              const pct = total > 0 ? (value / total) * 100 : NaN;
-              return `${c.dataset.label}: ${fmt(value)} CPFs ativos · ${fmtPct(pct)} do mês`;
-            },
-          },
-        },
-      },
-      scales: {
-        x: { stacked: false, ticks: { color: '#64748b', font: { size: 11, weight: '600' } }, grid: { display: false }, border: { display: false } },
-        y: { stacked: false, beginAtZero: true, ticks: { color: '#94a3b8', font: { size: 10 }, callback: v => fmt(v) }, grid: { color: 'rgba(148,163,184,0.18)' }, border: { display: false } },
-        yTotal: { position: 'right', beginAtZero: true, ticks: { color: '#94a3b8', font: { size: 10 }, callback: v => fmt(v) }, grid: { drawOnChartArea: false }, border: { display: false } },
-      },
-    },
-  });
-  if (summary) {
-    summary.innerHTML = labels.map((label, index) => {
-      const total = monthlyTotals[index] || 0;
-      const previous = index > 0 ? monthlyTotals[index - 1] || 0 : null;
-      const delta = previous && previous > 0 ? ((total - previous) / previous) * 100 : null;
-      const top = series
-        .map((item) => ({ label: item.classificacao || 'Sem classificação', value: Number(item.values?.[index]) || 0 }))
-        .sort((a, b) => b.value - a.value)[0];
-      const deltaLabel = delta === null ? 'sem comparativo' : `${delta >= 0 ? '+' : ''}${fmtPct(delta)} vs mês anterior`;
-      return `<div class="petit-metric">
-        <span>${escapeHtml(label)}<small>${escapeHtml(top?.label || 'Sem dados')} · ${fmt(top?.value || 0)} ativos</small></span>
-        <strong>${fmt(total)}</strong>
-        <small style="grid-column:1 / -1;color:#94a3b8;font-weight:800">${escapeHtml(deltaLabel)}</small>
-      </div>`;
-    }).join('');
-    summary.style.display = 'grid';
-  }
-}
-
 function resetCareCoordinationDetail(message = 'Selecione uma barra no CC01 para carregar as condições.') {
   const context = document.getElementById('care-detail-context');
   const loading = document.getElementById('care-detail-loading');
