@@ -3330,11 +3330,13 @@ async function renderCareCoordination() {
       meta.data.forEach((bar, index) => {
         const value = Number(dataset.data[index]) || 0;
         if (!value) return;
+        const pct = total > 0 ? (value / total) * 100 : NaN;
+        const label = fmtPct(pct);
         const props = bar.getProps(['x', 'y'], true);
         const hasRoomInside = props.x - chartArea.left > 72;
         ctx.textAlign = hasRoomInside ? 'right' : 'left';
         ctx.fillStyle = hasRoomInside ? '#ffffff' : '#334155';
-        ctx.fillText(fmt(value), hasRoomInside ? props.x - 10 : props.x + 10, props.y);
+        ctx.fillText(label, hasRoomInside ? props.x - 10 : props.x + 10, props.y);
       });
       ctx.restore();
     },
