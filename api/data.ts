@@ -481,9 +481,6 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           WHERE ${baseWhere}
             AND ${classification} = '${escape(classificacao)}'
             AND ${category} = '${escape(categoria)}'
-            AND ${bmiValue} IS NOT NULL
-            AND ${bmiValue} > 0
-            AND try_cast(${quoteIdent(dateColumn)} AS TIMESTAMP) IS NOT NULL
         ),
         latest_by_cpf AS (
           SELECT
@@ -491,7 +488,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
             imc,
             ROW_NUMBER() OVER (
               PARTITION BY cpf_norm
-              ORDER BY data_criacao DESC
+              ORDER BY data_criacao DESC NULLS LAST
             ) AS rn
           FROM raw
         ),
@@ -500,12 +497,14 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
             cpf_norm,
             imc,
             CASE
+              WHEN imc IS NULL OR imc <= 0 THEN 'Sem IMC válido'
               WHEN imc < 25 THEN 'Até 24,9'
               WHEN imc < 30 THEN '25 a 29,9'
               WHEN imc < 40 THEN '30 a 39,9'
               ELSE '40 ou mais'
             END AS faixa_imc,
             CASE
+              WHEN imc IS NULL OR imc <= 0 THEN 5
               WHEN imc < 25 THEN 1
               WHEN imc < 30 THEN 2
               WHEN imc < 40 THEN 3
@@ -533,12 +532,18 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         imc_maximo: Number(getCell(row[4])) || null,
       })).filter((item) => item.faixa_imc);
       const total = items.reduce((acc, item) => acc + item.total_cpfs, 0);
+      const missing_bmi_total = items
+        .filter((item) => item.faixa_imc === 'Sem IMC válido')
+        .reduce((acc, item) => acc + item.total_cpfs, 0);
+      const valid_bmi_total = total - missing_bmi_total;
       return res.status(200).json({
         scope: 'care_bmi_distribution',
         classificacao,
         categoria,
         items,
         total,
+        valid_bmi_total,
+        missing_bmi_total,
         bmi_column: bmiColumn,
         date_column: dateColumn,
         source: HEALTHCOACH_TABLE,

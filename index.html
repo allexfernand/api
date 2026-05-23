@@ -3696,6 +3696,8 @@ async function loadCareObesityBmiDistribution(category) {
     const labels = items.map((item) => item.faixa_imc || 'Sem faixa');
     const values = items.map((item) => Number(item.total_cpfs) || 0);
     const total = Number(data.total) || values.reduce((acc, value) => acc + value, 0);
+    const validTotal = Number(data.valid_bmi_total) || 0;
+    const missingTotal = Number(data.missing_bmi_total) || 0;
     careComplementChart = new Chart(canvas, {
       type: 'bar',
       data: {
@@ -3703,7 +3705,7 @@ async function loadCareObesityBmiDistribution(category) {
         datasets: [{
           label: 'CPFs únicos',
           data: values,
-          backgroundColor: ['#3F55E3', '#2563eb', '#7c3aed', '#be185d'],
+          backgroundColor: ['#3F55E3', '#2563eb', '#7c3aed', '#be185d', '#94a3b8'],
           borderRadius: 8,
           borderSkipped: false,
         }],
@@ -3724,7 +3726,7 @@ async function loadCareObesityBmiDistribution(category) {
                 const value = Number(c.parsed.y) || 0;
                 const item = items[c.dataIndex] || {};
                 const pct = total > 0 ? (value / total) * 100 : NaN;
-                return `${fmt(value)} CPFs · ${fmtPct(pct)} · IMC médio ${item.imc_medio || '—'}`;
+                return `${fmt(value)} CPFs · ${fmtPct(pct)} · IMC médio ${item.imc_medio ?? '—'}`;
               },
             },
           },
@@ -3739,11 +3741,11 @@ async function loadCareObesityBmiDistribution(category) {
       const weighted = items.reduce((acc, item) => {
         const count = Number(item.total_cpfs) || 0;
         const avg = Number(item.imc_medio);
-        return Number.isFinite(avg) ? acc + (avg * count) : acc;
+        return item.imc_medio !== null && Number.isFinite(avg) ? acc + (avg * count) : acc;
       }, 0);
-      const avg = total > 0 ? weighted / total : null;
+      const avg = validTotal > 0 ? weighted / validTotal : null;
       meta.style.display = 'block';
-      meta.textContent = `${fmt(total)} CPFs com IMC · IMC médio ${avg === null ? '—' : avg.toFixed(1)}`;
+      meta.textContent = `${fmt(total)} CPFs no detalhe · ${fmt(validTotal)} com IMC válido · ${fmt(missingTotal)} sem IMC válido · IMC médio ${avg === null ? '—' : avg.toFixed(1)}`;
     }
   }
 }
