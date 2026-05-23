@@ -296,12 +296,10 @@ body {
 .petit-title{font-size:30px;font-weight:800;letter-spacing:-.8px;line-height:1.05;margin-bottom:8px}
 .petit-subtitle{font-size:13px;line-height:1.5;color:rgba(255,255,255,.82);max-width:680px}
 .petit-period-pill{font-size:12px;font-weight:800;color:var(--sanus-brand-ink);background:#fff;border:1px solid rgba(255,255,255,.4);border-radius:999px;padding:8px 12px;white-space:nowrap;box-shadow:0 1px 2px rgba(0,0,0,.08)}
-.care-filter-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:16px;padding:12px 16px;background:#fff;border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow-sm)}
-.care-filter-title{font-size:12px;font-weight:800;color:#334155;margin-bottom:2px}
-.care-filter-note{font-size:11px;color:#94a3b8;line-height:1.4}
-.care-filter-control{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:800;color:#64748b;white-space:nowrap}
-.care-filter-control select{min-width:156px;border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#334155;font-size:12px;font-weight:700;padding:8px 10px;outline:none}
-.care-filter-control select:focus{border-color:var(--sanus-brand);box-shadow:0 0 0 3px rgba(63,85,227,.12)}
+.care-card-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+.care-card-filter{display:flex;align-items:center;gap:6px;font-size:10px;font-weight:800;color:#64748b;white-space:nowrap}
+.care-card-filter select{min-width:154px;border:1px solid #e2e8f0;border-radius:999px;background:#fff;color:#334155;font-size:11px;font-weight:800;padding:5px 10px;outline:none}
+.care-card-filter select:focus{border-color:var(--sanus-brand);box-shadow:0 0 0 3px rgba(63,85,227,.12)}
 .petit-kpi-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-bottom:16px}
 .petit-kpi{background:#fff;border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow-sm);padding:18px}
 .petit-kpi-icon{width:36px;height:36px;border-radius:10px;background:var(--sanus-brand-tint);color:var(--sanus-brand-strong);display:grid;place-items:center;margin-bottom:12px}
@@ -865,21 +863,6 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
 
   <!-- Tab: Coordenação de Cuidado -->
   <div class="tab-content" id="tab-coordenacao-cuidado">
-    <div class="care-filter-bar">
-      <div>
-        <div class="care-filter-title">Subfiltro da Coordenação</div>
-        <div class="care-filter-note">Aplica o vínculo do beneficiário em CC01, CC05 e detalhamentos derivados.</div>
-      </div>
-      <label class="care-filter-control" for="care-beneficiary-type-select">
-        Vínculo
-        <select id="care-beneficiary-type-select" onchange="onCareBeneficiaryTypeChange(this.value)">
-          <option value="">Titular e dependente</option>
-          <option value="TITULAR">Titular</option>
-          <option value="DEPENDENTE">Dependente</option>
-        </select>
-      </label>
-    </div>
-
     <div class="petit-kpi-grid">
       <div class="petit-kpi">
         <div class="petit-kpi-icon"><i class="fa-solid fa-people-group"></i></div>
@@ -920,7 +903,17 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
             <h2 style="font-size:13px;font-weight:700;color:#334155;margin-bottom:4px">Evolução das linhas de cuidado</h2>
             <div style="font-size:11px;color:#94a3b8">CPFs ativos por classificação · <span id="care-coordination-filter-context">todos os filtros globais</span></div>
           </div>
-          <span class="petit-chip">Linhas de cuidado</span>
+          <div class="care-card-actions">
+            <label class="care-card-filter" for="care-beneficiary-type-select-cc01">
+              Vínculo
+              <select id="care-beneficiary-type-select-cc01" onchange="onCareBeneficiaryTypeChange(this.value)">
+                <option value="">Titular e dependente</option>
+                <option value="TITULAR">Titular</option>
+                <option value="DEPENDENTE">Dependente</option>
+              </select>
+            </label>
+            <span class="petit-chip">CC01</span>
+          </div>
         </div>
         <div class="chart-wrap" style="height:340px">
           <div class="skeleton" id="skel-care-coordination-lines"></div>
@@ -990,7 +983,17 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
             <h2 style="font-size:13px;font-weight:700;color:#334155;margin-bottom:4px">Condições ativas</h2>
             <div style="font-size:11px;color:#94a3b8" id="care-active-chronic-context">Crônicos e situacionais · último status diferente de fechado</div>
           </div>
-          <span class="petit-chip">CC05</span>
+          <div class="care-card-actions">
+            <label class="care-card-filter" for="care-beneficiary-type-select-cc05">
+              Vínculo
+              <select id="care-beneficiary-type-select-cc05" onchange="onCareBeneficiaryTypeChange(this.value)">
+                <option value="">Titular e dependente</option>
+                <option value="TITULAR">Titular</option>
+                <option value="DEPENDENTE">Dependente</option>
+              </select>
+            </label>
+            <span class="petit-chip">CC05</span>
+          </div>
         </div>
         <div class="loading-box" id="care-active-chronic-loading" style="display:none"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando condições ativas...</div>
         <div class="petit-placeholder" id="care-active-chronic-empty" style="min-height:280px;display:none;align-items:center;justify-content:center;text-align:center">
@@ -1795,8 +1798,16 @@ function appendCareBeneficiaryTypeParam(params) {
   if (currentCareBeneficiaryType) params.set('type', currentCareBeneficiaryType);
 }
 
+function syncCareBeneficiaryTypeControls() {
+  ['care-beneficiary-type-select-cc01', 'care-beneficiary-type-select-cc05'].forEach((id) => {
+    const select = document.getElementById(id);
+    if (select) select.value = currentCareBeneficiaryType;
+  });
+}
+
 function onCareBeneficiaryTypeChange(value) {
   currentCareBeneficiaryType = value === 'TITULAR' || value === 'DEPENDENTE' ? value : '';
+  syncCareBeneficiaryTypeControls();
   updateFilterInfo();
   renderCareCoordination();
 }
@@ -2088,8 +2099,7 @@ async function clearFilters() {
   const partnerSelect = document.getElementById('partner-select');
   if (partnerSelect) partnerSelect.value = '';
   document.getElementById('type-select').value  = '';
-  const careTypeSelect = document.getElementById('care-beneficiary-type-select');
-  if (careTypeSelect) careTypeSelect.value = '';
+  syncCareBeneficiaryTypeControls();
   const typificationFinisherSelect = document.getElementById('session-typification-finisher-select');
   if (typificationFinisherSelect) typificationFinisherSelect.value = '';
   document.getElementById('company-select').innerHTML = '<option value="">(Selecione um grupo primeiro)</option>';
