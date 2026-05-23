@@ -928,13 +928,19 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
         <div class="petit-card-header">
           <div>
             <h2 style="font-size:13px;font-weight:700;color:#334155;margin-bottom:4px">Detalhamento dos crônicos</h2>
-            <div style="font-size:11px;color:#94a3b8">Distribuição dos beneficiários em Crônico</div>
+            <div style="font-size:11px;color:#94a3b8" id="care-chronic-context">Condições em Crônico</div>
           </div>
           <span class="petit-chip">CC03</span>
         </div>
-        <div class="petit-placeholder" style="min-height:280px;display:flex;align-items:center;justify-content:center;text-align:center">
-          Detalhamento dos crônicos em definição.
+        <div class="loading-box" id="care-chronic-loading" style="display:none"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando crônicos...</div>
+        <div class="petit-placeholder" id="care-chronic-empty" style="min-height:280px;display:none;align-items:center;justify-content:center;text-align:center">
+          Nenhum crônico encontrado para o filtro atual.
         </div>
+        <div id="care-chronic-content" style="display:none;flex:1;min-height:0">
+          <div class="petit-dist-list petit-top-exams-list" id="care-chronic-list" style="max-height:340px"></div>
+          <div style="font-size:11px;color:#94a3b8;margin-top:10px;text-align:right" id="care-chronic-meta">—</div>
+        </div>
+        <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="care-chronic-error"></div>
       </div>
 
       <div class="card-box" data-qtag="#CC04" style="display:flex;flex-direction:column;min-height:0">
@@ -3189,6 +3195,7 @@ function renderPetitComiteMds() {
 async function renderCareCoordination() {
   loadCareCoordinationKpis();
   resetCareCoordinationDetail();
+  loadCareCoordinationChronicDetail();
   const context = document.getElementById('care-coordination-filter-context');
   const canvas = document.getElementById('careCoordinationLinesChart');
   const skel = document.getElementById('skel-care-coordination-lines');
@@ -3330,15 +3337,15 @@ function resetCareCoordinationDetail(message = 'Selecione uma barra no CC01 para
   }
 }
 
-async function loadCareCoordinationDetail(classificacao) {
-  const context = document.getElementById('care-detail-context');
-  const loading = document.getElementById('care-detail-loading');
-  const empty = document.getElementById('care-detail-empty');
-  const content = document.getElementById('care-detail-content');
-  const list = document.getElementById('care-detail-list');
-  const meta = document.getElementById('care-detail-meta');
-  const error = document.getElementById('care-detail-error');
-  if (context) context.textContent = `Condições em ${classificacao}`;
+async function loadCareLineDetailInto(classificacao, targets) {
+  const context = document.getElementById(targets.context);
+  const loading = document.getElementById(targets.loading);
+  const empty = document.getElementById(targets.empty);
+  const content = document.getElementById(targets.content);
+  const list = document.getElementById(targets.list);
+  const meta = document.getElementById(targets.meta);
+  const error = document.getElementById(targets.error);
+  if (context) context.textContent = targets.contextText || `Condições em ${classificacao}`;
   if (loading) loading.style.display = 'block';
   if (empty) empty.style.display = 'none';
   if (content) content.style.display = 'none';
@@ -3368,6 +3375,10 @@ async function loadCareCoordinationDetail(classificacao) {
   const items = data.items || [];
   const total = Number(data.total) || items.reduce((acc, item) => acc + (Number(item.total_cpfs) || 0), 0);
   const max = items.reduce((acc, item) => Math.max(acc, Number(item.total_cpfs) || 0), 0) || 1;
+  if (!items.length && empty) {
+    empty.style.display = 'flex';
+    empty.textContent = targets.emptyText || 'Nenhuma condição encontrada para essa linha.';
+  }
   if (list) {
     list.innerHTML = items.length ? items.map((item, index) => {
       const value = Number(item.total_cpfs) || 0;
@@ -3382,7 +3393,33 @@ async function loadCareCoordinationDetail(classificacao) {
     }).join('') : '<div style="font-size:13px;color:#94a3b8;text-align:center;padding:20px 0">Nenhuma condição encontrada para essa linha.</div>';
   }
   if (meta) meta.textContent = `${items.length} condições · total ${fmt(total)} CPFs únicos`;
-  if (content) content.style.display = 'block';
+  if (content && items.length) content.style.display = 'block';
+}
+
+async function loadCareCoordinationDetail(classificacao) {
+  return loadCareLineDetailInto(classificacao, {
+    context: 'care-detail-context',
+    loading: 'care-detail-loading',
+    empty: 'care-detail-empty',
+    content: 'care-detail-content',
+    list: 'care-detail-list',
+    meta: 'care-detail-meta',
+    error: 'care-detail-error',
+  });
+}
+
+async function loadCareCoordinationChronicDetail() {
+  return loadCareLineDetailInto('Crônico', {
+    context: 'care-chronic-context',
+    loading: 'care-chronic-loading',
+    empty: 'care-chronic-empty',
+    content: 'care-chronic-content',
+    list: 'care-chronic-list',
+    meta: 'care-chronic-meta',
+    error: 'care-chronic-error',
+    contextText: 'Condições em Crônico',
+    emptyText: 'Nenhum crônico encontrado para o filtro atual.',
+  });
 }
 
 async function loadCareCoordinationKpis() {
