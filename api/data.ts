@@ -198,6 +198,18 @@ function pickCareStatusColumn(columns: string[]) {
   return pickColumn(columns, ['status', 'status_atendimento', 'status_registro', 'situacao', 'state']);
 }
 
+function pickGestationalWeekColumn(columns: string[]) {
+  return pickColumn(columns, [
+    'qual_semana_gestacional',
+    'qual_a_semana_gestacional',
+    'semana_gestacional',
+    'semanas_gestacionais',
+    'idade_gestacional',
+    'gestational_week',
+    'weeks_pregnant',
+  ]);
+}
+
 function openLatestStatusCondition(columnAlias = 'status_norm') {
   return `COALESCE(${columnAlias}, '') NOT IN ('fechado', 'fechada', 'closed', 'encerrado', 'encerrada', 'finalizado', 'finalizada')`;
 }
@@ -780,6 +792,152 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         missing_risk_total,
         risk_column: riskColumn,
         date_column: dateColumn,
+        source: HEALTHCOACH_TABLE,
+        auth_role: getDashboardAuth(req)?.role || 'full',
+        updatedAt: new Date().toISOString(),
+      });
+    }
+
+    if (scope === 'care_gestational_distribution') {
+      const classificacao = String(req.query.classificacao || 'Situacional').trim();
+      const categoria = String(req.query.categoria || 'Gestantes').trim();
+      const activeOnly = String(req.query.active_only || '') === '1';
+      const [columns, beneficiaryColumns] = await Promise.all([
+        getColumns(wh.id, HEALTHCOACH_TABLE),
+        getColumns(wh.id, BENEFICIARIES_TABLE).catch(() => []),
+      ]);
+      const weekColumn = pickGestationalWeekColumn(columns);
+      if (!weekColumn) return res.status(400).json({ error: "Coluna qual_semana_gestacional não encontrada em healthcoach_gold_live." });
+      const dateColumn = pickCareDateColumn(columns);
+      if (!dateColumn) return res.status(400).json({ error: "Coluna de data não encontrada em healthcoach_gold_live." });
+      const statusColumn = activeOnly ? pickCareStatusColumn(columns) : null;
+      if (activeOnly && !statusColumn) return res.status(400).json({ error: "Coluna de status não encontrada em healthcoach_gold_live." });
+      const company = req.query.company || null;
+      const baseWhere = buildCareLineFilters(columns, beneficiaryColumns, req.query, groupNames, company, partnerBrokerId);
+      const category = careCategoryExpr();
+      const classification = careClassificationExpr();
+      const weekRawExpr = `LOWER(TRIM(CAST(${quoteIdent(weekColumn)} AS STRING)))`;
+      const rows = await runQuery(wh.id, `
+        WITH raw AS (
+          SELECT
+            REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '') AS cpf_norm,
+            ${classification} AS classificacao,
+            ${category} AS categoria_atendimento,
+            ${weekRawExpr} AS semana_raw,
+            try_cast(REGEXP_EXTRACT(${weekRawExpr}, '([0-9]+)', 1) AS INT) AS semana_num,
+            ${activeOnly ? `LOWER(TRIM(CAST(${quoteIdent(statusColumn)} AS STRING)))` : "NULL"} AS status_norm,
+            try_cast(${quoteIdent(dateColumn)} AS TIMESTAMP) AS data_criacao
+          FROM ${HEALTHCOACH_TABLE}
+          WHERE ${baseWhere}
+        ),
+        latest_by_cpf AS (
+          SELECT
+            cpf_norm,
+            classificacao,
+            categoria_atendimento,
+            semana_raw,
+            semana_num,
+            status_norm,
+            data_criacao,
+            ROW_NUMBER() OVER (
+              PARTITION BY cpf_norm
+              ORDER BY data_criacao DESC NULLS LAST
+            ) AS rn
+          FROM raw
+        ),
+        filtered AS (
+          SELECT
+            cpf_norm,
+            semana_raw,
+            semana_num,
+            data_criacao,
+            CASE
+              WHEN data_criacao IS NULL THEN 0
+              ELSE GREATEST(CAST(FLOOR(DATEDIFF(current_date(), CAST(data_criacao AS DATE)) / 7) AS INT), 0)
+            END AS semanas_passadas
+          FROM latest_by_cpf
+          WHERE rn = 1
+            AND classificacao = '${escape(classificacao)}'
+            AND categoria_atendimento = '${escape(categoria)}'
+            ${activeOnly ? `AND ${openLatestStatusCondition()}` : ""}
+        ),
+        adjusted AS (
+          SELECT
+            cpf_norm,
+            semana_raw,
+            data_criacao,
+            semanas_passadas,
+            CASE
+              WHEN semana_raw RLIKE 'puerper' THEN NULL
+              WHEN semana_num IS NULL THEN NULL
+              ELSE semana_num + semanas_passadas
+            END AS semana_atual,
+            CASE
+              WHEN semana_raw RLIKE 'puerper' THEN 1
+              WHEN semana_num IS NULL THEN 0
+              ELSE 0
+            END AS forca_puerperio
+          FROM filtered
+        ),
+        bucketed AS (
+          SELECT
+            cpf_norm,
+            CASE
+              WHEN forca_puerperio = 1 THEN 'Puerpério'
+              WHEN semana_atual IS NULL THEN 'Sem semana informada'
+              WHEN semana_atual <= 0 THEN 'Sem semana informada'
+              WHEN semana_atual BETWEEN 1 AND 13 THEN '1º trimestre (1-13 sem)'
+              WHEN semana_atual BETWEEN 14 AND 27 THEN '2º trimestre (14-27 sem)'
+              WHEN semana_atual BETWEEN 28 AND 42 THEN '3º trimestre (28-42 sem)'
+              ELSE 'Puerpério'
+            END AS faixa,
+            CASE
+              WHEN forca_puerperio = 1 THEN 4
+              WHEN semana_atual IS NULL OR semana_atual <= 0 THEN 5
+              WHEN semana_atual BETWEEN 1 AND 13 THEN 1
+              WHEN semana_atual BETWEEN 14 AND 27 THEN 2
+              WHEN semana_atual BETWEEN 28 AND 42 THEN 3
+              ELSE 4
+            END AS ordem,
+            semana_atual
+          FROM adjusted
+        )
+        SELECT
+          faixa,
+          ordem,
+          COUNT(DISTINCT cpf_norm) AS total_cpfs,
+          ROUND(AVG(CASE WHEN semana_atual IS NOT NULL AND semana_atual > 0 THEN semana_atual END), 1) AS semana_media,
+          MIN(CASE WHEN semana_atual IS NOT NULL AND semana_atual > 0 THEN semana_atual END) AS semana_minima,
+          MAX(CASE WHEN semana_atual IS NOT NULL AND semana_atual > 0 THEN semana_atual END) AS semana_maxima
+        FROM bucketed
+        GROUP BY faixa, ordem
+        ORDER BY ordem ASC
+      `);
+      const items = rows.map((row) => ({
+        faixa: String(getCell(row[0]) || '').trim(),
+        ordem: toInt(row[1]),
+        total_cpfs: toInt(row[2]),
+        semana_media: Number(getCell(row[3])) || null,
+        semana_minima: Number(getCell(row[4])) || null,
+        semana_maxima: Number(getCell(row[5])) || null,
+      })).filter((item) => item.faixa);
+      const total = items.reduce((acc, item) => acc + item.total_cpfs, 0);
+      const missing_total = items
+        .filter((item) => item.faixa === 'Sem semana informada')
+        .reduce((acc, item) => acc + item.total_cpfs, 0);
+      const valid_total = total - missing_total;
+      return res.status(200).json({
+        scope: 'care_gestational_distribution',
+        classificacao,
+        categoria,
+        active_only: activeOnly,
+        items,
+        total,
+        valid_total,
+        missing_total,
+        week_column: weekColumn,
+        date_column: dateColumn,
+        reference_date: new Date().toISOString().slice(0, 10),
         source: HEALTHCOACH_TABLE,
         auth_role: getDashboardAuth(req)?.role || 'full',
         updatedAt: new Date().toISOString(),
