@@ -3497,6 +3497,7 @@ async function loadCareLinesEvolution(classNames, includeOthers) {
 
   const p = new URLSearchParams();
   p.set('scope', 'care_lines_evolution');
+  p.set('active_only', '1');
   p.set('class_names', JSON.stringify(classNames));
   if (includeOthers) p.set('include_others', '1');
   appendGroupParams(p);
