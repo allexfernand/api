@@ -607,6 +607,7 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
         <div class="multi-select-options" id="group-select-options"></div>
       </div>
     </div>
+
   </div>
   <div class="filter-group" id="filter-company-group">
     <label>🏬 Empresa</label>
@@ -652,6 +653,7 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
         </div>
       </div>
     </div>
+
   </div>
   <button class="clear-btn" onclick="clearFilters()">✕ Limpar</button>
   <div class="pdf-control filter-pdf-control is-busy" id="pdf-ready-control" title="Aguardando os quadros do Petit Comitê terminarem de renderizar" style="display:none">
@@ -918,6 +920,34 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
           <div style="font-size:11px;color:#94a3b8;margin-top:10px;text-align:right" id="care-detail-meta">—</div>
         </div>
         <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="care-detail-error"></div>
+      </div>
+    </div>
+
+    <div class="petit-grid-2">
+      <div class="card-box" data-qtag="#CC03" style="display:flex;flex-direction:column;min-height:0">
+        <div class="petit-card-header">
+          <div>
+            <h2 style="font-size:13px;font-weight:700;color:#334155;margin-bottom:4px">Detalhamento dos crônicos</h2>
+            <div style="font-size:11px;color:#94a3b8">Distribuição dos beneficiários em Crônico</div>
+          </div>
+          <span class="petit-chip">CC03</span>
+        </div>
+        <div class="petit-placeholder" style="min-height:280px;display:flex;align-items:center;justify-content:center;text-align:center">
+          Detalhamento dos crônicos em definição.
+        </div>
+      </div>
+
+      <div class="card-box" data-qtag="#CC04" style="display:flex;flex-direction:column;min-height:0">
+        <div class="petit-card-header">
+          <div>
+            <h2 style="font-size:13px;font-weight:700;color:#334155;margin-bottom:4px">Detalhamento complementar</h2>
+            <div style="font-size:11px;color:#94a3b8">Clique em uma barra do CC03 para detalhar</div>
+          </div>
+          <span class="petit-chip">CC04</span>
+        </div>
+        <div class="petit-placeholder" style="min-height:280px;display:flex;align-items:center;justify-content:center;text-align:center">
+          Detalhamento em definição.
+        </div>
       </div>
     </div>
   </div>
