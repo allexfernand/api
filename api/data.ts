@@ -194,6 +194,14 @@ function pickRiskPriorityColumn(columns: string[]) {
   return pickColumn(columns, ['prioridade_atendimento', 'prioridade', 'risco', 'risco_atendimento', 'priority']);
 }
 
+function pickCareStatusColumn(columns: string[]) {
+  return pickColumn(columns, ['status', 'status_atendimento', 'status_registro', 'situacao', 'state']);
+}
+
+function openLatestStatusCondition(columnAlias = 'status_norm') {
+  return `COALESCE(${columnAlias}, '') NOT IN ('fechado', 'fechada', 'closed', 'encerrado', 'encerrada', 'finalizado', 'finalizada')`;
+}
+
 function buildCareLineFilters(columns: string[], beneficiaryColumns: string[], query: Record<string, any>, groupNames: string[], company: unknown, partnerBrokerId: unknown, includeDateFilter = true) {
   const conditions = [
     `cpf_atendido IS NOT NULL`,
@@ -421,6 +429,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     if (scope === 'care_line_detail') {
       const classificacao = String(req.query.classificacao || '').trim();
       if (!classificacao) return res.status(400).json({ error: "Classificação obrigatória." });
+      const activeOnly = String(req.query.active_only || '') === '1';
       const [columns, beneficiaryColumns] = await Promise.all([
         getColumns(wh.id, HEALTHCOACH_TABLE),
         getColumns(wh.id, BENEFICIARIES_TABLE).catch(() => []),
@@ -429,7 +438,44 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const baseWhere = buildCareLineFilters(columns, beneficiaryColumns, req.query, groupNames, company, partnerBrokerId);
       const category = careCategoryExpr();
       const classification = careClassificationExpr();
-      const rows = await runQuery(wh.id, `
+      const dateColumn = activeOnly ? pickCareDateColumn(columns) : null;
+      const statusColumn = activeOnly ? pickCareStatusColumn(columns) : null;
+      if (activeOnly && !dateColumn) return res.status(400).json({ error: "Coluna de data não encontrada em healthcoach_gold_live." });
+      if (activeOnly && !statusColumn) return res.status(400).json({ error: "Coluna de status não encontrada em healthcoach_gold_live." });
+      const rows = await runQuery(wh.id, activeOnly ? `
+        WITH raw AS (
+          SELECT
+            REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '') AS cpf_norm,
+            ${category} AS categoria_atendimento,
+            LOWER(TRIM(CAST(${quoteIdent(statusColumn)} AS STRING))) AS status_norm,
+            try_cast(${quoteIdent(dateColumn)} AS TIMESTAMP) AS data_criacao
+          FROM ${HEALTHCOACH_TABLE}
+          WHERE ${baseWhere}
+            AND ${classification} = '${escape(classificacao)}'
+            AND categoria_atendimento IS NOT NULL
+            AND TRIM(CAST(categoria_atendimento AS STRING)) != ''
+        ),
+        latest_by_cpf AS (
+          SELECT
+            cpf_norm,
+            categoria_atendimento,
+            status_norm,
+            ROW_NUMBER() OVER (
+              PARTITION BY cpf_norm
+              ORDER BY data_criacao DESC NULLS LAST
+            ) AS rn
+          FROM raw
+        )
+        SELECT
+          categoria_atendimento,
+          COUNT(DISTINCT cpf_norm) AS total_cpfs
+        FROM latest_by_cpf
+        WHERE rn = 1
+          AND ${openLatestStatusCondition()}
+        GROUP BY categoria_atendimento
+        ORDER BY total_cpfs DESC
+        LIMIT 50
+      ` : `
         SELECT
           ${category} AS categoria_atendimento,
           COUNT(DISTINCT REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '')) AS total_cpfs
@@ -450,6 +496,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       return res.status(200).json({
         scope: 'care_line_detail',
         classificacao,
+        active_only: activeOnly,
         items,
         total,
         source: HEALTHCOACH_TABLE,
@@ -462,6 +509,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const classificacao = String(req.query.classificacao || 'Crônico').trim();
       const categoria = String(req.query.categoria || '').trim();
       if (!categoria) return res.status(400).json({ error: "Categoria obrigatória." });
+      const activeOnly = String(req.query.active_only || '') === '1';
       const [columns, beneficiaryColumns] = await Promise.all([
         getColumns(wh.id, HEALTHCOACH_TABLE),
         getColumns(wh.id, BENEFICIARIES_TABLE).catch(() => []),
@@ -470,6 +518,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       if (!bmiColumn) return res.status(400).json({ error: "Coluna de IMC não encontrada em healthcoach_gold_live." });
       const dateColumn = pickCareDateColumn(columns);
       if (!dateColumn) return res.status(400).json({ error: "Coluna de data não encontrada em healthcoach_gold_live." });
+      const statusColumn = activeOnly ? pickCareStatusColumn(columns) : null;
+      if (activeOnly && !statusColumn) return res.status(400).json({ error: "Coluna de status não encontrada em healthcoach_gold_live." });
       const company = req.query.company || null;
       const baseWhere = buildCareLineFilters(columns, beneficiaryColumns, req.query, groupNames, company, partnerBrokerId);
       const category = careCategoryExpr();
@@ -479,17 +529,21 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         WITH raw AS (
           SELECT
             REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '') AS cpf_norm,
+            ${category} AS categoria_atendimento,
             ${bmiValue} AS imc,
+            ${activeOnly ? `LOWER(TRIM(CAST(${quoteIdent(statusColumn)} AS STRING)))` : "NULL"} AS status_norm,
             try_cast(${quoteIdent(dateColumn)} AS TIMESTAMP) AS data_criacao
           FROM ${HEALTHCOACH_TABLE}
           WHERE ${baseWhere}
             AND ${classification} = '${escape(classificacao)}'
-            AND ${category} = '${escape(categoria)}'
+            ${activeOnly ? "" : `AND ${category} = '${escape(categoria)}'`}
         ),
         latest_by_cpf AS (
           SELECT
             cpf_norm,
+            categoria_atendimento,
             imc,
+            status_norm,
             ROW_NUMBER() OVER (
               PARTITION BY cpf_norm
               ORDER BY data_criacao DESC NULLS LAST
@@ -516,6 +570,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
             END AS ordem
           FROM latest_by_cpf
           WHERE rn = 1
+            ${activeOnly ? `AND categoria_atendimento = '${escape(categoria)}' AND ${openLatestStatusCondition()}` : ""}
         )
         SELECT
           faixa_imc,
@@ -544,6 +599,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         scope: 'care_bmi_distribution',
         classificacao,
         categoria,
+        active_only: activeOnly,
         items,
         total,
         valid_bmi_total,
@@ -560,6 +616,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const classificacao = String(req.query.classificacao || 'Crônico').trim();
       const categoria = String(req.query.categoria || '').trim();
       if (!categoria) return res.status(400).json({ error: "Categoria obrigatória." });
+      const activeOnly = String(req.query.active_only || '') === '1';
       const [columns, beneficiaryColumns] = await Promise.all([
         getColumns(wh.id, HEALTHCOACH_TABLE),
         getColumns(wh.id, BENEFICIARIES_TABLE).catch(() => []),
@@ -568,6 +625,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       if (!riskColumn) return res.status(400).json({ error: "Coluna prioridade_atendimento não encontrada em healthcoach_gold_live." });
       const dateColumn = pickCareDateColumn(columns);
       if (!dateColumn) return res.status(400).json({ error: "Coluna de data não encontrada em healthcoach_gold_live." });
+      const statusColumn = activeOnly ? pickCareStatusColumn(columns) : null;
+      if (activeOnly && !statusColumn) return res.status(400).json({ error: "Coluna de status não encontrada em healthcoach_gold_live." });
       const company = req.query.company || null;
       const baseWhere = buildCareLineFilters(columns, beneficiaryColumns, req.query, groupNames, company, partnerBrokerId);
       const category = careCategoryExpr();
@@ -577,17 +636,21 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         WITH raw AS (
           SELECT
             REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '') AS cpf_norm,
+            ${category} AS categoria_atendimento,
             ${riskValue} AS prioridade,
+            ${activeOnly ? `LOWER(TRIM(CAST(${quoteIdent(statusColumn)} AS STRING)))` : "NULL"} AS status_norm,
             try_cast(${quoteIdent(dateColumn)} AS TIMESTAMP) AS data_criacao
           FROM ${HEALTHCOACH_TABLE}
           WHERE ${baseWhere}
             AND ${classification} = '${escape(classificacao)}'
-            AND ${category} = '${escape(categoria)}'
+            ${activeOnly ? "" : `AND ${category} = '${escape(categoria)}'`}
         ),
         latest_by_cpf AS (
           SELECT
             cpf_norm,
+            categoria_atendimento,
             prioridade,
+            status_norm,
             ROW_NUMBER() OVER (
               PARTITION BY cpf_norm
               ORDER BY data_criacao DESC NULLS LAST
@@ -611,6 +674,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
             END AS ordem
           FROM latest_by_cpf
           WHERE rn = 1
+            ${activeOnly ? `AND categoria_atendimento = '${escape(categoria)}' AND ${openLatestStatusCondition()}` : ""}
         )
         SELECT
           risco,
@@ -632,6 +696,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         scope: 'care_risk_distribution',
         classificacao,
         categoria,
+        active_only: activeOnly,
         items,
         total,
         risk_total: total - missing_risk_total,
