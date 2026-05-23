@@ -273,6 +273,21 @@ function careClassificationExpr() {
   END`;
 }
 
+function parseClassNames(query: Record<string, any>) {
+  const raw = query.class_names;
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(String(raw));
+    if (Array.isArray(parsed)) return [...new Set(parsed.map((value) => String(value).trim()).filter(Boolean))];
+  } catch {}
+  return String(raw).split(',').map((value) => value.trim()).filter(Boolean);
+}
+
+function literalRows(values: string[], columnName: string) {
+  if (!values.length) return `SELECT '' AS ${columnName} WHERE false`;
+  return values.map((value) => `SELECT '${escape(value)}' AS ${columnName}`).join('\nUNION ALL\n');
+}
+
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
@@ -426,6 +441,91 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         classificacao,
         items,
         total,
+        source: HEALTHCOACH_TABLE,
+        auth_role: getDashboardAuth(req)?.role || 'full',
+        updatedAt: new Date().toISOString(),
+      });
+    }
+
+    if (scope === 'care_lines_evolution') {
+      const classNames = parseClassNames(req.query);
+      if (!classNames.length) return res.status(400).json({ error: "Classificações obrigatórias." });
+      const includeOthers = String(req.query.include_others || '') === '1';
+      const visibleClasses = includeOthers ? [...classNames, 'Outros'] : classNames;
+      const [columns, beneficiaryColumns] = await Promise.all([
+        getColumns(wh.id, HEALTHCOACH_TABLE),
+        getColumns(wh.id, BENEFICIARIES_TABLE).catch(() => []),
+      ]);
+      const dateColumn = pickCareDateColumn(columns);
+      if (!dateColumn) return res.status(400).json({ error: "Coluna de data não encontrada em healthcoach_gold_live." });
+      const company = req.query.company || null;
+      const baseWhere = buildCareLineFilters(columns, beneficiaryColumns, req.query, groupNames, company, partnerBrokerId, false);
+      const classification = careClassificationExpr();
+      const classList = classNames.map((name) => `'${escape(name)}'`).join(',');
+      const rows = await runQuery(wh.id, `
+        WITH base AS (
+          SELECT
+            DATE_FORMAT(try_cast(${quoteIdent(dateColumn)} AS TIMESTAMP), 'yyyy-MM') AS mes,
+            ${classification} AS classificacao,
+            REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '') AS cpf_norm
+          FROM ${HEALTHCOACH_TABLE}
+          WHERE ${baseWhere}
+            AND try_cast(${quoteIdent(dateColumn)} AS TIMESTAMP) IS NOT NULL
+        ),
+        latest_month AS (
+          SELECT MAX(mes) AS mes FROM base
+        ),
+        months AS (
+          SELECT DATE_FORMAT(add_months(to_date(CONCAT(mes, '-01')), -2), 'yyyy-MM') AS mes FROM latest_month
+          UNION ALL
+          SELECT DATE_FORMAT(add_months(to_date(CONCAT(mes, '-01')), -1), 'yyyy-MM') AS mes FROM latest_month
+          UNION ALL
+          SELECT mes FROM latest_month
+        ),
+        classes AS (
+          ${literalRows(visibleClasses, 'classificacao')}
+        ),
+        scoped AS (
+          SELECT
+            b.mes,
+            CASE
+              WHEN b.classificacao IN (${classList}) THEN b.classificacao
+              ${includeOthers ? "ELSE 'Outros'" : "ELSE NULL"}
+            END AS classificacao,
+            b.cpf_norm
+          FROM base b
+          INNER JOIN months m ON m.mes = b.mes
+        )
+        SELECT
+          m.mes,
+          c.classificacao,
+          COUNT(DISTINCT s.cpf_norm) AS total_cpfs
+        FROM months m
+        CROSS JOIN classes c
+        LEFT JOIN scoped s
+          ON s.mes = m.mes
+         AND s.classificacao = c.classificacao
+        WHERE m.mes IS NOT NULL
+        GROUP BY m.mes, c.classificacao
+        ORDER BY m.mes ASC, c.classificacao ASC
+      `);
+      const months = [...new Set(rows.map((row) => String(getCell(row[0]) || '').trim()).filter(Boolean))];
+      const seriesByClass = new Map<string, Record<string, number>>();
+      rows.forEach((row) => {
+        const month = String(getCell(row[0]) || '').trim();
+        const classificacao = String(getCell(row[1]) || '').trim();
+        if (!month || !classificacao) return;
+        if (!seriesByClass.has(classificacao)) seriesByClass.set(classificacao, {});
+        seriesByClass.get(classificacao)![month] = toInt(row[2]);
+      });
+      const series = visibleClasses.map((classificacao) => ({
+        classificacao,
+        values: months.map((month) => seriesByClass.get(classificacao)?.[month] || 0),
+      }));
+      return res.status(200).json({
+        scope: 'care_lines_evolution',
+        months,
+        series,
         source: HEALTHCOACH_TABLE,
         auth_role: getDashboardAuth(req)?.role || 'full',
         updatedAt: new Date().toISOString(),

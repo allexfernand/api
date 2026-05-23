@@ -923,6 +923,21 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
       </div>
     </div>
 
+    <div class="chart-card" data-qtag="#CC05">
+      <div class="petit-card-header">
+        <div>
+          <h2 style="font-size:13px;font-weight:700;color:#334155;margin-bottom:4px">Evolução mensal das classificações</h2>
+          <div style="font-size:11px;color:#94a3b8">Últimos 3 meses · mesmas classificações exibidas no CC01</div>
+        </div>
+        <span class="petit-chip">Classificações</span>
+      </div>
+      <div class="chart-wrap" style="height:320px">
+        <div class="skeleton" id="skel-care-lines-evolution"></div>
+        <canvas id="careLinesEvolutionChart" style="display:none"></canvas>
+      </div>
+      <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="care-lines-evolution-error"></div>
+    </div>
+
     <div class="petit-grid-2">
       <div class="card-box" data-qtag="#CC03" style="display:flex;flex-direction:column;min-height:0">
         <div class="petit-card-header">
@@ -1614,7 +1629,7 @@ const fmt = n => Number(n).toLocaleString('pt-BR');
 const mN = {'01':'Jan','02':'Fev','03':'Mar','04':'Abr','05':'Mai','06':'Jun','07':'Jul','08':'Ago','09':'Set','10':'Out','11':'Nov','12':'Dez'};
 const AUTH_STORAGE_KEY = 'sanus-dashboard-basic-auth';
 
-let usersData = [], companiesData = [], sessionCompaniesData = [], eChart, agegroupChart, appointmentTypesTrendChart, careCoordinationLinesChart, petitCareLinesChart, petitSessionsEvolChart, petitSessionsTotalEvolChart, sessionsEvolChart, sessionsTotalEvolChart, sessionsAttendanceChart, sessionsDailyChart, sessionsTopGroupsChart, qualityVolumeEvolutionChart, qualityEvolutionChart, qualityCriteriaEvolutionChart;
+let usersData = [], companiesData = [], sessionCompaniesData = [], eChart, agegroupChart, appointmentTypesTrendChart, careCoordinationLinesChart, careLinesEvolutionChart, petitCareLinesChart, petitSessionsEvolChart, petitSessionsTotalEvolChart, sessionsEvolChart, sessionsTotalEvolChart, sessionsAttendanceChart, sessionsDailyChart, sessionsTopGroupsChart, qualityVolumeEvolutionChart, qualityEvolutionChart, qualityCriteriaEvolutionChart;
 let currentGroup = '', currentType = '', currentCompany = '';
 let currentGroups = [];
 let currentPartnerBrokerId = '';
@@ -3195,6 +3210,7 @@ function renderPetitComiteMds() {
 async function renderCareCoordination() {
   loadCareCoordinationKpis();
   resetCareCoordinationDetail();
+  resetCareLinesEvolution();
   loadCareCoordinationChronicDetail();
   const context = document.getElementById('care-coordination-filter-context');
   const canvas = document.getElementById('careCoordinationLinesChart');
@@ -3241,6 +3257,7 @@ async function renderCareCoordination() {
   const rawItems = data.items || [];
   const topItems = rawItems.slice(0, 5);
   const otherTotal = rawItems.slice(5).reduce((acc, item) => acc + (Number(item.total_cpfs) || 0), 0);
+  loadCareLinesEvolution(topItems.map((item) => item.classificacoes).filter(Boolean), otherTotal > 0);
   const items = otherTotal > 0
     ? [...topItems, { classificacoes: 'Outros', total_cpfs: otherTotal }]
     : topItems;
@@ -3309,6 +3326,93 @@ async function renderCareCoordination() {
           grid: { display: false },
           border: { display: false },
         },
+      },
+    },
+  });
+}
+
+function resetCareLinesEvolution(message = '') {
+  const skel = document.getElementById('skel-care-lines-evolution');
+  const canvas = document.getElementById('careLinesEvolutionChart');
+  const error = document.getElementById('care-lines-evolution-error');
+  if (careLinesEvolutionChart) {
+    careLinesEvolutionChart.destroy();
+    careLinesEvolutionChart = null;
+  }
+  if (skel) skel.style.display = message ? 'none' : 'block';
+  if (canvas) canvas.style.display = 'none';
+  if (error) {
+    error.style.display = message ? 'block' : 'none';
+    error.textContent = message;
+  }
+}
+
+async function loadCareLinesEvolution(classNames, includeOthers) {
+  const skel = document.getElementById('skel-care-lines-evolution');
+  const canvas = document.getElementById('careLinesEvolutionChart');
+  const error = document.getElementById('care-lines-evolution-error');
+  if (!canvas) return;
+  if (!classNames.length) {
+    resetCareLinesEvolution('Sem classificações para montar a evolução.');
+    return;
+  }
+  resetCareLinesEvolution();
+
+  const p = new URLSearchParams();
+  p.set('scope', 'care_lines_evolution');
+  p.set('class_names', JSON.stringify(classNames));
+  if (includeOthers) p.set('include_others', '1');
+  appendGroupParams(p);
+  if (currentCompany) p.set('company', currentCompany);
+  const data = await safeGet('/api/data?' + p.toString());
+
+  if (!data || data.error) {
+    if (skel) skel.style.display = 'none';
+    if (error) {
+      error.style.display = 'block';
+      error.textContent = data?.error ? String(data.error).slice(0, 220) : 'Erro ao carregar evolução das classificações';
+    }
+    return;
+  }
+
+  const months = data.months || [];
+  const labels = months.map((month) => monthShortLabel(month));
+  const palette = ['#3F55E3', '#2563eb', '#7c3aed', '#0891b2', '#be185d', '#0f766e', '#64748b'];
+  const datasets = (data.series || []).map((item, index) => ({
+    label: item.classificacao || 'Sem classificação',
+    data: item.values || [],
+    borderColor: palette[index] || '#3F55E3',
+    backgroundColor: `${palette[index] || '#3F55E3'}22`,
+    borderWidth: 2,
+    pointRadius: 3,
+    pointBackgroundColor: palette[index] || '#3F55E3',
+    fill: false,
+    tension: 0.35,
+  }));
+
+  if (careLinesEvolutionChart) careLinesEvolutionChart.destroy();
+  if (skel) skel.style.display = 'none';
+  canvas.style.display = 'block';
+  careLinesEvolutionChart = new Chart(canvas, {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: true, position: 'top', align: 'end', labels: { boxWidth: 10, boxHeight: 10, color: '#64748b', font: { size: 11 } } },
+        tooltip: {
+          backgroundColor: '#1e293b',
+          borderColor: '#334155',
+          borderWidth: 1,
+          titleColor: '#cbd5e1',
+          bodyColor: '#f8fafc',
+          callbacks: { label: c => `${c.dataset.label}: ${fmt(c.parsed.y)} CPFs únicos` },
+        },
+      },
+      scales: {
+        x: { ticks: { color: '#64748b', font: { size: 11, weight: '600' } }, grid: { display: false }, border: { display: false } },
+        y: { beginAtZero: true, ticks: { color: '#94a3b8', font: { size: 10 }, callback: v => fmt(v) }, grid: { color: 'rgba(148,163,184,0.18)' }, border: { display: false } },
       },
     },
   });
