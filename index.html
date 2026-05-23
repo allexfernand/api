@@ -952,7 +952,7 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
           <div class="skeleton" id="skel-care-lines-volume"></div>
           <canvas id="careLinesVolumeChart" style="display:none"></canvas>
         </div>
-        <div style="font-size:11px;color:#94a3b8;margin-top:10px;text-align:right;display:none" id="care-lines-volume-meta">—</div>
+        <div class="petit-metric-stack" id="care-lines-volume-summary" style="display:none;margin-top:14px;grid-template-columns:repeat(3,minmax(0,1fr))"></div>
         <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="care-lines-volume-error"></div>
       </div>
     </div>
@@ -3439,7 +3439,7 @@ function resetCareLinesEvolution(message = '') {
   const error = document.getElementById('care-lines-evolution-error');
   const volumeSkel = document.getElementById('skel-care-lines-volume');
   const volumeCanvas = document.getElementById('careLinesVolumeChart');
-  const volumeMeta = document.getElementById('care-lines-volume-meta');
+  const volumeSummary = document.getElementById('care-lines-volume-summary');
   const volumeError = document.getElementById('care-lines-volume-error');
   if (careLinesEvolutionChart) {
     careLinesEvolutionChart.destroy();
@@ -3453,9 +3453,9 @@ function resetCareLinesEvolution(message = '') {
   if (canvas) canvas.style.display = 'none';
   if (volumeSkel) volumeSkel.style.display = message ? 'none' : 'block';
   if (volumeCanvas) volumeCanvas.style.display = 'none';
-  if (volumeMeta) {
-    volumeMeta.style.display = 'none';
-    volumeMeta.textContent = '—';
+  if (volumeSummary) {
+    volumeSummary.style.display = 'none';
+    volumeSummary.innerHTML = '';
   }
   if (summary) {
     summary.style.display = 'none';
@@ -3650,7 +3650,7 @@ async function loadCareLinesEvolution(classNames, includeOthers) {
 function renderCareLinesVolumeChart(labels, series, monthlyTotals, palette) {
   const skel = document.getElementById('skel-care-lines-volume');
   const canvas = document.getElementById('careLinesVolumeChart');
-  const meta = document.getElementById('care-lines-volume-meta');
+  const summary = document.getElementById('care-lines-volume-summary');
   const error = document.getElementById('care-lines-volume-error');
   if (!canvas) return;
   if (!labels.length || !series.length) {
@@ -3669,30 +3669,38 @@ function renderCareLinesVolumeChart(labels, series, monthlyTotals, palette) {
     error.textContent = '';
   }
   canvas.style.display = 'block';
-  const datasets = series.map((item, index) => {
-    const color = palette[index] || '#3F55E3';
-    return {
-      label: item.classificacao || 'Sem classificação',
-      data: item.values || [],
-      borderColor: color,
-      backgroundColor: `${color}1f`,
-      borderWidth: 3,
-      pointRadius: 4,
-      pointHoverRadius: 6,
-      pointBackgroundColor: color,
-      pointBorderColor: '#ffffff',
-      pointBorderWidth: 2,
-      fill: false,
-      tension: 0.35,
-    };
+  const datasets = series.map((item, index) => ({
+    type: 'bar',
+    label: item.classificacao || 'Sem classificação',
+    data: item.values || [],
+    backgroundColor: palette[index] || '#3F55E3',
+    borderColor: '#ffffff',
+    borderWidth: 1,
+    borderRadius: 6,
+    borderSkipped: false,
+    barPercentage: 0.82,
+    categoryPercentage: 0.72,
+  }));
+  datasets.push({
+    type: 'line',
+    label: 'Total do mês',
+    data: monthlyTotals,
+    borderColor: '#0f172a',
+    backgroundColor: 'rgba(15,23,42,0.08)',
+    borderWidth: 2,
+    borderDash: [6, 4],
+    pointRadius: 4,
+    pointBackgroundColor: '#0f172a',
+    fill: false,
+    tension: 0.3,
+    yAxisID: 'yTotal',
   });
   careLinesVolumeChart = new Chart(canvas, {
-    type: 'line',
+    type: 'bar',
     data: { labels, datasets },
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      interaction: { mode: 'index', intersect: false },
       plugins: {
         legend: { display: true, position: 'top', align: 'end', labels: { boxWidth: 10, boxHeight: 10, color: '#64748b', font: { size: 11 } } },
         tooltip: {
@@ -3702,22 +3710,39 @@ function renderCareLinesVolumeChart(labels, series, monthlyTotals, palette) {
           titleColor: '#cbd5e1',
           bodyColor: '#f8fafc',
           callbacks: {
-            label: c => `${c.dataset.label}: ${fmt(Number(c.parsed.y) || 0)} CPFs ativos`,
+            label: c => {
+              const value = Number(c.parsed.y) || 0;
+              if (c.dataset.type === 'line') return `Total do mês: ${fmt(value)} CPFs ativos`;
+              const total = monthlyTotals[c.dataIndex] || 0;
+              const pct = total > 0 ? (value / total) * 100 : NaN;
+              return `${c.dataset.label}: ${fmt(value)} CPFs ativos · ${fmtPct(pct)} do mês`;
+            },
           },
         },
       },
       scales: {
-        x: { ticks: { color: '#64748b', font: { size: 11, weight: '600' } }, grid: { display: false }, border: { display: false } },
-        y: { beginAtZero: true, ticks: { color: '#94a3b8', font: { size: 10 }, callback: v => fmt(v) }, grid: { color: 'rgba(148,163,184,0.18)' }, border: { display: false } },
+        x: { stacked: false, ticks: { color: '#64748b', font: { size: 11, weight: '600' } }, grid: { display: false }, border: { display: false } },
+        y: { stacked: false, beginAtZero: true, ticks: { color: '#94a3b8', font: { size: 10 }, callback: v => fmt(v) }, grid: { color: 'rgba(148,163,184,0.18)' }, border: { display: false } },
+        yTotal: { position: 'right', beginAtZero: true, ticks: { color: '#94a3b8', font: { size: 10 }, callback: v => fmt(v) }, grid: { drawOnChartArea: false }, border: { display: false } },
       },
     },
   });
-  if (meta) {
-    const lastTotal = monthlyTotals[monthlyTotals.length - 1] || 0;
-    const firstTotal = monthlyTotals[0] || 0;
-    const delta = firstTotal > 0 ? ((lastTotal - firstTotal) / firstTotal) * 100 : null;
-    meta.style.display = 'block';
-    meta.textContent = `${fmt(lastTotal)} ativos no último mês${delta === null ? '' : ` · ${delta >= 0 ? '+' : ''}${fmtPct(delta)} vs início`}`;
+  if (summary) {
+    summary.innerHTML = labels.map((label, index) => {
+      const total = monthlyTotals[index] || 0;
+      const previous = index > 0 ? monthlyTotals[index - 1] || 0 : null;
+      const delta = previous && previous > 0 ? ((total - previous) / previous) * 100 : null;
+      const top = series
+        .map((item) => ({ label: item.classificacao || 'Sem classificação', value: Number(item.values?.[index]) || 0 }))
+        .sort((a, b) => b.value - a.value)[0];
+      const deltaLabel = delta === null ? 'sem comparativo' : `${delta >= 0 ? '+' : ''}${fmtPct(delta)} vs mês anterior`;
+      return `<div class="petit-metric">
+        <span>${escapeHtml(label)}<small>${escapeHtml(top?.label || 'Sem dados')} · ${fmt(top?.value || 0)} ativos</small></span>
+        <strong>${fmt(total)}</strong>
+        <small style="grid-column:1 / -1;color:#94a3b8;font-weight:800">${escapeHtml(deltaLabel)}</small>
+      </div>`;
+    }).join('');
+    summary.style.display = 'grid';
   }
 }
 
