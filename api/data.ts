@@ -380,6 +380,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     }
 
     if (scope === 'care_lines') {
+      const includeActiveMapped = String(req.query.include_active_mapped || '') === '1';
       const [columns, beneficiaryColumns] = await Promise.all([
         getColumns(wh.id, HEALTHCOACH_TABLE),
         getColumns(wh.id, BENEFICIARIES_TABLE).catch(() => []),
@@ -403,17 +404,45 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         FROM ${HEALTHCOACH_TABLE}
         WHERE ${where}
       `);
+      const dateColumn = includeActiveMapped ? pickCareDateColumn(columns) : null;
+      const statusColumn = includeActiveMapped ? pickCareStatusColumn(columns) : null;
+      const activeMappedRows = includeActiveMapped && dateColumn && statusColumn ? await runQuery(wh.id, `
+        WITH raw AS (
+          SELECT
+            REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '') AS cpf_norm,
+            LOWER(TRIM(CAST(${quoteIdent(statusColumn)} AS STRING))) AS status_norm,
+            try_cast(${quoteIdent(dateColumn)} AS TIMESTAMP) AS data_criacao
+          FROM ${HEALTHCOACH_TABLE}
+          WHERE ${where}
+        ),
+        latest_by_cpf AS (
+          SELECT
+            cpf_norm,
+            status_norm,
+            ROW_NUMBER() OVER (
+              PARTITION BY cpf_norm
+              ORDER BY data_criacao DESC NULLS LAST
+            ) AS rn
+          FROM raw
+        )
+        SELECT COUNT(DISTINCT cpf_norm) AS active_mapped_cpfs
+        FROM latest_by_cpf
+        WHERE rn = 1
+          AND ${openLatestStatusCondition()}
+      `) : [];
       const items = rows.map((row) => ({
         classificacoes: String(getCell(row[0]) || '').trim(),
         total_cpfs: toInt(row[1]),
       })).filter((item) => item.classificacoes);
       const total = items.reduce((acc, item) => acc + item.total_cpfs, 0);
       const mapped_total = toInt(mappedRows[0]?.[0]);
+      const active_mapped_total = includeActiveMapped && dateColumn && statusColumn ? toInt(activeMappedRows[0]?.[0]) : null;
       return res.status(200).json({
         scope: 'care_lines',
         items,
         total,
         mapped_total,
+        active_mapped_total,
         filters: {
           period: Boolean(req.query.meses),
           group_names: groupNames,

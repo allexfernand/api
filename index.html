@@ -863,9 +863,9 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
       </div>
       <div class="petit-kpi">
         <div class="petit-kpi-icon"><i class="fa-solid fa-map-location-dot"></i></div>
-        <div class="petit-kpi-label">Beneficiários Mapeados</div>
+        <div class="petit-kpi-label">Beneficiários Mapeados / Ativos</div>
         <div class="petit-kpi-value" id="care-kpi-mapped-static">—</div>
-        <div class="petit-kpi-note" id="care-kpi-mapped-static-note">linhas de cuidado · sem filtro de data</div>
+        <div class="petit-kpi-note" id="care-kpi-mapped-static-note">mapeados / ativos · sem filtro de data</div>
       </div>
       <div class="petit-kpi">
         <div class="petit-kpi-icon"><i class="fa-solid fa-headset"></i></div>
@@ -3942,7 +3942,7 @@ async function loadCareCoordinationKpis() {
   if (newBeneficiariesValue) newBeneficiariesValue.textContent = '…';
   if (beneficiariesNote) beneficiariesNote.textContent = petitBeneficiariesFilterNote();
   if (sessionsNote) sessionsNote.textContent = petitSessionsFilterNote();
-  if (mappedStaticNote) mappedStaticNote.textContent = 'linhas de cuidado · sem filtro de data';
+  if (mappedStaticNote) mappedStaticNote.textContent = 'mapeados / ativos · sem filtro de data';
   if (mappedNote) mappedNote.textContent = 'linhas de cuidado · filtros aplicados';
   if (newBeneficiariesNote) newBeneficiariesNote.textContent = 'primeira aparição · filtros aplicados';
 
@@ -3959,6 +3959,7 @@ async function loadCareCoordinationKpis() {
   if (currentCompany) careLineParams.set('company', currentCompany);
   const staticCareLineParams = new URLSearchParams();
   staticCareLineParams.set('scope', 'care_lines');
+  staticCareLineParams.set('include_active_mapped', '1');
   appendGroupParams(staticCareLineParams);
   if (currentCompany) staticCareLineParams.set('company', currentCompany);
   const newBeneficiariesParams = new URLSearchParams();
@@ -3996,13 +3997,17 @@ async function loadCareCoordinationKpis() {
 
   if (staticCareLinesData && !staticCareLinesData.error && totalBeneficiaries > 0) {
     const mapped = Number(staticCareLinesData.mapped_total) || 0;
+    const activeMappedRaw = staticCareLinesData.active_mapped_total;
+    const activeMapped = activeMappedRaw === null || activeMappedRaw === undefined ? null : Number(activeMappedRaw) || 0;
     const pct = (mapped / totalBeneficiaries) * 100;
-    if (mappedStaticValue) mappedStaticValue.textContent = fmt(mapped);
-    if (mappedStaticNote) mappedStaticNote.textContent = `${fmtPct(pct)} da base · sem filtro de data`;
+    if (mappedStaticValue) mappedStaticValue.textContent = activeMapped === null ? fmt(mapped) : `${fmt(mapped)} / ${fmt(activeMapped)}`;
+    if (mappedStaticNote) mappedStaticNote.textContent = activeMapped === null ? `${fmtPct(pct)} da base · sem filtro de data` : `${fmtPct(pct)} da base · ativos excluem status fechado`;
   } else if (staticCareLinesData && !staticCareLinesData.error) {
     const mapped = Number(staticCareLinesData.mapped_total) || 0;
-    if (mappedStaticValue) mappedStaticValue.textContent = fmt(mapped);
-    if (mappedStaticNote) mappedStaticNote.textContent = 'sem filtro de data';
+    const activeMappedRaw = staticCareLinesData.active_mapped_total;
+    const activeMapped = activeMappedRaw === null || activeMappedRaw === undefined ? null : Number(activeMappedRaw) || 0;
+    if (mappedStaticValue) mappedStaticValue.textContent = activeMapped === null ? fmt(mapped) : `${fmt(mapped)} / ${fmt(activeMapped)}`;
+    if (mappedStaticNote) mappedStaticNote.textContent = activeMapped === null ? 'sem filtro de data' : 'ativos excluem status fechado';
   } else {
     if (mappedStaticValue) mappedStaticValue.textContent = 'Erro';
     if (mappedStaticNote) mappedStaticNote.textContent = String(staticCareLinesData?.error || 'Erro ao carregar mapeamento').slice(0, 140);
