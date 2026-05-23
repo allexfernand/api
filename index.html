@@ -300,6 +300,7 @@ body {
 .care-card-filter{display:flex;align-items:center;gap:6px;font-size:10px;font-weight:800;color:#64748b;white-space:nowrap}
 .care-card-filter select{min-width:154px;border:1px solid #e2e8f0;border-radius:999px;background:#fff;color:#334155;font-size:11px;font-weight:800;padding:5px 10px;outline:none}
 .care-card-filter select:focus{border-color:var(--sanus-brand);box-shadow:0 0 0 3px rgba(63,85,227,.12)}
+.care-context-breakdown{display:block;margin-top:2px;color:#64748b;font-weight:700}
 .petit-kpi-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-bottom:16px}
 .petit-kpi{background:#fff;border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow-sm);padding:18px}
 .petit-kpi-icon{width:36px;height:36px;border-radius:10px;background:var(--sanus-brand-tint);color:var(--sanus-brand-strong);display:grid;place-items:center;margin-bottom:12px}
@@ -1799,6 +1800,13 @@ function careTypeBreakdownText(breakdown) {
   const titulares = Number(breakdown.titulares) || 0;
   const dependentes = Number(breakdown.dependentes) || 0;
   return `Titulares: ${fmt(titulares)} · Dependentes: ${fmt(dependentes)}`;
+}
+
+function careContextHtml(baseText, breakdown) {
+  const breakdownText = careTypeBreakdownText(breakdown);
+  const safeBase = escapeHtml(baseText || '');
+  if (!breakdownText) return safeBase;
+  return `${safeBase}<span class="care-context-breakdown">${escapeHtml(breakdownText)}</span>`;
 }
 
 function appendCareBeneficiaryTypeParam(params) {
@@ -3347,9 +3355,8 @@ async function renderCareCoordination() {
     return;
   }
 
-  const typeBreakdownText = careTypeBreakdownText(data.type_breakdown);
-  if (context && typeBreakdownText) {
-    context.textContent = `${context.textContent || 'todos os filtros globais'} · ${typeBreakdownText}`;
+  if (context) {
+    context.innerHTML = careContextHtml(context.textContent || 'todos os filtros globais', data.type_breakdown);
   }
 
   const rawItems = data.items || [];
@@ -3839,9 +3846,8 @@ async function loadCareLineDetailInto(classificacao, targets) {
   }
 
   if (context && targets.showTypeBreakdown) {
-    const typeBreakdownText = careTypeBreakdownText(data.type_breakdown);
     const baseContext = targets.contextText || `Condições em ${classificacao}`;
-    context.textContent = typeBreakdownText ? `${baseContext} · ${typeBreakdownText}` : baseContext;
+    context.innerHTML = careContextHtml(baseContext, data.type_breakdown);
   }
 
   const items = data.items || [];
