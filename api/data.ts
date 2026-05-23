@@ -131,7 +131,7 @@ function buildFilters(groupNames: string[], typeFilter: unknown, partnerBrokerId
   return `WHERE ${conditions.join(' AND ')}`;
 }
 
-function buildBeneficiaryOrgFilter(beneficiaryColumns: string[], groupNames: string[], company: unknown, partnerBrokerId: unknown) {
+function buildBeneficiaryOrgFilter(beneficiaryColumns: string[], groupNames: string[], company: unknown, partnerBrokerId: unknown, typeFilter: unknown = null) {
   const conditions = [];
   const cpfColumn = pickColumn(beneficiaryColumns, [
     'cpf',
@@ -144,7 +144,10 @@ function buildBeneficiaryOrgFilter(beneficiaryColumns: string[], groupNames: str
     'cpf_beneficiario',
   ]);
   const orgIdColumn = pickColumn(beneficiaryColumns, ['organization_id', 'id_organizacao', 'id_empresa', 'empresa_id']);
-  if (!cpfColumn) return '';
+  const kinshipColumn = pickColumn(beneficiaryColumns, ['type_kinship', 'GRAU_PARENTESCO', 'grau_parentesco', 'kinship', 'tipo_beneficiario']);
+  const normalizedType = String(typeFilter || '').trim().toUpperCase();
+  const hasTypeFilter = normalizedType === 'TITULAR' || normalizedType === 'DEPENDENTE';
+  if (!cpfColumn) return hasTypeFilter ? '1 = 0' : '';
   if (groupNames.length && orgIdColumn) {
     const groupList = groupNames.map((group) => `'${escape(group)}'`).join(',');
     conditions.push(`CAST(b.${quoteIdent(orgIdColumn)} AS STRING) IN (
@@ -160,6 +163,14 @@ function buildBeneficiaryOrgFilter(beneficiaryColumns: string[], groupNames: str
   }
   if (partnerBrokerId && orgIdColumn) {
     conditions.push(`CAST(b.${quoteIdent(orgIdColumn)} AS STRING) IN ${partnerOrgIdsSubquery(partnerBrokerId)}`);
+  }
+  if (hasTypeFilter) {
+    if (!kinshipColumn) return '1 = 0';
+    if (normalizedType === 'TITULAR') {
+      conditions.push(`UPPER(TRIM(COALESCE(b.${quoteIdent(kinshipColumn)},''))) = 'TITULAR'`);
+    } else if (normalizedType === 'DEPENDENTE') {
+      conditions.push(`UPPER(TRIM(COALESCE(b.${quoteIdent(kinshipColumn)},''))) != 'TITULAR'`);
+    }
   }
   if (!conditions.length) return '';
   return `EXISTS (
@@ -234,6 +245,8 @@ function buildCareLineFilters(columns: string[], beneficiaryColumns: string[], q
   let groupApplied = false;
   let companyApplied = false;
   let partnerApplied = false;
+  const typeFilter = String(query.type || '').trim().toUpperCase();
+  const hasTypeFilter = typeFilter === 'TITULAR' || typeFilter === 'DEPENDENTE';
 
   if (company && companyColumn) {
     conditions.push(`UPPER(TRIM(CAST(${quoteIdent(companyColumn)} AS STRING))) = UPPER(TRIM('${escape(company)}'))`);
@@ -273,13 +286,15 @@ function buildCareLineFilters(columns: string[], beneficiaryColumns: string[], q
   const needsBeneficiaryOrgFilter =
     (groupNames.length && !groupApplied) ||
     (company && !companyApplied) ||
-    (partnerBrokerId && !partnerApplied);
+    (partnerBrokerId && !partnerApplied) ||
+    hasTypeFilter;
   if (needsBeneficiaryOrgFilter) {
     const beneficiaryFilter = buildBeneficiaryOrgFilter(
       beneficiaryColumns,
       groupApplied ? [] : groupNames,
       companyApplied ? null : company,
       partnerApplied ? null : partnerBrokerId,
+      hasTypeFilter ? typeFilter : null,
     );
     if (beneficiaryFilter) conditions.push(beneficiaryFilter);
   }

@@ -296,6 +296,12 @@ body {
 .petit-title{font-size:30px;font-weight:800;letter-spacing:-.8px;line-height:1.05;margin-bottom:8px}
 .petit-subtitle{font-size:13px;line-height:1.5;color:rgba(255,255,255,.82);max-width:680px}
 .petit-period-pill{font-size:12px;font-weight:800;color:var(--sanus-brand-ink);background:#fff;border:1px solid rgba(255,255,255,.4);border-radius:999px;padding:8px 12px;white-space:nowrap;box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.care-filter-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:16px;padding:12px 16px;background:#fff;border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow-sm)}
+.care-filter-title{font-size:12px;font-weight:800;color:#334155;margin-bottom:2px}
+.care-filter-note{font-size:11px;color:#94a3b8;line-height:1.4}
+.care-filter-control{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:800;color:#64748b;white-space:nowrap}
+.care-filter-control select{min-width:156px;border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#334155;font-size:12px;font-weight:700;padding:8px 10px;outline:none}
+.care-filter-control select:focus{border-color:var(--sanus-brand);box-shadow:0 0 0 3px rgba(63,85,227,.12)}
 .petit-kpi-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-bottom:16px}
 .petit-kpi{background:#fff;border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow-sm);padding:18px}
 .petit-kpi-icon{width:36px;height:36px;border-radius:10px;background:var(--sanus-brand-tint);color:var(--sanus-brand-strong);display:grid;place-items:center;margin-bottom:12px}
@@ -859,6 +865,21 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
 
   <!-- Tab: Coordenação de Cuidado -->
   <div class="tab-content" id="tab-coordenacao-cuidado">
+    <div class="care-filter-bar">
+      <div>
+        <div class="care-filter-title">Subfiltro da Coordenação</div>
+        <div class="care-filter-note">Aplica o vínculo do beneficiário em CC01, CC05 e detalhamentos derivados.</div>
+      </div>
+      <label class="care-filter-control" for="care-beneficiary-type-select">
+        Vínculo
+        <select id="care-beneficiary-type-select" onchange="onCareBeneficiaryTypeChange(this.value)">
+          <option value="">Titular e dependente</option>
+          <option value="TITULAR">Titular</option>
+          <option value="DEPENDENTE">Dependente</option>
+        </select>
+      </label>
+    </div>
+
     <div class="petit-kpi-grid">
       <div class="petit-kpi">
         <div class="petit-kpi-icon"><i class="fa-solid fa-people-group"></i></div>
@@ -1663,6 +1684,7 @@ let usersData = [], companiesData = [], sessionCompaniesData = [], eChart, agegr
 let currentGroup = '', currentType = '', currentCompany = '';
 let currentGroups = [];
 let currentPartnerBrokerId = '';
+let currentCareBeneficiaryType = '';
 let partnerOptionsCache = [];
 let groupOptionsCache = { orgs: null, sessions: null, petitMds: null };
 let activeGroupSource = 'orgs';
@@ -1761,6 +1783,22 @@ function appendGroupParams(params) {
   if (isPartnerFilteredTab() && currentPartnerBrokerId) {
     params.set('partner_broker_id', currentPartnerBrokerId);
   }
+}
+
+function careBeneficiaryTypeLabel(value = currentCareBeneficiaryType) {
+  if (value === 'TITULAR') return 'Titular';
+  if (value === 'DEPENDENTE') return 'Dependente';
+  return 'Titular e dependente';
+}
+
+function appendCareBeneficiaryTypeParam(params) {
+  if (currentCareBeneficiaryType) params.set('type', currentCareBeneficiaryType);
+}
+
+function onCareBeneficiaryTypeChange(value) {
+  currentCareBeneficiaryType = value === 'TITULAR' || value === 'DEPENDENTE' ? value : '';
+  updateFilterInfo();
+  renderCareCoordination();
 }
 
 function isPartnerFilteredTab(tab = getActiveTab()) {
@@ -2034,6 +2072,7 @@ function updateFilterInfo() {
   else if (currentGroups.length > 1) parts.push(`${currentGroups.length} grupos econômicos`);
   if (isPartnerFilteredTab(activeTab) && currentPartnerBrokerId) parts.push(`Parceiro: ${selectedPartnerLabel()}`);
   if (currentCompany && activeTab !== 'sessoes') parts.push(currentCompany);
+  if (activeTab === 'coordenacao-cuidado' && currentCareBeneficiaryType) parts.push(`Vínculo: ${careBeneficiaryTypeLabel()}`);
   if (currentType && activeTab !== 'sessoes' && activeTab !== 'coordenacao-cuidado' && !isPetitTab(activeTab) && !activeTab.startsWith('qualidade')) parts.push(currentType === 'TITULAR' ? 'Titular' : 'Dependente');
   document.getElementById('filter-info').textContent = parts.length ? `Filtrando: ${parts.join(' · ')}` : '';
 }
@@ -2042,12 +2081,15 @@ async function clearFilters() {
   const activeTab = getActiveTab();
   currentGroup = ''; currentGroups = []; currentType = ''; currentCompany = '';
   currentPartnerBrokerId = '';
+  currentCareBeneficiaryType = '';
   selectedSessionTypificationFinisher = '';
   updateGroupSelectLabel();
   renderGroupOptions();
   const partnerSelect = document.getElementById('partner-select');
   if (partnerSelect) partnerSelect.value = '';
   document.getElementById('type-select').value  = '';
+  const careTypeSelect = document.getElementById('care-beneficiary-type-select');
+  if (careTypeSelect) careTypeSelect.value = '';
   const typificationFinisherSelect = document.getElementById('session-typification-finisher-select');
   if (typificationFinisherSelect) typificationFinisherSelect.value = '';
   document.getElementById('company-select').innerHTML = '<option value="">(Selecione um grupo primeiro)</option>';
@@ -3255,6 +3297,7 @@ async function renderCareCoordination() {
     if (currentGroups.length) parts.push(selectedGroupsText());
     if (currentCompany) parts.push(currentCompany);
     if (currentPartnerBrokerId) parts.push(`Parceiro: ${selectedPartnerLabel()}`);
+    if (currentCareBeneficiaryType) parts.push(`Vínculo: ${careBeneficiaryTypeLabel()}`);
     context.textContent = parts.length ? `filtros globais: ${parts.join(' · ')}` : 'todos os filtros globais';
   }
   if (!canvas) return;
@@ -3274,6 +3317,7 @@ async function renderCareCoordination() {
   p.set('active_only', '1');
   if (months.length > 0) p.set('meses', months.join(','));
   appendGroupParams(p);
+  appendCareBeneficiaryTypeParam(p);
   if (currentCompany) p.set('company', currentCompany);
   const data = await safeGet('/api/data?' + p.toString());
 
@@ -3500,6 +3544,7 @@ async function loadCareLinesEvolution(classNames, includeOthers) {
   p.set('class_names', JSON.stringify(classNames));
   if (includeOthers) p.set('include_others', '1');
   appendGroupParams(p);
+  appendCareBeneficiaryTypeParam(p);
   if (currentCompany) p.set('company', currentCompany);
   const data = await safeGet('/api/data?' + p.toString());
 
@@ -3758,6 +3803,7 @@ async function loadCareLineDetailInto(classificacao, targets) {
     Object.entries(targets.extraParams).forEach(([key, value]) => p.set(key, value));
   }
   appendGroupParams(p);
+  appendCareBeneficiaryTypeParam(p);
   if (currentCompany) p.set('company', currentCompany);
   const data = await safeGet('/api/data?' + p.toString());
   if (loading) loading.style.display = 'none';
@@ -3871,6 +3917,7 @@ async function loadCareObesityBmiDistribution(category, activeOnly = false, clas
   if (activeOnly) p.set('active_only', '1');
   if (months.length > 0) p.set('meses', months.join(','));
   appendGroupParams(p);
+  appendCareBeneficiaryTypeParam(p);
   if (currentCompany) p.set('company', currentCompany);
 
   const data = await safeGet('/api/data?' + p.toString());
@@ -3973,6 +4020,7 @@ async function loadCareOncologyRiskDistribution(category, activeOnly = false, cl
   if (activeOnly) p.set('active_only', '1');
   if (months.length > 0) p.set('meses', months.join(','));
   appendGroupParams(p);
+  appendCareBeneficiaryTypeParam(p);
   if (currentCompany) p.set('company', currentCompany);
 
   const data = await safeGet('/api/data?' + p.toString());
@@ -4074,6 +4122,7 @@ async function loadCareGestationalDistribution(category, activeOnly = false, cla
   if (activeOnly) p.set('active_only', '1');
   if (months.length > 0) p.set('meses', months.join(','));
   appendGroupParams(p);
+  appendCareBeneficiaryTypeParam(p);
   if (currentCompany) p.set('company', currentCompany);
 
   const data = await safeGet('/api/data?' + p.toString());
