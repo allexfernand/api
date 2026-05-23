@@ -1127,7 +1127,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const statusColumn = pickCareStatusColumn(columns);
       if (!statusColumn) return res.status(400).json({ error: "Coluna de status não encontrada em healthcoach_gold_live." });
       const company = req.query.company || null;
-      const baseWhere = buildCareLineFilters(columns, beneficiaryColumns, req.query, groupNames, company, partnerBrokerId);
+      const baseWhere = buildCareLineFilters(columns, beneficiaryColumns, req.query, groupNames, company, partnerBrokerId, false);
       const category = careCategoryExpr();
       const classification = careClassificationExpr();
       const classList = ['Crônico', 'Situacional'].map((name) => `'${escape(name)}'`).join(',');

@@ -906,7 +906,7 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
         <div class="petit-kpi-icon"><i class="fa-solid fa-layer-group"></i></div>
         <div class="petit-kpi-label">Comorbidades ativas</div>
         <div class="petit-kpi-value" id="care-kpi-comorbidities">—</div>
-        <div class="petit-kpi-note" id="care-kpi-comorbidities-note">CPFs únicos por nº de condições</div>
+        <div class="petit-kpi-note" id="care-kpi-comorbidities-note">sem filtro de data · status aberto</div>
       </div>
     </div>
 
@@ -4289,7 +4289,7 @@ async function loadCareCoordinationKpis() {
   if (mappedStaticNote) mappedStaticNote.textContent = 'mapeados / ativos · sem filtro de data';
   if (mappedNote) mappedNote.textContent = 'linhas de cuidado · filtros aplicados';
   if (newBeneficiariesNote) newBeneficiariesNote.textContent = 'primeira aparição · filtros aplicados';
-  if (comorbiditiesNote) comorbiditiesNote.textContent = 'CPFs únicos por nº de condições';
+  if (comorbiditiesNote) comorbiditiesNote.textContent = 'sem filtro de data · status aberto';
 
   const meses = [...selectedMonths].sort();
   const careKpiPeriodLabel = meses.length
@@ -4320,7 +4320,6 @@ async function loadCareCoordinationKpis() {
   if (currentCompany) newBeneficiariesParams.set('company', currentCompany);
   const comorbidityParams = new URLSearchParams();
   comorbidityParams.set('scope', 'care_comorbidity_distribution');
-  if (meses.length > 0) comorbidityParams.set('meses', meses.join(','));
   appendGroupParams(comorbidityParams);
   appendCareBeneficiaryTypeParam(comorbidityParams);
   if (currentCompany) comorbidityParams.set('company', currentCompany);
@@ -4407,7 +4406,7 @@ async function loadCareCoordinationKpis() {
         <span><small>3+ condições</small><strong>${fmt(threePlus)}</strong></span>
       </div>`;
     }
-    if (comorbiditiesNote) comorbiditiesNote.textContent = `${fmt(total)} CPFs com condição ativa · ${careKpiPeriodLabel}`;
+    if (comorbiditiesNote) comorbiditiesNote.textContent = `${fmt(total)} CPFs com condição ativa · sem filtro de data`;
   } else {
     if (comorbiditiesValue) comorbiditiesValue.textContent = 'Erro';
     if (comorbiditiesNote) comorbiditiesNote.textContent = String(comorbidityData?.error || 'Erro ao carregar comorbidades').slice(0, 140);
