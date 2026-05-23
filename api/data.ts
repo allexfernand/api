@@ -260,6 +260,14 @@ function careCategoryExpr() {
   END`;
 }
 
+function careClassificationExpr() {
+  const normalized = `LOWER(TRIM(CAST(classificacoes AS STRING)))`;
+  return `CASE
+    WHEN ${normalized} IN ('cronico', 'crônico') THEN 'Crônico'
+    ELSE TRIM(CAST(classificacoes AS STRING))
+  END`;
+}
+
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
@@ -339,13 +347,14 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       ]);
       const company = req.query.company || null;
       const where = buildCareLineFilters(columns, beneficiaryColumns, req.query, groupNames, company, partnerBrokerId);
+      const classification = careClassificationExpr();
       const rows = await runQuery(wh.id, `
         SELECT
-          TRIM(CAST(classificacoes AS STRING)) AS classificacoes,
+          ${classification} AS classificacoes,
           COUNT(DISTINCT REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '')) AS total_cpfs
         FROM ${HEALTHCOACH_TABLE}
         WHERE ${where}
-        GROUP BY TRIM(CAST(classificacoes AS STRING))
+        GROUP BY ${classification}
         ORDER BY total_cpfs DESC
         LIMIT 30
       `);
@@ -388,13 +397,14 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const company = req.query.company || null;
       const baseWhere = buildCareLineFilters(columns, beneficiaryColumns, req.query, groupNames, company, partnerBrokerId);
       const category = careCategoryExpr();
+      const classification = careClassificationExpr();
       const rows = await runQuery(wh.id, `
         SELECT
           ${category} AS categoria_atendimento,
           COUNT(DISTINCT REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '')) AS total_cpfs
         FROM ${HEALTHCOACH_TABLE}
         WHERE ${baseWhere}
-          AND TRIM(CAST(classificacoes AS STRING)) = '${escape(classificacao)}'
+          AND ${classification} = '${escape(classificacao)}'
           AND categoria_atendimento IS NOT NULL
           AND TRIM(CAST(categoria_atendimento AS STRING)) != ''
         GROUP BY ${category}
