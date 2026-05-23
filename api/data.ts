@@ -109,6 +109,33 @@ function pickColumn(columns: string[], candidates: string[]) {
   return null;
 }
 
+function pickBeneficiaryCpfColumn(columns: string[]) {
+  return pickColumn(columns, [
+    'cpf',
+    'CPF',
+    'document',
+    'documento',
+    'cpf_cnpj',
+    'document_number',
+    'beneficiary_cpf',
+    'cpf_beneficiario',
+  ]);
+}
+
+function pickBeneficiaryKinshipColumn(columns: string[]) {
+  return pickColumn(columns, ['type_kinship', 'GRAU_PARENTESCO', 'grau_parentesco', 'kinship', 'tipo_beneficiario']);
+}
+
+function parseCareTypeBreakdown(rows: any[]) {
+  return rows.reduce((acc, row) => {
+    const tipo = String(getCell(row[0]) || '').trim().toUpperCase();
+    const total = toInt(row[1]);
+    if (tipo === 'TITULAR') acc.titulares += total;
+    else if (tipo === 'DEPENDENTE') acc.dependentes += total;
+    return acc;
+  }, { titulares: 0, dependentes: 0 });
+}
+
 function buildFilters(groupNames: string[], typeFilter: unknown, partnerBrokerId: unknown) {
   const conditions = [`b.created_at IS NOT NULL`];
   if (groupNames.length) {
@@ -133,18 +160,9 @@ function buildFilters(groupNames: string[], typeFilter: unknown, partnerBrokerId
 
 function buildBeneficiaryOrgFilter(beneficiaryColumns: string[], groupNames: string[], company: unknown, partnerBrokerId: unknown, typeFilter: unknown = null) {
   const conditions = [];
-  const cpfColumn = pickColumn(beneficiaryColumns, [
-    'cpf',
-    'CPF',
-    'document',
-    'documento',
-    'cpf_cnpj',
-    'document_number',
-    'beneficiary_cpf',
-    'cpf_beneficiario',
-  ]);
+  const cpfColumn = pickBeneficiaryCpfColumn(beneficiaryColumns);
   const orgIdColumn = pickColumn(beneficiaryColumns, ['organization_id', 'id_organizacao', 'id_empresa', 'empresa_id']);
-  const kinshipColumn = pickColumn(beneficiaryColumns, ['type_kinship', 'GRAU_PARENTESCO', 'grau_parentesco', 'kinship', 'tipo_beneficiario']);
+  const kinshipColumn = pickBeneficiaryKinshipColumn(beneficiaryColumns);
   const normalizedType = String(typeFilter || '').trim().toUpperCase();
   const hasTypeFilter = normalizedType === 'TITULAR' || normalizedType === 'DEPENDENTE';
   if (!cpfColumn) return hasTypeFilter ? '1 = 0' : '';
@@ -493,6 +511,72 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         WHERE rn = 1
           AND ${openLatestStatusCondition()}
       `) : [];
+      const beneficiaryCpfColumn = pickBeneficiaryCpfColumn(beneficiaryColumns);
+      const beneficiaryKinshipColumn = pickBeneficiaryKinshipColumn(beneficiaryColumns);
+      const typeBreakdownRows = beneficiaryCpfColumn && beneficiaryKinshipColumn ? await runQuery(wh.id, activeOnly ? `
+        WITH raw AS (
+          SELECT
+            REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '') AS cpf_norm,
+            LOWER(TRIM(CAST(${quoteIdent(activeStatusColumn)} AS STRING))) AS status_norm,
+            try_cast(${quoteIdent(activeDateColumn)} AS TIMESTAMP) AS data_criacao
+          FROM ${HEALTHCOACH_TABLE}
+          WHERE ${where}
+        ),
+        latest_by_cpf AS (
+          SELECT
+            cpf_norm,
+            status_norm,
+            ROW_NUMBER() OVER (
+              PARTITION BY cpf_norm
+              ORDER BY data_criacao DESC NULLS LAST
+            ) AS rn
+          FROM raw
+        ),
+        scoped AS (
+          SELECT cpf_norm
+          FROM latest_by_cpf
+          WHERE rn = 1
+            AND ${openLatestStatusCondition()}
+        ),
+        beneficiary_types AS (
+          SELECT
+            REGEXP_REPLACE(CAST(b.${quoteIdent(beneficiaryCpfColumn)} AS STRING), '[^0-9]', '') AS cpf_norm,
+            CASE
+              WHEN MAX(CASE WHEN UPPER(TRIM(COALESCE(b.${quoteIdent(beneficiaryKinshipColumn)},''))) = 'TITULAR' THEN 1 ELSE 0 END) = 1 THEN 'TITULAR'
+              ELSE 'DEPENDENTE'
+            END AS tipo
+          FROM ${BENEFICIARIES_TABLE} b
+          WHERE b.${quoteIdent(beneficiaryCpfColumn)} IS NOT NULL
+            AND TRIM(CAST(b.${quoteIdent(beneficiaryCpfColumn)} AS STRING)) != ''
+          GROUP BY REGEXP_REPLACE(CAST(b.${quoteIdent(beneficiaryCpfColumn)} AS STRING), '[^0-9]', '')
+        )
+        SELECT bt.tipo, COUNT(DISTINCT s.cpf_norm) AS total_cpfs
+        FROM scoped s
+        INNER JOIN beneficiary_types bt ON bt.cpf_norm = s.cpf_norm
+        GROUP BY bt.tipo
+      ` : `
+        WITH scoped AS (
+          SELECT DISTINCT REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '') AS cpf_norm
+          FROM ${HEALTHCOACH_TABLE}
+          WHERE ${where}
+        ),
+        beneficiary_types AS (
+          SELECT
+            REGEXP_REPLACE(CAST(b.${quoteIdent(beneficiaryCpfColumn)} AS STRING), '[^0-9]', '') AS cpf_norm,
+            CASE
+              WHEN MAX(CASE WHEN UPPER(TRIM(COALESCE(b.${quoteIdent(beneficiaryKinshipColumn)},''))) = 'TITULAR' THEN 1 ELSE 0 END) = 1 THEN 'TITULAR'
+              ELSE 'DEPENDENTE'
+            END AS tipo
+          FROM ${BENEFICIARIES_TABLE} b
+          WHERE b.${quoteIdent(beneficiaryCpfColumn)} IS NOT NULL
+            AND TRIM(CAST(b.${quoteIdent(beneficiaryCpfColumn)} AS STRING)) != ''
+          GROUP BY REGEXP_REPLACE(CAST(b.${quoteIdent(beneficiaryCpfColumn)} AS STRING), '[^0-9]', '')
+        )
+        SELECT bt.tipo, COUNT(DISTINCT s.cpf_norm) AS total_cpfs
+        FROM scoped s
+        INNER JOIN beneficiary_types bt ON bt.cpf_norm = s.cpf_norm
+        GROUP BY bt.tipo
+      `) : [];
       const items = rows.map((row) => ({
         classificacoes: String(getCell(row[0]) || '').trim(),
         total_cpfs: toInt(row[1]),
@@ -506,6 +590,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         total,
         mapped_total,
         active_mapped_total,
+        type_breakdown: parseCareTypeBreakdown(typeBreakdownRows),
         filters: {
           period: Boolean(req.query.meses),
           active_only: activeOnly,
@@ -586,6 +671,78 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         ORDER BY total_cpfs DESC
         LIMIT 50
       `);
+      const beneficiaryCpfColumn = pickBeneficiaryCpfColumn(beneficiaryColumns);
+      const beneficiaryKinshipColumn = pickBeneficiaryKinshipColumn(beneficiaryColumns);
+      const typeBreakdownRows = beneficiaryCpfColumn && beneficiaryKinshipColumn ? await runQuery(wh.id, activeOnly ? `
+        WITH raw AS (
+          SELECT
+            REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '') AS cpf_norm,
+            ${classification} AS classificacao,
+            LOWER(TRIM(CAST(${quoteIdent(statusColumn)} AS STRING))) AS status_norm,
+            try_cast(${quoteIdent(dateColumn)} AS TIMESTAMP) AS data_criacao
+          FROM ${HEALTHCOACH_TABLE}
+          WHERE ${baseWhere}
+        ),
+        latest_by_cpf AS (
+          SELECT
+            cpf_norm,
+            classificacao,
+            status_norm,
+            ROW_NUMBER() OVER (
+              PARTITION BY cpf_norm
+              ORDER BY data_criacao DESC NULLS LAST
+            ) AS rn
+          FROM raw
+        ),
+        scoped AS (
+          SELECT cpf_norm
+          FROM latest_by_cpf
+          WHERE rn = 1
+            AND classificacao IN (${detailClassList})
+            AND ${openLatestStatusCondition()}
+        ),
+        beneficiary_types AS (
+          SELECT
+            REGEXP_REPLACE(CAST(b.${quoteIdent(beneficiaryCpfColumn)} AS STRING), '[^0-9]', '') AS cpf_norm,
+            CASE
+              WHEN MAX(CASE WHEN UPPER(TRIM(COALESCE(b.${quoteIdent(beneficiaryKinshipColumn)},''))) = 'TITULAR' THEN 1 ELSE 0 END) = 1 THEN 'TITULAR'
+              ELSE 'DEPENDENTE'
+            END AS tipo
+          FROM ${BENEFICIARIES_TABLE} b
+          WHERE b.${quoteIdent(beneficiaryCpfColumn)} IS NOT NULL
+            AND TRIM(CAST(b.${quoteIdent(beneficiaryCpfColumn)} AS STRING)) != ''
+          GROUP BY REGEXP_REPLACE(CAST(b.${quoteIdent(beneficiaryCpfColumn)} AS STRING), '[^0-9]', '')
+        )
+        SELECT bt.tipo, COUNT(DISTINCT s.cpf_norm) AS total_cpfs
+        FROM scoped s
+        INNER JOIN beneficiary_types bt ON bt.cpf_norm = s.cpf_norm
+        GROUP BY bt.tipo
+      ` : `
+        WITH scoped AS (
+          SELECT DISTINCT REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '') AS cpf_norm
+          FROM ${HEALTHCOACH_TABLE}
+          WHERE ${baseWhere}
+            AND ${classification} IN (${detailClassList})
+            AND categoria_atendimento IS NOT NULL
+            AND TRIM(CAST(categoria_atendimento AS STRING)) != ''
+        ),
+        beneficiary_types AS (
+          SELECT
+            REGEXP_REPLACE(CAST(b.${quoteIdent(beneficiaryCpfColumn)} AS STRING), '[^0-9]', '') AS cpf_norm,
+            CASE
+              WHEN MAX(CASE WHEN UPPER(TRIM(COALESCE(b.${quoteIdent(beneficiaryKinshipColumn)},''))) = 'TITULAR' THEN 1 ELSE 0 END) = 1 THEN 'TITULAR'
+              ELSE 'DEPENDENTE'
+            END AS tipo
+          FROM ${BENEFICIARIES_TABLE} b
+          WHERE b.${quoteIdent(beneficiaryCpfColumn)} IS NOT NULL
+            AND TRIM(CAST(b.${quoteIdent(beneficiaryCpfColumn)} AS STRING)) != ''
+          GROUP BY REGEXP_REPLACE(CAST(b.${quoteIdent(beneficiaryCpfColumn)} AS STRING), '[^0-9]', '')
+        )
+        SELECT bt.tipo, COUNT(DISTINCT s.cpf_norm) AS total_cpfs
+        FROM scoped s
+        INNER JOIN beneficiary_types bt ON bt.cpf_norm = s.cpf_norm
+        GROUP BY bt.tipo
+      `) : [];
       const items = rows.map((row) => ({
         classificacao: String(getCell(row[0]) || '').trim(),
         categoria_atendimento: String(getCell(row[1]) || '').trim(),
@@ -599,6 +756,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         active_only: activeOnly,
         items,
         total,
+        type_breakdown: parseCareTypeBreakdown(typeBreakdownRows),
         source: HEALTHCOACH_TABLE,
         auth_role: getDashboardAuth(req)?.role || 'full',
         updatedAt: new Date().toISOString(),

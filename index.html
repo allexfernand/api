@@ -1794,6 +1794,13 @@ function careBeneficiaryTypeLabel(value = currentCareBeneficiaryType) {
   return 'Titular e dependente';
 }
 
+function careTypeBreakdownText(breakdown) {
+  if (!breakdown) return '';
+  const titulares = Number(breakdown.titulares) || 0;
+  const dependentes = Number(breakdown.dependentes) || 0;
+  return `Titulares: ${fmt(titulares)} · Dependentes: ${fmt(dependentes)}`;
+}
+
 function appendCareBeneficiaryTypeParam(params) {
   if (currentCareBeneficiaryType) params.set('type', currentCareBeneficiaryType);
 }
@@ -3340,6 +3347,11 @@ async function renderCareCoordination() {
     return;
   }
 
+  const typeBreakdownText = careTypeBreakdownText(data.type_breakdown);
+  if (context && typeBreakdownText) {
+    context.textContent = `${context.textContent || 'todos os filtros globais'} · ${typeBreakdownText}`;
+  }
+
   const rawItems = data.items || [];
   const topItems = rawItems.slice(0, 5);
   const otherTotal = rawItems.slice(5).reduce((acc, item) => acc + (Number(item.total_cpfs) || 0), 0);
@@ -3826,6 +3838,12 @@ async function loadCareLineDetailInto(classificacao, targets) {
     return;
   }
 
+  if (context && targets.showTypeBreakdown) {
+    const typeBreakdownText = careTypeBreakdownText(data.type_breakdown);
+    const baseContext = targets.contextText || `Condições em ${classificacao}`;
+    context.textContent = typeBreakdownText ? `${baseContext} · ${typeBreakdownText}` : baseContext;
+  }
+
   const items = data.items || [];
   const total = Number(data.total) || items.reduce((acc, item) => acc + (Number(item.total_cpfs) || 0), 0);
   const max = items.reduce((acc, item) => Math.max(acc, Number(item.total_cpfs) || 0), 0) || 1;
@@ -3886,6 +3904,7 @@ async function loadCareCoordinationActiveChronicDetail() {
     emptyText: 'Nenhuma condição ativa encontrada para o filtro atual.',
     extraParams: { active_only: '1', class_names: JSON.stringify(['Crônico', 'Situacional']) },
     showClassificationTag: true,
+    showTypeBreakdown: true,
     onItemClick: (item) => handleCareChronicCategoryClick(item, true),
   });
 }
