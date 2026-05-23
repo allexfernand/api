@@ -310,6 +310,11 @@ body {
 .petit-human-bar{height:8px;border-radius:999px;background:#e2e8f0;overflow:hidden;display:flex;margin-top:10px}
 .petit-human-bar span{height:100%;transition:width .35s var(--ease)}
 .petit-grid-2{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(320px,.75fr);gap:16px;margin-bottom:16px}
+.petit-grid-2.care-evolution-grid{grid-template-columns:repeat(2,minmax(0,1fr));align-items:stretch}
+.care-evolution-card{display:flex;flex-direction:column;min-height:560px;margin-bottom:0}
+.care-evolution-card .chart-wrap{flex:0 0 320px}
+.care-evolution-card .petit-metric-stack{min-height:108px}
+.care-evolution-card .petit-metric{min-height:78px;box-sizing:border-box}
 .petit-grid-3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-bottom:16px}
 .petit-card-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:16px}
 .petit-chip{font-size:11px;font-weight:800;color:var(--sanus-brand-strong);background:var(--sanus-brand-tint);border:1px solid var(--sanus-brand-soft);border-radius:999px;padding:4px 10px;white-space:nowrap}
@@ -923,8 +928,8 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
       </div>
     </div>
 
-    <div class="petit-grid-2">
-      <div class="chart-card" data-qtag="#CC07">
+    <div class="petit-grid-2 care-evolution-grid">
+      <div class="chart-card care-evolution-card" data-qtag="#CC07">
         <div class="petit-card-header">
           <div>
             <h2 style="font-size:13px;font-weight:700;color:#334155;margin-bottom:4px">Composição mensal das classificações</h2>
@@ -940,7 +945,7 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
         <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="care-lines-evolution-error"></div>
       </div>
 
-      <div class="chart-card" data-qtag="#CC08">
+      <div class="chart-card care-evolution-card" data-qtag="#CC08">
         <div class="petit-card-header">
           <div>
             <h2 style="font-size:13px;font-weight:700;color:#334155;margin-bottom:4px">Volume ativo mensal</h2>
