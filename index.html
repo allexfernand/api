@@ -3787,7 +3787,7 @@ async function loadCareLineDetailInto(classificacao, targets) {
       const title = classification ? `${label} · ${classification}` : label;
       const color = ['#3F55E3', '#2563eb', '#7c3aed', '#0891b2', '#be185d', '#0f766e', '#1d4ed8', '#f59e0b', '#db2777', '#64748b'][index] || '#3F55E3';
       return `<div class="petit-dist-row" title="${escapeAttr(title)}" data-care-category="${escapeAttr(label)}" data-care-classification="${escapeAttr(classification)}" style="${targets.onItemClick ? 'cursor:pointer' : ''}">
-        <div class="petit-dist-label">${escapeHtml(label)}${classification && targets.showClassificationTag ? `<small style="display:block;font-size:10px;color:#94a3b8;font-weight:800;margin-top:2px">${escapeHtml(classification)}</small>` : ''}</div>
+        <div class="petit-dist-label" style="display:flex;align-items:center;gap:6px;min-width:0"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(label)}</span>${classification && targets.showClassificationTag ? `<small style="font-size:10px;color:#64748b;font-weight:800;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:999px;padding:2px 6px;white-space:nowrap">${escapeHtml(classification)}</small>` : ''}</div>
         <div class="petit-dist-track"><div class="petit-dist-bar" style="width:${width}%;background:${color}"><span class="petit-dist-value">${fmt(value)} <small>${fmtPct(pct)}</small></span></div></div>
       </div>`;
     }).join('') : '<div style="font-size:13px;color:#94a3b8;text-align:center;padding:20px 0">Nenhuma condição encontrada para essa linha.</div>';
