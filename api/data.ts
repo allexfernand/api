@@ -186,6 +186,10 @@ function pickCareDateColumn(columns: string[]) {
   ]);
 }
 
+function pickBmiColumn(columns: string[]) {
+  return pickColumn(columns, ['imc', 'IMC', 'bmi', 'BMI', 'indice_massa_corporal', 'indice_de_massa_corporal']);
+}
+
 function buildCareLineFilters(columns: string[], beneficiaryColumns: string[], query: Record<string, any>, groupNames: string[], company: unknown, partnerBrokerId: unknown, includeDateFilter = true) {
   const conditions = [
     `cpf_atendido IS NOT NULL`,
@@ -444,6 +448,99 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         classificacao,
         items,
         total,
+        source: HEALTHCOACH_TABLE,
+        auth_role: getDashboardAuth(req)?.role || 'full',
+        updatedAt: new Date().toISOString(),
+      });
+    }
+
+    if (scope === 'care_bmi_distribution') {
+      const classificacao = String(req.query.classificacao || 'Crônico').trim();
+      const categoria = String(req.query.categoria || '').trim();
+      if (!categoria) return res.status(400).json({ error: "Categoria obrigatória." });
+      const [columns, beneficiaryColumns] = await Promise.all([
+        getColumns(wh.id, HEALTHCOACH_TABLE),
+        getColumns(wh.id, BENEFICIARIES_TABLE).catch(() => []),
+      ]);
+      const bmiColumn = pickBmiColumn(columns);
+      if (!bmiColumn) return res.status(400).json({ error: "Coluna de IMC não encontrada em healthcoach_gold_live." });
+      const dateColumn = pickCareDateColumn(columns);
+      if (!dateColumn) return res.status(400).json({ error: "Coluna de data não encontrada em healthcoach_gold_live." });
+      const company = req.query.company || null;
+      const baseWhere = buildCareLineFilters(columns, beneficiaryColumns, req.query, groupNames, company, partnerBrokerId);
+      const category = careCategoryExpr();
+      const classification = careClassificationExpr();
+      const bmiValue = `try_cast(REPLACE(CAST(${quoteIdent(bmiColumn)} AS STRING), ',', '.') AS DOUBLE)`;
+      const rows = await runQuery(wh.id, `
+        WITH raw AS (
+          SELECT
+            REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '') AS cpf_norm,
+            ${bmiValue} AS imc,
+            try_cast(${quoteIdent(dateColumn)} AS TIMESTAMP) AS data_criacao
+          FROM ${HEALTHCOACH_TABLE}
+          WHERE ${baseWhere}
+            AND ${classification} = '${escape(classificacao)}'
+            AND ${category} = '${escape(categoria)}'
+            AND ${bmiValue} IS NOT NULL
+            AND ${bmiValue} > 0
+            AND try_cast(${quoteIdent(dateColumn)} AS TIMESTAMP) IS NOT NULL
+        ),
+        latest_by_cpf AS (
+          SELECT
+            cpf_norm,
+            imc,
+            ROW_NUMBER() OVER (
+              PARTITION BY cpf_norm
+              ORDER BY data_criacao DESC
+            ) AS rn
+          FROM raw
+        ),
+        bucketed AS (
+          SELECT
+            cpf_norm,
+            imc,
+            CASE
+              WHEN imc < 25 THEN 'Até 24,9'
+              WHEN imc < 30 THEN '25 a 29,9'
+              WHEN imc < 40 THEN '30 a 39,9'
+              ELSE '40 ou mais'
+            END AS faixa_imc,
+            CASE
+              WHEN imc < 25 THEN 1
+              WHEN imc < 30 THEN 2
+              WHEN imc < 40 THEN 3
+              ELSE 4
+            END AS ordem
+          FROM latest_by_cpf
+          WHERE rn = 1
+        )
+        SELECT
+          faixa_imc,
+          COUNT(DISTINCT cpf_norm) AS total_cpfs,
+          ROUND(AVG(imc), 1) AS imc_medio,
+          ROUND(MIN(imc), 1) AS imc_minimo,
+          ROUND(MAX(imc), 1) AS imc_maximo,
+          ordem
+        FROM bucketed
+        GROUP BY faixa_imc, ordem
+        ORDER BY ordem ASC
+      `);
+      const items = rows.map((row) => ({
+        faixa_imc: String(getCell(row[0]) || '').trim(),
+        total_cpfs: toInt(row[1]),
+        imc_medio: Number(getCell(row[2])) || null,
+        imc_minimo: Number(getCell(row[3])) || null,
+        imc_maximo: Number(getCell(row[4])) || null,
+      })).filter((item) => item.faixa_imc);
+      const total = items.reduce((acc, item) => acc + item.total_cpfs, 0);
+      return res.status(200).json({
+        scope: 'care_bmi_distribution',
+        classificacao,
+        categoria,
+        items,
+        total,
+        bmi_column: bmiColumn,
+        date_column: dateColumn,
         source: HEALTHCOACH_TABLE,
         auth_role: getDashboardAuth(req)?.role || 'full',
         updatedAt: new Date().toISOString(),

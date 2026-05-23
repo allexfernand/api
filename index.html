@@ -962,14 +962,20 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
       <div class="card-box" data-qtag="#CC04" style="display:flex;flex-direction:column;min-height:0">
         <div class="petit-card-header">
           <div>
-            <h2 style="font-size:13px;font-weight:700;color:#334155;margin-bottom:4px">Detalhamento complementar</h2>
-            <div style="font-size:11px;color:#94a3b8">Clique em uma barra do CC03 para detalhar</div>
+            <h2 style="font-size:13px;font-weight:700;color:#334155;margin-bottom:4px" id="care-complement-title">Detalhamento complementar</h2>
+            <div style="font-size:11px;color:#94a3b8" id="care-complement-context">Clique em uma barra do CC03 para detalhar</div>
           </div>
           <span class="petit-chip">CC04</span>
         </div>
-        <div class="petit-placeholder" style="min-height:280px;display:flex;align-items:center;justify-content:center;text-align:center">
+        <div class="loading-box" id="care-complement-loading" style="display:none"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando detalhamento...</div>
+        <div class="petit-placeholder" id="care-complement-empty" style="min-height:280px;display:flex;align-items:center;justify-content:center;text-align:center">
           Detalhamento em definição.
         </div>
+        <div class="chart-wrap" id="care-complement-chart-wrap" style="height:280px;display:none">
+          <canvas id="careComplementChart"></canvas>
+        </div>
+        <div style="font-size:11px;color:#94a3b8;margin-top:10px;text-align:right;display:none" id="care-complement-meta">—</div>
+        <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="care-complement-error"></div>
       </div>
     </div>
   </div>
@@ -1630,7 +1636,7 @@ const fmt = n => Number(n).toLocaleString('pt-BR');
 const mN = {'01':'Jan','02':'Fev','03':'Mar','04':'Abr','05':'Mai','06':'Jun','07':'Jul','08':'Ago','09':'Set','10':'Out','11':'Nov','12':'Dez'};
 const AUTH_STORAGE_KEY = 'sanus-dashboard-basic-auth';
 
-let usersData = [], companiesData = [], sessionCompaniesData = [], eChart, agegroupChart, appointmentTypesTrendChart, careCoordinationLinesChart, careLinesEvolutionChart, petitCareLinesChart, petitSessionsEvolChart, petitSessionsTotalEvolChart, sessionsEvolChart, sessionsTotalEvolChart, sessionsAttendanceChart, sessionsDailyChart, sessionsTopGroupsChart, qualityVolumeEvolutionChart, qualityEvolutionChart, qualityCriteriaEvolutionChart;
+let usersData = [], companiesData = [], sessionCompaniesData = [], eChart, agegroupChart, appointmentTypesTrendChart, careCoordinationLinesChart, careLinesEvolutionChart, careComplementChart, petitCareLinesChart, petitSessionsEvolChart, petitSessionsTotalEvolChart, sessionsEvolChart, sessionsTotalEvolChart, sessionsAttendanceChart, sessionsDailyChart, sessionsTopGroupsChart, qualityVolumeEvolutionChart, qualityEvolutionChart, qualityCriteriaEvolutionChart;
 let currentGroup = '', currentType = '', currentCompany = '';
 let currentGroups = [];
 let currentPartnerBrokerId = '';
@@ -3212,6 +3218,7 @@ async function renderCareCoordination() {
   loadCareCoordinationKpis();
   resetCareCoordinationDetail();
   resetCareLinesEvolution();
+  resetCareComplementDetail();
   loadCareCoordinationChronicDetail();
   const context = document.getElementById('care-coordination-filter-context');
   const canvas = document.getElementById('careCoordinationLinesChart');
@@ -3350,6 +3357,44 @@ function resetCareLinesEvolution(message = '') {
   if (error) {
     error.style.display = message ? 'block' : 'none';
     error.textContent = message;
+  }
+}
+
+function normalizeCareCategoryName(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+}
+
+function resetCareComplementDetail(message = 'Clique em uma barra do CC03 para detalhar') {
+  const title = document.getElementById('care-complement-title');
+  const context = document.getElementById('care-complement-context');
+  const loading = document.getElementById('care-complement-loading');
+  const empty = document.getElementById('care-complement-empty');
+  const chartWrap = document.getElementById('care-complement-chart-wrap');
+  const meta = document.getElementById('care-complement-meta');
+  const error = document.getElementById('care-complement-error');
+  if (careComplementChart) {
+    careComplementChart.destroy();
+    careComplementChart = null;
+  }
+  if (title) title.textContent = 'Detalhamento complementar';
+  if (context) context.textContent = 'Clique em uma barra do CC03 para detalhar';
+  if (loading) loading.style.display = 'none';
+  if (chartWrap) chartWrap.style.display = 'none';
+  if (meta) {
+    meta.style.display = 'none';
+    meta.textContent = '—';
+  }
+  if (error) {
+    error.style.display = 'none';
+    error.textContent = '';
+  }
+  if (empty) {
+    empty.style.display = 'flex';
+    empty.textContent = message;
   }
 }
 
@@ -3543,11 +3588,16 @@ async function loadCareLineDetailInto(classificacao, targets) {
       const width = Math.max((value / max) * 100, 2);
       const label = item.categoria_atendimento || 'Sem categoria';
       const color = ['#3F55E3', '#2563eb', '#7c3aed', '#0891b2', '#be185d', '#0f766e', '#1d4ed8', '#f59e0b', '#db2777', '#64748b'][index] || '#3F55E3';
-      return `<div class="petit-dist-row" title="${escapeAttr(label)}">
+      return `<div class="petit-dist-row" title="${escapeAttr(label)}" data-care-category="${escapeAttr(label)}" style="${targets.onItemClick ? 'cursor:pointer' : ''}">
         <div class="petit-dist-label">${escapeHtml(label)}</div>
         <div class="petit-dist-track"><div class="petit-dist-bar" style="width:${width}%;background:${color}"><span class="petit-dist-value">${fmt(value)} <small>${fmtPct(pct)}</small></span></div></div>
       </div>`;
     }).join('') : '<div style="font-size:13px;color:#94a3b8;text-align:center;padding:20px 0">Nenhuma condição encontrada para essa linha.</div>';
+    if (items.length && targets.onItemClick) {
+      list.querySelectorAll('[data-care-category]').forEach((row) => {
+        row.addEventListener('click', () => targets.onItemClick(row.getAttribute('data-care-category') || ''));
+      });
+    }
   }
   if (meta) meta.textContent = `${items.length} condições · total ${fmt(total)} CPFs únicos`;
   if (content && items.length) content.style.display = 'block';
@@ -3576,7 +3626,126 @@ async function loadCareCoordinationChronicDetail() {
     error: 'care-chronic-error',
     contextText: 'Condições em Crônico',
     emptyText: 'Nenhum crônico encontrado para o filtro atual.',
+    onItemClick: handleCareChronicCategoryClick,
   });
+}
+
+function handleCareChronicCategoryClick(category) {
+  const normalized = normalizeCareCategoryName(category);
+  if (normalized === 'obesidade') {
+    loadCareObesityBmiDistribution(category);
+    return;
+  }
+  if (normalized === 'gestantes' || normalized === 'gestante') {
+    resetCareComplementDetail('Gestantes selecionado. Defina quais condições devem aparecer neste detalhe.');
+    const title = document.getElementById('care-complement-title');
+    const context = document.getElementById('care-complement-context');
+    if (title) title.textContent = 'Detalhamento de gestantes';
+    if (context) context.textContent = 'Comportamento específico em definição';
+    return;
+  }
+  resetCareComplementDetail(`Sem detalhamento específico para ${category || 'essa condição'}.`);
+}
+
+async function loadCareObesityBmiDistribution(category) {
+  const title = document.getElementById('care-complement-title');
+  const context = document.getElementById('care-complement-context');
+  const loading = document.getElementById('care-complement-loading');
+  const empty = document.getElementById('care-complement-empty');
+  const chartWrap = document.getElementById('care-complement-chart-wrap');
+  const canvas = document.getElementById('careComplementChart');
+  const meta = document.getElementById('care-complement-meta');
+  const error = document.getElementById('care-complement-error');
+  resetCareComplementDetail('');
+  if (title) title.textContent = 'IMC médio em obesidade';
+  if (context) context.textContent = 'Distribuição de CPFs por faixa de IMC';
+  if (empty) empty.style.display = 'none';
+  if (loading) loading.style.display = 'block';
+
+  const months = [...selectedMonths].sort();
+  const p = new URLSearchParams();
+  p.set('scope', 'care_bmi_distribution');
+  p.set('classificacao', 'Crônico');
+  p.set('categoria', category || 'Obesidade');
+  if (months.length > 0) p.set('meses', months.join(','));
+  appendGroupParams(p);
+  if (currentCompany) p.set('company', currentCompany);
+
+  const data = await safeGet('/api/data?' + p.toString());
+  if (loading) loading.style.display = 'none';
+  if (!data || data.error) {
+    if (error) {
+      error.style.display = 'block';
+      error.textContent = data?.error ? String(data.error).slice(0, 220) : 'Erro ao carregar distribuição de IMC';
+    }
+    return;
+  }
+
+  const items = data.items || [];
+  if (!items.length) {
+    if (empty) {
+      empty.style.display = 'flex';
+      empty.textContent = 'Nenhum IMC encontrado para Obesidade no filtro atual.';
+    }
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+  if (chartWrap) chartWrap.style.display = 'block';
+  if (canvas) {
+    if (careComplementChart) careComplementChart.destroy();
+    const labels = items.map((item) => item.faixa_imc || 'Sem faixa');
+    const values = items.map((item) => Number(item.total_cpfs) || 0);
+    const total = Number(data.total) || values.reduce((acc, value) => acc + value, 0);
+    careComplementChart = new Chart(canvas, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{
+          label: 'CPFs únicos',
+          data: values,
+          backgroundColor: ['#3F55E3', '#2563eb', '#7c3aed', '#be185d'],
+          borderRadius: 8,
+          borderSkipped: false,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: '#1e293b',
+            borderColor: '#334155',
+            borderWidth: 1,
+            titleColor: '#cbd5e1',
+            bodyColor: '#f8fafc',
+            callbacks: {
+              label: (c) => {
+                const value = Number(c.parsed.y) || 0;
+                const item = items[c.dataIndex] || {};
+                const pct = total > 0 ? (value / total) * 100 : NaN;
+                return `${fmt(value)} CPFs · ${fmtPct(pct)} · IMC médio ${item.imc_medio || '—'}`;
+              },
+            },
+          },
+        },
+        scales: {
+          x: { ticks: { color: '#64748b', font: { size: 11, weight: '600' } }, grid: { display: false }, border: { display: false } },
+          y: { beginAtZero: true, ticks: { color: '#94a3b8', font: { size: 10 }, callback: v => fmt(v) }, grid: { color: 'rgba(148,163,184,0.18)' }, border: { display: false } },
+        },
+      },
+    });
+    if (meta) {
+      const weighted = items.reduce((acc, item) => {
+        const count = Number(item.total_cpfs) || 0;
+        const avg = Number(item.imc_medio);
+        return Number.isFinite(avg) ? acc + (avg * count) : acc;
+      }, 0);
+      const avg = total > 0 ? weighted / total : null;
+      meta.style.display = 'block';
+      meta.textContent = `${fmt(total)} CPFs com IMC · IMC médio ${avg === null ? '—' : avg.toFixed(1)}`;
+    }
+  }
 }
 
 async function loadCareCoordinationKpis() {
