@@ -3636,6 +3636,10 @@ function handleCareChronicCategoryClick(category) {
     loadCareObesityBmiDistribution(category);
     return;
   }
+  if (normalized === 'doenca oncologica') {
+    loadCareOncologyRiskDistribution(category);
+    return;
+  }
   if (normalized === 'gestantes' || normalized === 'gestante') {
     resetCareComplementDetail('Gestantes selecionado. Defina quais condições devem aparecer neste detalhe.');
     const title = document.getElementById('care-complement-title');
@@ -3746,6 +3750,108 @@ async function loadCareObesityBmiDistribution(category) {
       const avg = validTotal > 0 ? weighted / validTotal : null;
       meta.style.display = 'block';
       meta.textContent = `${fmt(total)} CPFs no detalhe · ${fmt(validTotal)} com IMC válido · ${fmt(missingTotal)} sem IMC válido · IMC médio ${avg === null ? '—' : avg.toFixed(1)}`;
+    }
+  }
+}
+
+async function loadCareOncologyRiskDistribution(category) {
+  const title = document.getElementById('care-complement-title');
+  const context = document.getElementById('care-complement-context');
+  const loading = document.getElementById('care-complement-loading');
+  const empty = document.getElementById('care-complement-empty');
+  const chartWrap = document.getElementById('care-complement-chart-wrap');
+  const canvas = document.getElementById('careComplementChart');
+  const meta = document.getElementById('care-complement-meta');
+  const error = document.getElementById('care-complement-error');
+  resetCareComplementDetail('');
+  if (title) title.textContent = 'Risco em doença oncológica';
+  if (context) context.textContent = 'Distribuição por prioridade de atendimento';
+  if (empty) empty.style.display = 'none';
+  if (loading) loading.style.display = 'block';
+
+  const months = [...selectedMonths].sort();
+  const p = new URLSearchParams();
+  p.set('scope', 'care_risk_distribution');
+  p.set('classificacao', 'Crônico');
+  p.set('categoria', category || 'Doença oncológica');
+  if (months.length > 0) p.set('meses', months.join(','));
+  appendGroupParams(p);
+  if (currentCompany) p.set('company', currentCompany);
+
+  const data = await safeGet('/api/data?' + p.toString());
+  if (loading) loading.style.display = 'none';
+  if (!data || data.error) {
+    if (error) {
+      error.style.display = 'block';
+      error.textContent = data?.error ? String(data.error).slice(0, 220) : 'Erro ao carregar distribuição de risco';
+    }
+    return;
+  }
+
+  const items = data.items || [];
+  if (!items.length) {
+    if (empty) {
+      empty.style.display = 'flex';
+      empty.textContent = 'Nenhuma prioridade encontrada para Doença oncológica no filtro atual.';
+    }
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+  if (chartWrap) chartWrap.style.display = 'block';
+  if (canvas) {
+    if (careComplementChart) careComplementChart.destroy();
+    const labels = items.map((item) => item.risco || 'Sem risco');
+    const values = items.map((item) => Number(item.total_cpfs) || 0);
+    const total = Number(data.total) || values.reduce((acc, value) => acc + value, 0);
+    const riskTotal = Number(data.risk_total) || 0;
+    const missingTotal = Number(data.missing_risk_total) || 0;
+    const colorByRisk = {
+      'Risco baixo': '#16a34a',
+      'Risco moderado': '#f59e0b',
+      'Risco alto': '#dc2626',
+      'Sem risco informado': '#94a3b8',
+    };
+    careComplementChart = new Chart(canvas, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{
+          label: 'CPFs únicos',
+          data: values,
+          backgroundColor: labels.map((label) => colorByRisk[label] || '#3F55E3'),
+          borderRadius: 8,
+          borderSkipped: false,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: '#1e293b',
+            borderColor: '#334155',
+            borderWidth: 1,
+            titleColor: '#cbd5e1',
+            bodyColor: '#f8fafc',
+            callbacks: {
+              label: (c) => {
+                const value = Number(c.parsed.y) || 0;
+                const pct = total > 0 ? (value / total) * 100 : NaN;
+                return `${fmt(value)} CPFs · ${fmtPct(pct)}`;
+              },
+            },
+          },
+        },
+        scales: {
+          x: { ticks: { color: '#64748b', font: { size: 11, weight: '600' } }, grid: { display: false }, border: { display: false } },
+          y: { beginAtZero: true, ticks: { color: '#94a3b8', font: { size: 10 }, callback: v => fmt(v) }, grid: { color: 'rgba(148,163,184,0.18)' }, border: { display: false } },
+        },
+      },
+    });
+    if (meta) {
+      meta.style.display = 'block';
+      meta.textContent = `${fmt(total)} CPFs no detalhe · ${fmt(riskTotal)} com risco informado · ${fmt(missingTotal)} sem risco informado`;
     }
   }
 }

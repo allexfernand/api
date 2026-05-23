@@ -190,6 +190,10 @@ function pickBmiColumn(columns: string[]) {
   return pickColumn(columns, ['imc', 'IMC', 'bmi', 'BMI', 'indice_massa_corporal', 'indice_de_massa_corporal']);
 }
 
+function pickRiskPriorityColumn(columns: string[]) {
+  return pickColumn(columns, ['prioridade_atendimento', 'prioridade', 'risco', 'risco_atendimento', 'priority']);
+}
+
 function buildCareLineFilters(columns: string[], beneficiaryColumns: string[], query: Record<string, any>, groupNames: string[], company: unknown, partnerBrokerId: unknown, includeDateFilter = true) {
   const conditions = [
     `cpf_atendido IS NOT NULL`,
@@ -545,6 +549,94 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         valid_bmi_total,
         missing_bmi_total,
         bmi_column: bmiColumn,
+        date_column: dateColumn,
+        source: HEALTHCOACH_TABLE,
+        auth_role: getDashboardAuth(req)?.role || 'full',
+        updatedAt: new Date().toISOString(),
+      });
+    }
+
+    if (scope === 'care_risk_distribution') {
+      const classificacao = String(req.query.classificacao || 'Crônico').trim();
+      const categoria = String(req.query.categoria || '').trim();
+      if (!categoria) return res.status(400).json({ error: "Categoria obrigatória." });
+      const [columns, beneficiaryColumns] = await Promise.all([
+        getColumns(wh.id, HEALTHCOACH_TABLE),
+        getColumns(wh.id, BENEFICIARIES_TABLE).catch(() => []),
+      ]);
+      const riskColumn = pickRiskPriorityColumn(columns);
+      if (!riskColumn) return res.status(400).json({ error: "Coluna prioridade_atendimento não encontrada em healthcoach_gold_live." });
+      const dateColumn = pickCareDateColumn(columns);
+      if (!dateColumn) return res.status(400).json({ error: "Coluna de data não encontrada em healthcoach_gold_live." });
+      const company = req.query.company || null;
+      const baseWhere = buildCareLineFilters(columns, beneficiaryColumns, req.query, groupNames, company, partnerBrokerId);
+      const category = careCategoryExpr();
+      const classification = careClassificationExpr();
+      const riskValue = `LOWER(TRIM(CAST(${quoteIdent(riskColumn)} AS STRING)))`;
+      const rows = await runQuery(wh.id, `
+        WITH raw AS (
+          SELECT
+            REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '') AS cpf_norm,
+            ${riskValue} AS prioridade,
+            try_cast(${quoteIdent(dateColumn)} AS TIMESTAMP) AS data_criacao
+          FROM ${HEALTHCOACH_TABLE}
+          WHERE ${baseWhere}
+            AND ${classification} = '${escape(classificacao)}'
+            AND ${category} = '${escape(categoria)}'
+        ),
+        latest_by_cpf AS (
+          SELECT
+            cpf_norm,
+            prioridade,
+            ROW_NUMBER() OVER (
+              PARTITION BY cpf_norm
+              ORDER BY data_criacao DESC NULLS LAST
+            ) AS rn
+          FROM raw
+        ),
+        bucketed AS (
+          SELECT
+            cpf_norm,
+            CASE
+              WHEN prioridade IN ('baixo', 'baixa', 'risco baixo', 'risco baixa') THEN 'Risco baixo'
+              WHEN prioridade IN ('moderado', 'moderada', 'risco moderado', 'risco moderada') THEN 'Risco moderado'
+              WHEN prioridade IN ('alto', 'alta', 'risco alto', 'risco alta') THEN 'Risco alto'
+              ELSE 'Sem risco informado'
+            END AS risco,
+            CASE
+              WHEN prioridade IN ('baixo', 'baixa', 'risco baixo', 'risco baixa') THEN 1
+              WHEN prioridade IN ('moderado', 'moderada', 'risco moderado', 'risco moderada') THEN 2
+              WHEN prioridade IN ('alto', 'alta', 'risco alto', 'risco alta') THEN 3
+              ELSE 4
+            END AS ordem
+          FROM latest_by_cpf
+          WHERE rn = 1
+        )
+        SELECT
+          risco,
+          COUNT(DISTINCT cpf_norm) AS total_cpfs,
+          ordem
+        FROM bucketed
+        GROUP BY risco, ordem
+        ORDER BY ordem ASC
+      `);
+      const items = rows.map((row) => ({
+        risco: String(getCell(row[0]) || '').trim(),
+        total_cpfs: toInt(row[1]),
+      })).filter((item) => item.risco);
+      const total = items.reduce((acc, item) => acc + item.total_cpfs, 0);
+      const missing_risk_total = items
+        .filter((item) => item.risco === 'Sem risco informado')
+        .reduce((acc, item) => acc + item.total_cpfs, 0);
+      return res.status(200).json({
+        scope: 'care_risk_distribution',
+        classificacao,
+        categoria,
+        items,
+        total,
+        risk_total: total - missing_risk_total,
+        missing_risk_total,
+        risk_column: riskColumn,
         date_column: dateColumn,
         source: HEALTHCOACH_TABLE,
         auth_role: getDashboardAuth(req)?.role || 'full',
