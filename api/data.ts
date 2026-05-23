@@ -288,6 +288,7 @@ function careClassificationExpr() {
   const normalized = `LOWER(TRIM(CAST(classificacoes AS STRING)))`;
   return `CASE
     WHEN ${normalized} IN ('cronico', 'crônico') THEN 'Crônico'
+    WHEN ${normalized} IN ('situacional', 'situacionais') THEN 'Situacional'
     ELSE TRIM(CAST(classificacoes AS STRING))
   END`;
 }
@@ -493,7 +494,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
     if (scope === 'care_line_detail') {
       const classificacao = String(req.query.classificacao || '').trim();
-      if (!classificacao) return res.status(400).json({ error: "Classificação obrigatória." });
+      const classNames = parseClassNames(req.query);
+      const detailClasses = classNames.length ? classNames : [classificacao].filter(Boolean);
+      if (!detailClasses.length) return res.status(400).json({ error: "Classificação obrigatória." });
       const activeOnly = String(req.query.active_only || '') === '1';
       const [columns, beneficiaryColumns] = await Promise.all([
         getColumns(wh.id, HEALTHCOACH_TABLE),
@@ -503,6 +506,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const baseWhere = buildCareLineFilters(columns, beneficiaryColumns, req.query, groupNames, company, partnerBrokerId);
       const category = careCategoryExpr();
       const classification = careClassificationExpr();
+      const detailClassList = detailClasses.map((name) => `'${escape(name)}'`).join(',');
       const dateColumn = activeOnly ? pickCareDateColumn(columns) : null;
       const statusColumn = activeOnly ? pickCareStatusColumn(columns) : null;
       if (activeOnly && !dateColumn) return res.status(400).json({ error: "Coluna de data não encontrada em healthcoach_gold_live." });
@@ -531,36 +535,40 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           FROM raw
         )
         SELECT
+          classificacao,
           COALESCE(NULLIF(TRIM(CAST(categoria_atendimento AS STRING)), ''), 'Sem categoria') AS categoria_atendimento,
           COUNT(DISTINCT cpf_norm) AS total_cpfs
         FROM latest_by_cpf
         WHERE rn = 1
-          AND classificacao = '${escape(classificacao)}'
+          AND classificacao IN (${detailClassList})
           AND ${openLatestStatusCondition()}
-        GROUP BY COALESCE(NULLIF(TRIM(CAST(categoria_atendimento AS STRING)), ''), 'Sem categoria')
+        GROUP BY classificacao, COALESCE(NULLIF(TRIM(CAST(categoria_atendimento AS STRING)), ''), 'Sem categoria')
         ORDER BY total_cpfs DESC
         LIMIT 50
       ` : `
         SELECT
+          ${classification} AS classificacao,
           ${category} AS categoria_atendimento,
           COUNT(DISTINCT REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '')) AS total_cpfs
         FROM ${HEALTHCOACH_TABLE}
         WHERE ${baseWhere}
-          AND ${classification} = '${escape(classificacao)}'
+          AND ${classification} IN (${detailClassList})
           AND categoria_atendimento IS NOT NULL
           AND TRIM(CAST(categoria_atendimento AS STRING)) != ''
-        GROUP BY ${category}
+        GROUP BY ${classification}, ${category}
         ORDER BY total_cpfs DESC
         LIMIT 50
       `);
       const items = rows.map((row) => ({
-        categoria_atendimento: String(getCell(row[0]) || '').trim(),
-        total_cpfs: toInt(row[1]),
+        classificacao: String(getCell(row[0]) || '').trim(),
+        categoria_atendimento: String(getCell(row[1]) || '').trim(),
+        total_cpfs: toInt(row[2]),
       })).filter((item) => item.categoria_atendimento);
       const total = items.reduce((acc, item) => acc + item.total_cpfs, 0);
       return res.status(200).json({
         scope: 'care_line_detail',
-        classificacao,
+        classificacao: detailClasses.length === 1 ? detailClasses[0] : 'Múltiplas',
+        class_names: detailClasses,
         active_only: activeOnly,
         items,
         total,

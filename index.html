@@ -963,57 +963,17 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
     </div>
 
     <div class="petit-grid-2">
-      <div class="card-box" data-qtag="#CC03" style="display:flex;flex-direction:column;min-height:0">
-        <div class="petit-card-header">
-          <div>
-            <h2 style="font-size:13px;font-weight:700;color:#334155;margin-bottom:4px">Detalhamento dos crônicos</h2>
-            <div style="font-size:11px;color:#94a3b8" id="care-chronic-context">Condições em Crônico</div>
-          </div>
-          <span class="petit-chip">CC03</span>
-        </div>
-        <div class="loading-box" id="care-chronic-loading" style="display:none"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando crônicos...</div>
-        <div class="petit-placeholder" id="care-chronic-empty" style="min-height:280px;display:none;align-items:center;justify-content:center;text-align:center">
-          Nenhum crônico encontrado para o filtro atual.
-        </div>
-        <div id="care-chronic-content" style="display:none;flex:1;min-height:0">
-          <div class="petit-dist-list petit-top-exams-list" id="care-chronic-list" style="max-height:340px"></div>
-          <div style="font-size:11px;color:#94a3b8;margin-top:10px;text-align:right" id="care-chronic-meta">—</div>
-        </div>
-        <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="care-chronic-error"></div>
-      </div>
-
-      <div class="card-box" data-qtag="#CC04" style="display:flex;flex-direction:column;min-height:0">
-        <div class="petit-card-header">
-          <div>
-            <h2 style="font-size:13px;font-weight:700;color:#334155;margin-bottom:4px" id="care-complement-title">Detalhamento complementar</h2>
-            <div style="font-size:11px;color:#94a3b8" id="care-complement-context">Clique em uma barra do CC03 para detalhar</div>
-          </div>
-          <span class="petit-chip">CC04</span>
-        </div>
-        <div class="loading-box" id="care-complement-loading" style="display:none"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando detalhamento...</div>
-        <div class="petit-placeholder" id="care-complement-empty" style="min-height:280px;display:flex;align-items:center;justify-content:center;text-align:center">
-          Detalhamento em definição.
-        </div>
-        <div class="chart-wrap" id="care-complement-chart-wrap" style="height:280px;display:none">
-          <canvas id="careComplementChart"></canvas>
-        </div>
-        <div style="font-size:11px;color:#94a3b8;margin-top:10px;text-align:right;display:none" id="care-complement-meta">—</div>
-        <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="care-complement-error"></div>
-      </div>
-    </div>
-
-    <div class="petit-grid-2">
       <div class="card-box" data-qtag="#CC05" style="display:flex;flex-direction:column;min-height:0">
         <div class="petit-card-header">
           <div>
-            <h2 style="font-size:13px;font-weight:700;color:#334155;margin-bottom:4px">Crônicos ativos</h2>
-            <div style="font-size:11px;color:#94a3b8" id="care-active-chronic-context">Condições em Crônico · último status diferente de fechado</div>
+            <h2 style="font-size:13px;font-weight:700;color:#334155;margin-bottom:4px">Condições ativas</h2>
+            <div style="font-size:11px;color:#94a3b8" id="care-active-chronic-context">Crônicos e situacionais · último status diferente de fechado</div>
           </div>
           <span class="petit-chip">CC05</span>
         </div>
-        <div class="loading-box" id="care-active-chronic-loading" style="display:none"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando crônicos ativos...</div>
+        <div class="loading-box" id="care-active-chronic-loading" style="display:none"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando condições ativas...</div>
         <div class="petit-placeholder" id="care-active-chronic-empty" style="min-height:280px;display:none;align-items:center;justify-content:center;text-align:center">
-          Nenhum crônico ativo encontrado para o filtro atual.
+          Nenhuma condição ativa encontrada para o filtro atual.
         </div>
         <div id="care-active-chronic-content" style="display:none;flex:1;min-height:0">
           <div class="petit-dist-list petit-top-exams-list" id="care-active-chronic-list" style="max-height:340px"></div>
@@ -3281,9 +3241,7 @@ async function renderCareCoordination() {
   loadCareCoordinationKpis();
   resetCareCoordinationDetail();
   resetCareLinesEvolution();
-  resetCareComplementDetail();
   resetCareComplementDetail('Clique em uma barra do CC05 para detalhar', true);
-  loadCareCoordinationChronicDetail();
   loadCareCoordinationActiveChronicDetail();
   const context = document.getElementById('care-coordination-filter-context');
   const canvas = document.getElementById('careCoordinationLinesChart');
@@ -3825,15 +3783,20 @@ async function loadCareLineDetailInto(classificacao, targets) {
       const pct = total > 0 ? (value / total) * 100 : NaN;
       const width = Math.max((value / max) * 100, 2);
       const label = item.categoria_atendimento || 'Sem categoria';
+      const classification = item.classificacao || '';
+      const title = classification ? `${label} · ${classification}` : label;
       const color = ['#3F55E3', '#2563eb', '#7c3aed', '#0891b2', '#be185d', '#0f766e', '#1d4ed8', '#f59e0b', '#db2777', '#64748b'][index] || '#3F55E3';
-      return `<div class="petit-dist-row" title="${escapeAttr(label)}" data-care-category="${escapeAttr(label)}" style="${targets.onItemClick ? 'cursor:pointer' : ''}">
-        <div class="petit-dist-label">${escapeHtml(label)}</div>
+      return `<div class="petit-dist-row" title="${escapeAttr(title)}" data-care-category="${escapeAttr(label)}" data-care-classification="${escapeAttr(classification)}" style="${targets.onItemClick ? 'cursor:pointer' : ''}">
+        <div class="petit-dist-label">${escapeHtml(label)}${classification && targets.showClassificationTag ? `<small style="display:block;font-size:10px;color:#94a3b8;font-weight:800;margin-top:2px">${escapeHtml(classification)}</small>` : ''}</div>
         <div class="petit-dist-track"><div class="petit-dist-bar" style="width:${width}%;background:${color}"><span class="petit-dist-value">${fmt(value)} <small>${fmtPct(pct)}</small></span></div></div>
       </div>`;
     }).join('') : '<div style="font-size:13px;color:#94a3b8;text-align:center;padding:20px 0">Nenhuma condição encontrada para essa linha.</div>';
     if (items.length && targets.onItemClick) {
       list.querySelectorAll('[data-care-category]').forEach((row) => {
-        row.addEventListener('click', () => targets.onItemClick(row.getAttribute('data-care-category') || ''));
+        row.addEventListener('click', () => targets.onItemClick({
+          category: row.getAttribute('data-care-category') || '',
+          classificacao: row.getAttribute('data-care-classification') || '',
+        }));
       });
     }
   }
@@ -3854,23 +3817,8 @@ async function loadCareCoordinationDetail(classificacao) {
   });
 }
 
-async function loadCareCoordinationChronicDetail() {
-  return loadCareLineDetailInto('Crônico', {
-    context: 'care-chronic-context',
-    loading: 'care-chronic-loading',
-    empty: 'care-chronic-empty',
-    content: 'care-chronic-content',
-    list: 'care-chronic-list',
-    meta: 'care-chronic-meta',
-    error: 'care-chronic-error',
-    contextText: 'Condições em Crônico',
-    emptyText: 'Nenhum crônico encontrado para o filtro atual.',
-    onItemClick: handleCareChronicCategoryClick,
-  });
-}
-
 async function loadCareCoordinationActiveChronicDetail() {
-  return loadCareLineDetailInto('Crônico', {
+  return loadCareLineDetailInto('Crônico/Situacional', {
     context: 'care-active-chronic-context',
     loading: 'care-active-chronic-loading',
     empty: 'care-active-chronic-empty',
@@ -3878,21 +3826,24 @@ async function loadCareCoordinationActiveChronicDetail() {
     list: 'care-active-chronic-list',
     meta: 'care-active-chronic-meta',
     error: 'care-active-chronic-error',
-    contextText: 'Condições em Crônico · último status diferente de fechado',
-    emptyText: 'Nenhum crônico ativo encontrado para o filtro atual.',
-    extraParams: { active_only: '1' },
-    onItemClick: (category) => handleCareChronicCategoryClick(category, true),
+    contextText: 'Crônicos e situacionais · ordenado por maior volume ativo',
+    emptyText: 'Nenhuma condição ativa encontrada para o filtro atual.',
+    extraParams: { active_only: '1', class_names: JSON.stringify(['Crônico', 'Situacional']) },
+    showClassificationTag: true,
+    onItemClick: (item) => handleCareChronicCategoryClick(item, true),
   });
 }
 
-function handleCareChronicCategoryClick(category, activeOnly = false) {
+function handleCareChronicCategoryClick(item, activeOnly = false) {
+  const category = typeof item === 'string' ? item : item?.category;
+  const classificacao = typeof item === 'string' ? 'Crônico' : (item?.classificacao || 'Crônico');
   const normalized = normalizeCareCategoryName(category);
   if (normalized === 'obesidade') {
-    loadCareObesityBmiDistribution(category, activeOnly);
+    loadCareObesityBmiDistribution(category, activeOnly, classificacao);
     return;
   }
   if (normalized === 'doenca oncologica') {
-    loadCareOncologyRiskDistribution(category, activeOnly);
+    loadCareOncologyRiskDistribution(category, activeOnly, classificacao);
     return;
   }
   if (normalized === 'gestantes' || normalized === 'gestante') {
@@ -3905,7 +3856,7 @@ function handleCareChronicCategoryClick(category, activeOnly = false) {
   resetCareComplementDetail(`Sem detalhamento específico para ${category || 'essa condição'}.`, activeOnly);
 }
 
-async function loadCareObesityBmiDistribution(category, activeOnly = false) {
+async function loadCareObesityBmiDistribution(category, activeOnly = false, classificacao = 'Crônico') {
   const { title, context, loading, empty, chartWrap, canvas, meta, error } = careComplementElements(activeOnly);
   resetCareComplementDetail('', activeOnly);
   if (title) title.textContent = 'IMC médio em obesidade';
@@ -3918,7 +3869,7 @@ async function loadCareObesityBmiDistribution(category, activeOnly = false) {
   const months = [...selectedMonths].sort();
   const p = new URLSearchParams();
   p.set('scope', 'care_bmi_distribution');
-  p.set('classificacao', 'Crônico');
+  p.set('classificacao', classificacao || 'Crônico');
   p.set('categoria', category || 'Obesidade');
   if (activeOnly) p.set('active_only', '1');
   if (months.length > 0) p.set('meses', months.join(','));
@@ -4007,7 +3958,7 @@ async function loadCareObesityBmiDistribution(category, activeOnly = false) {
   }
 }
 
-async function loadCareOncologyRiskDistribution(category, activeOnly = false) {
+async function loadCareOncologyRiskDistribution(category, activeOnly = false, classificacao = 'Crônico') {
   const { title, context, loading, empty, chartWrap, canvas, meta, error } = careComplementElements(activeOnly);
   resetCareComplementDetail('', activeOnly);
   if (title) title.textContent = 'Risco em doença oncológica';
@@ -4020,7 +3971,7 @@ async function loadCareOncologyRiskDistribution(category, activeOnly = false) {
   const months = [...selectedMonths].sort();
   const p = new URLSearchParams();
   p.set('scope', 'care_risk_distribution');
-  p.set('classificacao', 'Crônico');
+  p.set('classificacao', classificacao || 'Crônico');
   p.set('categoria', category || 'Doença oncológica');
   if (activeOnly) p.set('active_only', '1');
   if (months.length > 0) p.set('meses', months.join(','));
