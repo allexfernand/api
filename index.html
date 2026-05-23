@@ -309,13 +309,13 @@ body {
 .petit-kpi-value{font-size:30px;font-weight:800;color:#0f172a;letter-spacing:-.8px;line-height:1}
 .petit-kpi-note{font-size:11px;color:#94a3b8;margin-top:8px}
 .care-kpi-wide{grid-column:span 2}
-.care-kpi-stacked .petit-kpi-value{font-size:28px}
+.care-kpi-stacked .petit-kpi-value{font-size:27px}
 .care-kpi-stacked .petit-kpi-label:not(:first-of-type){margin-top:14px}
 .care-kpi-stacked .petit-kpi-note{line-height:1.35}
 .petit-kpi-split{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:2px}
-.petit-kpi-split span{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid #dbe3f0;border-radius:14px;background:linear-gradient(180deg,#fff,#f8fafc);padding:12px 14px;min-height:58px}
-.petit-kpi-split small{font-size:11px;font-weight:800;color:#64748b;line-height:1.2;text-transform:uppercase;letter-spacing:.35px}
-.petit-kpi-split strong{font-size:24px;font-weight:800;color:#0f172a;line-height:1;letter-spacing:-.5px}
+.petit-kpi-split span{display:grid;place-items:center;gap:7px;border:1px solid #dbe3f0;border-radius:14px;background:linear-gradient(180deg,#fff,#f8fafc);padding:12px 10px;min-height:72px;text-align:center;min-width:0}
+.petit-kpi-split small{font-size:10px;font-weight:800;color:#64748b;line-height:1.15;text-transform:uppercase;letter-spacing:.25px;white-space:nowrap}
+.petit-kpi-split strong{font-size:27px;font-weight:800;color:#0f172a;line-height:1;letter-spacing:-.6px}
 .petit-human-split{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .petit-human-item{border:1px solid #e2e8f0;border-radius:10px;background:#f8fafc;padding:8px}
 .petit-human-label{font-size:10px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.45px;margin-bottom:4px}
@@ -875,14 +875,11 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
   <!-- Tab: Coordenação de Cuidado -->
   <div class="tab-content" id="tab-coordenacao-cuidado">
     <div class="petit-kpi-grid care-kpi-grid">
-      <div class="petit-kpi care-kpi-stacked">
+      <div class="petit-kpi">
         <div class="petit-kpi-icon"><i class="fa-solid fa-people-group"></i></div>
         <div class="petit-kpi-label">Beneficiários</div>
         <div class="petit-kpi-value" id="care-kpi-beneficiaries">—</div>
         <div class="petit-kpi-note" id="care-kpi-beneficiaries-note">ativos · filtros aplicados</div>
-        <div class="petit-kpi-label">Atendimentos</div>
-        <div class="petit-kpi-value" id="care-kpi-sessions">—</div>
-        <div class="petit-kpi-note" id="care-kpi-sessions-note">sessões · filtros aplicados</div>
       </div>
       <div class="petit-kpi">
         <div class="petit-kpi-icon"><i class="fa-solid fa-map-location-dot"></i></div>
@@ -891,13 +888,16 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
         <div class="petit-kpi-note" id="care-kpi-mapped-static-note">mapeados / ativos · sem filtro de data</div>
       </div>
       <div class="petit-kpi">
+        <div class="petit-kpi-icon"><i class="fa-solid fa-headset"></i></div>
+        <div class="petit-kpi-label">Atendimentos</div>
+        <div class="petit-kpi-value" id="care-kpi-sessions">—</div>
+        <div class="petit-kpi-note" id="care-kpi-sessions-note">volume de sessões · filtros aplicados</div>
+      </div>
+      <div class="petit-kpi care-kpi-stacked">
         <div class="petit-kpi-icon"><i class="fa-solid fa-map-location-dot"></i></div>
         <div class="petit-kpi-label">Beneficiários Mapeados</div>
         <div class="petit-kpi-value" id="care-kpi-mapped">—</div>
         <div class="petit-kpi-note" id="care-kpi-mapped-note">linhas de cuidado · filtros aplicados</div>
-      </div>
-      <div class="petit-kpi">
-        <div class="petit-kpi-icon"><i class="fa-solid fa-user-plus"></i></div>
         <div class="petit-kpi-label">Novos beneficiários</div>
         <div class="petit-kpi-value" id="care-kpi-new-beneficiaries">—</div>
         <div class="petit-kpi-note" id="care-kpi-new-beneficiaries-note">primeira aparição · filtros aplicados</div>
@@ -1812,7 +1812,10 @@ function careTypeBreakdownText(breakdown) {
   if (!breakdown) return '';
   const titulares = Number(breakdown.titulares) || 0;
   const dependentes = Number(breakdown.dependentes) || 0;
-  return `Titulares: ${fmt(titulares)} · Dependentes: ${fmt(dependentes)}`;
+  const total = titulares + dependentes;
+  const titularPct = total > 0 ? (titulares / total) * 100 : NaN;
+  const dependentePct = total > 0 ? (dependentes / total) * 100 : NaN;
+  return `Titulares: ${fmt(titulares)} (${fmtPct(titularPct)}) · Dependentes: ${fmt(dependentes)} (${fmtPct(dependentePct)})`;
 }
 
 function careContextHtml(baseText, breakdown) {
