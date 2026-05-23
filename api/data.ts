@@ -381,6 +381,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
     if (scope === 'care_lines') {
       const includeActiveMapped = String(req.query.include_active_mapped || '') === '1';
+      const activeOnly = String(req.query.active_only || '') === '1';
       const [columns, beneficiaryColumns] = await Promise.all([
         getColumns(wh.id, HEALTHCOACH_TABLE),
         getColumns(wh.id, BENEFICIARIES_TABLE).catch(() => []),
@@ -388,7 +389,41 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const company = req.query.company || null;
       const where = buildCareLineFilters(columns, beneficiaryColumns, req.query, groupNames, company, partnerBrokerId);
       const classification = careClassificationExpr();
-      const rows = await runQuery(wh.id, `
+      const activeDateColumn = activeOnly ? pickCareDateColumn(columns) : null;
+      const activeStatusColumn = activeOnly ? pickCareStatusColumn(columns) : null;
+      if (activeOnly && !activeDateColumn) return res.status(400).json({ error: "Coluna de data não encontrada em healthcoach_gold_live." });
+      if (activeOnly && !activeStatusColumn) return res.status(400).json({ error: "Coluna de status não encontrada em healthcoach_gold_live." });
+      const rows = await runQuery(wh.id, activeOnly ? `
+        WITH raw AS (
+          SELECT
+            REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '') AS cpf_norm,
+            ${classification} AS classificacoes,
+            LOWER(TRIM(CAST(${quoteIdent(activeStatusColumn)} AS STRING))) AS status_norm,
+            try_cast(${quoteIdent(activeDateColumn)} AS TIMESTAMP) AS data_criacao
+          FROM ${HEALTHCOACH_TABLE}
+          WHERE ${where}
+        ),
+        latest_by_cpf AS (
+          SELECT
+            cpf_norm,
+            classificacoes,
+            status_norm,
+            ROW_NUMBER() OVER (
+              PARTITION BY cpf_norm
+              ORDER BY data_criacao DESC NULLS LAST
+            ) AS rn
+          FROM raw
+        )
+        SELECT
+          classificacoes,
+          COUNT(DISTINCT cpf_norm) AS total_cpfs
+        FROM latest_by_cpf
+        WHERE rn = 1
+          AND ${openLatestStatusCondition()}
+        GROUP BY classificacoes
+        ORDER BY total_cpfs DESC
+        LIMIT 30
+      ` : `
         SELECT
           ${classification} AS classificacoes,
           COUNT(DISTINCT REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '')) AS total_cpfs
@@ -445,6 +480,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         active_mapped_total,
         filters: {
           period: Boolean(req.query.meses),
+          active_only: activeOnly,
           group_names: groupNames,
           company,
           partner_broker_id: partnerBrokerId,
