@@ -170,16 +170,9 @@ function buildBeneficiaryOrgFilter(beneficiaryColumns: string[], groupNames: str
   )`;
 }
 
-function buildCareLineFilters(columns: string[], beneficiaryColumns: string[], query: Record<string, any>, groupNames: string[], company: unknown, partnerBrokerId: unknown) {
-  const conditions = [
-    `cpf_atendido IS NOT NULL`,
-    `TRIM(CAST(cpf_atendido AS STRING)) != ''`,
-    `classificacoes IS NOT NULL`,
-    `TRIM(CAST(classificacoes AS STRING)) != ''`,
-    `CAST(classificacoes AS STRING) RLIKE '^[A-Za-zÀ-ú]'`,
-  ];
-  const meses = query.meses ? String(query.meses).split(',').filter((m) => /^\d{4}-\d{2}$/.test(m)) : [];
-  const dateColumn = pickColumn(columns, [
+function pickCareDateColumn(columns: string[]) {
+  return pickColumn(columns, [
+    'hora_criacao_atendimento',
     'created_at',
     'creation_time',
     'event_timestamp',
@@ -188,7 +181,19 @@ function buildCareLineFilters(columns: string[], beneficiaryColumns: string[], q
     'dt_atendimento',
     'updated_at',
   ]);
-  if (dateColumn && meses.length) {
+}
+
+function buildCareLineFilters(columns: string[], beneficiaryColumns: string[], query: Record<string, any>, groupNames: string[], company: unknown, partnerBrokerId: unknown, includeDateFilter = true) {
+  const conditions = [
+    `cpf_atendido IS NOT NULL`,
+    `TRIM(CAST(cpf_atendido AS STRING)) != ''`,
+    `classificacoes IS NOT NULL`,
+    `TRIM(CAST(classificacoes AS STRING)) != ''`,
+    `CAST(classificacoes AS STRING) RLIKE '^[A-Za-zÀ-ú]'`,
+  ];
+  const meses = query.meses ? String(query.meses).split(',').filter((m) => /^\d{4}-\d{2}$/.test(m)) : [];
+  const dateColumn = pickCareDateColumn(columns);
+  if (includeDateFilter && dateColumn && meses.length) {
     conditions.push(`DATE_FORMAT(try_cast(${quoteIdent(dateColumn)} AS TIMESTAMP), 'yyyy-MM') IN (${meses.map((month) => `'${escape(month)}'`).join(',')})`);
   }
 
@@ -421,6 +426,60 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         classificacao,
         items,
         total,
+        source: HEALTHCOACH_TABLE,
+        auth_role: getDashboardAuth(req)?.role || 'full',
+        updatedAt: new Date().toISOString(),
+      });
+    }
+
+    if (scope === 'care_new_beneficiaries') {
+      const [columns, beneficiaryColumns] = await Promise.all([
+        getColumns(wh.id, HEALTHCOACH_TABLE),
+        getColumns(wh.id, BENEFICIARIES_TABLE).catch(() => []),
+      ]);
+      const dateColumn = pickCareDateColumn(columns);
+      if (!dateColumn) return res.status(400).json({ error: "Coluna de data não encontrada em healthcoach_gold_live." });
+      const company = req.query.company || null;
+      const baseWhere = buildCareLineFilters(columns, beneficiaryColumns, req.query, groupNames, company, partnerBrokerId, false);
+      const meses = req.query.meses ? String(req.query.meses).split(',').filter((m) => /^\d{4}-\d{2}$/.test(m)) : [];
+      const firstDateFilter = meses.length
+        ? `WHERE DATE_FORMAT(primeira_data, 'yyyy-MM') IN (${meses.map((month) => `'${escape(month)}'`).join(',')})`
+        : '';
+      const rows = await runQuery(wh.id, `
+        WITH primeiro_atendimento AS (
+          SELECT
+            REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '') AS cpf_norm,
+            MIN(try_cast(${quoteIdent(dateColumn)} AS TIMESTAMP)) AS primeira_data
+          FROM ${HEALTHCOACH_TABLE}
+          WHERE cpf_atendido IS NOT NULL
+            AND TRIM(CAST(cpf_atendido AS STRING)) != ''
+          GROUP BY REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '')
+        ),
+        cpfs_filtrados AS (
+          SELECT DISTINCT
+            REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '') AS cpf_norm
+          FROM ${HEALTHCOACH_TABLE}
+          WHERE ${baseWhere}
+        ),
+        novos AS (
+          SELECT pa.cpf_norm
+          FROM primeiro_atendimento pa
+          INNER JOIN cpfs_filtrados cf
+            ON cf.cpf_norm = pa.cpf_norm
+          ${firstDateFilter}
+        )
+        SELECT COUNT(DISTINCT cpf_norm) AS novos_cpfs
+        FROM novos
+      `);
+      return res.status(200).json({
+        scope: 'care_new_beneficiaries',
+        total_new_beneficiaries: toInt(rows[0]?.[0]),
+        filters: {
+          period: Boolean(req.query.meses),
+          group_names: groupNames,
+          company,
+          partner_broker_id: partnerBrokerId,
+        },
         source: HEALTHCOACH_TABLE,
         auth_role: getDashboardAuth(req)?.role || 'full',
         updatedAt: new Date().toISOString(),

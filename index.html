@@ -872,10 +872,10 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
         <div class="petit-kpi-note" id="care-kpi-mapped-note">linhas de cuidado · filtros aplicados</div>
       </div>
       <div class="petit-kpi">
-        <div class="petit-kpi-icon"><i class="fa-solid fa-circle"></i></div>
-        <div class="petit-kpi-label">—</div>
-        <div class="petit-kpi-value">—</div>
-        <div class="petit-kpi-note">em definição</div>
+        <div class="petit-kpi-icon"><i class="fa-solid fa-user-plus"></i></div>
+        <div class="petit-kpi-label">Novos beneficiários</div>
+        <div class="petit-kpi-value" id="care-kpi-new-beneficiaries">—</div>
+        <div class="petit-kpi-note" id="care-kpi-new-beneficiaries-note">primeira aparição · filtros aplicados</div>
       </div>
       <div class="petit-kpi">
         <div class="petit-kpi-icon"><i class="fa-solid fa-circle"></i></div>
@@ -3362,12 +3362,16 @@ async function loadCareCoordinationKpis() {
   const sessionsNote = document.getElementById('care-kpi-sessions-note');
   const mappedValue = document.getElementById('care-kpi-mapped');
   const mappedNote = document.getElementById('care-kpi-mapped-note');
+  const newBeneficiariesValue = document.getElementById('care-kpi-new-beneficiaries');
+  const newBeneficiariesNote = document.getElementById('care-kpi-new-beneficiaries-note');
   if (beneficiariesValue) beneficiariesValue.textContent = '…';
   if (sessionsValue) sessionsValue.textContent = '…';
   if (mappedValue) mappedValue.textContent = '…';
+  if (newBeneficiariesValue) newBeneficiariesValue.textContent = '…';
   if (beneficiariesNote) beneficiariesNote.textContent = petitBeneficiariesFilterNote();
   if (sessionsNote) sessionsNote.textContent = petitSessionsFilterNote();
   if (mappedNote) mappedNote.textContent = 'linhas de cuidado · filtros aplicados';
+  if (newBeneficiariesNote) newBeneficiariesNote.textContent = 'primeira aparição · filtros aplicados';
 
   const meses = [...selectedMonths].sort();
   const sessionParams = new URLSearchParams();
@@ -3380,11 +3384,17 @@ async function loadCareCoordinationKpis() {
   if (meses.length > 0) careLineParams.set('meses', meses.join(','));
   appendGroupParams(careLineParams);
   if (currentCompany) careLineParams.set('company', currentCompany);
+  const newBeneficiariesParams = new URLSearchParams();
+  newBeneficiariesParams.set('scope', 'care_new_beneficiaries');
+  if (meses.length > 0) newBeneficiariesParams.set('meses', meses.join(','));
+  appendGroupParams(newBeneficiariesParams);
+  if (currentCompany) newBeneficiariesParams.set('company', currentCompany);
 
-  const [demographicsData, sessionsData, careLinesData] = await Promise.all([
+  const [demographicsData, sessionsData, careLinesData, newBeneficiariesData] = await Promise.all([
     safeGet('/api/demographics' + buildQS()),
     safeGet('/api/sessions?' + sessionParams.toString()),
     safeGet('/api/data?' + careLineParams.toString()),
+    safeGet('/api/data?' + newBeneficiariesParams.toString()),
   ]);
   const totalBeneficiaries = demographicsData && !demographicsData.error
     ? Number(demographicsData.total_beneficiarios ?? demographicsData.total_vidas) || 0
@@ -3417,6 +3427,20 @@ async function loadCareCoordinationKpis() {
   } else {
     if (mappedValue) mappedValue.textContent = 'Erro';
     if (mappedNote) mappedNote.textContent = String(careLinesData?.error || 'Erro ao carregar mapeamento').slice(0, 140);
+  }
+
+  if (newBeneficiariesData && !newBeneficiariesData.error) {
+    const totalNew = Number(newBeneficiariesData.total_new_beneficiaries) || 0;
+    if (newBeneficiariesValue) newBeneficiariesValue.textContent = fmt(totalNew);
+    if (newBeneficiariesNote) {
+      const periodLabel = meses.length
+        ? (meses.length === 1 ? monthShortLabel(meses[0]) : `${meses.length} meses selecionados`)
+        : 'todo o histórico';
+      newBeneficiariesNote.textContent = `primeira aparição · ${periodLabel}`;
+    }
+  } else {
+    if (newBeneficiariesValue) newBeneficiariesValue.textContent = 'Erro';
+    if (newBeneficiariesNote) newBeneficiariesNote.textContent = String(newBeneficiariesData?.error || 'Erro ao carregar novos beneficiários').slice(0, 140);
   }
 }
 
