@@ -517,8 +517,6 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
             try_cast(${quoteIdent(dateColumn)} AS TIMESTAMP) AS data_criacao
           FROM ${HEALTHCOACH_TABLE}
           WHERE ${baseWhere}
-            AND categoria_atendimento IS NOT NULL
-            AND TRIM(CAST(categoria_atendimento AS STRING)) != ''
         ),
         latest_by_cpf AS (
           SELECT
@@ -533,13 +531,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           FROM raw
         )
         SELECT
-          categoria_atendimento,
+          COALESCE(NULLIF(TRIM(CAST(categoria_atendimento AS STRING)), ''), 'Sem categoria') AS categoria_atendimento,
           COUNT(DISTINCT cpf_norm) AS total_cpfs
         FROM latest_by_cpf
         WHERE rn = 1
           AND classificacao = '${escape(classificacao)}'
           AND ${openLatestStatusCondition()}
-        GROUP BY categoria_atendimento
+        GROUP BY COALESCE(NULLIF(TRIM(CAST(categoria_atendimento AS STRING)), ''), 'Sem categoria')
         ORDER BY total_cpfs DESC
         LIMIT 50
       ` : `
