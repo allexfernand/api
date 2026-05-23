@@ -349,15 +349,23 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         ORDER BY total_cpfs DESC
         LIMIT 30
       `);
+      const mappedRows = await runQuery(wh.id, `
+        SELECT
+          COUNT(DISTINCT REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '')) AS mapped_cpfs
+        FROM ${HEALTHCOACH_TABLE}
+        WHERE ${where}
+      `);
       const items = rows.map((row) => ({
         classificacoes: String(getCell(row[0]) || '').trim(),
         total_cpfs: toInt(row[1]),
       })).filter((item) => item.classificacoes);
       const total = items.reduce((acc, item) => acc + item.total_cpfs, 0);
+      const mapped_total = toInt(mappedRows[0]?.[0]);
       return res.status(200).json({
         scope: 'care_lines',
         items,
         total,
+        mapped_total,
         filters: {
           period: Boolean(req.query.meses),
           group_names: groupNames,

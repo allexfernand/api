@@ -866,10 +866,10 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
         <div class="petit-kpi-note" id="care-kpi-sessions-note">volume de sessões · filtros aplicados</div>
       </div>
       <div class="petit-kpi">
-        <div class="petit-kpi-icon"><i class="fa-solid fa-circle"></i></div>
-        <div class="petit-kpi-label">—</div>
-        <div class="petit-kpi-value">—</div>
-        <div class="petit-kpi-note">em definição</div>
+        <div class="petit-kpi-icon"><i class="fa-solid fa-map-location-dot"></i></div>
+        <div class="petit-kpi-label">Beneficiários mapeados</div>
+        <div class="petit-kpi-value" id="care-kpi-mapped">—</div>
+        <div class="petit-kpi-note" id="care-kpi-mapped-note">linhas de cuidado · filtros aplicados</div>
       </div>
       <div class="petit-kpi">
         <div class="petit-kpi-icon"><i class="fa-solid fa-circle"></i></div>
@@ -3360,10 +3360,14 @@ async function loadCareCoordinationKpis() {
   const beneficiariesNote = document.getElementById('care-kpi-beneficiaries-note');
   const sessionsValue = document.getElementById('care-kpi-sessions');
   const sessionsNote = document.getElementById('care-kpi-sessions-note');
+  const mappedValue = document.getElementById('care-kpi-mapped');
+  const mappedNote = document.getElementById('care-kpi-mapped-note');
   if (beneficiariesValue) beneficiariesValue.textContent = '…';
   if (sessionsValue) sessionsValue.textContent = '…';
+  if (mappedValue) mappedValue.textContent = '…';
   if (beneficiariesNote) beneficiariesNote.textContent = petitBeneficiariesFilterNote();
   if (sessionsNote) sessionsNote.textContent = petitSessionsFilterNote();
+  if (mappedNote) mappedNote.textContent = 'linhas de cuidado · filtros aplicados';
 
   const meses = [...selectedMonths].sort();
   const sessionParams = new URLSearchParams();
@@ -3371,15 +3375,23 @@ async function loadCareCoordinationKpis() {
   if (meses.length > 0) sessionParams.set('meses', meses.join(','));
   appendGroupParams(sessionParams);
   if (currentCompany) sessionParams.set('company', currentCompany);
+  const careLineParams = new URLSearchParams();
+  careLineParams.set('scope', 'care_lines');
+  if (meses.length > 0) careLineParams.set('meses', meses.join(','));
+  appendGroupParams(careLineParams);
+  if (currentCompany) careLineParams.set('company', currentCompany);
 
-  const [demographicsData, sessionsData] = await Promise.all([
+  const [demographicsData, sessionsData, careLinesData] = await Promise.all([
     safeGet('/api/demographics' + buildQS()),
     safeGet('/api/sessions?' + sessionParams.toString()),
+    safeGet('/api/data?' + careLineParams.toString()),
   ]);
+  const totalBeneficiaries = demographicsData && !demographicsData.error
+    ? Number(demographicsData.total_beneficiarios ?? demographicsData.total_vidas) || 0
+    : 0;
 
   if (demographicsData && !demographicsData.error) {
-    const total = Number(demographicsData.total_beneficiarios ?? demographicsData.total_vidas) || 0;
-    if (beneficiariesValue) beneficiariesValue.textContent = fmt(total);
+    if (beneficiariesValue) beneficiariesValue.textContent = fmt(totalBeneficiaries);
     if (beneficiariesNote) beneficiariesNote.textContent = petitBeneficiariesFilterNote();
   } else {
     if (beneficiariesValue) beneficiariesValue.textContent = 'Erro';
@@ -3392,6 +3404,19 @@ async function loadCareCoordinationKpis() {
   } else {
     if (sessionsValue) sessionsValue.textContent = 'Erro';
     if (sessionsNote) sessionsNote.textContent = String(sessionsData?.error || 'Erro ao carregar atendimentos').slice(0, 140);
+  }
+
+  if (careLinesData && !careLinesData.error && totalBeneficiaries > 0) {
+    const mapped = Number(careLinesData.mapped_total) || 0;
+    const pct = (mapped / totalBeneficiaries) * 100;
+    if (mappedValue) mappedValue.textContent = fmtPct(pct);
+    if (mappedNote) mappedNote.textContent = `${fmt(mapped)} de ${fmt(totalBeneficiaries)} beneficiários`;
+  } else if (careLinesData && !careLinesData.error) {
+    if (mappedValue) mappedValue.textContent = '—';
+    if (mappedNote) mappedNote.textContent = 'base de beneficiários indisponível';
+  } else {
+    if (mappedValue) mappedValue.textContent = 'Erro';
+    if (mappedNote) mappedNote.textContent = String(careLinesData?.error || 'Erro ao carregar mapeamento').slice(0, 140);
   }
 }
 
