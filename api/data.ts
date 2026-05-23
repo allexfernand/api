@@ -173,11 +173,14 @@ function buildBeneficiaryOrgFilter(beneficiaryColumns: string[], groupNames: str
 function pickCareDateColumn(columns: string[]) {
   return pickColumn(columns, [
     'hora_criacao_atendimento',
+    'data_criacao',
+    'data_de_criacao',
+    'dt_criacao',
+    'created_date',
     'created_at',
     'creation_time',
     'event_timestamp',
     'data_atendimento',
-    'data_criacao',
     'dt_atendimento',
     'updated_at',
   ]);
@@ -527,6 +530,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         months,
         series,
         source: HEALTHCOACH_TABLE,
+        date_column: dateColumn,
         auth_role: getDashboardAuth(req)?.role || 'full',
         updatedAt: new Date().toISOString(),
       });
