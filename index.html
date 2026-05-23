@@ -3318,47 +3318,42 @@ async function renderCareCoordination() {
   if (careCoordinationLinesChart) careCoordinationLinesChart.destroy();
   if (skel) skel.style.display = 'none';
   canvas.style.display = 'block';
-  const pieValueLabelsPlugin = {
-    id: 'carePieValueLabels',
+  const barValueLabelsPlugin = {
+    id: 'careBarValueLabels',
     afterDatasetsDraw(chart) {
-      const { ctx } = chart;
+      const { ctx, chartArea } = chart;
       const meta = chart.getDatasetMeta(0);
       const dataset = chart.data.datasets[0];
       ctx.save();
-      ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.font = '700 12px Inter, system-ui, sans-serif';
-      meta.data.forEach((arc, index) => {
+      meta.data.forEach((bar, index) => {
         const value = Number(dataset.data[index]) || 0;
         if (!value) return;
-        const props = arc.getProps(['x', 'y', 'startAngle', 'endAngle', 'innerRadius', 'outerRadius'], true);
-        const angle = (props.startAngle + props.endAngle) / 2;
-        const radius = (props.innerRadius + props.outerRadius) / 2;
-        const x = props.x + Math.cos(angle) * radius;
-        const y = props.y + Math.sin(angle) * radius;
-        ctx.fillStyle = '#ffffff';
-        ctx.strokeStyle = 'rgba(15,23,42,0.45)';
-        ctx.lineWidth = 3;
-        ctx.strokeText(fmt(value), x, y);
-        ctx.fillText(fmt(value), x, y);
+        const props = bar.getProps(['x', 'y'], true);
+        const hasRoomInside = props.x - chartArea.left > 72;
+        ctx.textAlign = hasRoomInside ? 'right' : 'left';
+        ctx.fillStyle = hasRoomInside ? '#ffffff' : '#334155';
+        ctx.fillText(fmt(value), hasRoomInside ? props.x - 10 : props.x + 10, props.y);
       });
       ctx.restore();
     },
   };
   careCoordinationLinesChart = new Chart(canvas, {
-    type: 'pie',
+    type: 'bar',
     data: {
       labels,
       datasets: [{
         label: 'CPFs únicos',
         data: values,
         backgroundColor: ['#3F55E3', '#2563eb', '#7c3aed', '#0891b2', '#be185d', '#0f766e', '#1d4ed8', '#f59e0b', '#db2777', '#64748b', '#334155', '#14b8a6'],
-        borderColor: '#ffffff',
-        borderWidth: 2,
-        hoverOffset: 6,
+        borderRadius: 10,
+        borderSkipped: false,
+        barThickness: 28,
       }],
     },
     options: {
+      indexAxis: 'y',
       responsive: true,
       maintainAspectRatio: false,
       onClick: (_event, elements) => {
@@ -3377,21 +3372,7 @@ async function renderCareCoordination() {
       },
       plugins: {
         legend: {
-          display: true,
-          position: 'right',
-          labels: {
-            boxWidth: 12,
-            boxHeight: 12,
-            color: '#64748b',
-            font: { size: 11, weight: '600' },
-            generateLabels(chart) {
-              const base = Chart.defaults.plugins.legend.labels.generateLabels(chart);
-              return base.map((label) => ({
-                ...label,
-                text: `${label.text} (${fmt(values[label.index] || 0)})`,
-              }));
-            },
-          },
+          display: false,
         },
         tooltip: {
           backgroundColor: '#1e293b',
@@ -3401,15 +3382,33 @@ async function renderCareCoordination() {
           bodyColor: '#f8fafc',
           callbacks: {
             label: c => {
-              const value = Number(c.parsed) || 0;
+              const value = Number(c.parsed.x) || 0;
               const pct = total > 0 ? (value / total) * 100 : NaN;
               return `${fmt(value)} CPFs únicos · ${fmtPct(pct)}`;
             },
           },
         },
       },
+      scales: {
+        x: {
+          beginAtZero: true,
+          grace: '12%',
+          ticks: { color: '#94a3b8', font: { size: 10 }, callback: v => fmt(v) },
+          grid: { color: 'rgba(148,163,184,0.16)' },
+          border: { display: false },
+        },
+        y: {
+          ticks: {
+            color: '#475569',
+            font: { size: 11, weight: '700' },
+            callback: v => `${labels[v] || v} (${fmt(values[v] || 0)})`,
+          },
+          grid: { display: false },
+          border: { display: false },
+        },
+      },
     },
-    plugins: [pieValueLabelsPlugin],
+    plugins: [barValueLabelsPlugin],
   });
 }
 
