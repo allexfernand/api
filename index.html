@@ -308,6 +308,12 @@ body {
 .petit-kpi-label{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:#94a3b8;margin-bottom:8px}
 .petit-kpi-value{font-size:30px;font-weight:800;color:#0f172a;letter-spacing:-.8px;line-height:1}
 .petit-kpi-note{font-size:11px;color:#94a3b8;margin-top:8px}
+.care-kpi-wide{grid-column:span 2}
+.care-kpi-duo{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.care-kpi-duo-item{display:grid;gap:5px;border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc;padding:9px 8px;min-width:0}
+.care-kpi-duo-item span{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.45px;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.care-kpi-duo-item strong{font-size:22px;font-weight:800;color:#0f172a;line-height:1;letter-spacing:-.5px}
+.care-kpi-duo-item small{font-size:10px;color:#94a3b8;line-height:1.25}
 .petit-kpi-split{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
 .petit-kpi-split span{display:grid;gap:3px;border:1px solid #e2e8f0;border-radius:10px;background:#f8fafc;padding:7px 6px;text-align:center}
 .petit-kpi-split small{font-size:10px;font-weight:800;color:#64748b;line-height:1}
@@ -504,6 +510,7 @@ body {
   .tabs{overflow-x:auto}
   .tab{white-space:nowrap}
   .chart-wrap{height:260px}
+  .care-kpi-wide{grid-column:auto}
   .petit-kpi-grid{grid-template-columns:1fr}
   .petit-title{font-size:24px}
   .petit-dist-row{grid-template-columns:1fr 52px;gap:8px}
@@ -872,21 +879,25 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
     <div class="petit-kpi-grid care-kpi-grid">
       <div class="petit-kpi">
         <div class="petit-kpi-icon"><i class="fa-solid fa-people-group"></i></div>
-        <div class="petit-kpi-label">Beneficiários</div>
-        <div class="petit-kpi-value" id="care-kpi-beneficiaries">—</div>
-        <div class="petit-kpi-note" id="care-kpi-beneficiaries-note">beneficiários ativos · filtros aplicados</div>
+        <div class="petit-kpi-label">Beneficiários / Atendimentos</div>
+        <div class="care-kpi-duo">
+          <div class="care-kpi-duo-item">
+            <span>Beneficiários</span>
+            <strong id="care-kpi-beneficiaries">—</strong>
+            <small id="care-kpi-beneficiaries-note">ativos · filtros aplicados</small>
+          </div>
+          <div class="care-kpi-duo-item">
+            <span>Atendimentos</span>
+            <strong id="care-kpi-sessions">—</strong>
+            <small id="care-kpi-sessions-note">sessões · filtros aplicados</small>
+          </div>
+        </div>
       </div>
       <div class="petit-kpi">
         <div class="petit-kpi-icon"><i class="fa-solid fa-map-location-dot"></i></div>
         <div class="petit-kpi-label">Beneficiários Mapeados / Ativos</div>
         <div class="petit-kpi-value" id="care-kpi-mapped-static">—</div>
         <div class="petit-kpi-note" id="care-kpi-mapped-static-note">mapeados / ativos · sem filtro de data</div>
-      </div>
-      <div class="petit-kpi">
-        <div class="petit-kpi-icon"><i class="fa-solid fa-headset"></i></div>
-        <div class="petit-kpi-label">Atendimentos</div>
-        <div class="petit-kpi-value" id="care-kpi-sessions">—</div>
-        <div class="petit-kpi-note" id="care-kpi-sessions-note">volume de sessões · filtros aplicados</div>
       </div>
       <div class="petit-kpi">
         <div class="petit-kpi-icon"><i class="fa-solid fa-map-location-dot"></i></div>
@@ -900,7 +911,7 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
         <div class="petit-kpi-value" id="care-kpi-new-beneficiaries">—</div>
         <div class="petit-kpi-note" id="care-kpi-new-beneficiaries-note">primeira aparição · filtros aplicados</div>
       </div>
-      <div class="petit-kpi">
+      <div class="petit-kpi care-kpi-wide">
         <div class="petit-kpi-icon"><i class="fa-solid fa-layer-group"></i></div>
         <div class="petit-kpi-label">Comorbidades ativas</div>
         <div class="petit-kpi-value" id="care-kpi-comorbidities">—</div>
