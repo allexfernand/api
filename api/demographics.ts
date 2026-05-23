@@ -89,7 +89,7 @@ function buildFilters(groupNames: string[], typeFilter: unknown, partnerBrokerId
       FROM ${ORGANIZATION_PARTNER_BROKERS_TABLE} opb
       WHERE ${partnerBrokerCondition(partnerBrokerId)}
         AND opb.deleted_at IS NULL
-      UNION
+      UNION ALL
       SELECT child.id
       FROM ${ORGANIZATION_PARTNER_BROKERS_TABLE} opb
       INNER JOIN ${ORGANIZATIONS_TABLE} child

@@ -81,7 +81,7 @@ function partnerOrgIdsSubquery(partnerBrokerId: unknown) {
     FROM ${ORGANIZATION_PARTNER_BROKERS_TABLE} opb
     WHERE ${partnerCondition}
       AND opb.deleted_at IS NULL
-    UNION
+    UNION ALL
     SELECT CAST(child.id AS STRING)
     FROM ${ORGANIZATION_PARTNER_BROKERS_TABLE} opb
     INNER JOIN ${ORGANIZATIONS_TABLE} child
@@ -318,7 +318,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
             CAST(opb.organization_id AS STRING) AS organization_id
           FROM ${ORGANIZATION_PARTNER_BROKERS_TABLE} opb
           WHERE opb.deleted_at IS NULL
-          UNION
+          UNION ALL
           SELECT
             CAST(opb.partner_broker_id AS STRING) AS partner_broker_id,
             CAST(child.id AS STRING) AS organization_id
@@ -603,7 +603,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           FROM ${ORGANIZATION_PARTNER_BROKERS_TABLE} opb
           WHERE ${partnerBrokerCondition(partnerBrokerId)}
             AND opb.deleted_at IS NULL
-          UNION
+          UNION ALL
           SELECT CAST(child.id AS STRING) AS organization_id
           FROM ${ORGANIZATION_PARTNER_BROKERS_TABLE} opb
           INNER JOIN ${ORGANIZATIONS_TABLE} child

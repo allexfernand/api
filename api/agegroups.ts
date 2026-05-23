@@ -96,7 +96,7 @@ function partnerOrgIdsSubquery(partnerBrokerId: unknown) {
     FROM ${ORGANIZATION_PARTNER_BROKERS_TABLE} opb
     WHERE ${partnerCondition}
       AND opb.deleted_at IS NULL
-    UNION
+    UNION ALL
     SELECT CAST(child.id AS STRING)
     FROM ${ORGANIZATION_PARTNER_BROKERS_TABLE} opb
     INNER JOIN ${ORGANIZATIONS_TABLE} child

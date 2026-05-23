@@ -73,12 +73,12 @@ function partnerBrokerCondition(partnerBrokerId: unknown) {
 function partnerOrgIdsSubquery(partnerBrokerId: unknown) {
   const partnerCondition = partnerBrokerCondition(partnerBrokerId);
   return `(
-    SELECT CAST(opb.organization_id AS STRING)
+    SELECT CAST(opb.organization_id AS STRING) AS organization_id
     FROM ${ORGANIZATION_PARTNER_BROKERS_TABLE} opb
     WHERE ${partnerCondition}
       AND opb.deleted_at IS NULL
-    UNION
-    SELECT CAST(child.id AS STRING)
+    UNION ALL
+    SELECT CAST(child.id AS STRING) AS organization_id
     FROM ${ORGANIZATION_PARTNER_BROKERS_TABLE} opb
     INNER JOIN ${ORGANIZATIONS_TABLE} child
       ON CAST(child.matriz_id AS STRING) = CAST(opb.organization_id AS STRING)
@@ -119,7 +119,12 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   const groupNames = parseGroupNames(req.query);
   const typeFilter = req.query.type || null;
   const partnerBrokerId = scopedPartnerBrokerId(req, req.query.partner_broker_id || null);
-  const extraFilter = buildFilters(groupNames, typeFilter, partnerBrokerId);
+  const extraFilter = buildFilters(groupNames, typeFilter, null);
+  const partnerCte = partnerBrokerId ? `WITH partner_orgs AS ${partnerOrgIdsSubquery(partnerBrokerId)}` : '';
+  const partnerJoin = partnerBrokerId
+    ? `INNER JOIN (SELECT DISTINCT organization_id FROM partner_orgs) po
+        ON CAST(b.ID_EMPRESA AS STRING) = po.organization_id`
+    : '';
 
   try {
     const { warehouses = [] } = await dbFetch("/api/2.0/sql/warehouses") as { warehouses?: Warehouse[] };
@@ -127,10 +132,12 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
 
     const rows = await runQuery(wh.id, `
+      ${partnerCte}
       SELECT
         NOME_CLIENTE AS empresa,
         COUNT(*) AS total
       FROM hive_metastore.sanus_prod.vw_beneficiarios b
+      ${partnerJoin}
       WHERE NOME_CLIENTE IS NOT NULL
         ${extraFilter}
       GROUP BY NOME_CLIENTE
