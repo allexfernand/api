@@ -783,12 +783,15 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       if (!classNames.length) return res.status(400).json({ error: "Classificações obrigatórias." });
       const includeOthers = String(req.query.include_others || '') === '1';
       const visibleClasses = includeOthers ? [...classNames, 'Outros'] : classNames;
+      const activeOnly = String(req.query.active_only || '') === '1';
       const [columns, beneficiaryColumns] = await Promise.all([
         getColumns(wh.id, HEALTHCOACH_TABLE),
         getColumns(wh.id, BENEFICIARIES_TABLE).catch(() => []),
       ]);
       const dateColumn = pickCareDateColumn(columns);
       if (!dateColumn) return res.status(400).json({ error: "Coluna de data não encontrada em healthcoach_gold_live." });
+      const statusColumn = activeOnly ? pickCareStatusColumn(columns) : null;
+      if (activeOnly && !statusColumn) return res.status(400).json({ error: "Coluna de status não encontrada em healthcoach_gold_live." });
       const company = req.query.company || null;
       const baseWhere = buildCareLineFilters(columns, beneficiaryColumns, req.query, groupNames, company, partnerBrokerId, false);
       const classification = careClassificationExpr();
@@ -798,7 +801,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           SELECT
             DATE_FORMAT(try_cast(${quoteIdent(dateColumn)} AS TIMESTAMP), 'yyyy-MM') AS mes,
             ${classification} AS classificacao,
-            REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '') AS cpf_norm
+            REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '') AS cpf_norm,
+            ${activeOnly ? `LOWER(TRIM(CAST(${quoteIdent(statusColumn)} AS STRING)))` : "NULL"} AS status_norm,
+            try_cast(${quoteIdent(dateColumn)} AS TIMESTAMP) AS data_criacao
           FROM ${HEALTHCOACH_TABLE}
           WHERE ${baseWhere}
             AND try_cast(${quoteIdent(dateColumn)} AS TIMESTAMP) IS NOT NULL
@@ -816,6 +821,20 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         classes AS (
           ${literalRows(visibleClasses, 'classificacao')}
         ),
+        active_base AS (
+          SELECT mes, classificacao, cpf_norm
+          FROM (
+            SELECT
+              b.*,
+              ROW_NUMBER() OVER (
+                PARTITION BY b.mes, b.cpf_norm
+                ORDER BY b.data_criacao DESC NULLS LAST
+              ) AS rn
+            FROM base b
+          )
+          WHERE rn = 1
+            AND ${openLatestStatusCondition()}
+        ),
         scoped AS (
           SELECT
             b.mes,
@@ -824,7 +843,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
               ${includeOthers ? "ELSE 'Outros'" : "ELSE NULL"}
             END AS classificacao,
             b.cpf_norm
-          FROM base b
+          FROM ${activeOnly ? "active_base" : "base"} b
           INNER JOIN months m ON m.mes = b.mes
         )
         SELECT
@@ -857,6 +876,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         scope: 'care_lines_evolution',
         months,
         series,
+        active_only: activeOnly,
         source: HEALTHCOACH_TABLE,
         date_column: dateColumn,
         auth_role: getDashboardAuth(req)?.role || 'full',
