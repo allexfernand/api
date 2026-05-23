@@ -1117,6 +1117,119 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       });
     }
 
+    if (scope === 'care_comorbidity_distribution') {
+      const [columns, beneficiaryColumns] = await Promise.all([
+        getColumns(wh.id, HEALTHCOACH_TABLE),
+        getColumns(wh.id, BENEFICIARIES_TABLE).catch(() => []),
+      ]);
+      const dateColumn = pickCareDateColumn(columns);
+      if (!dateColumn) return res.status(400).json({ error: "Coluna de data não encontrada em healthcoach_gold_live." });
+      const statusColumn = pickCareStatusColumn(columns);
+      if (!statusColumn) return res.status(400).json({ error: "Coluna de status não encontrada em healthcoach_gold_live." });
+      const company = req.query.company || null;
+      const baseWhere = buildCareLineFilters(columns, beneficiaryColumns, req.query, groupNames, company, partnerBrokerId);
+      const category = careCategoryExpr();
+      const classification = careClassificationExpr();
+      const classList = ['Crônico', 'Situacional'].map((name) => `'${escape(name)}'`).join(',');
+      const rows = await runQuery(wh.id, `
+        WITH raw AS (
+          SELECT
+            REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '') AS cpf_norm,
+            ${classification} AS classificacao,
+            NULLIF(TRIM(CAST(${category} AS STRING)), '') AS categoria_atendimento,
+            LOWER(TRIM(CAST(${quoteIdent(statusColumn)} AS STRING))) AS status_norm,
+            try_cast(${quoteIdent(dateColumn)} AS TIMESTAMP) AS data_criacao
+          FROM ${HEALTHCOACH_TABLE}
+          WHERE ${baseWhere}
+        ),
+        overall_latest AS (
+          SELECT
+            cpf_norm,
+            status_norm,
+            ROW_NUMBER() OVER (
+              PARTITION BY cpf_norm
+              ORDER BY data_criacao DESC NULLS LAST
+            ) AS rn
+          FROM raw
+        ),
+        category_latest AS (
+          SELECT
+            cpf_norm,
+            classificacao,
+            categoria_atendimento,
+            status_norm,
+            ROW_NUMBER() OVER (
+              PARTITION BY cpf_norm, classificacao, categoria_atendimento
+              ORDER BY data_criacao DESC NULLS LAST
+            ) AS rn
+          FROM raw
+          WHERE classificacao IN (${classList})
+            AND categoria_atendimento IS NOT NULL
+        ),
+        active_categories AS (
+          SELECT
+            c.cpf_norm,
+            CONCAT(c.classificacao, '||', c.categoria_atendimento) AS category_key
+          FROM category_latest c
+          INNER JOIN overall_latest o
+            ON o.cpf_norm = c.cpf_norm
+           AND o.rn = 1
+          WHERE c.rn = 1
+            AND ${openLatestStatusCondition('c.status_norm')}
+            AND ${openLatestStatusCondition('o.status_norm')}
+        ),
+        cpf_counts AS (
+          SELECT
+            cpf_norm,
+            COUNT(DISTINCT category_key) AS comorbidity_count
+          FROM active_categories
+          GROUP BY cpf_norm
+        ),
+        bucketed AS (
+          SELECT
+            cpf_norm,
+            CASE
+              WHEN comorbidity_count = 1 THEN '1'
+              WHEN comorbidity_count = 2 THEN '2'
+              ELSE '3+'
+            END AS faixa,
+            CASE
+              WHEN comorbidity_count = 1 THEN 1
+              WHEN comorbidity_count = 2 THEN 2
+              ELSE 3
+            END AS ordem
+          FROM cpf_counts
+          WHERE comorbidity_count > 0
+        )
+        SELECT
+          faixa,
+          ordem,
+          COUNT(DISTINCT cpf_norm) AS total_cpfs
+        FROM bucketed
+        GROUP BY faixa, ordem
+        ORDER BY ordem ASC
+      `);
+      const items = rows.map((row) => ({
+        faixa: String(getCell(row[0]) || '').trim(),
+        ordem: toInt(row[1]),
+        total_cpfs: toInt(row[2]),
+      })).filter((item) => item.faixa);
+      const byRange = Object.fromEntries(items.map((item) => [item.faixa, item.total_cpfs]));
+      const total = items.reduce((acc, item) => acc + item.total_cpfs, 0);
+      return res.status(200).json({
+        scope: 'care_comorbidity_distribution',
+        items,
+        total,
+        one_comorbidity: Number(byRange['1']) || 0,
+        two_comorbidities: Number(byRange['2']) || 0,
+        three_or_more_comorbidities: Number(byRange['3+']) || 0,
+        source: HEALTHCOACH_TABLE,
+        date_column: dateColumn,
+        auth_role: getDashboardAuth(req)?.role || 'full',
+        updatedAt: new Date().toISOString(),
+      });
+    }
+
     if (scope === 'care_lines_evolution') {
       const classNames = parseClassNames(req.query);
       if (!classNames.length) return res.status(400).json({ error: "Classificações obrigatórias." });
