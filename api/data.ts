@@ -511,18 +511,19 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         WITH raw AS (
           SELECT
             REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '') AS cpf_norm,
+            ${classification} AS classificacao,
             ${category} AS categoria_atendimento,
             LOWER(TRIM(CAST(${quoteIdent(statusColumn)} AS STRING))) AS status_norm,
             try_cast(${quoteIdent(dateColumn)} AS TIMESTAMP) AS data_criacao
           FROM ${HEALTHCOACH_TABLE}
           WHERE ${baseWhere}
-            AND ${classification} = '${escape(classificacao)}'
             AND categoria_atendimento IS NOT NULL
             AND TRIM(CAST(categoria_atendimento AS STRING)) != ''
         ),
         latest_by_cpf AS (
           SELECT
             cpf_norm,
+            classificacao,
             categoria_atendimento,
             status_norm,
             ROW_NUMBER() OVER (
@@ -536,6 +537,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           COUNT(DISTINCT cpf_norm) AS total_cpfs
         FROM latest_by_cpf
         WHERE rn = 1
+          AND classificacao = '${escape(classificacao)}'
           AND ${openLatestStatusCondition()}
         GROUP BY categoria_atendimento
         ORDER BY total_cpfs DESC
@@ -594,18 +596,20 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         WITH raw AS (
           SELECT
             REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '') AS cpf_norm,
+            ${classification} AS classificacao,
             ${category} AS categoria_atendimento,
             ${bmiValue} AS imc,
             ${activeOnly ? `LOWER(TRIM(CAST(${quoteIdent(statusColumn)} AS STRING)))` : "NULL"} AS status_norm,
             try_cast(${quoteIdent(dateColumn)} AS TIMESTAMP) AS data_criacao
           FROM ${HEALTHCOACH_TABLE}
           WHERE ${baseWhere}
-            AND ${classification} = '${escape(classificacao)}'
+            ${activeOnly ? "" : `AND ${classification} = '${escape(classificacao)}'`}
             ${activeOnly ? "" : `AND ${category} = '${escape(categoria)}'`}
         ),
         latest_by_cpf AS (
           SELECT
             cpf_norm,
+            classificacao,
             categoria_atendimento,
             imc,
             status_norm,
@@ -635,7 +639,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
             END AS ordem
           FROM latest_by_cpf
           WHERE rn = 1
-            ${activeOnly ? `AND categoria_atendimento = '${escape(categoria)}' AND ${openLatestStatusCondition()}` : ""}
+            ${activeOnly ? `AND classificacao = '${escape(classificacao)}' AND categoria_atendimento = '${escape(categoria)}' AND ${openLatestStatusCondition()}` : ""}
         )
         SELECT
           faixa_imc,
@@ -701,18 +705,20 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         WITH raw AS (
           SELECT
             REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '') AS cpf_norm,
+            ${classification} AS classificacao,
             ${category} AS categoria_atendimento,
             ${riskValue} AS prioridade,
             ${activeOnly ? `LOWER(TRIM(CAST(${quoteIdent(statusColumn)} AS STRING)))` : "NULL"} AS status_norm,
             try_cast(${quoteIdent(dateColumn)} AS TIMESTAMP) AS data_criacao
           FROM ${HEALTHCOACH_TABLE}
           WHERE ${baseWhere}
-            AND ${classification} = '${escape(classificacao)}'
+            ${activeOnly ? "" : `AND ${classification} = '${escape(classificacao)}'`}
             ${activeOnly ? "" : `AND ${category} = '${escape(categoria)}'`}
         ),
         latest_by_cpf AS (
           SELECT
             cpf_norm,
+            classificacao,
             categoria_atendimento,
             prioridade,
             status_norm,
@@ -739,7 +745,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
             END AS ordem
           FROM latest_by_cpf
           WHERE rn = 1
-            ${activeOnly ? `AND categoria_atendimento = '${escape(categoria)}' AND ${openLatestStatusCondition()}` : ""}
+            ${activeOnly ? `AND classificacao = '${escape(classificacao)}' AND categoria_atendimento = '${escape(categoria)}' AND ${openLatestStatusCondition()}` : ""}
         )
         SELECT
           risco,
