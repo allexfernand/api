@@ -245,6 +245,18 @@ function pickCareIdColumn(columns: string[]) {
   ]);
 }
 
+function careCaseIdExpr(columns: string[]): string {
+  const idColumn = pickCareIdColumn(columns);
+  if (idColumn) {
+    return `NULLIF(TRIM(CAST(${quoteIdent(idColumn)} AS STRING)), '')`;
+  }
+  return `CONCAT(
+    'CPF:', REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', ''),
+    '|CL:', COALESCE(${careClassificationExpr()}, ''),
+    '|CT:', COALESCE(${careCategoryExpr()}, '')
+  )`;
+}
+
 function pickCareSubjectColumn(columns: string[]) {
   return pickColumn(columns, ['assunto', 'subject', 'categoria_atendimento', 'tipo_atendimento', 'motivo', 'tema']);
 }
@@ -457,6 +469,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const company = req.query.company || null;
       const where = buildCareLineFilters(columns, beneficiaryColumns, req.query, groupNames, company, partnerBrokerId);
       const classification = careClassificationExpr();
+      const caseIdExpr = careCaseIdExpr(columns);
       const activeDateColumn = activeOnly ? pickCareDateColumn(columns) : null;
       const activeStatusColumn = activeOnly ? pickCareStatusColumn(columns) : null;
       if (activeOnly && !activeDateColumn) return res.status(400).json({ error: "Coluna de data não encontrada em healthcoach_gold_live." });
@@ -465,27 +478,30 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         WITH raw AS (
           SELECT
             REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '') AS cpf_norm,
+            ${caseIdExpr} AS atendimento_id,
             ${classification} AS classificacoes,
             LOWER(TRIM(CAST(${quoteIdent(activeStatusColumn)} AS STRING))) AS status_norm,
             try_cast(${quoteIdent(activeDateColumn)} AS TIMESTAMP) AS data_criacao
           FROM ${HEALTHCOACH_TABLE}
           WHERE ${where}
         ),
-        latest_by_cpf AS (
+        latest_per_case AS (
           SELECT
             cpf_norm,
+            atendimento_id,
             classificacoes,
             status_norm,
             ROW_NUMBER() OVER (
-              PARTITION BY cpf_norm
+              PARTITION BY atendimento_id
               ORDER BY data_criacao DESC NULLS LAST
             ) AS rn
           FROM raw
+          WHERE atendimento_id IS NOT NULL
         )
         SELECT
           classificacoes,
           COUNT(DISTINCT cpf_norm) AS total_cpfs
-        FROM latest_by_cpf
+        FROM latest_per_case
         WHERE rn = 1
           AND ${openLatestStatusCondition()}
         GROUP BY classificacoes
@@ -513,23 +529,26 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         WITH raw AS (
           SELECT
             REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '') AS cpf_norm,
+            ${caseIdExpr} AS atendimento_id,
             LOWER(TRIM(CAST(${quoteIdent(statusColumn)} AS STRING))) AS status_norm,
             try_cast(${quoteIdent(dateColumn)} AS TIMESTAMP) AS data_criacao
           FROM ${HEALTHCOACH_TABLE}
           WHERE ${where}
         ),
-        latest_by_cpf AS (
+        latest_per_case AS (
           SELECT
             cpf_norm,
+            atendimento_id,
             status_norm,
             ROW_NUMBER() OVER (
-              PARTITION BY cpf_norm
+              PARTITION BY atendimento_id
               ORDER BY data_criacao DESC NULLS LAST
             ) AS rn
           FROM raw
+          WHERE atendimento_id IS NOT NULL
         )
         SELECT COUNT(DISTINCT cpf_norm) AS active_mapped_cpfs
-        FROM latest_by_cpf
+        FROM latest_per_case
         WHERE rn = 1
           AND ${openLatestStatusCondition()}
       `) : [];
@@ -539,24 +558,27 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         WITH raw AS (
           SELECT
             REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '') AS cpf_norm,
+            ${caseIdExpr} AS atendimento_id,
             LOWER(TRIM(CAST(${quoteIdent(activeStatusColumn)} AS STRING))) AS status_norm,
             try_cast(${quoteIdent(activeDateColumn)} AS TIMESTAMP) AS data_criacao
           FROM ${HEALTHCOACH_TABLE}
           WHERE ${where}
         ),
-        latest_by_cpf AS (
+        latest_per_case AS (
           SELECT
             cpf_norm,
+            atendimento_id,
             status_norm,
             ROW_NUMBER() OVER (
-              PARTITION BY cpf_norm
+              PARTITION BY atendimento_id
               ORDER BY data_criacao DESC NULLS LAST
             ) AS rn
           FROM raw
+          WHERE atendimento_id IS NOT NULL
         ),
         scoped AS (
-          SELECT cpf_norm
-          FROM latest_by_cpf
+          SELECT DISTINCT cpf_norm
+          FROM latest_per_case
           WHERE rn = 1
             AND ${openLatestStatusCondition()}
         ),
@@ -640,6 +662,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const baseWhere = buildCareLineFilters(columns, beneficiaryColumns, req.query, groupNames, company, partnerBrokerId);
       const category = careCategoryExpr();
       const classification = careClassificationExpr();
+      const caseIdExpr = careCaseIdExpr(columns);
       const detailClassList = detailClasses.map((name) => `'${escape(name)}'`).join(',');
       const dateColumn = pickCareDateColumn(columns);
       const statusColumn = activeOnly ? pickCareStatusColumn(columns) : null;
@@ -663,31 +686,34 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
             REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '') AS cpf_norm,
             ${classification} AS classificacao,
             ${category} AS categoria_atendimento,
-            ${idSelectExpr} AS atendimento_id,
+            ${caseIdExpr} AS atendimento_id,
+            ${idSelectExpr} AS atendimento_label,
             LOWER(TRIM(CAST(${quoteIdent(statusColumn)} AS STRING))) AS status_norm,
             try_cast(${quoteIdent(dateColumn)} AS TIMESTAMP) AS data_criacao
           FROM ${HEALTHCOACH_TABLE}
           WHERE ${baseWhere}
         ),
-        latest_by_cpf AS (
+        latest_per_case AS (
           SELECT
             cpf_norm,
             classificacao,
             categoria_atendimento,
             atendimento_id,
+            atendimento_label,
             status_norm,
             ROW_NUMBER() OVER (
-              PARTITION BY cpf_norm
+              PARTITION BY atendimento_id
               ORDER BY data_criacao DESC NULLS LAST
             ) AS rn
           FROM raw
+          WHERE atendimento_id IS NOT NULL
         )
         SELECT
           classificacao,
           COALESCE(NULLIF(TRIM(CAST(categoria_atendimento AS STRING)), ''), 'Sem categoria') AS categoria_atendimento,
           COUNT(DISTINCT cpf_norm) AS total_cpfs,
-          CONCAT_WS(', ', SLICE(SORT_ARRAY(COLLECT_SET(atendimento_id)), 1, 5)) AS example_ids
-        FROM latest_by_cpf
+          CONCAT_WS(', ', SLICE(SORT_ARRAY(COLLECT_SET(atendimento_label)), 1, 5)) AS example_ids
+        FROM latest_per_case
         WHERE rn = 1
           AND classificacao IN (${detailClassList})
           AND ${openLatestStatusCondition()}
@@ -715,58 +741,61 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
             REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '') AS cpf_norm,
             ${classification} AS classificacao,
             ${category} AS categoria_atendimento,
-            ${idSelectExpr} AS atendimento_id,
+            ${caseIdExpr} AS atendimento_id,
+            ${idSelectExpr} AS atendimento_label,
             ${subjectSelectExpr} AS assunto,
             LOWER(TRIM(CAST(${quoteIdent(statusColumn)} AS STRING))) AS status_norm,
             try_cast(${quoteIdent(dateColumn)} AS TIMESTAMP) AS data_criacao
           FROM ${HEALTHCOACH_TABLE}
           WHERE ${baseWhere}
         ),
-        latest_by_cpf AS (
+        latest_per_case AS (
           SELECT
             cpf_norm,
             classificacao,
             categoria_atendimento,
             atendimento_id,
+            atendimento_label,
             assunto,
             status_norm,
             data_criacao,
             MIN(data_criacao) OVER (
-              PARTITION BY cpf_norm, classificacao, categoria_atendimento
+              PARTITION BY atendimento_id
             ) AS primeira_data,
             ROW_NUMBER() OVER (
-              PARTITION BY cpf_norm
+              PARTITION BY atendimento_id
               ORDER BY data_criacao DESC NULLS LAST
             ) AS rn
           FROM raw
+          WHERE atendimento_id IS NOT NULL
         ),
         scoped AS (
           SELECT
             classificacao,
             COALESCE(NULLIF(TRIM(CAST(categoria_atendimento AS STRING)), ''), 'Sem categoria') AS categoria_atendimento,
-            atendimento_id,
+            atendimento_label,
             assunto,
             primeira_data,
             data_criacao
-          FROM latest_by_cpf
+          FROM latest_per_case
           WHERE rn = 1
             AND classificacao IN (${detailClassList})
             AND ${openLatestStatusCondition()}
-            AND atendimento_id IS NOT NULL
+            AND atendimento_label IS NOT NULL
         ),
         ranked AS (
           SELECT
             *,
             ROW_NUMBER() OVER (
               PARTITION BY classificacao, categoria_atendimento
-              ORDER BY data_criacao DESC NULLS LAST, atendimento_id ASC
+              ORDER BY data_criacao DESC NULLS LAST, atendimento_label ASC
             ) AS sample_rn
           FROM scoped
         )
         SELECT
           classificacao,
           categoria_atendimento,
-          atendimento_id,
+          atendimento_label AS atendimento_id,
           assunto,
           DATE_FORMAT(CAST(primeira_data AS TIMESTAMP), 'yyyy-MM-dd') AS data_abertura_primeiro_registro
         FROM ranked
@@ -836,26 +865,29 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         WITH raw AS (
           SELECT
             REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '') AS cpf_norm,
+            ${caseIdExpr} AS atendimento_id,
             ${classification} AS classificacao,
             LOWER(TRIM(CAST(${quoteIdent(statusColumn)} AS STRING))) AS status_norm,
             try_cast(${quoteIdent(dateColumn)} AS TIMESTAMP) AS data_criacao
           FROM ${HEALTHCOACH_TABLE}
           WHERE ${baseWhere}
         ),
-        latest_by_cpf AS (
+        latest_per_case AS (
           SELECT
             cpf_norm,
+            atendimento_id,
             classificacao,
             status_norm,
             ROW_NUMBER() OVER (
-              PARTITION BY cpf_norm
+              PARTITION BY atendimento_id
               ORDER BY data_criacao DESC NULLS LAST
             ) AS rn
           FROM raw
+          WHERE atendimento_id IS NOT NULL
         ),
         scoped AS (
-          SELECT cpf_norm
-          FROM latest_by_cpf
+          SELECT DISTINCT cpf_norm
+          FROM latest_per_case
           WHERE rn = 1
             AND classificacao IN (${detailClassList})
             AND ${openLatestStatusCondition()}
@@ -961,11 +993,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const baseWhere = buildCareLineFilters(columns, beneficiaryColumns, req.query, groupNames, company, partnerBrokerId);
       const category = careCategoryExpr();
       const classification = careClassificationExpr();
+      const caseIdExpr = careCaseIdExpr(columns);
       const bmiValue = `try_cast(REPLACE(CAST(${quoteIdent(bmiColumn)} AS STRING), ',', '.') AS DOUBLE)`;
       const rows = await runQuery(wh.id, `
         WITH raw AS (
           SELECT
             REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '') AS cpf_norm,
+            ${caseIdExpr} AS atendimento_id,
             ${classification} AS classificacao,
             ${category} AS categoria_atendimento,
             ${bmiValue} AS imc,
@@ -976,22 +1010,25 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
             ${activeOnly ? "" : `AND ${classification} = '${escape(classificacao)}'`}
             ${activeOnly ? "" : `AND ${category} = '${escape(categoria)}'`}
         ),
-        latest_by_cpf AS (
+        latest_per_case AS (
           SELECT
             cpf_norm,
+            atendimento_id,
             classificacao,
             categoria_atendimento,
             imc,
             status_norm,
             ROW_NUMBER() OVER (
-              PARTITION BY cpf_norm
+              PARTITION BY atendimento_id
               ORDER BY data_criacao DESC NULLS LAST
             ) AS rn
           FROM raw
+          WHERE atendimento_id IS NOT NULL
         ),
         bucketed AS (
           SELECT
             cpf_norm,
+            atendimento_id,
             imc,
             CASE
               WHEN imc IS NULL OR imc <= 0 THEN 'Sem IMC válido'
@@ -1007,7 +1044,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
               WHEN imc < 40 THEN 3
               ELSE 4
             END AS ordem
-          FROM latest_by_cpf
+          FROM latest_per_case
           WHERE rn = 1
             ${activeOnly ? `AND classificacao = '${escape(classificacao)}' AND categoria_atendimento = '${escape(categoria)}' AND ${openLatestStatusCondition()}` : ""}
         )
@@ -1070,11 +1107,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const baseWhere = buildCareLineFilters(columns, beneficiaryColumns, req.query, groupNames, company, partnerBrokerId);
       const category = careCategoryExpr();
       const classification = careClassificationExpr();
+      const caseIdExpr = careCaseIdExpr(columns);
       const riskValue = `LOWER(TRIM(CAST(${quoteIdent(riskColumn)} AS STRING)))`;
       const rows = await runQuery(wh.id, `
         WITH raw AS (
           SELECT
             REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '') AS cpf_norm,
+            ${caseIdExpr} AS atendimento_id,
             ${classification} AS classificacao,
             ${category} AS categoria_atendimento,
             ${riskValue} AS prioridade,
@@ -1085,22 +1124,25 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
             ${activeOnly ? "" : `AND ${classification} = '${escape(classificacao)}'`}
             ${activeOnly ? "" : `AND ${category} = '${escape(categoria)}'`}
         ),
-        latest_by_cpf AS (
+        latest_per_case AS (
           SELECT
             cpf_norm,
+            atendimento_id,
             classificacao,
             categoria_atendimento,
             prioridade,
             status_norm,
             ROW_NUMBER() OVER (
-              PARTITION BY cpf_norm
+              PARTITION BY atendimento_id
               ORDER BY data_criacao DESC NULLS LAST
             ) AS rn
           FROM raw
+          WHERE atendimento_id IS NOT NULL
         ),
         bucketed AS (
           SELECT
             cpf_norm,
+            atendimento_id,
             CASE
               WHEN prioridade IN ('baixo', 'baixa', 'risco baixo', 'risco baixa') THEN 'Risco baixo'
               WHEN prioridade IN ('moderado', 'moderada', 'risco moderado', 'risco moderada') THEN 'Risco moderado'
@@ -1113,7 +1155,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
               WHEN prioridade IN ('alto', 'alta', 'risco alto', 'risco alta') THEN 3
               ELSE 4
             END AS ordem
-          FROM latest_by_cpf
+          FROM latest_per_case
           WHERE rn = 1
             ${activeOnly ? `AND classificacao = '${escape(classificacao)}' AND categoria_atendimento = '${escape(categoria)}' AND ${openLatestStatusCondition()}` : ""}
         )
@@ -1168,11 +1210,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const baseWhere = buildCareLineFilters(columns, beneficiaryColumns, req.query, groupNames, company, partnerBrokerId);
       const category = careCategoryExpr();
       const classification = careClassificationExpr();
+      const caseIdExpr = careCaseIdExpr(columns);
       const weekRawExpr = `LOWER(TRIM(CAST(${quoteIdent(weekColumn)} AS STRING)))`;
       const rows = await runQuery(wh.id, `
         WITH raw AS (
           SELECT
             REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '') AS cpf_norm,
+            ${caseIdExpr} AS atendimento_id,
             ${classification} AS classificacao,
             ${category} AS categoria_atendimento,
             ${weekRawExpr} AS semana_raw,
@@ -1182,9 +1226,10 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           FROM ${HEALTHCOACH_TABLE}
           WHERE ${baseWhere}
         ),
-        latest_by_cpf AS (
+        latest_per_case AS (
           SELECT
             cpf_norm,
+            atendimento_id,
             classificacao,
             categoria_atendimento,
             semana_raw,
@@ -1192,14 +1237,16 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
             status_norm,
             data_criacao,
             ROW_NUMBER() OVER (
-              PARTITION BY cpf_norm
+              PARTITION BY atendimento_id
               ORDER BY data_criacao DESC NULLS LAST
             ) AS rn
           FROM raw
+          WHERE atendimento_id IS NOT NULL
         ),
         filtered AS (
           SELECT
             cpf_norm,
+            atendimento_id,
             semana_raw,
             semana_num,
             data_criacao,
@@ -1207,7 +1254,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
               WHEN data_criacao IS NULL THEN 0
               ELSE GREATEST(CAST(FLOOR(DATEDIFF(current_date(), CAST(data_criacao AS DATE)) / 7) AS INT), 0)
             END AS semanas_passadas
-          FROM latest_by_cpf
+          FROM latest_per_case
           WHERE rn = 1
             AND classificacao = '${escape(classificacao)}'
             AND categoria_atendimento = '${escape(categoria)}'
@@ -1309,11 +1356,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const baseWhere = buildCareLineFilters(columns, beneficiaryColumns, req.query, groupNames, company, partnerBrokerId, false);
       const category = careCategoryExpr();
       const classification = careClassificationExpr();
+      const caseIdExpr = careCaseIdExpr(columns);
       const classList = ['Crônico', 'Situacional'].map((name) => `'${escape(name)}'`).join(',');
       const rows = await runQuery(wh.id, `
         WITH raw AS (
           SELECT
             REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '') AS cpf_norm,
+            ${caseIdExpr} AS atendimento_id,
             ${classification} AS classificacao,
             NULLIF(TRIM(CAST(${category} AS STRING)), '') AS categoria_atendimento,
             LOWER(TRIM(CAST(${quoteIdent(statusColumn)} AS STRING))) AS status_norm,
@@ -1321,41 +1370,29 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           FROM ${HEALTHCOACH_TABLE}
           WHERE ${baseWhere}
         ),
-        overall_latest AS (
+        latest_per_case AS (
           SELECT
             cpf_norm,
-            status_norm,
-            ROW_NUMBER() OVER (
-              PARTITION BY cpf_norm
-              ORDER BY data_criacao DESC NULLS LAST
-            ) AS rn
-          FROM raw
-        ),
-        category_latest AS (
-          SELECT
-            cpf_norm,
+            atendimento_id,
             classificacao,
             categoria_atendimento,
             status_norm,
             ROW_NUMBER() OVER (
-              PARTITION BY cpf_norm, classificacao, categoria_atendimento
+              PARTITION BY atendimento_id
               ORDER BY data_criacao DESC NULLS LAST
             ) AS rn
           FROM raw
-          WHERE classificacao IN (${classList})
-            AND categoria_atendimento IS NOT NULL
+          WHERE atendimento_id IS NOT NULL
         ),
         active_categories AS (
-          SELECT
-            c.cpf_norm,
-            CONCAT(c.classificacao, '||', c.categoria_atendimento) AS category_key
-          FROM category_latest c
-          INNER JOIN overall_latest o
-            ON o.cpf_norm = c.cpf_norm
-           AND o.rn = 1
-          WHERE c.rn = 1
-            AND ${openLatestStatusCondition('c.status_norm')}
-            AND ${openLatestStatusCondition('o.status_norm')}
+          SELECT DISTINCT
+            cpf_norm,
+            CONCAT(classificacao, '||', categoria_atendimento) AS category_key
+          FROM latest_per_case
+          WHERE rn = 1
+            AND classificacao IN (${classList})
+            AND categoria_atendimento IS NOT NULL
+            AND ${openLatestStatusCondition()}
         ),
         cpf_counts AS (
           SELECT
@@ -1426,6 +1463,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const company = req.query.company || null;
       const baseWhere = buildCareLineFilters(columns, beneficiaryColumns, req.query, groupNames, company, partnerBrokerId, false);
       const classification = careClassificationExpr();
+      const caseIdExpr = careCaseIdExpr(columns);
       const classList = classNames.map((name) => `'${escape(name)}'`).join(',');
       const rows = await runQuery(wh.id, `
         WITH base AS (
@@ -1433,6 +1471,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
             DATE_FORMAT(try_cast(${quoteIdent(dateColumn)} AS TIMESTAMP), 'yyyy-MM') AS mes,
             ${classification} AS classificacao,
             REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '') AS cpf_norm,
+            ${caseIdExpr} AS atendimento_id,
             ${activeOnly ? `LOWER(TRIM(CAST(${quoteIdent(statusColumn)} AS STRING)))` : "NULL"} AS status_norm,
             try_cast(${quoteIdent(dateColumn)} AS TIMESTAMP) AS data_criacao
           FROM ${HEALTHCOACH_TABLE}
@@ -1458,10 +1497,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
             SELECT
               b.*,
               ROW_NUMBER() OVER (
-                PARTITION BY b.mes, b.cpf_norm
+                PARTITION BY b.mes, b.atendimento_id
                 ORDER BY b.data_criacao DESC NULLS LAST
               ) AS rn
             FROM base b
+            WHERE b.atendimento_id IS NOT NULL
           )
           WHERE rn = 1
             AND ${openLatestStatusCondition()}
