@@ -227,6 +227,19 @@ function pickCareStatusColumn(columns: string[]) {
   return pickColumn(columns, ['status', 'status_atendimento', 'status_registro', 'situacao', 'state']);
 }
 
+function pickCareIdColumn(columns: string[]) {
+  return pickColumn(columns, [
+    'id',
+    'ID',
+    'atendimento_id',
+    'id_atendimento',
+    'healthcoach_id',
+    'healthcoach_live_id',
+    'record_id',
+    'registro_id',
+  ]);
+}
+
 function pickGestationalWeekColumn(columns: string[]) {
   return pickColumn(columns, [
     'qual_semana_gestacional',
@@ -621,6 +634,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const detailClassList = detailClasses.map((name) => `'${escape(name)}'`).join(',');
       const dateColumn = activeOnly ? pickCareDateColumn(columns) : null;
       const statusColumn = activeOnly ? pickCareStatusColumn(columns) : null;
+      const idColumn = pickCareIdColumn(columns);
+      const idSelectExpr = idColumn ? `NULLIF(TRIM(CAST(${quoteIdent(idColumn)} AS STRING)), '')` : "CAST(NULL AS STRING)";
       if (activeOnly && !dateColumn) return res.status(400).json({ error: "Coluna de data não encontrada em healthcoach_gold_live." });
       if (activeOnly && !statusColumn) return res.status(400).json({ error: "Coluna de status não encontrada em healthcoach_gold_live." });
       const rows = await runQuery(wh.id, activeOnly ? `
@@ -629,6 +644,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
             REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '') AS cpf_norm,
             ${classification} AS classificacao,
             ${category} AS categoria_atendimento,
+            ${idSelectExpr} AS atendimento_id,
             LOWER(TRIM(CAST(${quoteIdent(statusColumn)} AS STRING))) AS status_norm,
             try_cast(${quoteIdent(dateColumn)} AS TIMESTAMP) AS data_criacao
           FROM ${HEALTHCOACH_TABLE}
@@ -639,6 +655,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
             cpf_norm,
             classificacao,
             categoria_atendimento,
+            atendimento_id,
             status_norm,
             ROW_NUMBER() OVER (
               PARTITION BY cpf_norm
@@ -649,7 +666,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         SELECT
           classificacao,
           COALESCE(NULLIF(TRIM(CAST(categoria_atendimento AS STRING)), ''), 'Sem categoria') AS categoria_atendimento,
-          COUNT(DISTINCT cpf_norm) AS total_cpfs
+          COUNT(DISTINCT cpf_norm) AS total_cpfs,
+          CONCAT_WS(', ', SLICE(SORT_ARRAY(COLLECT_SET(atendimento_id)), 1, 5)) AS example_ids
         FROM latest_by_cpf
         WHERE rn = 1
           AND classificacao IN (${detailClassList})
@@ -661,7 +679,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         SELECT
           ${classification} AS classificacao,
           ${category} AS categoria_atendimento,
-          COUNT(DISTINCT REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '')) AS total_cpfs
+          COUNT(DISTINCT REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '')) AS total_cpfs,
+          CONCAT_WS(', ', SLICE(SORT_ARRAY(COLLECT_SET(${idSelectExpr})), 1, 5)) AS example_ids
         FROM ${HEALTHCOACH_TABLE}
         WHERE ${baseWhere}
           AND ${classification} IN (${detailClassList})
@@ -747,6 +766,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         classificacao: String(getCell(row[0]) || '').trim(),
         categoria_atendimento: String(getCell(row[1]) || '').trim(),
         total_cpfs: toInt(row[2]),
+        example_ids: String(getCell(row[3]) || '').split(',').map((id) => id.trim()).filter(Boolean),
       })).filter((item) => item.categoria_atendimento);
       const total = items.reduce((acc, item) => acc + item.total_cpfs, 0);
       return res.status(200).json({
@@ -757,6 +777,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         items,
         total,
         type_breakdown: parseCareTypeBreakdown(typeBreakdownRows),
+        id_column: idColumn,
         source: HEALTHCOACH_TABLE,
         auth_role: getDashboardAuth(req)?.role || 'full',
         updatedAt: new Date().toISOString(),

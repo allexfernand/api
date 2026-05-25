@@ -3689,6 +3689,11 @@ function resetCareCoordinationDetail(message = 'Selecione uma barra no CC01 para
   }
 }
 
+function careExampleIdsTooltip(item) {
+  const ids = Array.isArray(item?.example_ids) ? item.example_ids.filter(Boolean).slice(0, 5) : [];
+  return ids.length ? `\nIDs healthcoach_gold_live: ${ids.join(', ')}` : '';
+}
+
 function renderCareClassificationColumns(list, items, total, targets) {
   const columns = [
     { label: 'Crônico', color: '#3F55E3' },
@@ -3708,9 +3713,10 @@ function renderCareClassificationColumns(list, items, total, targets) {
         const pct = columnTotal > 0 ? (value / columnTotal) * 100 : NaN;
         const width = Math.max((value / columnMax) * 100, 2);
         const label = item.categoria_atendimento || 'Sem categoria';
-        return `<div class="petit-dist-row" title="${escapeAttr(label)}" data-care-category="${escapeAttr(label)}" data-care-classification="${escapeAttr(column.label)}" style="${targets.onItemClick ? 'cursor:pointer' : ''}">
+        const rowTitle = `${label}${careExampleIdsTooltip(item)}`;
+        return `<div class="petit-dist-row" title="${escapeAttr(rowTitle)}" data-care-category="${escapeAttr(label)}" data-care-classification="${escapeAttr(column.label)}" style="${targets.onItemClick ? 'cursor:pointer' : ''}">
           <div class="petit-dist-label">${escapeHtml(label)}</div>
-          <div class="petit-dist-track"><div class="petit-dist-bar" style="width:${width}%;background:${column.color}"><span class="petit-dist-value">${fmt(value)} <small>${fmtPct(pct)}</small></span></div></div>
+          <div class="petit-dist-track" title="${escapeAttr(rowTitle)}"><div class="petit-dist-bar" style="width:${width}%;background:${column.color}" title="${escapeAttr(rowTitle)}"><span class="petit-dist-value">${fmt(value)} <small>${fmtPct(pct)}</small></span></div></div>
         </div>`;
       }).join('') : `<div class="care-condition-column-empty">Nenhuma condição ${escapeHtml(column.label.toLowerCase())} ativa.</div>`;
       return `<section class="care-condition-column">
@@ -3793,11 +3799,11 @@ async function loadCareLineDetailInto(classificacao, targets) {
       const width = Math.max((value / max) * 100, 2);
       const label = item.categoria_atendimento || 'Sem categoria';
       const classification = item.classificacao || '';
-      const title = classification ? `${label} · ${classification}` : label;
+      const title = `${classification ? `${label} · ${classification}` : label}${careExampleIdsTooltip(item)}`;
       const color = ['#3F55E3', '#2563eb', '#7c3aed', '#0891b2', '#be185d', '#0f766e', '#1d4ed8', '#f59e0b', '#db2777', '#64748b'][index] || '#3F55E3';
       return `<div class="petit-dist-row" title="${escapeAttr(title)}" data-care-category="${escapeAttr(label)}" data-care-classification="${escapeAttr(classification)}" style="${targets.onItemClick ? 'cursor:pointer' : ''}">
         <div class="petit-dist-label" style="display:flex;align-items:center;gap:6px;min-width:0"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(label)}</span>${classification && targets.showClassificationTag ? `<small style="font-size:10px;color:#64748b;font-weight:800;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:999px;padding:2px 6px;white-space:nowrap">${escapeHtml(classification)}</small>` : ''}</div>
-        <div class="petit-dist-track"><div class="petit-dist-bar" style="width:${width}%;background:${color}"><span class="petit-dist-value">${fmt(value)} <small>${fmtPct(pct)}</small></span></div></div>
+        <div class="petit-dist-track" title="${escapeAttr(title)}"><div class="petit-dist-bar" style="width:${width}%;background:${color}" title="${escapeAttr(title)}"><span class="petit-dist-value">${fmt(value)} <small>${fmtPct(pct)}</small></span></div></div>
       </div>`;
     }).join('') : '<div style="font-size:13px;color:#94a3b8;text-align:center;padding:20px 0">Nenhuma condição encontrada para essa linha.</div>';
     if (items.length && targets.onItemClick) {
