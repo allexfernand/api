@@ -1362,7 +1362,6 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const category = careCategoryExpr();
       const classification = careClassificationExpr();
       const caseIdExpr = careCaseIdExpr(columns);
-      const classList = ['Crônico', 'Situacional'].map((name) => `'${escape(name)}'`).join(',');
       const rows = await runQuery(wh.id, `
         WITH raw AS (
           SELECT
@@ -1389,21 +1388,32 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           FROM raw
           WHERE atendimento_id IS NOT NULL
         ),
-        active_categories AS (
-          SELECT DISTINCT
+        active_cases AS (
+          SELECT
             cpf_norm,
-            CONCAT(classificacao, '||', categoria_atendimento) AS category_key
+            classificacao,
+            categoria_atendimento
           FROM latest_per_case
           WHERE rn = 1
-            AND classificacao IN (${classList})
-            AND categoria_atendimento IS NOT NULL
             AND ${openLatestStatusCondition()}
         ),
         cpf_counts AS (
           SELECT
             cpf_norm,
-            COUNT(DISTINCT category_key) AS comorbidity_count
-          FROM active_categories
+            COUNT(DISTINCT CASE
+              WHEN classificacao IN ('Crônico', 'Situacional')
+                AND categoria_atendimento IS NOT NULL
+              THEN CONCAT(classificacao, '||', categoria_atendimento)
+            END) AS comorbidity_count,
+            MAX(CASE
+              WHEN LOWER(TRIM(CAST(classificacao AS STRING))) RLIKE 'investiga' THEN 1
+              ELSE 0
+            END) AS has_investigation,
+            MAX(CASE
+              WHEN LOWER(TRIM(CAST(classificacao AS STRING))) RLIKE 'saud' THEN 1
+              ELSE 0
+            END) AS has_healthy
+          FROM active_cases
           GROUP BY cpf_norm
         ),
         bucketed AS (
@@ -1412,15 +1422,20 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
             CASE
               WHEN comorbidity_count = 1 THEN '1'
               WHEN comorbidity_count = 2 THEN '2'
-              ELSE '3+'
+              WHEN comorbidity_count >= 3 THEN '3+'
+              WHEN has_investigation = 1 THEN 'Investigação'
+              WHEN has_healthy = 1 THEN 'Saudáveis'
+              ELSE 'Outros'
             END AS faixa,
             CASE
               WHEN comorbidity_count = 1 THEN 1
               WHEN comorbidity_count = 2 THEN 2
-              ELSE 3
+              WHEN comorbidity_count >= 3 THEN 3
+              WHEN has_investigation = 1 THEN 4
+              WHEN has_healthy = 1 THEN 5
+              ELSE 6
             END AS ordem
           FROM cpf_counts
-          WHERE comorbidity_count > 0
         )
         SELECT
           faixa,
@@ -1437,13 +1452,18 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       })).filter((item) => item.faixa);
       const byRange = Object.fromEntries(items.map((item) => [item.faixa, item.total_cpfs]));
       const total = items.reduce((acc, item) => acc + item.total_cpfs, 0);
+      const conditionTotal = (Number(byRange['1']) || 0) + (Number(byRange['2']) || 0) + (Number(byRange['3+']) || 0);
       return res.status(200).json({
         scope: 'care_comorbidity_distribution',
         items,
         total,
+        condition_total: conditionTotal,
         one_comorbidity: Number(byRange['1']) || 0,
         two_comorbidities: Number(byRange['2']) || 0,
         three_or_more_comorbidities: Number(byRange['3+']) || 0,
+        investigation_total: Number(byRange['Investigação']) || 0,
+        healthy_total: Number(byRange['Saudáveis']) || 0,
+        other_total: Number(byRange['Outros']) || 0,
         source: HEALTHCOACH_TABLE,
         date_column: dateColumn,
         auth_role: getDashboardAuth(req)?.role || 'full',

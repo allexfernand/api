@@ -321,6 +321,10 @@ body {
 .petit-kpi-split span{display:grid;place-items:center;gap:7px;border:1px solid #dbe3f0;border-radius:14px;background:linear-gradient(180deg,#fff,#f8fafc);padding:12px 10px;min-height:72px;text-align:center;min-width:0}
 .petit-kpi-split small{font-size:10px;font-weight:800;color:#64748b;line-height:1.15;text-transform:uppercase;letter-spacing:.25px;white-space:nowrap}
 .petit-kpi-split strong{font-size:27px;font-weight:800;color:#0f172a;line-height:1;letter-spacing:-.6px}
+.care-comorbidity-split{gap:8px}
+.care-comorbidity-split span{min-height:64px;padding:10px 8px}
+.care-comorbidity-split small{white-space:normal}
+.care-comorbidity-split strong{font-size:23px}
 .petit-human-split{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .petit-human-item{border:1px solid #e2e8f0;border-radius:10px;background:#f8fafc;padding:8px}
 .petit-human-label{font-size:10px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.45px;margin-bottom:4px}
@@ -4519,15 +4523,22 @@ async function loadCareCoordinationKpis() {
     const one = Number(comorbidityData.one_comorbidity) || 0;
     const two = Number(comorbidityData.two_comorbidities) || 0;
     const threePlus = Number(comorbidityData.three_or_more_comorbidities) || 0;
-    const total = Number(comorbidityData.total) || one + two + threePlus;
+    const investigation = Number(comorbidityData.investigation_total) || 0;
+    const healthy = Number(comorbidityData.healthy_total) || 0;
+    const other = Number(comorbidityData.other_total) || 0;
+    const conditionTotal = Number(comorbidityData.condition_total) || one + two + threePlus;
+    const total = Number(comorbidityData.total) || conditionTotal + investigation + healthy + other;
     if (comorbiditiesValue) {
-      comorbiditiesValue.innerHTML = `<div class="petit-kpi-split">
+      comorbiditiesValue.innerHTML = `<div class="petit-kpi-split care-comorbidity-split">
         <span><small>1 condição</small><strong>${fmt(one)}</strong></span>
         <span><small>2 condições</small><strong>${fmt(two)}</strong></span>
         <span><small>3+ condições</small><strong>${fmt(threePlus)}</strong></span>
+        <span><small>Investigação</small><strong>${fmt(investigation)}</strong></span>
+        <span><small>Saudáveis</small><strong>${fmt(healthy)}</strong></span>
+        <span><small>Outros</small><strong>${fmt(other)}</strong></span>
       </div>`;
     }
-    if (comorbiditiesNote) comorbiditiesNote.textContent = `${fmt(total)} CPFs com condição ativa · sem filtro de data`;
+    if (comorbiditiesNote) comorbiditiesNote.textContent = `${fmt(total)} CPFs ativos · ${fmt(conditionTotal)} com condição · fecha com Mapeados Ativos`;
   } else {
     if (comorbiditiesValue) comorbiditiesValue.textContent = 'Erro';
     if (comorbiditiesNote) comorbiditiesNote.textContent = String(comorbidityData?.error || 'Erro ao carregar comorbidades').slice(0, 140);
