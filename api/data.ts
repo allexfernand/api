@@ -132,8 +132,13 @@ function parseCareTypeBreakdown(rows: any[]) {
     const total = toInt(row[1]);
     if (tipo === 'TITULAR') acc.titulares += total;
     else if (tipo === 'DEPENDENTE') acc.dependentes += total;
+    else acc.sem_cadastro += total;
     return acc;
-  }, { titulares: 0, dependentes: 0 });
+  }, { titulares: 0, dependentes: 0, sem_cadastro: 0 });
+}
+
+function cpfNormExpr(rawExpr: string): string {
+  return `LPAD(REGEXP_REPLACE(CAST(${rawExpr} AS STRING), '[^0-9]', ''), 11, '0')`;
 }
 
 function buildFilters(groupNames: string[], typeFilter: unknown, partnerBrokerId: unknown) {
@@ -194,7 +199,7 @@ function buildBeneficiaryOrgFilter(beneficiaryColumns: string[], groupNames: str
   return `EXISTS (
     SELECT 1
     FROM ${BENEFICIARIES_TABLE} b
-    WHERE REGEXP_REPLACE(CAST(b.${quoteIdent(cpfColumn)} AS STRING), '[^0-9]', '') = REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '')
+    WHERE LPAD(REGEXP_REPLACE(CAST(b.${quoteIdent(cpfColumn)} AS STRING), '[^0-9]', ''), 11, '0') = LPAD(REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', ''), 11, '0')
       AND ${conditions.join(' AND ')}
   )`;
 }
@@ -251,7 +256,7 @@ function careCaseIdExpr(columns: string[]): string {
     return `NULLIF(TRIM(CAST(${quoteIdent(idColumn)} AS STRING)), '')`;
   }
   return `CONCAT(
-    'CPF:', REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', ''),
+    'CPF:', LPAD(REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', ''), 11, '0'),
     '|CL:', COALESCE(${careClassificationExpr()}, ''),
     '|CT:', COALESCE(${careCategoryExpr()}, '')
   )`;
@@ -477,7 +482,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const rows = await runQuery(wh.id, activeOnly ? `
         WITH raw AS (
           SELECT
-            REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '') AS cpf_norm,
+            LPAD(REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', ''), 11, '0') AS cpf_norm,
             ${caseIdExpr} AS atendimento_id,
             ${classification} AS classificacoes,
             LOWER(TRIM(CAST(${quoteIdent(activeStatusColumn)} AS STRING))) AS status_norm,
@@ -510,7 +515,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       ` : `
         SELECT
           ${classification} AS classificacoes,
-          COUNT(DISTINCT REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '')) AS total_cpfs
+          COUNT(DISTINCT LPAD(REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', ''), 11, '0')) AS total_cpfs
         FROM ${HEALTHCOACH_TABLE}
         WHERE ${where}
         GROUP BY ${classification}
@@ -519,7 +524,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       `);
       const mappedRows = await runQuery(wh.id, `
         SELECT
-          COUNT(DISTINCT REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '')) AS mapped_cpfs
+          COUNT(DISTINCT LPAD(REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', ''), 11, '0')) AS mapped_cpfs
         FROM ${HEALTHCOACH_TABLE}
         WHERE ${where}
       `);
@@ -528,7 +533,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const activeMappedRows = includeActiveMapped && dateColumn && statusColumn ? await runQuery(wh.id, `
         WITH raw AS (
           SELECT
-            REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '') AS cpf_norm,
+            LPAD(REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', ''), 11, '0') AS cpf_norm,
             ${caseIdExpr} AS atendimento_id,
             LOWER(TRIM(CAST(${quoteIdent(statusColumn)} AS STRING))) AS status_norm,
             try_cast(${quoteIdent(dateColumn)} AS TIMESTAMP) AS data_criacao
@@ -557,7 +562,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const typeBreakdownRows = beneficiaryCpfColumn && beneficiaryKinshipColumn ? await runQuery(wh.id, activeOnly ? `
         WITH raw AS (
           SELECT
-            REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '') AS cpf_norm,
+            LPAD(REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', ''), 11, '0') AS cpf_norm,
             ${caseIdExpr} AS atendimento_id,
             LOWER(TRIM(CAST(${quoteIdent(activeStatusColumn)} AS STRING))) AS status_norm,
             try_cast(${quoteIdent(activeDateColumn)} AS TIMESTAMP) AS data_criacao
@@ -584,7 +589,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         ),
         beneficiary_types AS (
           SELECT
-            REGEXP_REPLACE(CAST(b.${quoteIdent(beneficiaryCpfColumn)} AS STRING), '[^0-9]', '') AS cpf_norm,
+            LPAD(REGEXP_REPLACE(CAST(b.${quoteIdent(beneficiaryCpfColumn)} AS STRING), '[^0-9]', ''), 11, '0') AS cpf_norm,
             CASE
               WHEN MAX(CASE WHEN UPPER(TRIM(COALESCE(b.${quoteIdent(beneficiaryKinshipColumn)},''))) = 'TITULAR' THEN 1 ELSE 0 END) = 1 THEN 'TITULAR'
               ELSE 'DEPENDENTE'
@@ -592,21 +597,21 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           FROM ${BENEFICIARIES_TABLE} b
           WHERE b.${quoteIdent(beneficiaryCpfColumn)} IS NOT NULL
             AND TRIM(CAST(b.${quoteIdent(beneficiaryCpfColumn)} AS STRING)) != ''
-          GROUP BY REGEXP_REPLACE(CAST(b.${quoteIdent(beneficiaryCpfColumn)} AS STRING), '[^0-9]', '')
+          GROUP BY LPAD(REGEXP_REPLACE(CAST(b.${quoteIdent(beneficiaryCpfColumn)} AS STRING), '[^0-9]', ''), 11, '0')
         )
-        SELECT bt.tipo, COUNT(DISTINCT s.cpf_norm) AS total_cpfs
+        SELECT COALESCE(bt.tipo, 'SEM CADASTRO') AS tipo, COUNT(DISTINCT s.cpf_norm) AS total_cpfs
         FROM scoped s
-        INNER JOIN beneficiary_types bt ON bt.cpf_norm = s.cpf_norm
-        GROUP BY bt.tipo
+        LEFT JOIN beneficiary_types bt ON bt.cpf_norm = s.cpf_norm
+        GROUP BY COALESCE(bt.tipo, 'SEM CADASTRO')
       ` : `
         WITH scoped AS (
-          SELECT DISTINCT REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '') AS cpf_norm
+          SELECT DISTINCT LPAD(REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', ''), 11, '0') AS cpf_norm
           FROM ${HEALTHCOACH_TABLE}
           WHERE ${where}
         ),
         beneficiary_types AS (
           SELECT
-            REGEXP_REPLACE(CAST(b.${quoteIdent(beneficiaryCpfColumn)} AS STRING), '[^0-9]', '') AS cpf_norm,
+            LPAD(REGEXP_REPLACE(CAST(b.${quoteIdent(beneficiaryCpfColumn)} AS STRING), '[^0-9]', ''), 11, '0') AS cpf_norm,
             CASE
               WHEN MAX(CASE WHEN UPPER(TRIM(COALESCE(b.${quoteIdent(beneficiaryKinshipColumn)},''))) = 'TITULAR' THEN 1 ELSE 0 END) = 1 THEN 'TITULAR'
               ELSE 'DEPENDENTE'
@@ -614,12 +619,12 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           FROM ${BENEFICIARIES_TABLE} b
           WHERE b.${quoteIdent(beneficiaryCpfColumn)} IS NOT NULL
             AND TRIM(CAST(b.${quoteIdent(beneficiaryCpfColumn)} AS STRING)) != ''
-          GROUP BY REGEXP_REPLACE(CAST(b.${quoteIdent(beneficiaryCpfColumn)} AS STRING), '[^0-9]', '')
+          GROUP BY LPAD(REGEXP_REPLACE(CAST(b.${quoteIdent(beneficiaryCpfColumn)} AS STRING), '[^0-9]', ''), 11, '0')
         )
-        SELECT bt.tipo, COUNT(DISTINCT s.cpf_norm) AS total_cpfs
+        SELECT COALESCE(bt.tipo, 'SEM CADASTRO') AS tipo, COUNT(DISTINCT s.cpf_norm) AS total_cpfs
         FROM scoped s
-        INNER JOIN beneficiary_types bt ON bt.cpf_norm = s.cpf_norm
-        GROUP BY bt.tipo
+        LEFT JOIN beneficiary_types bt ON bt.cpf_norm = s.cpf_norm
+        GROUP BY COALESCE(bt.tipo, 'SEM CADASTRO')
       `) : [];
       const items = rows.map((row) => ({
         classificacoes: String(getCell(row[0]) || '').trim(),
@@ -672,7 +677,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const idSelectExpr = idColumn
         ? `NULLIF(TRIM(CAST(${quoteIdent(idColumn)} AS STRING)), '')`
         : `CONCAT(
-            'CPF ', REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', ''),
+            'CPF ', LPAD(REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', ''), 11, '0'),
             ' | ', COALESCE(DATE_FORMAT(try_cast(${quoteIdent(dateColumn)} AS TIMESTAMP), 'yyyy-MM-dd HH:mm:ss'), 'sem data')
           )`;
       const subjectSelectExpr = subjectColumn
@@ -683,7 +688,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const rows = await runQuery(wh.id, activeOnly ? `
         WITH raw AS (
           SELECT
-            REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '') AS cpf_norm,
+            LPAD(REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', ''), 11, '0') AS cpf_norm,
             ${classification} AS classificacao,
             ${category} AS categoria_atendimento,
             ${caseIdExpr} AS atendimento_id,
@@ -724,7 +729,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         SELECT
           ${classification} AS classificacao,
           ${category} AS categoria_atendimento,
-          COUNT(DISTINCT REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '')) AS total_cpfs,
+          COUNT(DISTINCT LPAD(REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', ''), 11, '0')) AS total_cpfs,
           CONCAT_WS(', ', SLICE(SORT_ARRAY(COLLECT_SET(${idSelectExpr})), 1, 5)) AS example_ids
         FROM ${HEALTHCOACH_TABLE}
         WHERE ${baseWhere}
@@ -738,7 +743,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const exampleRows = await runQuery(wh.id, activeOnly ? `
         WITH raw AS (
           SELECT
-            REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '') AS cpf_norm,
+            LPAD(REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', ''), 11, '0') AS cpf_norm,
             ${classification} AS classificacao,
             ${category} AS categoria_atendimento,
             ${caseIdExpr} AS atendimento_id,
@@ -804,7 +809,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       ` : `
         WITH raw AS (
           SELECT
-            REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '') AS cpf_norm,
+            LPAD(REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', ''), 11, '0') AS cpf_norm,
             ${classification} AS classificacao,
             ${category} AS categoria_atendimento,
             ${idSelectExpr} AS atendimento_id,
@@ -864,7 +869,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const typeBreakdownRows = beneficiaryCpfColumn && beneficiaryKinshipColumn ? await runQuery(wh.id, activeOnly ? `
         WITH raw AS (
           SELECT
-            REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '') AS cpf_norm,
+            LPAD(REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', ''), 11, '0') AS cpf_norm,
             ${caseIdExpr} AS atendimento_id,
             ${classification} AS classificacao,
             LOWER(TRIM(CAST(${quoteIdent(statusColumn)} AS STRING))) AS status_norm,
@@ -894,7 +899,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         ),
         beneficiary_types AS (
           SELECT
-            REGEXP_REPLACE(CAST(b.${quoteIdent(beneficiaryCpfColumn)} AS STRING), '[^0-9]', '') AS cpf_norm,
+            LPAD(REGEXP_REPLACE(CAST(b.${quoteIdent(beneficiaryCpfColumn)} AS STRING), '[^0-9]', ''), 11, '0') AS cpf_norm,
             CASE
               WHEN MAX(CASE WHEN UPPER(TRIM(COALESCE(b.${quoteIdent(beneficiaryKinshipColumn)},''))) = 'TITULAR' THEN 1 ELSE 0 END) = 1 THEN 'TITULAR'
               ELSE 'DEPENDENTE'
@@ -902,15 +907,15 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           FROM ${BENEFICIARIES_TABLE} b
           WHERE b.${quoteIdent(beneficiaryCpfColumn)} IS NOT NULL
             AND TRIM(CAST(b.${quoteIdent(beneficiaryCpfColumn)} AS STRING)) != ''
-          GROUP BY REGEXP_REPLACE(CAST(b.${quoteIdent(beneficiaryCpfColumn)} AS STRING), '[^0-9]', '')
+          GROUP BY LPAD(REGEXP_REPLACE(CAST(b.${quoteIdent(beneficiaryCpfColumn)} AS STRING), '[^0-9]', ''), 11, '0')
         )
-        SELECT bt.tipo, COUNT(DISTINCT s.cpf_norm) AS total_cpfs
+        SELECT COALESCE(bt.tipo, 'SEM CADASTRO') AS tipo, COUNT(DISTINCT s.cpf_norm) AS total_cpfs
         FROM scoped s
-        INNER JOIN beneficiary_types bt ON bt.cpf_norm = s.cpf_norm
-        GROUP BY bt.tipo
+        LEFT JOIN beneficiary_types bt ON bt.cpf_norm = s.cpf_norm
+        GROUP BY COALESCE(bt.tipo, 'SEM CADASTRO')
       ` : `
         WITH scoped AS (
-          SELECT DISTINCT REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '') AS cpf_norm
+          SELECT DISTINCT LPAD(REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', ''), 11, '0') AS cpf_norm
           FROM ${HEALTHCOACH_TABLE}
           WHERE ${baseWhere}
             AND ${classification} IN (${detailClassList})
@@ -919,7 +924,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         ),
         beneficiary_types AS (
           SELECT
-            REGEXP_REPLACE(CAST(b.${quoteIdent(beneficiaryCpfColumn)} AS STRING), '[^0-9]', '') AS cpf_norm,
+            LPAD(REGEXP_REPLACE(CAST(b.${quoteIdent(beneficiaryCpfColumn)} AS STRING), '[^0-9]', ''), 11, '0') AS cpf_norm,
             CASE
               WHEN MAX(CASE WHEN UPPER(TRIM(COALESCE(b.${quoteIdent(beneficiaryKinshipColumn)},''))) = 'TITULAR' THEN 1 ELSE 0 END) = 1 THEN 'TITULAR'
               ELSE 'DEPENDENTE'
@@ -927,12 +932,12 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           FROM ${BENEFICIARIES_TABLE} b
           WHERE b.${quoteIdent(beneficiaryCpfColumn)} IS NOT NULL
             AND TRIM(CAST(b.${quoteIdent(beneficiaryCpfColumn)} AS STRING)) != ''
-          GROUP BY REGEXP_REPLACE(CAST(b.${quoteIdent(beneficiaryCpfColumn)} AS STRING), '[^0-9]', '')
+          GROUP BY LPAD(REGEXP_REPLACE(CAST(b.${quoteIdent(beneficiaryCpfColumn)} AS STRING), '[^0-9]', ''), 11, '0')
         )
-        SELECT bt.tipo, COUNT(DISTINCT s.cpf_norm) AS total_cpfs
+        SELECT COALESCE(bt.tipo, 'SEM CADASTRO') AS tipo, COUNT(DISTINCT s.cpf_norm) AS total_cpfs
         FROM scoped s
-        INNER JOIN beneficiary_types bt ON bt.cpf_norm = s.cpf_norm
-        GROUP BY bt.tipo
+        LEFT JOIN beneficiary_types bt ON bt.cpf_norm = s.cpf_norm
+        GROUP BY COALESCE(bt.tipo, 'SEM CADASTRO')
       `) : [];
       const examplesByCondition = new Map<string, Array<Record<string, string>>>();
       exampleRows.forEach((row) => {
@@ -998,7 +1003,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const rows = await runQuery(wh.id, `
         WITH raw AS (
           SELECT
-            REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '') AS cpf_norm,
+            LPAD(REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', ''), 11, '0') AS cpf_norm,
             ${caseIdExpr} AS atendimento_id,
             ${classification} AS classificacao,
             ${category} AS categoria_atendimento,
@@ -1112,7 +1117,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const rows = await runQuery(wh.id, `
         WITH raw AS (
           SELECT
-            REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '') AS cpf_norm,
+            LPAD(REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', ''), 11, '0') AS cpf_norm,
             ${caseIdExpr} AS atendimento_id,
             ${classification} AS classificacao,
             ${category} AS categoria_atendimento,
@@ -1215,7 +1220,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const rows = await runQuery(wh.id, `
         WITH raw AS (
           SELECT
-            REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '') AS cpf_norm,
+            LPAD(REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', ''), 11, '0') AS cpf_norm,
             ${caseIdExpr} AS atendimento_id,
             ${classification} AS classificacao,
             ${category} AS categoria_atendimento,
@@ -1361,7 +1366,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const rows = await runQuery(wh.id, `
         WITH raw AS (
           SELECT
-            REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '') AS cpf_norm,
+            LPAD(REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', ''), 11, '0') AS cpf_norm,
             ${caseIdExpr} AS atendimento_id,
             ${classification} AS classificacao,
             NULLIF(TRIM(CAST(${category} AS STRING)), '') AS categoria_atendimento,
@@ -1470,7 +1475,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           SELECT
             DATE_FORMAT(try_cast(${quoteIdent(dateColumn)} AS TIMESTAMP), 'yyyy-MM') AS mes,
             ${classification} AS classificacao,
-            REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '') AS cpf_norm,
+            LPAD(REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', ''), 11, '0') AS cpf_norm,
             ${caseIdExpr} AS atendimento_id,
             ${activeOnly ? `LOWER(TRIM(CAST(${quoteIdent(statusColumn)} AS STRING)))` : "NULL"} AS status_norm,
             try_cast(${quoteIdent(dateColumn)} AS TIMESTAMP) AS data_criacao
@@ -1571,16 +1576,16 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const rows = await runQuery(wh.id, `
         WITH primeiro_atendimento AS (
           SELECT
-            REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '') AS cpf_norm,
+            LPAD(REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', ''), 11, '0') AS cpf_norm,
             MIN(try_cast(${quoteIdent(dateColumn)} AS TIMESTAMP)) AS primeira_data
           FROM ${HEALTHCOACH_TABLE}
           WHERE cpf_atendido IS NOT NULL
             AND TRIM(CAST(cpf_atendido AS STRING)) != ''
-          GROUP BY REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '')
+          GROUP BY LPAD(REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', ''), 11, '0')
         ),
         cpfs_filtrados AS (
           SELECT DISTINCT
-            REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '') AS cpf_norm
+            LPAD(REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', ''), 11, '0') AS cpf_norm
           FROM ${HEALTHCOACH_TABLE}
           WHERE ${baseWhere}
         ),

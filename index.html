@@ -301,6 +301,11 @@ body {
 .care-card-filter select{min-width:154px;border:1px solid #e2e8f0;border-radius:999px;background:#fff;color:#334155;font-size:11px;font-weight:800;padding:5px 10px;outline:none}
 .care-card-filter select:focus{border-color:var(--sanus-brand);box-shadow:0 0 0 3px rgba(63,85,227,.12)}
 .care-context-breakdown{display:block;margin-top:2px;color:#64748b;font-weight:700}
+.care-card-totals{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;padding-top:12px;border-top:1px solid #e2e8f0}
+.care-card-total{display:flex;flex-direction:column;gap:2px}
+.care-card-total-label{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:#94a3b8}
+.care-card-total-value{font-size:20px;font-weight:800;color:#0f172a;letter-spacing:-.4px;line-height:1.1}
+.care-card-total-hint{font-size:10px;color:#94a3b8;line-height:1.3}
 .petit-kpi-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-bottom:16px}
 .care-kpi-grid{grid-template-columns:repeat(6,minmax(0,1fr))}
 .petit-kpi{background:#fff;border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow-sm);padding:18px}
@@ -951,6 +956,18 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
         <div class="chart-wrap" style="height:340px">
           <div class="skeleton" id="skel-care-coordination-lines"></div>
           <canvas id="careCoordinationLinesChart" style="display:none"></canvas>
+        </div>
+        <div class="care-card-totals" id="care-coordination-lines-footer" style="display:none">
+          <div class="care-card-total">
+            <span class="care-card-total-label">CPFs nas classificações</span>
+            <span class="care-card-total-value" id="care-coord-lines-total-sum">—</span>
+            <span class="care-card-total-hint">soma — CPF com cards em N classes conta N vezes</span>
+          </div>
+          <div class="care-card-total">
+            <span class="care-card-total-label">CPFs únicos com card ativo</span>
+            <span class="care-card-total-value" id="care-coord-lines-total-unique">—</span>
+            <span class="care-card-total-hint">distintos — equivale ao KPI "Mapeados Ativos"</span>
+          </div>
         </div>
         <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="care-coordination-lines-error"></div>
       </div>
@@ -1816,10 +1833,20 @@ function careTypeBreakdownText(breakdown) {
   if (!breakdown) return '';
   const titulares = Number(breakdown.titulares) || 0;
   const dependentes = Number(breakdown.dependentes) || 0;
-  const total = titulares + dependentes;
-  const titularPct = total > 0 ? (titulares / total) * 100 : NaN;
-  const dependentePct = total > 0 ? (dependentes / total) * 100 : NaN;
-  return `Titulares: ${fmt(titulares)} (${fmtPct(titularPct)}) · Dependentes: ${fmt(dependentes)} (${fmtPct(dependentePct)})`;
+  const semCadastro = Number(breakdown.sem_cadastro) || 0;
+  const total = titulares + dependentes + semCadastro;
+  if (total <= 0) return '';
+  const titularPct = (titulares / total) * 100;
+  const dependentePct = (dependentes / total) * 100;
+  const parts = [
+    `Titulares: ${fmt(titulares)} (${fmtPct(titularPct)})`,
+    `Dependentes: ${fmt(dependentes)} (${fmtPct(dependentePct)})`,
+  ];
+  if (semCadastro > 0) {
+    const semPct = (semCadastro / total) * 100;
+    parts.push(`Sem cadastro: ${fmt(semCadastro)} (${fmtPct(semPct)})`);
+  }
+  return parts.join(' · ');
 }
 
 function careContextHtml(baseText, breakdown) {
@@ -3360,6 +3387,7 @@ async function renderCareCoordination() {
   const p = new URLSearchParams();
   p.set('scope', 'care_lines');
   p.set('active_only', '1');
+  p.set('include_active_mapped', '1');
   if (months.length > 0) p.set('meses', months.join(','));
   appendGroupParams(p);
   appendCareBeneficiaryTypeParam(p);
@@ -3389,6 +3417,15 @@ async function renderCareCoordination() {
   const labels = items.map((item) => item.classificacoes || 'Sem classificação');
   const values = items.map((item) => Number(item.total_cpfs) || 0);
   const total = Number(data.total) || values.reduce((acc, value) => acc + value, 0);
+  const uniqueActive = Number(data.active_mapped_total);
+  const footer = document.getElementById('care-coordination-lines-footer');
+  const totalSumEl = document.getElementById('care-coord-lines-total-sum');
+  const totalUniqueEl = document.getElementById('care-coord-lines-total-unique');
+  if (footer && totalSumEl && totalUniqueEl) {
+    totalSumEl.textContent = fmt(total);
+    totalUniqueEl.textContent = Number.isFinite(uniqueActive) ? fmt(uniqueActive) : '—';
+    footer.style.display = 'grid';
+  }
   if (careCoordinationLinesChart) careCoordinationLinesChart.destroy();
   if (skel) skel.style.display = 'none';
   canvas.style.display = 'block';
