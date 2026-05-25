@@ -240,6 +240,10 @@ function pickCareIdColumn(columns: string[]) {
   ]);
 }
 
+function pickCareSubjectColumn(columns: string[]) {
+  return pickColumn(columns, ['assunto', 'subject', 'categoria_atendimento', 'tipo_atendimento', 'motivo', 'tema']);
+}
+
 function pickGestationalWeekColumn(columns: string[]) {
   return pickColumn(columns, [
     'qual_semana_gestacional',
@@ -632,11 +636,15 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const category = careCategoryExpr();
       const classification = careClassificationExpr();
       const detailClassList = detailClasses.map((name) => `'${escape(name)}'`).join(',');
-      const dateColumn = activeOnly ? pickCareDateColumn(columns) : null;
+      const dateColumn = pickCareDateColumn(columns);
       const statusColumn = activeOnly ? pickCareStatusColumn(columns) : null;
       const idColumn = pickCareIdColumn(columns);
+      const subjectColumn = pickCareSubjectColumn(columns);
       const idSelectExpr = idColumn ? `NULLIF(TRIM(CAST(${quoteIdent(idColumn)} AS STRING)), '')` : "CAST(NULL AS STRING)";
-      if (activeOnly && !dateColumn) return res.status(400).json({ error: "Coluna de data não encontrada em healthcoach_gold_live." });
+      const subjectSelectExpr = subjectColumn
+        ? `COALESCE(NULLIF(TRIM(CAST(${quoteIdent(subjectColumn)} AS STRING)), ''), ${category})`
+        : category;
+      if (!dateColumn) return res.status(400).json({ error: "Coluna de data não encontrada em healthcoach_gold_live." });
       if (activeOnly && !statusColumn) return res.status(400).json({ error: "Coluna de status não encontrada em healthcoach_gold_live." });
       const rows = await runQuery(wh.id, activeOnly ? `
         WITH raw AS (
@@ -690,6 +698,127 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         ORDER BY total_cpfs DESC
         LIMIT 50
       `);
+      const exampleRows = idColumn ? await runQuery(wh.id, activeOnly ? `
+        WITH raw AS (
+          SELECT
+            REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '') AS cpf_norm,
+            ${classification} AS classificacao,
+            ${category} AS categoria_atendimento,
+            ${idSelectExpr} AS atendimento_id,
+            ${subjectSelectExpr} AS assunto,
+            LOWER(TRIM(CAST(${quoteIdent(statusColumn)} AS STRING))) AS status_norm,
+            try_cast(${quoteIdent(dateColumn)} AS TIMESTAMP) AS data_criacao
+          FROM ${HEALTHCOACH_TABLE}
+          WHERE ${baseWhere}
+        ),
+        latest_by_cpf AS (
+          SELECT
+            cpf_norm,
+            classificacao,
+            categoria_atendimento,
+            atendimento_id,
+            assunto,
+            status_norm,
+            data_criacao,
+            MIN(data_criacao) OVER (
+              PARTITION BY cpf_norm, classificacao, categoria_atendimento
+            ) AS primeira_data,
+            ROW_NUMBER() OVER (
+              PARTITION BY cpf_norm
+              ORDER BY data_criacao DESC NULLS LAST
+            ) AS rn
+          FROM raw
+        ),
+        scoped AS (
+          SELECT
+            classificacao,
+            COALESCE(NULLIF(TRIM(CAST(categoria_atendimento AS STRING)), ''), 'Sem categoria') AS categoria_atendimento,
+            atendimento_id,
+            assunto,
+            primeira_data,
+            data_criacao
+          FROM latest_by_cpf
+          WHERE rn = 1
+            AND classificacao IN (${detailClassList})
+            AND ${openLatestStatusCondition()}
+            AND atendimento_id IS NOT NULL
+        ),
+        ranked AS (
+          SELECT
+            *,
+            ROW_NUMBER() OVER (
+              PARTITION BY classificacao, categoria_atendimento
+              ORDER BY data_criacao DESC NULLS LAST, atendimento_id ASC
+            ) AS sample_rn
+          FROM scoped
+        )
+        SELECT
+          classificacao,
+          categoria_atendimento,
+          atendimento_id,
+          assunto,
+          DATE_FORMAT(CAST(primeira_data AS TIMESTAMP), 'yyyy-MM-dd') AS data_abertura_primeiro_registro
+        FROM ranked
+        WHERE sample_rn <= 5
+        ORDER BY classificacao ASC, categoria_atendimento ASC, sample_rn ASC
+      ` : `
+        WITH raw AS (
+          SELECT
+            REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '') AS cpf_norm,
+            ${classification} AS classificacao,
+            ${category} AS categoria_atendimento,
+            ${idSelectExpr} AS atendimento_id,
+            ${subjectSelectExpr} AS assunto,
+            try_cast(${quoteIdent(dateColumn)} AS TIMESTAMP) AS data_criacao
+          FROM ${HEALTHCOACH_TABLE}
+          WHERE ${baseWhere}
+            AND ${classification} IN (${detailClassList})
+            AND categoria_atendimento IS NOT NULL
+            AND TRIM(CAST(categoria_atendimento AS STRING)) != ''
+        ),
+        latest_by_condition AS (
+          SELECT
+            cpf_norm,
+            classificacao,
+            categoria_atendimento,
+            atendimento_id,
+            assunto,
+            data_criacao,
+            MIN(data_criacao) OVER (
+              PARTITION BY cpf_norm, classificacao, categoria_atendimento
+            ) AS primeira_data,
+            ROW_NUMBER() OVER (
+              PARTITION BY cpf_norm, classificacao, categoria_atendimento
+              ORDER BY data_criacao DESC NULLS LAST
+            ) AS rn
+          FROM raw
+          WHERE atendimento_id IS NOT NULL
+        ),
+        ranked AS (
+          SELECT
+            classificacao,
+            categoria_atendimento,
+            atendimento_id,
+            assunto,
+            primeira_data,
+            data_criacao,
+            ROW_NUMBER() OVER (
+              PARTITION BY classificacao, categoria_atendimento
+              ORDER BY data_criacao DESC NULLS LAST, atendimento_id ASC
+            ) AS sample_rn
+          FROM latest_by_condition
+          WHERE rn = 1
+        )
+        SELECT
+          classificacao,
+          categoria_atendimento,
+          atendimento_id,
+          assunto,
+          DATE_FORMAT(CAST(primeira_data AS TIMESTAMP), 'yyyy-MM-dd') AS data_abertura_primeiro_registro
+        FROM ranked
+        WHERE sample_rn <= 5
+        ORDER BY classificacao ASC, categoria_atendimento ASC, sample_rn ASC
+      `) : [];
       const beneficiaryCpfColumn = pickBeneficiaryCpfColumn(beneficiaryColumns);
       const beneficiaryKinshipColumn = pickBeneficiaryKinshipColumn(beneficiaryColumns);
       const typeBreakdownRows = beneficiaryCpfColumn && beneficiaryKinshipColumn ? await runQuery(wh.id, activeOnly ? `
@@ -762,12 +891,30 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         INNER JOIN beneficiary_types bt ON bt.cpf_norm = s.cpf_norm
         GROUP BY bt.tipo
       `) : [];
-      const items = rows.map((row) => ({
-        classificacao: String(getCell(row[0]) || '').trim(),
-        categoria_atendimento: String(getCell(row[1]) || '').trim(),
-        total_cpfs: toInt(row[2]),
-        example_ids: String(getCell(row[3]) || '').split(',').map((id) => id.trim()).filter(Boolean),
-      })).filter((item) => item.categoria_atendimento);
+      const examplesByCondition = new Map<string, Array<Record<string, string>>>();
+      exampleRows.forEach((row) => {
+        const classificacao = String(getCell(row[0]) || '').trim();
+        const categoria_atendimento = String(getCell(row[1]) || '').trim();
+        const key = `${classificacao}||${categoria_atendimento}`;
+        if (!examplesByCondition.has(key)) examplesByCondition.set(key, []);
+        examplesByCondition.get(key)!.push({
+          id: String(getCell(row[2]) || '').trim(),
+          assunto: String(getCell(row[3]) || '').trim() || categoria_atendimento,
+          data_abertura_primeiro_registro: String(getCell(row[4]) || '').trim(),
+        });
+      });
+      const items = rows.map((row) => {
+        const classificacao = String(getCell(row[0]) || '').trim();
+        const categoria_atendimento = String(getCell(row[1]) || '').trim();
+        const example_records = examplesByCondition.get(`${classificacao}||${categoria_atendimento}`) || [];
+        return {
+          classificacao,
+          categoria_atendimento,
+          total_cpfs: toInt(row[2]),
+          example_ids: example_records.map((record) => record.id).filter(Boolean),
+          example_records,
+        };
+      }).filter((item) => item.categoria_atendimento);
       const total = items.reduce((acc, item) => acc + item.total_cpfs, 0);
       return res.status(200).json({
         scope: 'care_line_detail',

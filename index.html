@@ -358,6 +358,12 @@ body {
 .care-condition-column-meta{font-size:10px;font-weight:800;color:#94a3b8;text-align:right;line-height:1.35}
 .care-condition-column-list{display:grid;gap:8px}
 .care-condition-column-empty{font-size:12px;color:#94a3b8;text-align:center;padding:24px 8px;border:1px dashed #e2e8f0;border-radius:12px;background:#f8fafc}
+.care-example-popover{position:fixed;z-index:9999;width:min(460px,calc(100vw - 32px));max-height:260px;overflow:auto;background:#fff;border:1px solid #dbe3f0;border-radius:14px;box-shadow:0 16px 42px rgba(15,23,42,.18);padding:12px;display:none}
+.care-example-popover-title{font-size:11px;font-weight:800;color:#334155;margin-bottom:8px}
+.care-example-table{width:100%;border-collapse:collapse;font-size:11px;color:#475569}
+.care-example-table th{position:sticky;top:0;background:#f8fafc;color:#64748b;font-size:10px;text-transform:uppercase;letter-spacing:.35px;text-align:left;padding:7px;border-bottom:1px solid #e2e8f0;z-index:1}
+.care-example-table td{padding:7px;border-bottom:1px solid #f1f5f9;vertical-align:top}
+.care-example-table code{font-size:10px;color:#334155;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:6px;padding:2px 5px;white-space:nowrap}
 @media (max-width:980px){.care-condition-columns{grid-template-columns:1fr}}
 .petit-placeholder{border:1px dashed #cbd5e1;background:#f8fafc;border-radius:var(--radius-sm);padding:16px;color:#64748b;font-size:12px;line-height:1.5}
 .petit-metric-stack{display:grid;gap:12px}
@@ -2098,7 +2104,7 @@ async function ensurePetitMdsScope() {
 }
 
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
-function escapeAttr(s){return String(s).replace(/"/g,'&quot;');}
+function escapeAttr(s){return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');}
 
 function updateFilterInfo() {
   const parts = [];
@@ -3694,6 +3700,83 @@ function careExampleIdsTooltip(item) {
   return ids.length ? `\nIDs healthcoach_gold_live: ${ids.join(', ')}` : '';
 }
 
+let careExamplePopoverHideTimer = null;
+
+function careExamplesAttr(item) {
+  const records = Array.isArray(item?.example_records) ? item.example_records.slice(0, 5) : [];
+  return records.length ? escapeAttr(JSON.stringify(records)) : '';
+}
+
+function formatCareExampleDate(value) {
+  if (!value) return '—';
+  const date = new Date(String(value) + 'T00:00:00');
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString('pt-BR');
+}
+
+function careExamplePopoverElement() {
+  let popover = document.getElementById('care-example-popover');
+  if (!popover) {
+    popover = document.createElement('div');
+    popover.id = 'care-example-popover';
+    popover.className = 'care-example-popover';
+    popover.addEventListener('mouseenter', () => {
+      if (careExamplePopoverHideTimer) clearTimeout(careExamplePopoverHideTimer);
+    });
+    popover.addEventListener('mouseleave', hideCareExamplePopover);
+    document.body.appendChild(popover);
+  }
+  return popover;
+}
+
+function positionCareExamplePopover(popover, anchor) {
+  const rect = anchor.getBoundingClientRect();
+  const width = Math.min(460, window.innerWidth - 32);
+  const left = Math.min(Math.max(16, rect.left), window.innerWidth - width - 16);
+  const top = Math.min(rect.bottom + 8, window.innerHeight - 276);
+  popover.style.left = `${left}px`;
+  popover.style.top = `${Math.max(16, top)}px`;
+}
+
+function showCareExamplePopover(anchor, records) {
+  const popover = careExamplePopoverElement();
+  if (careExamplePopoverHideTimer) clearTimeout(careExamplePopoverHideTimer);
+  popover.innerHTML = `<div class="care-example-popover-title">Exemplos da healthcoach_gold_live</div>
+    <table class="care-example-table">
+      <thead><tr><th>ID Healthcoach</th><th>Assunto</th><th>Abertura 1º registro</th></tr></thead>
+      <tbody>${records.map((record) => `<tr>
+        <td><code>${escapeHtml(record.id || '—')}</code></td>
+        <td>${escapeHtml(record.assunto || '—')}</td>
+        <td>${escapeHtml(formatCareExampleDate(record.data_abertura_primeiro_registro))}</td>
+      </tr>`).join('')}</tbody>
+    </table>`;
+  popover.style.display = 'block';
+  positionCareExamplePopover(popover, anchor);
+}
+
+function hideCareExamplePopover() {
+  const popover = document.getElementById('care-example-popover');
+  if (popover) popover.style.display = 'none';
+}
+
+function scheduleHideCareExamplePopover() {
+  if (careExamplePopoverHideTimer) clearTimeout(careExamplePopoverHideTimer);
+  careExamplePopoverHideTimer = setTimeout(hideCareExamplePopover, 140);
+}
+
+function wireCareExamplePopovers(root) {
+  root.querySelectorAll('[data-care-examples]').forEach((row) => {
+    row.addEventListener('mouseenter', () => {
+      try {
+        const records = JSON.parse(row.getAttribute('data-care-examples') || '[]');
+        if (Array.isArray(records) && records.length) showCareExamplePopover(row, records);
+      } catch {
+        hideCareExamplePopover();
+      }
+    });
+    row.addEventListener('mouseleave', scheduleHideCareExamplePopover);
+  });
+}
+
 function renderCareClassificationColumns(list, items, total, targets) {
   const columns = [
     { label: 'Crônico', color: '#3F55E3' },
@@ -3714,9 +3797,11 @@ function renderCareClassificationColumns(list, items, total, targets) {
         const width = Math.max((value / columnMax) * 100, 2);
         const label = item.categoria_atendimento || 'Sem categoria';
         const rowTitle = `${label}${careExampleIdsTooltip(item)}`;
-        return `<div class="petit-dist-row" title="${escapeAttr(rowTitle)}" data-care-category="${escapeAttr(label)}" data-care-classification="${escapeAttr(column.label)}" style="${targets.onItemClick ? 'cursor:pointer' : ''}">
+        const titleAttr = targets.showExamplePopover ? '' : `title="${escapeAttr(rowTitle)}"`;
+        const exampleAttr = targets.showExamplePopover ? careExamplesAttr(item) : '';
+        return `<div class="petit-dist-row" ${titleAttr} data-care-category="${escapeAttr(label)}" data-care-classification="${escapeAttr(column.label)}" ${exampleAttr ? `data-care-examples="${exampleAttr}"` : ''} style="${targets.onItemClick ? 'cursor:pointer' : ''}">
           <div class="petit-dist-label">${escapeHtml(label)}</div>
-          <div class="petit-dist-track" title="${escapeAttr(rowTitle)}"><div class="petit-dist-bar" style="width:${width}%;background:${column.color}" title="${escapeAttr(rowTitle)}"><span class="petit-dist-value">${fmt(value)} <small>${fmtPct(pct)}</small></span></div></div>
+          <div class="petit-dist-track" ${titleAttr}><div class="petit-dist-bar" style="width:${width}%;background:${column.color}" ${titleAttr}><span class="petit-dist-value">${fmt(value)} <small>${fmtPct(pct)}</small></span></div></div>
         </div>`;
       }).join('') : `<div class="care-condition-column-empty">Nenhuma condição ${escapeHtml(column.label.toLowerCase())} ativa.</div>`;
       return `<section class="care-condition-column">
@@ -3736,6 +3821,7 @@ function renderCareClassificationColumns(list, items, total, targets) {
       }));
     });
   }
+  if (targets.showExamplePopover) wireCareExamplePopovers(list);
 }
 
 async function loadCareLineDetailInto(classificacao, targets) {
@@ -3800,10 +3886,12 @@ async function loadCareLineDetailInto(classificacao, targets) {
       const label = item.categoria_atendimento || 'Sem categoria';
       const classification = item.classificacao || '';
       const title = `${classification ? `${label} · ${classification}` : label}${careExampleIdsTooltip(item)}`;
+      const titleAttr = targets.showExamplePopover ? '' : `title="${escapeAttr(title)}"`;
+      const exampleAttr = targets.showExamplePopover ? careExamplesAttr(item) : '';
       const color = ['#3F55E3', '#2563eb', '#7c3aed', '#0891b2', '#be185d', '#0f766e', '#1d4ed8', '#f59e0b', '#db2777', '#64748b'][index] || '#3F55E3';
-      return `<div class="petit-dist-row" title="${escapeAttr(title)}" data-care-category="${escapeAttr(label)}" data-care-classification="${escapeAttr(classification)}" style="${targets.onItemClick ? 'cursor:pointer' : ''}">
+      return `<div class="petit-dist-row" ${titleAttr} data-care-category="${escapeAttr(label)}" data-care-classification="${escapeAttr(classification)}" ${exampleAttr ? `data-care-examples="${exampleAttr}"` : ''} style="${targets.onItemClick ? 'cursor:pointer' : ''}">
         <div class="petit-dist-label" style="display:flex;align-items:center;gap:6px;min-width:0"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(label)}</span>${classification && targets.showClassificationTag ? `<small style="font-size:10px;color:#64748b;font-weight:800;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:999px;padding:2px 6px;white-space:nowrap">${escapeHtml(classification)}</small>` : ''}</div>
-        <div class="petit-dist-track" title="${escapeAttr(title)}"><div class="petit-dist-bar" style="width:${width}%;background:${color}" title="${escapeAttr(title)}"><span class="petit-dist-value">${fmt(value)} <small>${fmtPct(pct)}</small></span></div></div>
+        <div class="petit-dist-track" ${titleAttr}><div class="petit-dist-bar" style="width:${width}%;background:${color}" ${titleAttr}><span class="petit-dist-value">${fmt(value)} <small>${fmtPct(pct)}</small></span></div></div>
       </div>`;
     }).join('') : '<div style="font-size:13px;color:#94a3b8;text-align:center;padding:20px 0">Nenhuma condição encontrada para essa linha.</div>';
     if (items.length && targets.onItemClick) {
@@ -3814,6 +3902,7 @@ async function loadCareLineDetailInto(classificacao, targets) {
         }));
       });
     }
+    if (targets.showExamplePopover) wireCareExamplePopovers(list);
     }
   }
   if (meta) meta.textContent = `${items.length} condições · total ${fmt(total)} CPFs únicos`;
@@ -3830,6 +3919,7 @@ async function loadCareCoordinationDetail(classificacao) {
     meta: 'care-detail-meta',
     error: 'care-detail-error',
     extraParams: { active_only: '1' },
+    showExamplePopover: true,
   });
 }
 
