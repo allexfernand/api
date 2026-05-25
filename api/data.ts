@@ -645,7 +645,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const statusColumn = activeOnly ? pickCareStatusColumn(columns) : null;
       const idColumn = pickCareIdColumn(columns);
       const subjectColumn = pickCareSubjectColumn(columns);
-      const idSelectExpr = idColumn ? `NULLIF(TRIM(CAST(${quoteIdent(idColumn)} AS STRING)), '')` : "CAST(NULL AS STRING)";
+      const idColumnLabel = idColumn || 'cpf_atendido + data_criacao';
+      const idSelectExpr = idColumn
+        ? `NULLIF(TRIM(CAST(${quoteIdent(idColumn)} AS STRING)), '')`
+        : `CONCAT(
+            'CPF ', REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', ''),
+            ' | ', COALESCE(DATE_FORMAT(try_cast(${quoteIdent(dateColumn)} AS TIMESTAMP), 'yyyy-MM-dd HH:mm:ss'), 'sem data')
+          )`;
       const subjectSelectExpr = subjectColumn
         ? `COALESCE(NULLIF(TRIM(CAST(${quoteIdent(subjectColumn)} AS STRING)), ''), ${category})`
         : category;
@@ -703,7 +709,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         ORDER BY total_cpfs DESC
         LIMIT 50
       `);
-      const exampleRows = idColumn ? await runQuery(wh.id, activeOnly ? `
+      const exampleRows = await runQuery(wh.id, activeOnly ? `
         WITH raw AS (
           SELECT
             REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', '') AS cpf_norm,
@@ -823,7 +829,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         FROM ranked
         WHERE sample_rn <= 5
         ORDER BY classificacao ASC, categoria_atendimento ASC, sample_rn ASC
-      `) : [];
+      `);
       const beneficiaryCpfColumn = pickBeneficiaryCpfColumn(beneficiaryColumns);
       const beneficiaryKinshipColumn = pickBeneficiaryKinshipColumn(beneficiaryColumns);
       const typeBreakdownRows = beneficiaryCpfColumn && beneficiaryKinshipColumn ? await runQuery(wh.id, activeOnly ? `
@@ -929,7 +935,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         items,
         total,
         type_breakdown: parseCareTypeBreakdown(typeBreakdownRows),
-        id_column: idColumn,
+        id_column: idColumnLabel,
         source: HEALTHCOACH_TABLE,
         auth_role: getDashboardAuth(req)?.role || 'full',
         updatedAt: new Date().toISOString(),
