@@ -364,6 +364,10 @@ body {
 .care-example-table th{position:sticky;top:0;background:#f8fafc;color:#64748b;font-size:10px;text-transform:uppercase;letter-spacing:.35px;text-align:left;padding:7px;border-bottom:1px solid #e2e8f0;z-index:1}
 .care-example-table td{padding:7px;border-bottom:1px solid #f1f5f9;vertical-align:top}
 .care-example-table code{font-size:10px;color:#334155;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:6px;padding:2px 5px;white-space:nowrap}
+.care-example-panel{border:1px solid #dbe3f0;border-radius:14px;background:#fff;box-shadow:var(--shadow-sm);padding:12px;max-height:240px;overflow:auto}
+.care-example-panel-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}
+.care-example-panel-title{font-size:11px;font-weight:800;color:#334155}
+.care-example-panel-close{border:0;background:#f1f5f9;color:#64748b;border-radius:999px;padding:4px 8px;font-size:10px;font-weight:800;cursor:pointer}
 @media (max-width:980px){.care-condition-columns{grid-template-columns:1fr}}
 .petit-placeholder{border:1px dashed #cbd5e1;background:#f8fafc;border-radius:var(--radius-sm);padding:16px;color:#64748b;font-size:12px;line-height:1.5}
 .petit-metric-stack{display:grid;gap:12px}
@@ -966,6 +970,7 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
         <div id="care-detail-content" style="display:none;flex:1;min-height:0">
           <div class="petit-dist-list petit-top-exams-list" id="care-detail-list" style="max-height:340px"></div>
           <div style="font-size:11px;color:#94a3b8;margin-top:10px;text-align:right" id="care-detail-meta">—</div>
+          <div id="care-detail-examples" style="display:none;margin-top:12px"></div>
         </div>
         <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="care-detail-error"></div>
       </div>
@@ -3679,12 +3684,17 @@ function resetCareCoordinationDetail(message = 'Selecione uma barra no CC01 para
   const content = document.getElementById('care-detail-content');
   const list = document.getElementById('care-detail-list');
   const meta = document.getElementById('care-detail-meta');
+  const examples = document.getElementById('care-detail-examples');
   const error = document.getElementById('care-detail-error');
   if (context) context.textContent = 'Selecione uma linha no CC01 para detalhar';
   if (loading) loading.style.display = 'none';
   if (content) content.style.display = 'none';
   if (list) list.innerHTML = '';
   if (meta) meta.textContent = '—';
+  if (examples) {
+    examples.style.display = 'none';
+    examples.innerHTML = '';
+  }
   if (error) {
     error.style.display = 'none';
     error.textContent = '';
@@ -3701,10 +3711,17 @@ function careExampleIdsTooltip(item) {
 }
 
 let careExamplePopoverHideTimer = null;
+let careExampleRecordsByKey = new Map();
 
 function careExamplesAttr(item) {
   const records = Array.isArray(item?.example_records) ? item.example_records.slice(0, 5) : [];
   return records.length ? escapeAttr(JSON.stringify(records)) : '';
+}
+
+function careExamplesKey(item, fallbackClassification = '') {
+  const classification = item?.classificacao || fallbackClassification || '';
+  const category = item?.categoria_atendimento || 'Sem categoria';
+  return `${classification}||${category}`;
 }
 
 function formatCareExampleDate(value) {
@@ -3753,6 +3770,40 @@ function showCareExamplePopover(anchor, records) {
   positionCareExamplePopover(popover, anchor);
 }
 
+function renderCareExampleTable(records) {
+  if (!records.length) {
+    return '<div style="font-size:12px;color:#94a3b8;padding:10px;text-align:center">Sem exemplos de ID para esta linha.</div>';
+  }
+  return `<table class="care-example-table">
+    <thead><tr><th>ID Healthcoach</th><th>Assunto</th><th>Abertura 1º registro</th></tr></thead>
+    <tbody>${records.map((record) => `<tr>
+      <td><code>${escapeHtml(record.id || '—')}</code></td>
+      <td>${escapeHtml(record.assunto || '—')}</td>
+      <td>${escapeHtml(formatCareExampleDate(record.data_abertura_primeiro_registro))}</td>
+    </tr>`).join('')}</tbody>
+  </table>`;
+}
+
+function renderCareExamplesPanel(label, classification, records) {
+  const panel = document.getElementById('care-detail-examples');
+  if (!panel) return;
+  panel.innerHTML = `<div class="care-example-panel">
+    <div class="care-example-panel-head">
+      <div class="care-example-panel-title">Exemplos da healthcoach_gold_live · ${escapeHtml(label)}${classification ? ` · ${escapeHtml(classification)}` : ''}</div>
+      <button class="care-example-panel-close" type="button" onclick="hideCareExamplesPanel()">Fechar</button>
+    </div>
+    ${renderCareExampleTable(records)}
+  </div>`;
+  panel.style.display = 'block';
+}
+
+function hideCareExamplesPanel() {
+  const panel = document.getElementById('care-detail-examples');
+  if (!panel) return;
+  panel.style.display = 'none';
+  panel.innerHTML = '';
+}
+
 function hideCareExamplePopover() {
   const popover = document.getElementById('care-example-popover');
   if (popover) popover.style.display = 'none';
@@ -3773,20 +3824,16 @@ function careExampleRecordsFromRow(row) {
 }
 
 function wireCareExamplePopovers(root) {
-  root.querySelectorAll('[data-care-examples]').forEach((row) => {
-    row.addEventListener('mouseenter', () => {
-      const records = careExampleRecordsFromRow(row);
-      if (records.length) showCareExamplePopover(row, records);
-      else hideCareExamplePopover();
-    });
+  root.querySelectorAll('[data-care-example-key]').forEach((row) => {
     row.addEventListener('click', (event) => {
-      const records = careExampleRecordsFromRow(row);
-      if (!records.length) return;
+      const key = row.getAttribute('data-care-example-key') || '';
+      const records = careExampleRecordsByKey.get(key) || careExampleRecordsFromRow(row);
+      const label = row.getAttribute('data-care-category') || 'Linha selecionada';
+      const classification = row.getAttribute('data-care-classification') || '';
       event.preventDefault();
       event.stopPropagation();
-      showCareExamplePopover(row, records);
+      renderCareExamplesPanel(label, classification, records.slice(0, 5));
     });
-    row.addEventListener('mouseleave', scheduleHideCareExamplePopover);
   });
 }
 
@@ -3820,7 +3867,8 @@ function renderCareClassificationColumns(list, items, total, targets) {
         const rowTitle = `${label}${careExampleIdsTooltip(item)}`;
         const titleAttr = targets.showExamplePopover ? '' : `title="${escapeAttr(rowTitle)}"`;
         const exampleAttr = targets.showExamplePopover ? careExamplesAttr(item) : '';
-        return `<div class="petit-dist-row" ${titleAttr} data-care-category="${escapeAttr(label)}" data-care-classification="${escapeAttr(column.label)}" ${exampleAttr ? `data-care-examples="${exampleAttr}"` : ''} style="${targets.onItemClick ? 'cursor:pointer' : ''}">
+        const exampleKey = careExamplesKey(item, column.label);
+        return `<div class="petit-dist-row" ${titleAttr} data-care-category="${escapeAttr(label)}" data-care-classification="${escapeAttr(column.label)}" data-care-example-key="${escapeAttr(exampleKey)}" ${exampleAttr ? `data-care-examples="${exampleAttr}"` : ''} style="${(targets.onItemClick || targets.showExamplePopover) ? 'cursor:pointer' : ''}">
           <div class="petit-dist-label">${escapeHtml(label)}</div>
           <div class="petit-dist-track" ${titleAttr}><div class="petit-dist-bar" style="width:${width}%;background:${column.color}" ${titleAttr}><span class="petit-dist-value">${fmt(value)} <small>${fmtPct(pct)}</small></span></div></div>
         </div>`;
@@ -3890,6 +3938,10 @@ async function loadCareLineDetailInto(classificacao, targets) {
   }
 
   const items = data.items || [];
+  careExampleRecordsByKey = new Map();
+  items.forEach((item) => {
+    careExampleRecordsByKey.set(careExamplesKey(item), Array.isArray(item.example_records) ? item.example_records.slice(0, 5) : []);
+  });
   const total = Number(data.total) || items.reduce((acc, item) => acc + (Number(item.total_cpfs) || 0), 0);
   const max = items.reduce((acc, item) => Math.max(acc, Number(item.total_cpfs) || 0), 0) || 1;
   if (!items.length && empty) {
@@ -3909,8 +3961,9 @@ async function loadCareLineDetailInto(classificacao, targets) {
       const title = `${classification ? `${label} · ${classification}` : label}${careExampleIdsTooltip(item)}`;
       const titleAttr = targets.showExamplePopover ? '' : `title="${escapeAttr(title)}"`;
       const exampleAttr = targets.showExamplePopover ? careExamplesAttr(item) : '';
+      const exampleKey = careExamplesKey(item);
       const color = ['#3F55E3', '#2563eb', '#7c3aed', '#0891b2', '#be185d', '#0f766e', '#1d4ed8', '#f59e0b', '#db2777', '#64748b'][index] || '#3F55E3';
-      return `<div class="petit-dist-row" ${titleAttr} data-care-category="${escapeAttr(label)}" data-care-classification="${escapeAttr(classification)}" ${exampleAttr ? `data-care-examples="${exampleAttr}"` : ''} style="${targets.onItemClick ? 'cursor:pointer' : ''}">
+      return `<div class="petit-dist-row" ${titleAttr} data-care-category="${escapeAttr(label)}" data-care-classification="${escapeAttr(classification)}" data-care-example-key="${escapeAttr(exampleKey)}" ${exampleAttr ? `data-care-examples="${exampleAttr}"` : ''} style="${(targets.onItemClick || targets.showExamplePopover) ? 'cursor:pointer' : ''}">
         <div class="petit-dist-label" style="display:flex;align-items:center;gap:6px;min-width:0"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(label)}</span>${classification && targets.showClassificationTag ? `<small style="font-size:10px;color:#64748b;font-weight:800;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:999px;padding:2px 6px;white-space:nowrap">${escapeHtml(classification)}</small>` : ''}</div>
         <div class="petit-dist-track" ${titleAttr}><div class="petit-dist-bar" style="width:${width}%;background:${color}" ${titleAttr}><span class="petit-dist-value">${fmt(value)} <small>${fmtPct(pct)}</small></span></div></div>
       </div>`;

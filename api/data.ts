@@ -233,10 +233,15 @@ function pickCareIdColumn(columns: string[]) {
     'ID',
     'atendimento_id',
     'id_atendimento',
+    'id_healthcoach',
+    'id_healthcoach_live',
     'healthcoach_id',
+    'health_coach_id',
     'healthcoach_live_id',
     'record_id',
     'registro_id',
+    'id_registro',
+    'uuid',
   ]);
 }
 
