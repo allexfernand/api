@@ -3763,19 +3763,40 @@ function scheduleHideCareExamplePopover() {
   careExamplePopoverHideTimer = setTimeout(hideCareExamplePopover, 140);
 }
 
+function careExampleRecordsFromRow(row) {
+  try {
+    const records = JSON.parse(row.getAttribute('data-care-examples') || '[]');
+    return Array.isArray(records) ? records : [];
+  } catch {
+    return [];
+  }
+}
+
 function wireCareExamplePopovers(root) {
   root.querySelectorAll('[data-care-examples]').forEach((row) => {
     row.addEventListener('mouseenter', () => {
-      try {
-        const records = JSON.parse(row.getAttribute('data-care-examples') || '[]');
-        if (Array.isArray(records) && records.length) showCareExamplePopover(row, records);
-      } catch {
-        hideCareExamplePopover();
-      }
+      const records = careExampleRecordsFromRow(row);
+      if (records.length) showCareExamplePopover(row, records);
+      else hideCareExamplePopover();
+    });
+    row.addEventListener('click', (event) => {
+      const records = careExampleRecordsFromRow(row);
+      if (!records.length) return;
+      event.preventDefault();
+      event.stopPropagation();
+      showCareExamplePopover(row, records);
     });
     row.addEventListener('mouseleave', scheduleHideCareExamplePopover);
   });
 }
+
+document.addEventListener('click', (event) => {
+  const popover = document.getElementById('care-example-popover');
+  if (!popover || popover.style.display === 'none') return;
+  const target = event.target;
+  if (popover.contains(target) || target?.closest?.('[data-care-examples]')) return;
+  hideCareExamplePopover();
+});
 
 function renderCareClassificationColumns(list, items, total, targets) {
   const columns = [
