@@ -414,9 +414,10 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       });
       return;
     }
-    const rows = await runQuery(wh.id, distinctCpf && !groupByMonth ? `
+    const rows = await runQuery(wh.id, distinctCpf ? `
       WITH typed_rows AS (
         SELECT
+          ${groupByMonth ? `${monthExpr} AS mes,` : ''}
           ${typeExpr} AS tipo_agrupado,
           LPAD(REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', ''), 11, '0') AS cpf_norm
         FROM ${APPOINTMENTS_TABLE}
@@ -426,6 +427,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       ),
       deduped AS (
         SELECT DISTINCT
+          ${groupByMonth ? 'mes,' : ''}
           tipo_agrupado,
           cpf_norm
         FROM typed_rows
@@ -434,11 +436,12 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           AND cpf_norm != '00000000000'
       )
       SELECT
+        ${groupByMonth ? 'mes,' : ''}
         tipo_agrupado,
         COUNT(*) AS total
       FROM deduped
-      GROUP BY tipo_agrupado
-      ORDER BY total DESC
+      GROUP BY ${groupByMonth ? 'mes, ' : ''}tipo_agrupado
+      ORDER BY ${groupByMonth ? 'mes ASC, ' : ''}total DESC
     ` : `
       SELECT
         ${groupByMonth ? `${monthExpr} AS mes,` : ''}
@@ -459,7 +462,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         })),
         months: monthList,
         source: "atendimento_summarized_gold_live",
-        filters: { group_name: groupName, company, partner_broker_id: partnerBrokerId },
+        filters: { group_name: groupName, company, partner_broker_id: partnerBrokerId, dedupe: distinctCpf ? 'distinct_cpf' : null },
       });
       return;
     }

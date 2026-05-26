@@ -4846,7 +4846,9 @@ async function loadAppointmentTypesTrend() {
   const p = new URLSearchParams();
   p.set('meses', months.join(','));
   p.set('group_by', 'month');
+  p.set('dedupe', 'distinct_cpf');
   appendGroupParams(p);
+  if (currentCompany) p.set('company', currentCompany);
 
   const data = await safeGet('/api/appointment-types?' + p.toString());
   if (!data || data.error) {
@@ -4882,7 +4884,7 @@ async function loadAppointmentTypesTrend() {
   }));
   const total = Object.values(totalsByType).reduce((acc, value) => acc + value, 0);
   if (period) period.textContent = `${monthShortLabel(months[0])} a ${monthShortLabel(months[months.length - 1])}`;
-  if (meta) meta.textContent = `${fmt(total)} agendamentos · ${types.length || 0} tipos · mesma regra de Tipos de consulta`;
+  if (meta) meta.textContent = `${fmt(total)} CPFs distintos · ${types.length || 0} tipos · mesma regra de Tipos de consulta`;
 
   if (appointmentTypesTrendChart) appointmentTypesTrendChart.destroy();
   if (skel) skel.style.display = 'none';
@@ -4911,10 +4913,10 @@ async function loadAppointmentTypesTrend() {
           titleColor: '#cbd5e1',
           bodyColor: '#f8fafc',
           callbacks: {
-            label: c => `${c.dataset.label}: ${fmt(c.parsed.y)}`,
+            label: c => `${c.dataset.label}: ${fmt(c.parsed.y)} CPFs distintos`,
             footer: (items) => {
               const totalMes = items.reduce((acc, item) => acc + (Number(item.parsed.y) || 0), 0);
-              return `Total do mês: ${fmt(totalMes)}`;
+              return `Total do mês: ${fmt(totalMes)} CPFs distintos`;
             },
           },
         },
@@ -4941,6 +4943,7 @@ async function loadAppointments() {
   const meses = [...selectedMonths].sort();
   const p = new URLSearchParams();
   if (meses.length > 0)  p.set('meses', meses.join(','));
+  p.set('dedupe', 'distinct_cpf');
   appendGroupParams(p);
   if (currentCompany)    p.set('company', currentCompany);
   const qs = p.toString() ? '?' + p.toString() : '';
@@ -4951,9 +4954,9 @@ async function loadAppointments() {
 
   if (appt && !appt.error) {
     document.getElementById('bullet-agend').textContent = fmt(appt.total);
-    let label = 'Mesma base de Tipos de consulta · últimos 12 meses';
-    if (meses.length === 1) { const [y,mm] = meses[0].split('-'); label = `Mesma base de Tipos de consulta · ${mN[mm]}/${y}`; }
-    else if (meses.length > 1) label = `Mesma base de Tipos de consulta · ${meses.length} meses selecionados`;
+    let label = 'CPFs distintos por tipo · últimos 12 meses';
+    if (meses.length === 1) { const [y,mm] = meses[0].split('-'); label = `CPFs distintos por tipo · ${mN[mm]}/${y}`; }
+    else if (meses.length > 1) label = `CPFs distintos por tipo · ${meses.length} meses selecionados`;
     document.getElementById('bullet-agend-periodo').textContent = label;
   } else {
     document.getElementById('bullet-agend').textContent = 'Erro';

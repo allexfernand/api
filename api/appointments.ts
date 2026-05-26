@@ -194,11 +194,30 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   const groupName = groupNames[0] || null;
   const company = req.query.company || null;
   const partnerBrokerId = scopedPartnerBrokerId(req, req.query.partner_broker_id || null);
+  const distinctCpf = req.query.dedupe === 'distinct_cpf' || req.query.dedupe === 'cpf_day';
   const monthList = meses.length ? meses.sort() : lastNMonthsList(Math.min(Math.max(parseInt(String(req.query.months)) || 12, 1), 24));
   const monthRangeFilter = monthList.map((month) => `(
     ${quoteIdent(APPOINTMENTS_DATE_COLUMN)} >= '${month}-01'
     AND ${quoteIdent(APPOINTMENTS_DATE_COLUMN)} < '${nextMonth(month)}-01'
   )`).join(' OR ');
+  const typeExpr = `CASE
+    WHEN UPPER(assunto) LIKE '%DASA%' THEN 'Exames - DASA'
+    WHEN UPPER(assunto) LIKE '%CONEXA%' AND UPPER(assunto) LIKE '%PA%' THEN 'Conexa PA'
+    WHEN UPPER(assunto) LIKE '%CONEXA%' THEN 'Conexa Eletiva'
+    WHEN UPPER(assunto) LIKE '%DENTIST%' OR UPPER(assunto) LIKE '%ODONTO%'
+         OR UPPER(assunto) LIKE '%ENDODONT%' OR UPPER(assunto) LIKE '%ORTODONT%'
+         OR UPPER(assunto) LIKE '%PROTESIST%' OR UPPER(assunto) LIKE '%BUCOMAXILO%'
+         OR UPPER(assunto) LIKE '%BUCO MAXILO%' OR UPPER(assunto) LIKE '%PERIODONT%' THEN 'Odontologia'
+    WHEN UPPER(assunto) LIKE '%PSICOLOG%' OR UPPER(assunto) LIKE '%PSIC_LOG%'
+         OR UPPER(assunto) LIKE '%NEUROPSIC%' OR UPPER(assunto) LIKE '%PSICOPEDAG%'
+         OR UPPER(assunto) LIKE '%NUTRICION%' OR UPPER(assunto) LIKE '%NUTRI__%'
+         OR UPPER(assunto) LIKE '%FISIOTERA%'
+         OR UPPER(assunto) LIKE '%FONOAUDIO%' OR UPPER(assunto) LIKE '%FONOTERAPIA%'
+         OR UPPER(assunto) LIKE '%TERAPIA OCUPACIONAL%' THEN 'Terapias'
+    WHEN tipo_solicitacao = 'Médico' THEN 'Consultas'
+    WHEN tipo_solicitacao IN ('Exame', 'Exames') THEN 'Exames'
+    ELSE 'Outros'
+  END`;
 
   try {
     const { warehouses = [] } = await dbFetch("/api/2.0/sql/warehouses") as { warehouses?: Warehouse[] };
@@ -209,7 +228,47 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const companyFilter = buildCompanyFilter(columns, company);
     const partnerFilter = buildPartnerFilter(columns, partnerBrokerId);
 
-    const rows = await runQuery(wh.id, `
+    const rows = await runQuery(wh.id, distinctCpf ? `
+      WITH typed_rows AS (
+        SELECT
+          ${typeExpr} AS tipo_agrupado,
+          LPAD(REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', ''), 11, '0') AS cpf_norm
+        FROM ${APPOINTMENTS_TABLE}
+        WHERE (${monthRangeFilter})
+          AND cpf_atendido IS NOT NULL
+          AND TRIM(CAST(cpf_atendido AS STRING)) != ''
+          AND UPPER(assunto) NOT IN (
+            'ATENDIMENTO WHATSAPP',
+            'ATENDIMENTO HUMANO',
+            'FORA DE HORÁRIO DE ATENDIMENTO'
+          )
+          AND LOWER(COALESCE(CAST(assunto AS STRING), '')) NOT LIKE '%http%'
+          AND UPPER(COALESCE(CAST(assunto AS STRING), '')) NOT LIKE '%ATENDIMENTO HUMANO%'
+          AND UPPER(TRIM(REGEXP_REPLACE(COALESCE(CAST(assunto AS STRING), ''), '[^A-Za-z0-9]+', ' '))) NOT LIKE '%ATENDIMENTO%HUMANO%'
+          AND NOT (
+            assunto RLIKE '^[A-Z][a-z]+ [A-Z]'
+            OR assunto RLIKE '^[A-Z][A-Z]+ [A-Z]'
+            OR assunto RLIKE '^ [A-Z]'
+          )
+          ${groupFilter}
+          ${companyFilter}
+          ${partnerFilter}
+      ),
+      deduped AS (
+        SELECT DISTINCT tipo_agrupado, cpf_norm
+        FROM typed_rows
+        WHERE cpf_norm IS NOT NULL
+          AND cpf_norm != ''
+          AND cpf_norm != '00000000000'
+      ),
+      grouped AS (
+        SELECT tipo_agrupado, COUNT(*) AS total
+        FROM deduped
+        GROUP BY tipo_agrupado
+      )
+      SELECT SUM(total) AS total_tickets
+      FROM grouped
+    ` : `
       SELECT COUNT(*) AS total_tickets
       FROM ${APPOINTMENTS_TABLE}
       WHERE (${monthRangeFilter})
@@ -235,7 +294,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       total: toInt(rows[0]?.[0]),
       months: monthList,
       source: "atendimento_summarized_gold_live",
-      filters: { group_name: groupName, company, partner_broker_id: partnerBrokerId },
+      filters: { group_name: groupName, company, partner_broker_id: partnerBrokerId, dedupe: distinctCpf ? 'distinct_cpf' : null },
     });
   } catch (err) {
     res.status(500).json({ error: (err as { message?: string }).message });
