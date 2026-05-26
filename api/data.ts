@@ -236,6 +236,8 @@ function pickCareIdColumn(columns: string[]) {
   return pickColumn(columns, [
     'id',
     'ID',
+    'id_unico',
+    'identificacao_atendimento',
     'atendimento_id',
     'id_atendimento',
     'id_healthcoach',
@@ -1517,16 +1519,20 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           ${literalRows(visibleClasses, 'classificacao')}
         ),
         active_base AS (
-          SELECT mes, classificacao, cpf_norm
+          SELECT competencia_mes AS mes, classificacao, cpf_norm
           FROM (
             SELECT
+              m.mes AS competencia_mes,
               b.*,
               ROW_NUMBER() OVER (
-                PARTITION BY b.mes, b.atendimento_id
+                PARTITION BY m.mes, b.atendimento_id
                 ORDER BY b.data_criacao DESC NULLS LAST
               ) AS rn
-            FROM base b
+            FROM months m
+            INNER JOIN base b
+              ON b.data_criacao < add_months(to_date(CONCAT(m.mes, '-01')), 1)
             WHERE b.atendimento_id IS NOT NULL
+              AND m.mes IS NOT NULL
           )
           WHERE rn = 1
             AND ${openLatestStatusCondition()}

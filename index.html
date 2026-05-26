@@ -1002,7 +1002,7 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
         <div class="petit-card-header">
           <div>
             <h2 style="font-size:13px;font-weight:700;color:#334155;margin-bottom:4px">Composição mensal das classificações</h2>
-            <div style="font-size:11px;color:#94a3b8">Últimos 3 meses · último registro do CPF no mês diferente de fechado · mesmas classificações exibidas no CC01</div>
+            <div style="font-size:11px;color:#94a3b8">Últimos 3 meses · acumulado até o mês com último status diferente de fechado · mesmas classificações exibidas no CC01</div>
           </div>
           <span class="petit-chip">CC07</span>
         </div>
@@ -3701,10 +3701,10 @@ async function loadCareLinesEvolution(classNames, includeOthers) {
           callbacks: {
             label: c => {
               const value = Number(c.parsed.y) || 0;
-              if (c.dataset.type === 'line') return `Total do mês: ${fmt(value)} CPFs únicos`;
+              if (c.dataset.type === 'line') return `Total acumulado: ${fmt(value)} CPFs únicos`;
               const total = monthlyTotals[c.dataIndex] || 0;
               const pct = total > 0 ? (value / total) * 100 : NaN;
-              return `${c.dataset.label}: ${fmt(value)} CPFs únicos · ${fmtPct(pct)} do mês`;
+              return `${c.dataset.label}: ${fmt(value)} CPFs únicos · ${fmtPct(pct)} do acumulado`;
             },
           },
         },
