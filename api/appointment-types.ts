@@ -198,7 +198,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   const partnerBrokerId = scopedPartnerBrokerId(req, req.query.partner_broker_id || null);
   const meses = req.query.meses ? String(req.query.meses).split(',').filter((m) => /^\d{4}-\d{2}$/.test(m)) : [];
   const groupByMonth = req.query.group_by === 'month';
-  const dedupeCpfDay = req.query.dedupe === 'cpf_day';
+  const distinctCpf = req.query.dedupe === 'distinct_cpf' || req.query.dedupe === 'cpf_day';
   const scope = String(req.query.scope || '');
   const monthList = meses.length ? meses.sort() : lastNMonthsList(Math.min(Math.max(parseInt(String(req.query.months)) || 12, 1), 24));
   const monthRangeFilter = monthList.map((month) => `(
@@ -414,12 +414,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       });
       return;
     }
-    const rows = await runQuery(wh.id, dedupeCpfDay && !groupByMonth ? `
+    const rows = await runQuery(wh.id, distinctCpf && !groupByMonth ? `
       WITH typed_rows AS (
         SELECT
           ${typeExpr} AS tipo_agrupado,
-          LPAD(REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', ''), 11, '0') AS cpf_norm,
-          TO_DATE(${quoteIdent(APPOINTMENTS_DATE_COLUMN)}) AS dia
+          LPAD(REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', ''), 11, '0') AS cpf_norm
         FROM ${APPOINTMENTS_TABLE}
         ${commonWhere}
           AND cpf_atendido IS NOT NULL
@@ -428,12 +427,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       deduped AS (
         SELECT DISTINCT
           tipo_agrupado,
-          cpf_norm,
-          dia
+          cpf_norm
         FROM typed_rows
         WHERE cpf_norm IS NOT NULL
           AND cpf_norm != ''
-          AND dia IS NOT NULL
+          AND cpf_norm != '00000000000'
       )
       SELECT
         tipo_agrupado,
@@ -481,7 +479,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       total,
       months: monthList,
       source: "atendimento_summarized_gold_live",
-      filters: { group_name: groupName, company, partner_broker_id: partnerBrokerId, dedupe: dedupeCpfDay ? 'cpf_day' : null },
+      filters: { group_name: groupName, company, partner_broker_id: partnerBrokerId, dedupe: distinctCpf ? 'distinct_cpf' : null },
     });
   } catch (err) {
     res.status(500).json({ error: (err as { message?: string }).message });

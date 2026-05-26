@@ -5732,7 +5732,7 @@ async function loadAppointmentTypes(monthValues, idPrefix='appointment-types') {
   if (monthValues && monthValues.length > 0) p.set('meses', monthValues.join(','));
   appendGroupParams(p);
   if (currentCompany && getActiveTab() !== 'sessoes') p.set('company', currentCompany);
-  if (idPrefix === 'agendamento-appointment-types') p.set('dedupe', 'cpf_day');
+  if (idPrefix === 'agendamento-appointment-types' || idPrefix === 'appointment-types') p.set('dedupe', 'distinct_cpf');
 
   const data = await safeGet('/api/appointment-types' + (p.toString() ? '?' + p.toString() : ''));
   if (!data || data.error) {
@@ -5757,8 +5757,8 @@ async function loadAppointmentTypes(monthValues, idPrefix='appointment-types') {
     }).join('') : '<tr><td colspan="3" style="padding:14px 10px;text-align:center;color:#94a3b8">Nenhum tipo encontrado.</td></tr>';
   }
   if (meta) {
-    const usesCpfDayDedupe = data.filters?.dedupe === 'cpf_day';
-    const totalLabel = usesCpfDayDedupe ? 'CPF/dia sem repetir' : 'solicitações';
+    const usesDistinctCpf = data.filters?.dedupe === 'distinct_cpf';
+    const totalLabel = usesDistinctCpf ? 'CPFs distintos' : 'solicitações';
     meta.textContent = `${items.length} tipos · total ${fmt(data.total || 0)} ${totalLabel}`;
   }
   if (loading) loading.style.display = 'none';
