@@ -943,7 +943,7 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
         <div class="petit-card-header">
           <div>
             <h2 style="font-size:13px;font-weight:700;color:#334155;margin-bottom:4px">Evolução das linhas de cuidado</h2>
-            <div style="font-size:11px;color:#94a3b8">CPFs ativos por classificação · <span id="care-coordination-filter-context">todos os filtros globais</span></div>
+            <div style="font-size:11px;color:#94a3b8">CPF-categorias ativos por classificação · <span id="care-coordination-filter-context">todos os filtros globais</span></div>
           </div>
           <div class="care-card-actions">
             <label class="care-card-filter" for="care-beneficiary-type-select-cc01">
@@ -963,9 +963,9 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
         </div>
         <div class="care-card-totals" id="care-coordination-lines-footer" style="display:none">
           <div class="care-card-total">
-            <span class="care-card-total-label">CPFs nas classificações</span>
+            <span class="care-card-total-label">CPF-categorias nas classificações</span>
             <span class="care-card-total-value" id="care-coord-lines-total-sum">—</span>
-            <span class="care-card-total-hint">soma — CPF com cards em N classes conta N vezes</span>
+            <span class="care-card-total-hint">soma — CPF com N categorias ativas conta N vezes</span>
           </div>
           <div class="care-card-total">
             <span class="care-card-total-label">CPFs únicos com card ativo</span>
@@ -3461,7 +3461,7 @@ async function renderCareCoordination() {
     data: {
       labels,
       datasets: [{
-        label: 'CPFs únicos',
+        label: 'CPF-categorias',
         data: values,
         backgroundColor: ['#3F55E3', '#2563eb', '#7c3aed', '#0891b2', '#be185d', '#0f766e', '#1d4ed8', '#f59e0b', '#db2777', '#64748b', '#334155', '#14b8a6'],
         borderRadius: 10,
@@ -3501,7 +3501,7 @@ async function renderCareCoordination() {
             label: c => {
               const value = Number(c.parsed.x) || 0;
               const pct = total > 0 ? (value / total) * 100 : NaN;
-              return `${fmt(value)} CPFs únicos · ${fmtPct(pct)}`;
+              return `${fmt(value)} CPF-categorias · ${fmtPct(pct)}`;
             },
           },
         },
@@ -3650,7 +3650,7 @@ async function loadCareLinesEvolution(classNames, includeOthers) {
   }));
   datasets.push({
     type: 'line',
-    label: 'Total do mês',
+    label: 'Total acumulado',
     data: monthlyTotals,
     borderColor: '#0f172a',
     backgroundColor: 'rgba(15,23,42,0.08)',

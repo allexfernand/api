@@ -476,6 +476,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const company = req.query.company || null;
       const where = buildCareLineFilters(columns, beneficiaryColumns, req.query, groupNames, company, partnerBrokerId);
       const classification = careClassificationExpr();
+      const category = careCategoryExpr();
       const caseIdExpr = careCaseIdExpr(columns);
       const activeDateColumn = activeOnly ? pickCareDateColumn(columns) : null;
       const activeStatusColumn = activeOnly ? pickCareStatusColumn(columns) : null;
@@ -487,6 +488,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
             LPAD(REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', ''), 11, '0') AS cpf_norm,
             ${caseIdExpr} AS atendimento_id,
             ${classification} AS classificacoes,
+            COALESCE(NULLIF(TRIM(CAST(${category} AS STRING)), ''), 'Sem categoria') AS categoria_atendimento,
             LOWER(TRIM(CAST(${quoteIdent(activeStatusColumn)} AS STRING))) AS status_norm,
             try_cast(${quoteIdent(activeDateColumn)} AS TIMESTAMP) AS data_criacao
           FROM ${HEALTHCOACH_TABLE}
@@ -497,6 +499,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
             cpf_norm,
             atendimento_id,
             classificacoes,
+            categoria_atendimento,
             status_norm,
             ROW_NUMBER() OVER (
               PARTITION BY atendimento_id
@@ -507,7 +510,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         )
         SELECT
           classificacoes,
-          COUNT(DISTINCT cpf_norm) AS total_cpfs
+          COUNT(DISTINCT CONCAT(cpf_norm, '||', COALESCE(categoria_atendimento, 'Sem categoria'))) AS total_cpfs
         FROM latest_per_case
         WHERE rn = 1
           AND ${openLatestStatusCondition()}
@@ -517,7 +520,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       ` : `
         SELECT
           ${classification} AS classificacoes,
-          COUNT(DISTINCT LPAD(REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', ''), 11, '0')) AS total_cpfs
+          COUNT(DISTINCT CONCAT(
+            LPAD(REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', ''), 11, '0'),
+            '||',
+            COALESCE(NULLIF(TRIM(CAST(${category} AS STRING)), ''), 'Sem categoria')
+          )) AS total_cpfs
         FROM ${HEALTHCOACH_TABLE}
         WHERE ${where}
         GROUP BY ${classification}
