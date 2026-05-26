@@ -1002,7 +1002,7 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
         <div class="petit-card-header">
           <div>
             <h2 style="font-size:13px;font-weight:700;color:#334155;margin-bottom:4px">Composição mensal das classificações</h2>
-            <div style="font-size:11px;color:#94a3b8">Últimos 3 meses · acumulado até o mês com último status diferente de fechado · mesmas classificações exibidas no CC01</div>
+            <div style="font-size:11px;color:#94a3b8">Últimos 3 meses · acumulado até o mês · 1 CPF por categoria ativa · status diferente de fechado</div>
           </div>
           <span class="petit-chip">CC07</span>
         </div>
@@ -3673,7 +3673,7 @@ async function loadCareLinesEvolution(classNames, includeOthers) {
         .sort((a, b) => b.value - a.value)[0];
       const deltaLabel = delta === null ? 'sem comparativo' : `${delta >= 0 ? '+' : ''}${fmtPct(delta)} vs mês anterior`;
       return `<div class="petit-metric">
-        <span>${escapeHtml(monthShortLabel(month))}<small>${escapeHtml(top?.label || 'Sem dados')} · ${fmt(top?.value || 0)} CPFs</small></span>
+        <span>${escapeHtml(monthShortLabel(month))}<small>${escapeHtml(top?.label || 'Sem dados')} · ${fmt(top?.value || 0)} CPF-categorias</small></span>
         <strong>${fmt(total)}</strong>
         <small style="grid-column:1 / -1;color:#94a3b8;font-weight:800">${escapeHtml(deltaLabel)}</small>
       </div>`;
@@ -3701,10 +3701,10 @@ async function loadCareLinesEvolution(classNames, includeOthers) {
           callbacks: {
             label: c => {
               const value = Number(c.parsed.y) || 0;
-              if (c.dataset.type === 'line') return `Total acumulado: ${fmt(value)} CPFs únicos`;
+              if (c.dataset.type === 'line') return `Total acumulado: ${fmt(value)} CPF-categorias`;
               const total = monthlyTotals[c.dataIndex] || 0;
               const pct = total > 0 ? (value / total) * 100 : NaN;
-              return `${c.dataset.label}: ${fmt(value)} CPFs únicos · ${fmtPct(pct)} do acumulado`;
+              return `${c.dataset.label}: ${fmt(value)} CPF-categorias · ${fmtPct(pct)} do acumulado`;
             },
           },
         },

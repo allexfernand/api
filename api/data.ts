@@ -1490,6 +1490,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const company = req.query.company || null;
       const baseWhere = buildCareLineFilters(columns, beneficiaryColumns, req.query, groupNames, company, partnerBrokerId, false);
       const classification = careClassificationExpr();
+      const category = careCategoryExpr();
       const caseIdExpr = careCaseIdExpr(columns);
       const classList = classNames.map((name) => `'${escape(name)}'`).join(',');
       const rows = await runQuery(wh.id, `
@@ -1497,6 +1498,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           SELECT
             DATE_FORMAT(try_cast(${quoteIdent(dateColumn)} AS TIMESTAMP), 'yyyy-MM') AS mes,
             ${classification} AS classificacao,
+            COALESCE(NULLIF(TRIM(CAST(${category} AS STRING)), ''), 'Sem categoria') AS categoria_atendimento,
             LPAD(REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', ''), 11, '0') AS cpf_norm,
             ${caseIdExpr} AS atendimento_id,
             ${activeOnly ? `LOWER(TRIM(CAST(${quoteIdent(statusColumn)} AS STRING)))` : "NULL"} AS status_norm,
@@ -1519,7 +1521,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           ${literalRows(visibleClasses, 'classificacao')}
         ),
         active_base AS (
-          SELECT competencia_mes AS mes, classificacao, cpf_norm
+          SELECT competencia_mes AS mes, classificacao, categoria_atendimento, cpf_norm
           FROM (
             SELECT
               m.mes AS competencia_mes,
@@ -1544,6 +1546,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
               WHEN b.classificacao IN (${classList}) THEN b.classificacao
               ${includeOthers ? "ELSE 'Outros'" : "ELSE NULL"}
             END AS classificacao,
+            b.categoria_atendimento,
             b.cpf_norm
           FROM ${activeOnly ? "active_base" : "base"} b
           INNER JOIN months m ON m.mes = b.mes
@@ -1551,7 +1554,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         SELECT
           m.mes,
           c.classificacao,
-          COUNT(DISTINCT s.cpf_norm) AS total_cpfs
+          COUNT(DISTINCT CONCAT(s.cpf_norm, '||', COALESCE(s.categoria_atendimento, 'Sem categoria'))) AS total_cpfs
         FROM months m
         CROSS JOIN classes c
         LEFT JOIN scoped s
