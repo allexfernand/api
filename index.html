@@ -2695,6 +2695,7 @@ function buildPdfReport() {
   const activeClone = activeTab.cloneNode(true);
   activeClone.classList.add('active');
   replacePdfRemoteAssets(activeClone);
+  activeClone.querySelector('.petit-hero-logo')?.remove();
   normalizePdfExportStyles(activeClone);
   copyCanvasAsImages(activeTab, activeClone);
   content.appendChild(activeClone);
