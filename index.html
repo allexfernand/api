@@ -222,6 +222,15 @@ body {
 .chart-card:hover{box-shadow:var(--shadow-md)}
 
 .chart-wrap{position:relative;width:100%;height:clamp(260px,32vw,360px)}
+.sessions-q3-compact-card{max-width:calc(50% - 8px);margin-right:auto}
+.sessions-q3-compact-card .chart-wrap{height:260px}
+.sessions-ia-evolution-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(92px,1fr));gap:8px;margin-top:12px}
+.sessions-ia-evolution-chip{border:1px solid var(--border);border-radius:10px;background:#f8fafc;padding:8px 10px}
+.sessions-ia-evolution-chip strong{display:block;font-size:13px;line-height:1.2;color:#334155}
+.sessions-ia-evolution-chip span{display:block;margin-top:2px;font-size:10px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.4px}
+.sessions-ia-evolution-chip.positive strong{color:#0f766e}
+.sessions-ia-evolution-chip.negative strong{color:#dc2626}
+.sessions-ia-evolution-chip.neutral strong{color:#64748b}
 
 .fluid-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:16px;align-items:stretch;margin-bottom:16px}
 .fluid-grid>.card-box,.fluid-grid>.chart-card{margin-bottom:0}
@@ -522,6 +531,7 @@ body {
 }
 @media (max-width:980px){
   .appointments-analysis-grid,.sessions-appointments-grid{grid-template-columns:1fr}
+  .sessions-q3-compact-card{max-width:100%}
   .sessions-utilization-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
   .petit-kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
   .petit-grid-2,.petit-grid-3{grid-template-columns:1fr}
@@ -1313,13 +1323,14 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
       </div>
     </div>
 
-    <div class="chart-card" data-qtag="#Q3">
+    <div class="chart-card sessions-q3-compact-card" data-qtag="#Q3">
       <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Evolução mensal de finalizações · Jan-Mai/2026</h2>
       <div style="font-size:11px;color:#94a3b8;margin-bottom:14px">Janeiro de 2026 a maio de 2026 · <span id="s-evol-jan-may-2026-mode">global</span></div>
       <div class="chart-wrap">
         <div class="skeleton" id="skel-s-evol-jan-may-2026"></div>
         <canvas id="sessionsJanMay2026EvolChart" style="display:none"></canvas>
       </div>
+      <div class="sessions-ia-evolution-summary" id="s-evol-jan-may-2026-ia-summary"></div>
       <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="s-evol-jan-may-2026-error"></div>
     </div>
 
@@ -6188,9 +6199,10 @@ async function loadSessionsDailyEvolution() {
   }
 }
 
-function renderSessionsFinalizationsEvolutionChart(cv, chartInstance, labels, totalValues, humanoValues, iaValues) {
+function renderSessionsFinalizationsEvolutionChart(cv, chartInstance, labels, totalValues, humanoValues, iaValues, options = {}) {
   if (chartInstance) chartInstance.destroy();
   if (!cv) return null;
+  const highlightIa = Boolean(options.highlightIa);
   return new Chart(cv, {
     type: 'line',
     data: {
@@ -6199,22 +6211,22 @@ function renderSessionsFinalizationsEvolutionChart(cv, chartInstance, labels, to
         {
           label: 'Total',
           data: totalValues,
-          borderColor: '#0f766e',
+          borderColor: highlightIa ? 'rgba(15,118,110,0.45)' : '#0f766e',
           backgroundColor: 'rgba(15,118,110,0.08)',
-          borderWidth: 2,
-          pointRadius: 3,
-          pointBackgroundColor: '#0f766e',
+          borderWidth: highlightIa ? 1.5 : 2,
+          pointRadius: highlightIa ? 2 : 3,
+          pointBackgroundColor: highlightIa ? 'rgba(15,118,110,0.65)' : '#0f766e',
           fill: false,
           tension: 0.35,
         },
         {
           label: 'Humano',
           data: humanoValues,
-          borderColor: '#6366f1',
+          borderColor: highlightIa ? 'rgba(99,102,241,0.42)' : '#6366f1',
           backgroundColor: 'rgba(99,102,241,0.08)',
-          borderWidth: 2,
-          pointRadius: 3,
-          pointBackgroundColor: '#6366f1',
+          borderWidth: highlightIa ? 1.5 : 2,
+          pointRadius: highlightIa ? 2 : 3,
+          pointBackgroundColor: highlightIa ? 'rgba(99,102,241,0.62)' : '#6366f1',
           fill: false,
           tension: 0.35,
         },
@@ -6222,9 +6234,10 @@ function renderSessionsFinalizationsEvolutionChart(cv, chartInstance, labels, to
           label: 'IA',
           data: iaValues,
           borderColor: '#14b8a6',
-          backgroundColor: 'rgba(20,184,166,0.08)',
-          borderWidth: 2,
-          pointRadius: 3,
+          backgroundColor: highlightIa ? 'rgba(20,184,166,0.12)' : 'rgba(20,184,166,0.08)',
+          borderWidth: highlightIa ? 3 : 2,
+          pointRadius: highlightIa ? 4 : 3,
+          pointHoverRadius: highlightIa ? 6 : 4,
           pointBackgroundColor: '#14b8a6',
           fill: false,
           tension: 0.35,
@@ -6255,6 +6268,36 @@ function renderSessionsFinalizationsEvolutionChart(cv, chartInstance, labels, to
       },
     },
   });
+}
+
+function sessionsIaEvolutionClass(current, previous) {
+  if (!Number.isFinite(previous) || previous <= 0 || current === previous) return 'neutral';
+  return current > previous ? 'positive' : 'negative';
+}
+
+function sessionsIaEvolutionLabel(current, previous) {
+  if (!Number.isFinite(previous) || previous <= 0) return 'base';
+  const delta = ((current - previous) / previous) * 100;
+  const sign = delta > 0 ? '+' : '';
+  return `${sign}${delta.toFixed(1).replace('.', ',')}%`;
+}
+
+function renderSessionsIaEvolutionSummary(series, container) {
+  if (!container) return;
+  const rows = (series || []).map((item) => ({
+    month: monthShortLabel(item.mes),
+    ia: Number(item.ia) || 0,
+  }));
+  container.innerHTML = rows.map((row, index) => {
+    const previous = index > 0 ? rows[index - 1].ia : NaN;
+    const pctLabel = sessionsIaEvolutionLabel(row.ia, previous);
+    const tone = sessionsIaEvolutionClass(row.ia, previous);
+    const context = index === 0 ? `${row.month} · ${fmt(row.ia)} IA` : `${row.month} · vs mês ant. · ${fmt(row.ia)} IA`;
+    return `<div class="sessions-ia-evolution-chip ${tone}">
+      <strong>${escapeHtml(pctLabel)}</strong>
+      <span>${escapeHtml(context)}</span>
+    </div>`;
+  }).join('');
 }
 
 async function loadSessionsEvolution() {
@@ -6364,6 +6407,7 @@ async function loadSessionsJanMay2026Evolution() {
   const cv = document.getElementById('sessionsJanMay2026EvolChart');
   const modeLabel = document.getElementById('s-evol-jan-may-2026-mode');
   const errorBox = document.getElementById('s-evol-jan-may-2026-error');
+  const iaSummary = document.getElementById('s-evol-jan-may-2026-ia-summary');
   if (!cv) return;
   if (skel) {
     skel.style.display = 'block';
@@ -6374,6 +6418,7 @@ async function loadSessionsJanMay2026Evolution() {
     errorBox.style.display = 'none';
     errorBox.textContent = '';
   }
+  if (iaSummary) iaSummary.innerHTML = '';
 
   const p = new URLSearchParams();
   p.set('meses', SESSIONS_JAN_MAY_2026_MONTHS.join(','));
@@ -6402,7 +6447,8 @@ async function loadSessionsJanMay2026Evolution() {
   }
   if (skel) skel.style.display = 'none';
   cv.style.display = 'block';
-  sessionsJanMay2026EvolChart = renderSessionsFinalizationsEvolutionChart(cv, sessionsJanMay2026EvolChart, labels, totalValues, humanoValues, iaValues);
+  renderSessionsIaEvolutionSummary(series, iaSummary);
+  sessionsJanMay2026EvolChart = renderSessionsFinalizationsEvolutionChart(cv, sessionsJanMay2026EvolChart, labels, totalValues, humanoValues, iaValues, { highlightIa: true });
 }
 
 // --- Evolução ---
