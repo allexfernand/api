@@ -224,13 +224,6 @@ body {
 .chart-wrap{position:relative;width:100%;height:clamp(260px,32vw,360px)}
 .sessions-q3-compact-card{max-width:calc(50% - 8px);margin-right:auto}
 .sessions-q3-compact-card .chart-wrap{height:260px}
-.sessions-ia-evolution-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(92px,1fr));gap:8px;margin-top:12px}
-.sessions-ia-evolution-chip{border:1px solid var(--border);border-radius:10px;background:#f8fafc;padding:8px 10px}
-.sessions-ia-evolution-chip strong{display:block;font-size:13px;line-height:1.2;color:#334155}
-.sessions-ia-evolution-chip span{display:block;margin-top:2px;font-size:10px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.4px}
-.sessions-ia-evolution-chip.positive strong{color:#0f766e}
-.sessions-ia-evolution-chip.negative strong{color:#dc2626}
-.sessions-ia-evolution-chip.neutral strong{color:#64748b}
 
 .fluid-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:16px;align-items:stretch;margin-bottom:16px}
 .fluid-grid>.card-box,.fluid-grid>.chart-card{margin-bottom:0}
@@ -1330,7 +1323,6 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
         <div class="skeleton" id="skel-s-evol-jan-may-2026"></div>
         <canvas id="sessionsJanMay2026EvolChart" style="display:none"></canvas>
       </div>
-      <div class="sessions-ia-evolution-summary" id="s-evol-jan-may-2026-ia-summary"></div>
       <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="s-evol-jan-may-2026-error"></div>
     </div>
 
@@ -6203,6 +6195,57 @@ function renderSessionsFinalizationsEvolutionChart(cv, chartInstance, labels, to
   if (chartInstance) chartInstance.destroy();
   if (!cv) return null;
   const highlightIa = Boolean(options.highlightIa);
+  const pointLabelPlugin = {
+    id: 'sessionsIaPointLabels',
+    afterDatasetsDraw(chart) {
+      const pointLabels = options.iaPointLabels || [];
+      const pointTones = options.iaPointTones || [];
+      if (!pointLabels.length) return;
+      const iaDatasetIndex = chart.data.datasets.findIndex((dataset) => dataset.label === 'IA');
+      if (iaDatasetIndex < 0) return;
+      const meta = chart.getDatasetMeta(iaDatasetIndex);
+      const { ctx, chartArea } = chart;
+      ctx.save();
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font = '700 11px Inter, system-ui, sans-serif';
+      meta.data.forEach((point, index) => {
+        const label = pointLabels[index];
+        if (!label) return;
+        const tone = pointTones[index] || 'neutral';
+        const colors = tone === 'negative'
+          ? { bg: '#fef2f2', border: '#fecaca', text: '#dc2626' }
+          : (tone === 'positive'
+            ? { bg: '#ecfdf5', border: '#99f6e4', text: '#0f766e' }
+            : { bg: '#f8fafc', border: '#cbd5e1', text: '#64748b' });
+        const x = point.x;
+        const y = Math.max(chartArea.top + 12, point.y - 18);
+        const width = ctx.measureText(label).width + 14;
+        const height = 20;
+        const left = Math.max(chartArea.left + 2, Math.min(x - width / 2, chartArea.right - width - 2));
+        const top = y - height / 2;
+        ctx.fillStyle = colors.bg;
+        ctx.strokeStyle = colors.border;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(left + 10, top);
+        ctx.lineTo(left + width - 10, top);
+        ctx.quadraticCurveTo(left + width, top, left + width, top + 10);
+        ctx.lineTo(left + width, top + height - 10);
+        ctx.quadraticCurveTo(left + width, top + height, left + width - 10, top + height);
+        ctx.lineTo(left + 10, top + height);
+        ctx.quadraticCurveTo(left, top + height, left, top + height - 10);
+        ctx.lineTo(left, top + 10);
+        ctx.quadraticCurveTo(left, top, left + 10, top);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = colors.text;
+        ctx.fillText(label, left + width / 2, top + height / 2 + 0.5);
+      });
+      ctx.restore();
+    },
+  };
   return new Chart(cv, {
     type: 'line',
     data: {
@@ -6247,6 +6290,7 @@ function renderSessionsFinalizationsEvolutionChart(cv, chartInstance, labels, to
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      layout: { padding: { top: options.iaPointLabels ? 18 : 0 } },
       plugins: {
         legend: { display: true, position: 'top', align: 'end', labels: { boxWidth: 10, boxHeight: 10, color: '#64748b', font: { size: 11 } } },
         tooltip: {
@@ -6267,37 +6311,40 @@ function renderSessionsFinalizationsEvolutionChart(cv, chartInstance, labels, to
         },
       },
     },
+    plugins: options.iaPointLabels ? [pointLabelPlugin] : [],
   });
 }
 
-function sessionsIaEvolutionClass(current, previous) {
-  if (!Number.isFinite(previous) || previous <= 0 || current === previous) return 'neutral';
-  return current > previous ? 'positive' : 'negative';
-}
-
-function sessionsIaEvolutionLabel(current, previous) {
-  if (!Number.isFinite(previous) || previous <= 0) return 'base';
+function sessionsIaEvolutionLabel(current, previous, index) {
+  if (index === 0 || !Number.isFinite(previous) || previous <= 0) return '0,0%';
   const delta = ((current - previous) / previous) * 100;
   const sign = delta > 0 ? '+' : '';
   return `${sign}${delta.toFixed(1).replace('.', ',')}%`;
 }
 
-function renderSessionsIaEvolutionSummary(series, container) {
-  if (!container) return;
+function sessionsIaEvolutionTone(current, previous, index) {
+  if (index === 0 || !Number.isFinite(previous) || previous <= 0 || current === previous) return 'neutral';
+  return current > previous ? 'positive' : 'negative';
+}
+
+function sessionsIaEvolutionLabels(series) {
   const rows = (series || []).map((item) => ({
-    month: monthShortLabel(item.mes),
     ia: Number(item.ia) || 0,
   }));
-  container.innerHTML = rows.map((row, index) => {
+  return rows.map((row, index) => {
     const previous = index > 0 ? rows[index - 1].ia : NaN;
-    const pctLabel = sessionsIaEvolutionLabel(row.ia, previous);
-    const tone = sessionsIaEvolutionClass(row.ia, previous);
-    const context = index === 0 ? `${row.month} · ${fmt(row.ia)} IA` : `${row.month} · vs mês ant. · ${fmt(row.ia)} IA`;
-    return `<div class="sessions-ia-evolution-chip ${tone}">
-      <strong>${escapeHtml(pctLabel)}</strong>
-      <span>${escapeHtml(context)}</span>
-    </div>`;
-  }).join('');
+    return sessionsIaEvolutionLabel(row.ia, previous, index);
+  });
+}
+
+function sessionsIaEvolutionTones(series) {
+  const rows = (series || []).map((item) => ({
+    ia: Number(item.ia) || 0,
+  }));
+  return rows.map((row, index) => {
+    const previous = index > 0 ? rows[index - 1].ia : NaN;
+    return sessionsIaEvolutionTone(row.ia, previous, index);
+  });
 }
 
 async function loadSessionsEvolution() {
@@ -6407,7 +6454,6 @@ async function loadSessionsJanMay2026Evolution() {
   const cv = document.getElementById('sessionsJanMay2026EvolChart');
   const modeLabel = document.getElementById('s-evol-jan-may-2026-mode');
   const errorBox = document.getElementById('s-evol-jan-may-2026-error');
-  const iaSummary = document.getElementById('s-evol-jan-may-2026-ia-summary');
   if (!cv) return;
   if (skel) {
     skel.style.display = 'block';
@@ -6418,7 +6464,6 @@ async function loadSessionsJanMay2026Evolution() {
     errorBox.style.display = 'none';
     errorBox.textContent = '';
   }
-  if (iaSummary) iaSummary.innerHTML = '';
 
   const p = new URLSearchParams();
   p.set('meses', SESSIONS_JAN_MAY_2026_MONTHS.join(','));
@@ -6447,8 +6492,11 @@ async function loadSessionsJanMay2026Evolution() {
   }
   if (skel) skel.style.display = 'none';
   cv.style.display = 'block';
-  renderSessionsIaEvolutionSummary(series, iaSummary);
-  sessionsJanMay2026EvolChart = renderSessionsFinalizationsEvolutionChart(cv, sessionsJanMay2026EvolChart, labels, totalValues, humanoValues, iaValues, { highlightIa: true });
+  sessionsJanMay2026EvolChart = renderSessionsFinalizationsEvolutionChart(cv, sessionsJanMay2026EvolChart, labels, totalValues, humanoValues, iaValues, {
+    highlightIa: true,
+    iaPointLabels: sessionsIaEvolutionLabels(series),
+    iaPointTones: sessionsIaEvolutionTones(series),
+  });
 }
 
 // --- Evolução ---
