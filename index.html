@@ -1317,8 +1317,8 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
     </div>
 
     <div class="chart-card sessions-q3-compact-card" data-qtag="#Q3">
-      <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Evolução mensal de finalizações · Jan-Mai/2026</h2>
-      <div style="font-size:11px;color:#94a3b8;margin-bottom:14px">Janeiro de 2026 a maio de 2026 · <span id="s-evol-jan-may-2026-mode">global</span></div>
+      <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Evolução mensal de finalizações · Set/25-Mai/26</h2>
+      <div style="font-size:11px;color:#94a3b8;margin-bottom:14px">Setembro de 2025 a maio de 2026 · IA em setembro/25 como base 0 · <span id="s-evol-jan-may-2026-mode">global</span></div>
       <div class="chart-wrap">
         <div class="skeleton" id="skel-s-evol-jan-may-2026"></div>
         <canvas id="sessionsJanMay2026EvolChart" style="display:none"></canvas>
@@ -1750,7 +1750,7 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
 <script>
 const fmt = n => Number(n).toLocaleString('pt-BR');
 const mN = {'01':'Jan','02':'Fev','03':'Mar','04':'Abr','05':'Mai','06':'Jun','07':'Jul','08':'Ago','09':'Set','10':'Out','11':'Nov','12':'Dez'};
-const SESSIONS_JAN_MAY_2026_MONTHS = ['2026-01', '2026-02', '2026-03', '2026-04', '2026-05'];
+const SESSIONS_Q3_PRESENTATION_MONTHS = ['2025-09', '2025-10', '2025-11', '2025-12', '2026-01', '2026-02', '2026-03', '2026-04', '2026-05'];
 const AUTH_STORAGE_KEY = 'sanus-dashboard-basic-auth';
 
 let usersData = [], companiesData = [], sessionCompaniesData = [], eChart, agegroupChart, appointmentTypesTrendChart, careCoordinationLinesChart, careLinesEvolutionChart, careComplementChart, careActiveComplementChart, petitCareLinesChart, petitSessionsEvolChart, petitSessionsTotalEvolChart, sessionsEvolChart, sessionsJanMay2026EvolChart, sessionsTotalEvolChart, sessionsAttendanceChart, sessionsDailyChart, sessionsTopGroupsChart, qualityVolumeEvolutionChart, qualityEvolutionChart, qualityCriteriaEvolutionChart;
@@ -6315,35 +6315,31 @@ function renderSessionsFinalizationsEvolutionChart(cv, chartInstance, labels, to
   });
 }
 
-function sessionsIaEvolutionLabel(current, previous, index) {
-  if (index === 0 || !Number.isFinite(previous) || previous <= 0) return '0,0%';
-  const delta = ((current - previous) / previous) * 100;
-  const sign = delta > 0 ? '+' : '';
-  return `${sign}${delta.toFixed(1).replace('.', ',')}%`;
+function sessionsQ3PresentationSeries(series) {
+  return (series || []).map((item) => ({
+    ...item,
+    ia: item.mes === '2025-09' ? 0 : Number(item.ia) || 0,
+  }));
 }
 
-function sessionsIaEvolutionTone(current, previous, index) {
-  if (index === 0 || !Number.isFinite(previous) || previous <= 0 || current === previous) return 'neutral';
-  return current > previous ? 'positive' : 'negative';
+function sessionsIaSharePct(row) {
+  const ia = Number(row.ia) || 0;
+  const total = Number(row.total) || ((Number(row.humano) || 0) + ia);
+  return total > 0 ? (ia / total) * 100 : 0;
 }
 
 function sessionsIaEvolutionLabels(series) {
-  const rows = (series || []).map((item) => ({
-    ia: Number(item.ia) || 0,
-  }));
-  return rows.map((row, index) => {
-    const previous = index > 0 ? rows[index - 1].ia : NaN;
-    return sessionsIaEvolutionLabel(row.ia, previous, index);
-  });
+  return (series || []).map((row) => `${sessionsIaSharePct(row).toFixed(1).replace('.', ',')}%`);
 }
 
 function sessionsIaEvolutionTones(series) {
-  const rows = (series || []).map((item) => ({
-    ia: Number(item.ia) || 0,
-  }));
+  const rows = series || [];
   return rows.map((row, index) => {
-    const previous = index > 0 ? rows[index - 1].ia : NaN;
-    return sessionsIaEvolutionTone(row.ia, previous, index);
+    if (index === 0) return 'neutral';
+    const pct = sessionsIaSharePct(row);
+    const previousPct = sessionsIaSharePct(rows[index - 1]);
+    if (pct === previousPct) return 'neutral';
+    return pct > previousPct ? 'positive' : 'negative';
   });
 }
 
@@ -6466,7 +6462,7 @@ async function loadSessionsJanMay2026Evolution() {
   }
 
   const p = new URLSearchParams();
-  p.set('meses', SESSIONS_JAN_MAY_2026_MONTHS.join(','));
+  p.set('meses', SESSIONS_Q3_PRESENTATION_MONTHS.join(','));
   appendGroupParams(p);
 
   const data = await safeGet('/api/sessions-evolution?' + p.toString());
@@ -6476,12 +6472,12 @@ async function loadSessionsJanMay2026Evolution() {
     if (skel) skel.style.display = 'none';
     if (errorBox) {
       errorBox.style.display = 'block';
-      errorBox.textContent = data && data.error ? String(data.error).slice(0, 220) : 'Erro ao carregar evolução Jan-Mai/2026';
+      errorBox.textContent = data && data.error ? String(data.error).slice(0, 220) : 'Erro ao carregar evolução Set/25-Mai/26';
     }
     return;
   }
 
-  const series = data.series || [];
+  const series = sessionsQ3PresentationSeries(data.series || []);
   const labels = series.map((it) => monthShortLabel(it.mes));
   const humanoValues = series.map((it) => Number(it.humano) || 0);
   const iaValues = series.map((it) => Number(it.ia) || 0);
