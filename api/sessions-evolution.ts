@@ -2,7 +2,7 @@
 // Evolução mensal de sessões finalizadas por Humano e IA (últimos 12 meses).
 // - Sem filtro de grupo/empresa: COUNT(*) GROUP BY mês — query rápida.
 // - Com filtro: JOIN por botmaker_session.organization_id x organizations.id.
-// Aceita ?group_name=, ?company=, ?type=, ?months=12.
+// Aceita ?group_name=, ?company=, ?type=, ?months=12 ou ?meses=2026-01,2026-02.
 import { MDS_PARTNER_SCOPE, requireBasicAuth, scopedPartnerBrokerId } from "../lib/basic-auth";
 
 declare const process: { env: Record<string, string | undefined> };
@@ -348,6 +348,15 @@ function lastNMonthsList(n: number, includeCurrentMonth = true) {
   return out;
 }
 
+function parseMonthList(value: unknown) {
+  const raw = Array.isArray(value) ? value.join(',') : String(value || '');
+  return [...new Set(raw
+    .split(',')
+    .map((month) => month.trim())
+    .filter((month) => /^\d{4}-\d{2}$/.test(month))
+  )].sort();
+}
+
 function nextMonth(month: string) {
   const [year, mm] = month.split('-').map((value) => parseInt(value, 10));
   const d = new Date(Date.UTC(year, mm - 1, 1));
@@ -369,12 +378,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   const typeFilter = req.query.type || null;
   const granularity = req.query.granularity || 'month';
   const dayMonth = req.query.mes && /^\d{4}-\d{2}$/.test(req.query.mes) ? req.query.mes : null;
+  const explicitMonths = parseMonthList(req.query.meses);
   const months = Math.min(Math.max(parseInt(req.query.months) || 12, 1), 24);
   const includeBeneficiaries = String(req.query.include_beneficiaries || '') === '1';
   const onlyBeneficiaries = String(req.query.only_beneficiaries || '') === '1';
   const hasOrgFilter = Boolean(groupNames.length || company || partnerBrokerId);
 
-  const monthList = lastNMonthsList(months);
+  const monthList = explicitMonths.length ? explicitMonths : lastNMonthsList(months);
   const fullMonthScopes = {
     last_1_month: lastNMonthsList(1, false),
     last_3_months: lastNMonthsList(3, false),
@@ -520,7 +530,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     });
 
     res.status(200).json({
-      months,
+      months: monthList.length,
+      period_months: monthList,
       series,
       utilization,
       utilization_periods: fullMonthScopes,

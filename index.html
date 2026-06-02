@@ -1313,6 +1313,16 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
       </div>
     </div>
 
+    <div class="chart-card" data-qtag="#Q3">
+      <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Evolução mensal de finalizações · Jan-Mai/2026</h2>
+      <div style="font-size:11px;color:#94a3b8;margin-bottom:14px">Janeiro de 2026 a maio de 2026 · <span id="s-evol-jan-may-2026-mode">global</span></div>
+      <div class="chart-wrap">
+        <div class="skeleton" id="skel-s-evol-jan-may-2026"></div>
+        <canvas id="sessionsJanMay2026EvolChart" style="display:none"></canvas>
+      </div>
+      <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="s-evol-jan-may-2026-error"></div>
+    </div>
+
     <div style="text-align:center;padding:20px;color:#bbb;font-size:13px">Mais dados serão adicionados em breve.</div>
   </div>
 
@@ -1737,9 +1747,10 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
 <script>
 const fmt = n => Number(n).toLocaleString('pt-BR');
 const mN = {'01':'Jan','02':'Fev','03':'Mar','04':'Abr','05':'Mai','06':'Jun','07':'Jul','08':'Ago','09':'Set','10':'Out','11':'Nov','12':'Dez'};
+const SESSIONS_JAN_MAY_2026_MONTHS = ['2026-01', '2026-02', '2026-03', '2026-04', '2026-05'];
 const AUTH_STORAGE_KEY = 'sanus-dashboard-basic-auth';
 
-let usersData = [], companiesData = [], sessionCompaniesData = [], eChart, agegroupChart, appointmentTypesTrendChart, careCoordinationLinesChart, careLinesEvolutionChart, careComplementChart, careActiveComplementChart, petitCareLinesChart, petitSessionsEvolChart, petitSessionsTotalEvolChart, sessionsEvolChart, sessionsTotalEvolChart, sessionsAttendanceChart, sessionsDailyChart, sessionsTopGroupsChart, qualityVolumeEvolutionChart, qualityEvolutionChart, qualityCriteriaEvolutionChart;
+let usersData = [], companiesData = [], sessionCompaniesData = [], eChart, agegroupChart, appointmentTypesTrendChart, careCoordinationLinesChart, careLinesEvolutionChart, careComplementChart, careActiveComplementChart, petitCareLinesChart, petitSessionsEvolChart, petitSessionsTotalEvolChart, sessionsEvolChart, sessionsJanMay2026EvolChart, sessionsTotalEvolChart, sessionsAttendanceChart, sessionsDailyChart, sessionsTopGroupsChart, qualityVolumeEvolutionChart, qualityEvolutionChart, qualityCriteriaEvolutionChart;
 let currentGroup = '', currentType = '', currentCompany = '';
 let currentGroups = [];
 let currentPartnerBrokerId = '';
@@ -1756,6 +1767,7 @@ let selectedTypification = null;
 let typificationGroupsRequestId = 0;
 let sessionsRequestId = 0;
 let sessionsEvolutionRequestId = 0;
+let sessionsJanMay2026EvolutionRequestId = 0;
 let petitComiteRequestId = 0;
 let petitMdsInitialized = false;
 let petitRenderVariant = 'default';
@@ -5656,6 +5668,7 @@ async function loadSessions() {
   const qs = p.toString() ? '?' + p.toString() : '';
 
   loadSessionsEvolution();
+  loadSessionsJanMay2026Evolution();
   loadSessionsDailyEvolution();
 
   const sessions = await safeGet('/api/sessions' + qs);
@@ -6175,6 +6188,75 @@ async function loadSessionsDailyEvolution() {
   }
 }
 
+function renderSessionsFinalizationsEvolutionChart(cv, chartInstance, labels, totalValues, humanoValues, iaValues) {
+  if (chartInstance) chartInstance.destroy();
+  if (!cv) return null;
+  return new Chart(cv, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Total',
+          data: totalValues,
+          borderColor: '#0f766e',
+          backgroundColor: 'rgba(15,118,110,0.08)',
+          borderWidth: 2,
+          pointRadius: 3,
+          pointBackgroundColor: '#0f766e',
+          fill: false,
+          tension: 0.35,
+        },
+        {
+          label: 'Humano',
+          data: humanoValues,
+          borderColor: '#6366f1',
+          backgroundColor: 'rgba(99,102,241,0.08)',
+          borderWidth: 2,
+          pointRadius: 3,
+          pointBackgroundColor: '#6366f1',
+          fill: false,
+          tension: 0.35,
+        },
+        {
+          label: 'IA',
+          data: iaValues,
+          borderColor: '#14b8a6',
+          backgroundColor: 'rgba(20,184,166,0.08)',
+          borderWidth: 2,
+          pointRadius: 3,
+          pointBackgroundColor: '#14b8a6',
+          fill: false,
+          tension: 0.35,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: true, position: 'top', align: 'end', labels: { boxWidth: 10, boxHeight: 10, color: '#64748b', font: { size: 11 } } },
+        tooltip: {
+          backgroundColor: '#1e293b', borderColor: '#334155', borderWidth: 1,
+          titleColor: '#94a3b8', bodyColor: '#f1f5f9',
+          callbacks: { label: c => sessionsPointTooltipLabel(c, totalValues) },
+        },
+      },
+      scales: {
+        x: {
+          ticks: { font: { size: 10 }, color: '#94a3b8', maxRotation: 45, autoSkip: true, maxTicksLimit: 14 },
+          grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false },
+        },
+        y: {
+          beginAtZero: true,
+          ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => fmt(v) },
+          grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false },
+        },
+      },
+    },
+  });
+}
+
 async function loadSessionsEvolution() {
   const requestId = ++sessionsEvolutionRequestId;
   const skel = document.getElementById('skel-s-evol');
@@ -6263,71 +6345,9 @@ async function loadSessionsEvolution() {
   if (skel) skel.style.display = 'none';
   if (cv && data && !data.error) cv.style.display = 'block';
 
-  if (sessionsEvolChart) sessionsEvolChart.destroy();
-  if (cv && data && !data.error) sessionsEvolChart = new Chart(cv, {
-    type: 'line',
-    data: {
-      labels,
-      datasets: [
-        {
-          label: 'Total',
-          data: totalValues,
-          borderColor: '#0f766e',
-          backgroundColor: 'rgba(15,118,110,0.08)',
-          borderWidth: 2,
-          pointRadius: 3,
-          pointBackgroundColor: '#0f766e',
-          fill: false,
-          tension: 0.35,
-        },
-        {
-          label: 'Humano',
-          data: humanoValues,
-          borderColor: '#6366f1',
-          backgroundColor: 'rgba(99,102,241,0.08)',
-          borderWidth: 2,
-          pointRadius: 3,
-          pointBackgroundColor: '#6366f1',
-          fill: false,
-          tension: 0.35,
-        },
-        {
-          label: 'IA',
-          data: iaValues,
-          borderColor: '#14b8a6',
-          backgroundColor: 'rgba(20,184,166,0.08)',
-          borderWidth: 2,
-          pointRadius: 3,
-          pointBackgroundColor: '#14b8a6',
-          fill: false,
-          tension: 0.35,
-        },
-      ],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: true, position: 'top', align: 'end', labels: { boxWidth: 10, boxHeight: 10, color: '#64748b', font: { size: 11 } } },
-        tooltip: {
-          backgroundColor: '#1e293b', borderColor: '#334155', borderWidth: 1,
-          titleColor: '#94a3b8', bodyColor: '#f1f5f9',
-          callbacks: { label: c => sessionsPointTooltipLabel(c, totalValues) },
-        },
-      },
-      scales: {
-        x: {
-          ticks: { font: { size: 10 }, color: '#94a3b8', maxRotation: 45, autoSkip: true, maxTicksLimit: 14 },
-          grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false },
-        },
-        y: {
-          beginAtZero: true,
-          ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => fmt(v) },
-          grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false },
-        },
-      },
-    },
-  });
+  if (cv && data && !data.error) {
+    sessionsEvolChart = renderSessionsFinalizationsEvolutionChart(cv, sessionsEvolChart, labels, totalValues, humanoValues, iaValues);
+  }
   renderSessionsTotalEvolutionChart(labels, totalValues, uniqueBeneficiaryValues, Boolean(data.beneficiaries_included));
 
   appointmentTypesBaseMonths = series.map((it) => it.mes);
@@ -6336,6 +6356,53 @@ async function loadSessionsEvolution() {
     renderSessionsAttendanceChart(labels, appointmentTypesBaseMonths, totalValues, data, demographicsData),
     loadSessionAppointmentTypes(),
   ]);
+}
+
+async function loadSessionsJanMay2026Evolution() {
+  const requestId = ++sessionsJanMay2026EvolutionRequestId;
+  const skel = document.getElementById('skel-s-evol-jan-may-2026');
+  const cv = document.getElementById('sessionsJanMay2026EvolChart');
+  const modeLabel = document.getElementById('s-evol-jan-may-2026-mode');
+  const errorBox = document.getElementById('s-evol-jan-may-2026-error');
+  if (!cv) return;
+  if (skel) {
+    skel.style.display = 'block';
+    skel.innerHTML = '';
+  }
+  cv.style.display = 'none';
+  if (errorBox) {
+    errorBox.style.display = 'none';
+    errorBox.textContent = '';
+  }
+
+  const p = new URLSearchParams();
+  p.set('meses', SESSIONS_JAN_MAY_2026_MONTHS.join(','));
+  appendGroupParams(p);
+
+  const data = await safeGet('/api/sessions-evolution?' + p.toString());
+  if (requestId !== sessionsJanMay2026EvolutionRequestId) return;
+
+  if (!data || data.error) {
+    if (skel) skel.style.display = 'none';
+    if (errorBox) {
+      errorBox.style.display = 'block';
+      errorBox.textContent = data && data.error ? String(data.error).slice(0, 220) : 'Erro ao carregar evolução Jan-Mai/2026';
+    }
+    return;
+  }
+
+  const series = data.series || [];
+  const labels = series.map((it) => monthShortLabel(it.mes));
+  const humanoValues = series.map((it) => Number(it.humano) || 0);
+  const iaValues = series.map((it) => Number(it.ia) || 0);
+  const totalValues = series.map((it) => Number(it.total) || ((Number(it.humano) || 0) + (Number(it.ia) || 0)));
+  if (modeLabel) {
+    const scope = selectedSessionScopeText();
+    modeLabel.textContent = scope || 'global';
+  }
+  if (skel) skel.style.display = 'none';
+  cv.style.display = 'block';
+  sessionsJanMay2026EvolChart = renderSessionsFinalizationsEvolutionChart(cv, sessionsJanMay2026EvolChart, labels, totalValues, humanoValues, iaValues);
 }
 
 // --- Evolução ---
