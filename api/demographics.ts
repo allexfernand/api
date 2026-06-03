@@ -56,6 +56,7 @@ const getCell = (cell: DatabricksCell) => {
 };
 const toInt = (v: DatabricksCell) => { const n = parseInt(String(getCell(v))); return Number.isFinite(n) ? n : 0; };
 const toNum = (v: DatabricksCell) => { const n = parseFloat(String(getCell(v))); return Number.isFinite(n) ? n : 0; };
+const BENEFICIARIES_VIEW = `hive_metastore.sanus_prod.vw_beneficiarios`;
 const ORGANIZATIONS_TABLE = `hive_metastore.sanus_prod.organizations`;
 const PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.partner_brokers`;
 const ORGANIZATION_PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.organization_partner_brokers`;
@@ -72,7 +73,7 @@ function partnerBrokerCondition(partnerBrokerId: unknown) {
   return `CAST(opb.partner_broker_id AS STRING) = '${escape(partnerBrokerId)}'`;
 }
 
-function buildFilters(groupNames: string[], typeFilter: unknown, partnerBrokerId: unknown) {
+function buildFilters(groupNames: string[], company: unknown, typeFilter: unknown, partnerBrokerId: unknown) {
   const conditions = [];
   if (groupNames.length) {
     const groupList = groupNames.map((group) => `'${escape(group)}'`).join(",");
@@ -98,6 +99,18 @@ function buildFilters(groupNames: string[], typeFilter: unknown, partnerBrokerId
         AND opb.deleted_at IS NULL
     )`);
   }
+  if (company) {
+    const c = escape(company);
+    conditions.push(`CAST(b.organization_id AS STRING) IN (
+      SELECT CAST(id AS STRING)
+      FROM ${ORGANIZATIONS_TABLE}
+      WHERE UPPER(TRIM(CAST(name AS STRING))) = UPPER(TRIM('${c}'))
+      UNION
+      SELECT CAST(ID_EMPRESA AS STRING)
+      FROM ${BENEFICIARIES_VIEW}
+      WHERE UPPER(TRIM(CAST(NOME_CLIENTE AS STRING))) = UPPER(TRIM('${c}'))
+    )`);
+  }
   if (typeFilter === 'TITULAR') {
     conditions.push(`UPPER(TRIM(COALESCE(b.type_kinship,''))) = 'TITULAR'`);
   } else if (typeFilter === 'DEPENDENTE') {
@@ -114,9 +127,10 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   if (!requireBasicAuth(req, res)) return;
 
   const groupNames = parseGroupNames(req.query);
+  const company = req.query.company || null;
   const typeFilter = req.query.type || null;
   const partnerBrokerId = scopedPartnerBrokerId(req, req.query.partner_broker_id || null);
-  const groupFilter = buildFilters(groupNames, typeFilter, partnerBrokerId);
+  const groupFilter = buildFilters(groupNames, company, typeFilter, partnerBrokerId);
 
   try {
     const { warehouses = [] } = await dbFetch("/api/2.0/sql/warehouses") as { warehouses?: Warehouse[] };
