@@ -55,6 +55,7 @@ const getCell = (cell: DatabricksCell) => {
   return cell;
 };
 const toInt = (v: DatabricksCell) => { const n = parseInt(String(getCell(v))); return Number.isFinite(n) ? n : 0; };
+const toNum = (v: DatabricksCell) => { const n = parseFloat(String(getCell(v))); return Number.isFinite(n) ? n : 0; };
 const toDate = (v: DatabricksCell) => { const raw = getCell(v); return raw ? String(raw).slice(0, 10) : ""; };
 const ORGANIZATIONS_TABLE = `hive_metastore.sanus_prod.organizations`;
 const PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.partner_brokers`;
@@ -73,6 +74,30 @@ const CLAIMS_EVENT_DATE_CANDIDATES = [
   'data_utilizacao',
   'dt_utilizacao',
   'competencia',
+];
+const CLAIMS_PAYMENT_DATE_CANDIDATES = [
+  'data_pagamento',
+  'dt_pagamento',
+  'data_do_pagamento',
+  'date_pagamento',
+  'payment_date',
+  'paid_at',
+  'data_pago',
+  'dt_pago',
+  'competencia_pagamento',
+];
+const CLAIMS_VALUE_CANDIDATES = [
+  'valor_pago',
+  'vl_pago',
+  'valor_pagamento',
+  'valor_sinistro',
+  'valor_evento',
+  'valor_utilizacao',
+  'valor_total',
+  'valor',
+  'vl_evento',
+  'amount',
+  'paid_amount',
 ];
 
 function partnerBrokerCondition(partnerBrokerId: unknown) {
@@ -430,6 +455,14 @@ function parseMonthList(value: unknown) {
   )].sort();
 }
 
+function numericValueExpr(column: string) {
+  const raw = `CAST(${quoteIdent(column)} AS STRING)`;
+  return `COALESCE(
+    try_cast(${quoteIdent(column)} AS DOUBLE),
+    try_cast(REGEXP_REPLACE(REGEXP_REPLACE(REGEXP_REPLACE(${raw}, '[R$\\s]', ''), '\\\\.', ''), ',', '.') AS DOUBLE)
+  )`;
+}
+
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
@@ -481,6 +514,49 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         series,
         source: CLAIMS_TABLE,
         date_column: eventDateColumn,
+        auth_role: getDashboardAuth(req)?.role || 'full',
+        updatedAt: new Date().toISOString(),
+      });
+    }
+
+    if (scope === 'sinistros_values_evolution') {
+      if (rejectMdsAuth(req, res)) return;
+      const requestedMonths = parseMonthList(req.query.meses);
+      const months = requestedMonths.length ? requestedMonths : lastNMonthsList(12);
+      const columns = await getColumns(wh.id, CLAIMS_TABLE);
+      const paymentDateColumn = pickColumn(columns, CLAIMS_PAYMENT_DATE_CANDIDATES);
+      const valueColumn = pickColumn(columns, CLAIMS_VALUE_CANDIDATES);
+      if (!paymentDateColumn) {
+        throw new Error(`Coluna de data de pagamento não encontrada em ${CLAIMS_TABLE}. Candidatas: ${CLAIMS_PAYMENT_DATE_CANDIDATES.join(', ')}`);
+      }
+      if (!valueColumn) {
+        throw new Error(`Coluna de valor não encontrada em ${CLAIMS_TABLE}. Candidatas: ${CLAIMS_VALUE_CANDIDATES.join(', ')}`);
+      }
+
+      const paymentDateExpr = `try_cast(${quoteIdent(paymentDateColumn)} AS TIMESTAMP)`;
+      const valueExpr = numericValueExpr(valueColumn);
+      const monthExpr = `DATE_FORMAT(${paymentDateExpr}, 'yyyy-MM')`;
+      const monthInList = months.map((month) => `'${month}'`).join(',');
+      const rows = await runQuery(wh.id, `
+        SELECT
+          ${monthExpr} AS mes,
+          SUM(COALESCE(${valueExpr}, 0)) AS total_value
+        FROM ${CLAIMS_TABLE}
+        WHERE ${paymentDateExpr} IS NOT NULL
+          AND ${monthExpr} IN (${monthInList})
+        GROUP BY ${monthExpr}
+        ORDER BY mes
+      `);
+
+      const byMonth = new Map(rows.map((row) => [String(getCell(row[0]) || ''), toNum(row[1])]));
+      const series = months.map((month) => ({ mes: month, total_value: byMonth.get(month) || 0 }));
+      return res.status(200).json({
+        scope: 'sinistros_values_evolution',
+        months,
+        series,
+        source: CLAIMS_TABLE,
+        date_column: paymentDateColumn,
+        value_column: valueColumn,
         auth_role: getDashboardAuth(req)?.role || 'full',
         updatedAt: new Date().toISOString(),
       });
