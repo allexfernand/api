@@ -14,6 +14,7 @@ const HEADERS = { "Authorization": `Bearer ${TOKEN}`, "Content-Type": "applicati
 const SESSION_TABLE       = `hive_metastore.sanus_prod.botmaker_session`;
 const MESSAGE_TABLE       = `hive_metastore.sanus_prod.botmaker_message`;
 const DASHBOARD_SESSIONS_TABLE = `hive_metastore.sanus_prod.dashboard_sessions_base_gold`;
+const BENEFICIARIES_VIEW = `hive_metastore.sanus_prod.vw_beneficiarios`;
 const ORGANIZATIONS_TABLE = `hive_metastore.sanus_prod.organizations`;
 const PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.partner_brokers`;
 const ORGANIZATION_PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.organization_partner_brokers`;
@@ -307,6 +308,25 @@ function economicGroupNamesCondition(groupNames: string[], tableAlias = 's') {
   )`;
 }
 
+function companySessionCondition(company: unknown, tableAlias = 's') {
+  const name = String(company || '').trim();
+  if (!name) return null;
+  const c = escape(name);
+  return `(
+    UPPER(TRIM(CAST(${tableAlias}.${quoteIdent('organization_name')} AS STRING))) = UPPER(TRIM('${c}'))
+    OR CAST(${tableAlias}.${quoteIdent('organization_id')} AS STRING) IN (
+      SELECT CAST(id AS STRING)
+      FROM ${ORGANIZATIONS_TABLE}
+      WHERE UPPER(TRIM(CAST(name AS STRING))) = UPPER(TRIM('${c}'))
+    )
+    OR CAST(${tableAlias}.${quoteIdent('organization_id')} AS STRING) IN (
+      SELECT CAST(ID_EMPRESA AS STRING)
+      FROM ${BENEFICIARIES_VIEW}
+      WHERE UPPER(TRIM(CAST(NOME_CLIENTE AS STRING))) = UPPER(TRIM('${c}'))
+    )
+  )`;
+}
+
 function partnerBrokerCondition(partnerBrokerId: unknown, tableAlias = 's') {
   const id = String(partnerBrokerId || '').trim();
   if (!id) return null;
@@ -405,7 +425,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
     const filters = [granularity === 'day' ? daySqlFilter : monthsSqlFilter];
     const orgFilters = [
-      company ? `s.${quoteIdent('organization_name')} = '${escape(company)}'` : economicGroupNamesCondition(groupNames, 's'),
+      company ? companySessionCondition(company, 's') : economicGroupNamesCondition(groupNames, 's'),
       partnerBrokerCondition(partnerBrokerId, 's'),
     ].filter(Boolean);
     filters.push(...orgFilters);
