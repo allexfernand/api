@@ -491,10 +491,10 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       if (rejectMdsAuth(req, res)) return;
       const requestedMonths = parseMonthList(req.query.meses);
       const months = requestedMonths.length ? requestedMonths : lastNMonthsList(12);
-      const paymentDateColumn = 'data_cobranca';
+      const paymentDateColumn = 'competencia_cobranca';
 
       const paymentDateExpr = quoteIdent(paymentDateColumn);
-      const monthExpr = `DATE_FORMAT(${paymentDateExpr}, 'yyyy-MM')`;
+      const monthExpr = `CONCAT(SUBSTRING(${paymentDateExpr}, 7, 4), '-', SUBSTRING(${paymentDateExpr}, 4, 2))`;
       const monthInList = months.map((month) => `'${month}'`).join(',');
       const rows = await runQuery(wh.id, `
         SELECT
