@@ -75,31 +75,6 @@ const CLAIMS_EVENT_DATE_CANDIDATES = [
   'dt_utilizacao',
   'competencia',
 ];
-const CLAIMS_PAYMENT_DATE_CANDIDATES = [
-  'data_cobranca',
-  'data_pagamento',
-  'dt_pagamento',
-  'data_do_pagamento',
-  'date_pagamento',
-  'payment_date',
-  'paid_at',
-  'data_pago',
-  'dt_pago',
-  'competencia_pagamento',
-];
-const CLAIMS_VALUE_CANDIDATES = [
-  'valor_pago',
-  'vl_pago',
-  'valor_pagamento',
-  'valor_sinistro',
-  'valor_evento',
-  'valor_utilizacao',
-  'valor_total',
-  'valor',
-  'vl_evento',
-  'amount',
-  'paid_amount',
-];
 
 function partnerBrokerCondition(partnerBrokerId: unknown) {
   if (String(partnerBrokerId) === MDS_PARTNER_SCOPE) {
@@ -456,14 +431,6 @@ function parseMonthList(value: unknown) {
   )].sort();
 }
 
-function numericValueExpr(column: string) {
-  const raw = `CAST(${quoteIdent(column)} AS STRING)`;
-  return `COALESCE(
-    try_cast(${quoteIdent(column)} AS DOUBLE),
-    try_cast(REGEXP_REPLACE(REGEXP_REPLACE(REGEXP_REPLACE(${raw}, '[R$\\s]', ''), '\\\\.', ''), ',', '.') AS DOUBLE)
-  )`;
-}
-
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
@@ -524,24 +491,18 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       if (rejectMdsAuth(req, res)) return;
       const requestedMonths = parseMonthList(req.query.meses);
       const months = requestedMonths.length ? requestedMonths : lastNMonthsList(12);
-      const columns = await getColumns(wh.id, CLAIMS_TABLE);
-      const paymentDateColumn = pickColumn(columns, CLAIMS_PAYMENT_DATE_CANDIDATES);
-      const valueColumn = pickColumn(columns, CLAIMS_VALUE_CANDIDATES);
-      if (!paymentDateColumn) {
-        throw new Error(`Coluna de data de pagamento não encontrada em ${CLAIMS_TABLE}. Candidatas: ${CLAIMS_PAYMENT_DATE_CANDIDATES.join(', ')}`);
-      }
-      if (!valueColumn) {
-        throw new Error(`Coluna de valor não encontrada em ${CLAIMS_TABLE}. Candidatas: ${CLAIMS_VALUE_CANDIDATES.join(', ')}`);
-      }
+      const paymentDateColumn = 'data_cobranca';
 
-      const paymentDateExpr = `try_cast(${quoteIdent(paymentDateColumn)} AS TIMESTAMP)`;
-      const valueExpr = numericValueExpr(valueColumn);
+      const paymentDateExpr = quoteIdent(paymentDateColumn);
       const monthExpr = `DATE_FORMAT(${paymentDateExpr}, 'yyyy-MM')`;
       const monthInList = months.map((month) => `'${month}'`).join(',');
       const rows = await runQuery(wh.id, `
         SELECT
           ${monthExpr} AS mes,
-          SUM(COALESCE(${valueExpr}, 0)) AS total_value
+          COUNT(*) AS qtd_itens,
+          SUM(COALESCE(sinistro, 0)) AS total_sinistro,
+          SUM(COALESCE(valor_coparticipacao, 0)) AS total_coparticipacao,
+          SUM(COALESCE(sinistro, 0)) + SUM(COALESCE(valor_coparticipacao, 0)) AS gasto_total
         FROM ${CLAIMS_TABLE}
         WHERE ${paymentDateExpr} IS NOT NULL
           AND ${monthExpr} IN (${monthInList})
@@ -549,15 +510,26 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         ORDER BY mes
       `);
 
-      const byMonth = new Map(rows.map((row) => [String(getCell(row[0]) || ''), toNum(row[1])]));
-      const series = months.map((month) => ({ mes: month, total_value: byMonth.get(month) || 0 }));
+      const byMonth = new Map(rows.map((row) => [String(getCell(row[0]) || ''), {
+        qtd_itens: toInt(row[1]),
+        total_sinistro: toNum(row[2]),
+        total_coparticipacao: toNum(row[3]),
+        gasto_total: toNum(row[4]),
+      }]));
+      const series = months.map((month) => ({
+        mes: month,
+        qtd_itens: byMonth.get(month)?.qtd_itens || 0,
+        total_sinistro: byMonth.get(month)?.total_sinistro || 0,
+        total_coparticipacao: byMonth.get(month)?.total_coparticipacao || 0,
+        gasto_total: byMonth.get(month)?.gasto_total || 0,
+      }));
       return res.status(200).json({
         scope: 'sinistros_values_evolution',
         months,
         series,
         source: CLAIMS_TABLE,
         date_column: paymentDateColumn,
-        value_column: valueColumn,
+        value_columns: ['sinistro', 'valor_coparticipacao'],
         auth_role: getDashboardAuth(req)?.role || 'full',
         updatedAt: new Date().toISOString(),
       });

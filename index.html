@@ -3026,7 +3026,7 @@ async function loadSinistroValuesEvolution(months = [...selectedMonths].sort()) 
 
   const series = data.series || [];
   const labels = series.map((item) => monthShortLabel(item.mes));
-  const values = series.map((item) => Number(item.total_value) || 0);
+  const values = series.map((item) => Number(item.gasto_total) || 0);
   if (sinistroValuesEvolutionChart) sinistroValuesEvolutionChart.destroy();
   if (skel) skel.style.display = 'none';
   canvas.style.display = 'block';
@@ -3067,7 +3067,7 @@ async function loadSinistroValuesEvolution(months = [...selectedMonths].sort()) 
     },
   });
   const total = values.reduce((acc, value) => acc + value, 0);
-  if (meta) meta.textContent = `${fmtCurrency(total)} pagos · data: ${data.date_column || 'data de pagamento'} · valor: ${data.value_column || 'valor'}`;
+  if (meta) meta.textContent = `${fmtCurrency(total)} pagos · data: ${data.date_column || 'data de pagamento'} · valor: sinistro + coparticipação`;
 }
 
 // --- Período dropdown ---
