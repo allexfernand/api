@@ -517,6 +517,111 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       });
     }
 
+    if (scope === 'sinistros_cohort_quarterly') {
+      if (rejectMdsAuth(req, res)) return;
+      const columns = await getColumns(wh.id, CLAIMS_TABLE);
+      const eventDateColumn = pickColumn(columns, CLAIMS_EVENT_DATE_CANDIDATES);
+      if (!eventDateColumn) {
+        throw new Error(`Coluna de data do evento não encontrada em ${CLAIMS_TABLE}. Candidatas: ${CLAIMS_EVENT_DATE_CANDIDATES.join(', ')}`);
+      }
+
+      const eventDateExpr = `try_cast(${quoteIdent(eventDateColumn)} AS TIMESTAMP)`;
+      const eventMonthExpr = `DATE_FORMAT(${eventDateExpr}, 'yyyy-MM')`;
+      const eventQuarterExpr = `CONCAT(YEAR(${eventDateExpr}), '-T', QUARTER(${eventDateExpr}))`;
+      const userKeyExpr = `CONCAT(COALESCE(CAST(codigo_usuario AS STRING), ''), '|', COALESCE(CAST(cpf_titular AS STRING), ''))`;
+      const billingMonthExpr = `CONCAT(SUBSTRING(competencia_cobranca, 7, 4), '-', SUBSTRING(competencia_cobranca, 4, 2))`;
+      const billingQuarterExpr = `CONCAT(
+        SUBSTRING(competencia_cobranca, 7, 4),
+        '-T',
+        CASE
+          WHEN CAST(SUBSTRING(competencia_cobranca, 4, 2) AS INT) BETWEEN 1 AND 3 THEN '1'
+          WHEN CAST(SUBSTRING(competencia_cobranca, 4, 2) AS INT) BETWEEN 4 AND 6 THEN '2'
+          WHEN CAST(SUBSTRING(competencia_cobranca, 4, 2) AS INT) BETWEEN 7 AND 9 THEN '3'
+          ELSE '4'
+        END
+      )`;
+      const analysisMonths = ['2025-07', '2025-08', '2025-09', '2025-10', '2025-11', '2025-12', '2026-01', '2026-02', '2026-03'];
+      const monthInList = analysisMonths.map((month) => `'${month}'`).join(',');
+      const rows = await runQuery(wh.id, `
+        WITH target_quarters AS (
+          SELECT '2025-T3' AS trimestre, 1 AS ord
+          UNION ALL SELECT '2025-T4' AS trimestre, 2 AS ord
+          UNION ALL SELECT '2026-T1' AS trimestre, 3 AS ord
+        ),
+        event_rows AS (
+          SELECT
+            ${userKeyExpr} AS user_key,
+            ${eventMonthExpr} AS mes,
+            ${eventQuarterExpr} AS trimestre
+          FROM ${CLAIMS_TABLE}
+          WHERE ${eventDateExpr} IS NOT NULL
+            AND ${eventMonthExpr} IN (${monthInList})
+        ),
+        cohort AS (
+          SELECT user_key
+          FROM event_rows
+          GROUP BY user_key
+          HAVING SUM(CASE WHEN mes < '2025-10' THEN 1 ELSE 0 END) > 0
+             AND SUM(CASE WHEN mes >= '2025-10' THEN 1 ELSE 0 END) > 0
+        ),
+        event_agg AS (
+          SELECT
+            er.trimestre,
+            COUNT(*) AS total_eventos,
+            COUNT(DISTINCT er.user_key) AS usuarios_unicos
+          FROM event_rows er
+          INNER JOIN cohort c ON c.user_key = er.user_key
+          GROUP BY er.trimestre
+        ),
+        value_rows AS (
+          SELECT
+            ${userKeyExpr} AS user_key,
+            ${billingMonthExpr} AS mes,
+            ${billingQuarterExpr} AS trimestre,
+            COALESCE(sinistro, 0) + COALESCE(valor_coparticipacao, 0) AS gasto_total
+          FROM ${CLAIMS_TABLE}
+          WHERE competencia_cobranca IS NOT NULL
+            AND ${billingMonthExpr} IN (${monthInList})
+        ),
+        value_agg AS (
+          SELECT
+            vr.trimestre,
+            SUM(vr.gasto_total) AS gasto_total
+          FROM value_rows vr
+          INNER JOIN cohort c ON c.user_key = vr.user_key
+          GROUP BY vr.trimestre
+        )
+        SELECT
+          tq.trimestre,
+          COALESCE(ea.total_eventos, 0) AS total_eventos,
+          COALESCE(ea.usuarios_unicos, 0) AS usuarios_unicos,
+          COALESCE(va.gasto_total, 0) AS gasto_total
+        FROM target_quarters tq
+        LEFT JOIN event_agg ea ON ea.trimestre = tq.trimestre
+        LEFT JOIN value_agg va ON va.trimestre = tq.trimestre
+        ORDER BY tq.ord
+      `);
+      const series = rows.map((row) => ({
+        trimestre: String(getCell(row[0]) || ''),
+        total_eventos: toInt(row[1]),
+        usuarios_unicos: toInt(row[2]),
+        gasto_total: toNum(row[3]),
+      }));
+      return res.status(200).json({
+        scope: 'sinistros_cohort_quarterly',
+        cohort_rule: 'usuarios_com_eventos_pre_e_pos_sanus',
+        before_months: ['2025-07', '2025-08', '2025-09'],
+        after_months: ['2025-10', '2025-11', '2025-12', '2026-01', '2026-02', '2026-03'],
+        series,
+        source: CLAIMS_TABLE,
+        date_column: eventDateColumn,
+        value_date_column: 'competencia_cobranca',
+        user_key_columns: ['codigo_usuario', 'cpf_titular'],
+        auth_role: getDashboardAuth(req)?.role || 'full',
+        updatedAt: new Date().toISOString(),
+      });
+    }
+
     if (scope === 'sinistros_values_evolution') {
       if (rejectMdsAuth(req, res)) return;
       const requestedMonths = parseMonthList(req.query.meses);

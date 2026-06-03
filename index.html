@@ -1618,6 +1618,17 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
         <div style="font-size:11px;color:#94a3b8;margin-top:10px;text-align:right" id="sinistro-quarterly-meta">—</div>
         <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="sinistro-quarterly-error"></div>
       </div>
+
+      <div class="chart-card" data-qtag="#AS04">
+        <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Coorte comparável antes x depois Sanus</h2>
+        <div style="font-size:11px;color:#94a3b8;margin-bottom:14px">Somente usuários presentes antes e depois da Sanus · barras: eventos · linha laranja: valor cobrado por competência</div>
+        <div class="chart-wrap">
+          <div class="skeleton" id="skel-sinistro-cohort"></div>
+          <canvas id="sinistroCohortEvolutionChart" style="display:none"></canvas>
+        </div>
+        <div style="font-size:11px;color:#94a3b8;margin-top:10px;text-align:right" id="sinistro-cohort-meta">—</div>
+        <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="sinistro-cohort-error"></div>
+      </div>
     </div>
   </div>
 
@@ -1864,7 +1875,7 @@ const SESSIONS_Q3_PRESENTATION_MONTHS = ['2025-09', '2025-10', '2025-11', '2025-
 const SINISTRO_AS03_MONTHS = ['2025-07', '2025-08', '2025-09', '2025-10', '2025-11', '2025-12', '2026-01', '2026-02', '2026-03'];
 const AUTH_STORAGE_KEY = 'sanus-dashboard-basic-auth';
 
-let usersData = [], companiesData = [], sessionCompaniesData = [], eChart, agegroupChart, appointmentTypesTrendChart, careCoordinationLinesChart, careLinesEvolutionChart, careComplementChart, careActiveComplementChart, petitCareLinesChart, petitSessionsEvolChart, petitSessionsTotalEvolChart, sessionsEvolChart, sessionsJanMay2026EvolChart, sessionsTotalEvolChart, sessionsAttendanceChart, sessionsDailyChart, sessionsTopGroupsChart, sinistroEventsEvolutionChart, sinistroValuesEvolutionChart, sinistroQuarterlyEvolutionChart, qualityVolumeEvolutionChart, qualityEvolutionChart, qualityCriteriaEvolutionChart;
+let usersData = [], companiesData = [], sessionCompaniesData = [], eChart, agegroupChart, appointmentTypesTrendChart, careCoordinationLinesChart, careLinesEvolutionChart, careComplementChart, careActiveComplementChart, petitCareLinesChart, petitSessionsEvolChart, petitSessionsTotalEvolChart, sessionsEvolChart, sessionsJanMay2026EvolChart, sessionsTotalEvolChart, sessionsAttendanceChart, sessionsDailyChart, sessionsTopGroupsChart, sinistroEventsEvolutionChart, sinistroValuesEvolutionChart, sinistroQuarterlyEvolutionChart, sinistroCohortEvolutionChart, qualityVolumeEvolutionChart, qualityEvolutionChart, qualityCriteriaEvolutionChart;
 let currentGroup = '', currentType = '', currentCompany = '';
 let currentGroups = [];
 let currentPartnerBrokerId = '';
@@ -1885,6 +1896,7 @@ let sessionsJanMay2026EvolutionRequestId = 0;
 let sinistroRequestId = 0;
 let sinistroValuesRequestId = 0;
 let sinistroQuarterlyRequestId = 0;
+let sinistroCohortRequestId = 0;
 let petitComiteRequestId = 0;
 let petitMdsInitialized = false;
 let petitRenderVariant = 'default';
@@ -2973,6 +2985,7 @@ function renderAnaliseSinistro() {
   loadSinistroEventsEvolution(months);
   loadSinistroValuesEvolution(months);
   loadSinistroQuarterlyEvolution();
+  loadSinistroCohortEvolution();
 }
 
 function sinistroPeriodLabel(months) {
@@ -3367,6 +3380,116 @@ async function loadSinistroQuarterlyEvolution() {
   const usersDelta = userValues[0] ? ((userValues[2] - userValues[0]) / userValues[0]) * 100 : 0;
   const costDelta = costValues[0] ? ((costValues[2] - costValues[0]) / costValues[0]) * 100 : 0;
   if (meta) meta.textContent = `T3/25 → T1/26: eventos ${eventDelta >= 0 ? '+' : ''}${eventDelta.toFixed(1).replace('.', ',')}% · usuários únicos ${usersDelta >= 0 ? '+' : ''}${usersDelta.toFixed(1).replace('.', ',')}% · valores ${costDelta >= 0 ? '+' : ''}${costDelta.toFixed(1).replace('.', ',')}%`;
+}
+
+async function loadSinistroCohortEvolution() {
+  const requestId = ++sinistroCohortRequestId;
+  const skel = document.getElementById('skel-sinistro-cohort');
+  const canvas = document.getElementById('sinistroCohortEvolutionChart');
+  const meta = document.getElementById('sinistro-cohort-meta');
+  const errorBox = document.getElementById('sinistro-cohort-error');
+  if (!canvas) return;
+  if (skel) {
+    skel.style.display = 'block';
+    skel.innerHTML = '';
+  }
+  canvas.style.display = 'none';
+  if (meta) meta.textContent = '—';
+  if (errorBox) {
+    errorBox.style.display = 'none';
+    errorBox.textContent = '';
+  }
+
+  const p = new URLSearchParams();
+  p.set('scope', 'sinistros_cohort_quarterly');
+  const data = await safeGet('/api/data?' + p.toString());
+  if (requestId !== sinistroCohortRequestId) return;
+
+  if (!data || data.error) {
+    if (skel) skel.style.display = 'none';
+    if (errorBox) {
+      errorBox.style.display = 'block';
+      errorBox.textContent = data?.error ? String(data.error).slice(0, 220) : 'Erro ao carregar coorte comparável de sinistro';
+    }
+    return;
+  }
+
+  const labelMap = { '2025-T3': 'Jul-Set/25', '2025-T4': 'Out-Dez/25', '2026-T1': 'Jan-Mar/26' };
+  const series = data.series || [];
+  const labels = series.map((item) => labelMap[item.trimestre] || quarterShortLabel(item.trimestre));
+  const eventValues = series.map((item) => Number(item.total_eventos) || 0);
+  const costValues = series.map((item) => Number(item.gasto_total) || 0);
+  const userValues = series.map((item) => Number(item.usuarios_unicos) || 0);
+
+  if (sinistroCohortEvolutionChart) sinistroCohortEvolutionChart.destroy();
+  if (skel) skel.style.display = 'none';
+  canvas.style.display = 'block';
+  sinistroCohortEvolutionChart = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Eventos da coorte',
+          data: eventValues,
+          yAxisID: 'y',
+          backgroundColor: ['rgba(148,163,184,0.55)', 'rgba(0,166,156,0.55)', 'rgba(0,166,156,0.70)'],
+          borderColor: ['#94a3b8', '#00A69C', '#0f766e'],
+          borderWidth: 1,
+          borderRadius: 8,
+          maxBarThickness: 58,
+        },
+        {
+          type: 'line',
+          label: 'Valor cobrado da coorte',
+          data: costValues,
+          yAxisID: 'y1',
+          borderColor: '#d97706',
+          backgroundColor: '#d97706',
+          borderWidth: 2,
+          borderDash: [5, 4],
+          pointRadius: 4,
+          pointBackgroundColor: '#fff',
+          pointBorderColor: '#d97706',
+          pointBorderWidth: 2,
+          tension: 0.3,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: true, position: 'bottom', labels: { font: { size: 11 }, color: '#64748b', usePointStyle: true, boxWidth: 8 } },
+        tooltip: {
+          backgroundColor: '#1e293b',
+          borderColor: '#334155',
+          borderWidth: 1,
+          titleColor: '#94a3b8',
+          bodyColor: '#f1f5f9',
+          callbacks: {
+            label: c => c.dataset.yAxisID === 'y1'
+              ? `${fmtCurrency(c.parsed.y)} cobrados`
+              : `${fmt(c.parsed.y)} eventos de sinistro`,
+            afterBody: (items) => {
+              const idx = items?.[0]?.dataIndex ?? 0;
+              return `${fmt(userValues[idx] || 0)} usuários únicos da coorte no trimestre`;
+            },
+          },
+        },
+      },
+      scales: {
+        x: { ticks: { font: { size: 10 }, color: '#94a3b8' }, grid: { display: false }, border: { display: false } },
+        y: { beginAtZero: true, position: 'left', ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => fmt(v) }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false }, title: { display: true, text: 'Eventos da coorte', font: { size: 10 }, color: '#94a3b8' } },
+        y1: { beginAtZero: true, position: 'right', ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => fmtCurrency(v) }, grid: { drawOnChartArea: false }, border: { display: false }, title: { display: true, text: 'Valor cobrado', font: { size: 10 }, color: '#94a3b8' } },
+      },
+    },
+  });
+  const eventDelta = eventValues[0] ? ((eventValues[2] - eventValues[0]) / eventValues[0]) * 100 : 0;
+  const costDelta = costValues[0] ? ((costValues[2] - costValues[0]) / costValues[0]) * 100 : 0;
+  const cohortUsers = Math.max(...userValues, 0);
+  if (meta) meta.textContent = `Coorte comparável: até ${fmt(cohortUsers)} usuários · T3/25 → T1/26: eventos ${eventDelta >= 0 ? '+' : ''}${eventDelta.toFixed(1).replace('.', ',')}% · valores ${costDelta >= 0 ? '+' : ''}${costDelta.toFixed(1).replace('.', ',')}%`;
 }
 
 async function loadSinistroValuesEvolution(months = [...selectedMonths].sort()) {
