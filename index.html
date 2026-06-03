@@ -562,6 +562,7 @@ body {
 .tab-content{display:none}
 .tab-content.active{display:block}
 body[data-active-tab="sessoes"] #filter-company-group{display:none!important}
+body[data-dashboard-mode="mds"] .tab[data-tab="analise-sinistro"]{display:none!important}
 body[data-dashboard-mode="mds"] .tabs{display:none}
 .loading-box{text-align:center;padding:32px;color:var(--text-faint);font-size:13px}
 footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
@@ -636,12 +637,13 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
   <div class="tab" data-tab="sessoes">Sessões</div>
   <div class="tab" data-tab="petit-comite">Petit Comitê</div>
   <div class="tab" data-tab="petit-comite-mds">Petit Comitê MDS</div>
+  <div class="tab" data-tab="analise-sinistro">Análise Sinistro</div>
   <div class="tab" data-tab="qualidade-estrategica">Qualidade · Estratégica</div>
   <div class="tab" data-tab="qualidade-operacional">Qualidade · Operacional</div>
 </div>
 
 <div class="filterbar">
-  <div class="filter-group">
+  <div class="filter-group" id="filter-group-group">
     <label>🏢 Grupo Econômico</label>
     <div class="multi-select" id="group-select">
       <button type="button" class="filter-select multi-select-button" id="group-select-button" onclick="toggleGroupDropdown()">
@@ -1511,6 +1513,28 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
   <!-- Tab: Petit Comitê MDS -->
   <div class="tab-content" id="tab-petit-comite-mds"></div>
 
+  <!-- Tab: Análise Sinistro -->
+  <div class="tab-content" id="tab-analise-sinistro">
+    <div class="card-box" style="display:flex;align-items:center;justify-content:space-between;gap:20px;padding:22px 28px;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:18px;min-width:260px">
+        <div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#1d4ed8,#0f766e);display:flex;align-items:center;justify-content:center">
+          <i class="fa-solid fa-file-medical" style="font-size:20px;color:#fff"></i>
+        </div>
+        <div>
+          <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;margin-bottom:3px">Análise Sinistro</div>
+          <div style="font-size:24px;font-weight:800;color:#0f172a;letter-spacing:-.5px;line-height:1.1">Cliente Azul</div>
+          <div style="font-size:12px;color:#64748b;margin-top:5px">Base dedicada · use apenas o filtro global de data</div>
+        </div>
+      </div>
+      <div style="font-size:11px;color:#64748b;font-weight:800;background:#eff6ff;border:1px solid #bfdbfe;border-radius:999px;padding:6px 12px" id="sinistro-period-context">Todos os meses</div>
+    </div>
+
+    <div class="card-box">
+      <div class="section-title" style="margin-bottom:8px"><i class="fa-solid fa-chart-line" style="margin-right:6px"></i>Indicadores de sinistro</div>
+      <div style="font-size:13px;color:#64748b;line-height:1.6">Estrutura da aba criada. Os componentes desta análise devem consumir somente o período selecionado no filtro global, sem filtros de grupo econômico, empresa, parceiro ou tipo de beneficiário.</div>
+    </div>
+  </div>
+
   <!-- Tab: Qualidade Estratégica -->
   <div class="tab-content" id="tab-qualidade-estrategica">
     <div class="card-box" style="display:flex;align-items:center;gap:20px;padding:20px 28px">
@@ -1825,23 +1849,26 @@ async function applyRouteMode() {
 }
 
 function updateFilterVisibility() {
+  const groupGroup = document.getElementById('filter-group-group');
   const typeGroup = document.getElementById('filter-type-group');
   const companyGroup = document.getElementById('filter-company-group');
   const partnerGroup = document.getElementById('filter-partner-group');
   const pdfControl = document.getElementById('pdf-ready-control');
   const activeTab = getActiveTab();
+  const isSinistro = isSinistroTab(activeTab);
   document.body.dataset.activeTab = activeTab;
   if (activeTab === 'sessoes') {
     currentCompany = '';
     resetCompanySelect();
-  } else if (currentGroups.length) {
+  } else if (!isSinistro && currentGroups.length) {
     loadCompanyOptions();
   }
-  if (typeGroup) typeGroup.style.display = (activeTab === 'sessoes' || activeTab === 'coordenacao-cuidado' || isPetitTab(activeTab) || activeTab.startsWith('qualidade')) ? 'none' : 'flex';
-  if (companyGroup) companyGroup.style.display = activeTab === 'sessoes' ? 'none' : 'flex';
-  if (partnerGroup) partnerGroup.style.display = isPartnerFilteredTab(activeTab) ? 'flex' : 'none';
+  if (groupGroup) groupGroup.style.display = isSinistro ? 'none' : 'flex';
+  if (typeGroup) typeGroup.style.display = (activeTab === 'sessoes' || activeTab === 'coordenacao-cuidado' || isPetitTab(activeTab) || activeTab.startsWith('qualidade') || isSinistro) ? 'none' : 'flex';
+  if (companyGroup) companyGroup.style.display = (activeTab === 'sessoes' || isSinistro) ? 'none' : 'flex';
+  if (partnerGroup) partnerGroup.style.display = (!isSinistro && isPartnerFilteredTab(activeTab)) ? 'flex' : 'none';
   if (pdfControl) pdfControl.style.display = isPetitTab(activeTab) ? 'grid' : 'none';
-  if (isPartnerFilteredTab(activeTab)) loadPartnerOptions();
+  if (!isSinistro && isPartnerFilteredTab(activeTab)) loadPartnerOptions();
 }
 
 // --- Filtros ---
@@ -1919,6 +1946,10 @@ function isPetitTab(tab = getActiveTab()) {
 
 function isPetitMdsTab(tab = getActiveTab()) {
   return tab === 'petit-comite-mds';
+}
+
+function isSinistroTab(tab = getActiveTab()) {
+  return tab === 'analise-sinistro';
 }
 
 function selectedGroupsLabel() {
@@ -2176,6 +2207,12 @@ function escapeAttr(s){return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quo
 function updateFilterInfo() {
   const parts = [];
   const activeTab = getActiveTab();
+  if (isSinistroTab(activeTab)) {
+    const periodLabel = document.getElementById('periodo-label')?.textContent?.trim() || '(Todos os meses)';
+    document.getElementById('filter-info').textContent = `Filtrando: ${periodLabel}`;
+    renderAnaliseSinistro();
+    return;
+  }
   if (currentGroups.length === 1) parts.push(currentGroups[0]);
   else if (currentGroups.length > 1) parts.push(`${currentGroups.length} grupos econômicos`);
   if (isPartnerFilteredTab(activeTab) && currentPartnerBrokerId) parts.push(`Parceiro: ${selectedPartnerLabel()}`);
@@ -2215,6 +2252,7 @@ async function clearFilters() {
 }
 
 function buildQS() {
+  if (isSinistroTab()) return '';
   const p = new URLSearchParams();
   appendGroupParams(p);
   const activeTab = getActiveTab();
@@ -2818,7 +2856,7 @@ async function downloadDashboardPdf() {
 
 function isPeriodFilteredTab(tab = getActiveTab()) {
   const activeTab = tab;
-  return activeTab === 'agendamentos' || activeTab === 'coordenacao-cuidado' || activeTab === 'sessoes' || isPetitTab(activeTab) || activeTab.startsWith('qualidade');
+  return activeTab === 'agendamentos' || activeTab === 'coordenacao-cuidado' || activeTab === 'sessoes' || isPetitTab(activeTab) || activeTab.startsWith('qualidade') || isSinistroTab(activeTab);
 }
 
 function loadPeriodFilteredTab() {
@@ -2829,6 +2867,20 @@ function loadPeriodFilteredTab() {
   else if (activeTab === 'petit-comite') renderPetitComite();
   else if (activeTab === 'petit-comite-mds') renderPetitComiteMds();
   else if (activeTab.startsWith('qualidade')) loadQuality();
+  else if (isSinistroTab(activeTab)) renderAnaliseSinistro();
+}
+
+function renderAnaliseSinistro() {
+  const context = document.getElementById('sinistro-period-context');
+  if (!context) return;
+  const months = [...selectedMonths].sort();
+  if (!months.length) {
+    context.textContent = 'Todos os meses';
+  } else if (months.length === 1) {
+    context.textContent = monthShortLabel(months[0]);
+  } else {
+    context.textContent = `${months.length} meses · ${monthShortLabel(months[0])} a ${monthShortLabel(months[months.length - 1])}`;
+  }
 }
 
 // --- Período dropdown ---
