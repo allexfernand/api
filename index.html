@@ -1549,21 +1549,21 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
 
     <div class="sinistro-ba-grid">
       <div class="sinistro-ba-card">
-        <div class="sinistro-ba-title"><i class="fa-solid fa-notes-medical" style="margin-right:6px;color:var(--brand)"></i>Eventos de sinistro · média mensal</div>
+        <div class="sinistro-ba-title"><i class="fa-solid fa-notes-medical" style="margin-right:6px;color:var(--brand)"></i>Eventos de sinistro · média mensal (janelas pareadas)</div>
         <div class="sinistro-ba-row">
-          <div class="sinistro-ba-seg"><span class="lbl">Antes (até set/25)</span><span class="val" id="ba-events-before">—</span></div>
+          <div class="sinistro-ba-seg"><span class="lbl">Antes (pré-Sanus)</span><span class="val" id="ba-events-before">—</span></div>
           <div class="sinistro-ba-arrow"><i class="fa-solid fa-arrow-right-long"></i></div>
-          <div class="sinistro-ba-seg is-after"><span class="lbl">Com Sanus (out/25→)</span><span class="val" id="ba-events-after">—</span></div>
+          <div class="sinistro-ba-seg is-after"><span class="lbl">Com Sanus</span><span class="val" id="ba-events-after">—</span></div>
           <div class="sinistro-ba-delta" id="ba-events-delta">—</div>
         </div>
         <div class="sinistro-ba-foot" id="ba-events-foot">Marco: Sanus entra em out/25</div>
       </div>
       <div class="sinistro-ba-card">
-        <div class="sinistro-ba-title"><i class="fa-solid fa-coins" style="margin-right:6px;color:var(--brand)"></i>Valor cobrado · média mensal</div>
+        <div class="sinistro-ba-title"><i class="fa-solid fa-coins" style="margin-right:6px;color:var(--brand)"></i>Valor cobrado · média mensal (janelas pareadas)</div>
         <div class="sinistro-ba-row">
-          <div class="sinistro-ba-seg"><span class="lbl">Antes (até set/25)</span><span class="val" id="ba-values-before">—</span></div>
+          <div class="sinistro-ba-seg"><span class="lbl">Antes (pré-Sanus)</span><span class="val" id="ba-values-before">—</span></div>
           <div class="sinistro-ba-arrow"><i class="fa-solid fa-arrow-right-long"></i></div>
-          <div class="sinistro-ba-seg is-after"><span class="lbl">Com Sanus (out/25→)</span><span class="val" id="ba-values-after">—</span></div>
+          <div class="sinistro-ba-seg is-after"><span class="lbl">Com Sanus</span><span class="val" id="ba-values-after">—</span></div>
           <div class="sinistro-ba-delta" id="ba-values-delta">—</div>
         </div>
         <div class="sinistro-ba-foot" id="ba-values-foot">Marco: Sanus entra em out/25</div>
@@ -3030,16 +3030,31 @@ function buildSanusInflectionPlugin(months) {
   };
 }
 
+function median(values) {
+  const sorted = values.filter((v) => Number.isFinite(v)).sort((a, b) => a - b);
+  if (!sorted.length) return 0;
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
 function renderSinistroBeforeAfter(kind, series, getValue, fmtFn) {
-  const before = (series || []).filter((item) => item.mes < SANUS_INFLECTION_MONTH);
-  const after = (series || []).filter((item) => item.mes >= SANUS_INFLECTION_MONTH);
-  const avg = (arr) => arr.length ? arr.reduce((acc, item) => acc + (Number(getValue(item)) || 0), 0) / arr.length : null;
-  const beforeAvg = avg(before);
-  const afterAvg = avg(after);
   const beforeEl = document.getElementById(`ba-${kind}-before`);
   const afterEl = document.getElementById(`ba-${kind}-after`);
   const deltaEl = document.getElementById(`ba-${kind}-delta`);
   const footEl = document.getElementById(`ba-${kind}-foot`);
+
+  const all = (series || []).map((item) => ({ mes: item.mes, v: Number(getValue(item)) || 0 }));
+  const med = median(all.map((x) => x.v).filter((v) => v > 0));
+  const isMature = (v) => v > 0 && (med === 0 || v >= 0.3 * med);
+  const beforeMature = all.filter((x) => x.mes < SANUS_INFLECTION_MONTH && isMature(x.v));
+  const afterMature = all.filter((x) => x.mes >= SANUS_INFLECTION_MONTH && isMature(x.v));
+  const n = Math.min(beforeMature.length, afterMature.length);
+  const beforeWin = beforeMature.slice(-n);
+  const afterWin = afterMature.slice(0, n);
+  const avg = (arr) => arr.length ? arr.reduce((acc, x) => acc + x.v, 0) / arr.length : null;
+  const beforeAvg = n ? avg(beforeWin) : null;
+  const afterAvg = n ? avg(afterWin) : null;
+
   if (beforeEl) beforeEl.textContent = beforeAvg == null ? '—' : fmtFn(beforeAvg);
   if (afterEl) afterEl.textContent = afterAvg == null ? '—' : fmtFn(afterAvg);
   if (deltaEl) {
@@ -3055,9 +3070,14 @@ function renderSinistroBeforeAfter(kind, series, getValue, fmtFn) {
     }
   }
   if (footEl) {
-    footEl.textContent = (before.length && after.length)
-      ? `${before.length} ${before.length > 1 ? 'meses' : 'mês'} antes · ${after.length} ${after.length > 1 ? 'meses' : 'mês'} com Sanus`
-      : 'Inclua meses antes e depois de out/25 no filtro de período';
+    if (!n) {
+      footEl.textContent = 'Sem meses maduros comparáveis antes e depois de out/25';
+    } else {
+      const range = (win) => win.length === 1
+        ? monthShortLabel(win[0].mes)
+        : `${monthShortLabel(win[0].mes)}–${monthShortLabel(win[win.length - 1].mes)}`;
+      footEl.textContent = `${range(beforeWin)} × ${range(afterWin)} · ${n}×${n} ${n > 1 ? 'meses maduros pareados' : 'mês maduro'}`;
+    }
   }
 }
 
