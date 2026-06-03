@@ -76,6 +76,7 @@ const CLAIMS_EVENT_DATE_CANDIDATES = [
   'competencia',
 ];
 const CLAIMS_PAYMENT_DATE_CANDIDATES = [
+  'data_cobranca',
   'data_pagamento',
   'dt_pagamento',
   'data_do_pagamento',
