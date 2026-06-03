@@ -227,8 +227,7 @@ body {
 .sinistro-chart-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:stretch;margin-bottom:16px}
 .sinistro-chart-grid>.chart-card{margin-bottom:0}
 @media (max-width: 900px){.sinistro-chart-grid{grid-template-columns:1fr}}
-.sinistro-ba-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-bottom:16px}
-@media (max-width: 900px){.sinistro-ba-grid{grid-template-columns:1fr}}
+.sinistro-ba-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-bottom:16px}
 .sinistro-ba-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px 18px;position:relative;overflow:hidden}
 .sinistro-ba-card::before{content:"";position:absolute;inset:0 auto 0 0;width:3px;background:var(--brand)}
 .sinistro-ba-title{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:#64748b;margin-bottom:14px}
@@ -242,6 +241,11 @@ body {
 .sinistro-ba-delta.up{background:#fef2f2;border-color:#fecaca;color:#b91c1c}
 .sinistro-ba-delta.down{background:#ecfdf5;border-color:#bbf7d0;color:#047857}
 .sinistro-ba-foot{font-size:10px;color:#94a3b8;margin-top:12px}
+.sinistro-ba-quarters{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:10px}
+.sinistro-ba-quarters .qcap{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:#94a3b8}
+.sinistro-ba-qchip{font-size:10px;font-weight:700;color:#475569;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:999px;padding:3px 8px}
+.sinistro-ba-qchip.is-after{background:#f0fdfa;border-color:#99f6e4;color:#0f766e}
+.sinistro-ba-qchip b{font-weight:800}
 
 .fluid-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:16px;align-items:stretch;margin-bottom:16px}
 .fluid-grid>.card-box,.fluid-grid>.chart-card{margin-bottom:0}
@@ -1567,6 +1571,17 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
           <div class="sinistro-ba-delta" id="ba-values-delta">—</div>
         </div>
         <div class="sinistro-ba-foot" id="ba-values-foot">Marco: Sanus entra em out/25</div>
+      </div>
+      <div class="sinistro-ba-card">
+        <div class="sinistro-ba-title"><i class="fa-solid fa-users" style="margin-right:6px;color:var(--brand)"></i>Usuários únicos · média mensal (janelas pareadas)</div>
+        <div class="sinistro-ba-row">
+          <div class="sinistro-ba-seg"><span class="lbl">Antes (pré-Sanus)</span><span class="val" id="ba-users-before">—</span></div>
+          <div class="sinistro-ba-arrow"><i class="fa-solid fa-arrow-right-long"></i></div>
+          <div class="sinistro-ba-seg is-after"><span class="lbl">Com Sanus</span><span class="val" id="ba-users-after">—</span></div>
+          <div class="sinistro-ba-delta" id="ba-users-delta">—</div>
+        </div>
+        <div class="sinistro-ba-foot" id="ba-users-foot">Chave: codigo_usuario + cpf_titular</div>
+        <div class="sinistro-ba-quarters" id="ba-users-quarters"></div>
       </div>
     </div>
 
@@ -3037,7 +3052,30 @@ function median(values) {
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
-function renderSinistroBeforeAfter(kind, series, getValue, fmtFn) {
+function quarterShortLabel(trimestre) {
+  const m = /^(\d{4})-T(\d)$/.exec(String(trimestre || ''));
+  return m ? `T${m[2]}/${m[1].slice(2)}` : String(trimestre || '');
+}
+
+function renderSinistroQuarters(quarters) {
+  const el = document.getElementById('ba-users-quarters');
+  if (!el) return;
+  const list = quarters || [];
+  if (!list.length) { el.innerHTML = ''; return; }
+  const med = median(list.map((q) => Number(q.total) || 0).filter((v) => v > 0));
+  const mature = list.filter((q) => {
+    const total = Number(q.total) || 0;
+    return total > 0 && (med === 0 || total >= 0.3 * med);
+  });
+  if (!mature.length) { el.innerHTML = ''; return; }
+  const chips = mature.map((q) => {
+    const after = q.trimestre >= '2025-T4' ? ' is-after' : '';
+    return `<span class="sinistro-ba-qchip${after}">${quarterShortLabel(q.trimestre)} · <b>${fmt(Number(q.usuarios_unicos) || 0)}</b></span>`;
+  }).join('');
+  el.innerHTML = `<span class="qcap">Únicos/trim</span>${chips}`;
+}
+
+function renderSinistroBeforeAfter(kind, series, getValue, fmtFn, colorize = true) {
   const beforeEl = document.getElementById(`ba-${kind}-before`);
   const afterEl = document.getElementById(`ba-${kind}-after`);
   const deltaEl = document.getElementById(`ba-${kind}-delta`);
@@ -3064,7 +3102,7 @@ function renderSinistroBeforeAfter(kind, series, getValue, fmtFn) {
     } else {
       const pct = ((afterAvg - beforeAvg) / beforeAvg) * 100;
       const arrow = pct > 0.05 ? '▲' : (pct < -0.05 ? '▼' : '–');
-      const tone = pct > 0.05 ? 'up' : (pct < -0.05 ? 'down' : '');
+      const tone = colorize ? (pct > 0.05 ? 'up' : (pct < -0.05 ? 'down' : '')) : '';
       deltaEl.textContent = `${arrow} ${Math.abs(pct).toFixed(1).replace('.', ',')}%`;
       deltaEl.className = `sinistro-ba-delta ${tone}`.trim();
     }
@@ -3161,6 +3199,8 @@ async function loadSinistroEventsEvolution(months = [...selectedMonths].sort()) 
   const total = values.reduce((acc, value) => acc + value, 0);
   if (meta) meta.textContent = `${fmt(total)} eventos · coluna de data: ${data.date_column || 'data do evento'}`;
   renderSinistroBeforeAfter('events', series, (item) => Number(item.total) || 0, (v) => fmt(Math.round(v)));
+  renderSinistroBeforeAfter('users', series, (item) => Number(item.usuarios_unicos) || 0, (v) => fmt(Math.round(v)), false);
+  renderSinistroQuarters(data.quarters);
 }
 
 async function loadSinistroValuesEvolution(months = [...selectedMonths].sort()) {

@@ -462,11 +462,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
       const eventDateExpr = `try_cast(${quoteIdent(eventDateColumn)} AS TIMESTAMP)`;
       const monthExpr = `DATE_FORMAT(${eventDateExpr}, 'yyyy-MM')`;
+      const userKeyExpr = `CONCAT(COALESCE(CAST(codigo_usuario AS STRING), ''), '|', COALESCE(CAST(cpf_titular AS STRING), ''))`;
       const monthInList = months.map((month) => `'${month}'`).join(',');
       const rows = await runQuery(wh.id, `
         SELECT
           ${monthExpr} AS mes,
-          COUNT(*) AS total
+          COUNT(*) AS total,
+          COUNT(DISTINCT ${userKeyExpr}) AS usuarios_unicos
         FROM ${CLAIMS_TABLE}
         WHERE ${eventDateExpr} IS NOT NULL
           AND ${monthExpr} IN (${monthInList})
@@ -474,14 +476,42 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         ORDER BY mes
       `);
 
-      const byMonth = new Map(rows.map((row) => [String(getCell(row[0]) || ''), toInt(row[1])]));
-      const series = months.map((month) => ({ mes: month, total: byMonth.get(month) || 0 }));
+      const byMonth = new Map(rows.map((row) => [String(getCell(row[0]) || ''), {
+        total: toInt(row[1]),
+        usuarios_unicos: toInt(row[2]),
+      }]));
+      const series = months.map((month) => ({
+        mes: month,
+        total: byMonth.get(month)?.total || 0,
+        usuarios_unicos: byMonth.get(month)?.usuarios_unicos || 0,
+      }));
+
+      const quarterExpr = `CONCAT(YEAR(${eventDateExpr}), '-T', QUARTER(${eventDateExpr}))`;
+      const quarterRows = await runQuery(wh.id, `
+        SELECT
+          ${quarterExpr} AS trimestre,
+          COUNT(*) AS total,
+          COUNT(DISTINCT ${userKeyExpr}) AS usuarios_unicos
+        FROM ${CLAIMS_TABLE}
+        WHERE ${eventDateExpr} IS NOT NULL
+          AND ${monthExpr} IN (${monthInList})
+        GROUP BY ${quarterExpr}
+        ORDER BY trimestre
+      `);
+      const quarters = quarterRows.map((row) => ({
+        trimestre: String(getCell(row[0]) || ''),
+        total: toInt(row[1]),
+        usuarios_unicos: toInt(row[2]),
+      }));
+
       return res.status(200).json({
         scope: 'sinistros_evolution',
         months,
         series,
+        quarters,
         source: CLAIMS_TABLE,
         date_column: eventDateColumn,
+        user_key_columns: ['codigo_usuario', 'cpf_titular'],
         auth_role: getDashboardAuth(req)?.role || 'full',
         updatedAt: new Date().toISOString(),
       });
@@ -519,6 +549,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         total_sinistro: toNum(row[2]),
         total_coparticipacao: toNum(row[3]),
         gasto_total: toNum(row[4]),
+        estimated: false,
+        estimation_method: null as string | null,
       }]));
       const septemberWeightedEstimate = (() => {
         if (!months.includes('2025-09')) return null;
