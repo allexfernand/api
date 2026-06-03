@@ -495,7 +495,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
       const paymentDateExpr = quoteIdent(paymentDateColumn);
       const monthExpr = `CONCAT(SUBSTRING(${paymentDateExpr}, 7, 4), '-', SUBSTRING(${paymentDateExpr}, 4, 2))`;
-      const monthInList = months.map((month) => `'${month}'`).join(',');
+      const queryMonths = [...new Set([
+        ...months,
+        ...(months.includes('2025-09') ? ['2025-08', '2025-10'] : []),
+      ])].sort();
+      const monthInList = queryMonths.map((month) => `'${month}'`).join(',');
       const rows = await runQuery(wh.id, `
         SELECT
           ${monthExpr} AS mes,
@@ -516,13 +520,36 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         total_coparticipacao: toNum(row[3]),
         gasto_total: toNum(row[4]),
       }]));
-      const series = months.map((month) => ({
-        mes: month,
-        qtd_itens: byMonth.get(month)?.qtd_itens || 0,
-        total_sinistro: byMonth.get(month)?.total_sinistro || 0,
-        total_coparticipacao: byMonth.get(month)?.total_coparticipacao || 0,
-        gasto_total: byMonth.get(month)?.gasto_total || 0,
-      }));
+      const septemberWeightedEstimate = (() => {
+        if (!months.includes('2025-09')) return null;
+        const current = byMonth.get('2025-09');
+        if (current && current.gasto_total > 0) return null;
+        const previous = byMonth.get('2025-08');
+        const next = byMonth.get('2025-10');
+        if (!previous?.qtd_itens || !next?.qtd_itens) return null;
+        const weight = previous.qtd_itens + next.qtd_itens;
+        return {
+          qtd_itens: 0,
+          total_sinistro: 0,
+          total_coparticipacao: 0,
+          gasto_total: ((previous.gasto_total * previous.qtd_itens) + (next.gasto_total * next.qtd_itens)) / weight,
+          estimated: true,
+          estimation_method: 'media_ponderada_ago_out_por_qtd_itens',
+        };
+      })();
+      const series = months.map((month) => {
+        const estimated = month === '2025-09' ? septemberWeightedEstimate : null;
+        const item = estimated || byMonth.get(month);
+        return {
+          mes: month,
+          qtd_itens: item?.qtd_itens || 0,
+          total_sinistro: item?.total_sinistro || 0,
+          total_coparticipacao: item?.total_coparticipacao || 0,
+          gasto_total: item?.gasto_total || 0,
+          estimated: Boolean(item?.estimated),
+          estimation_method: item?.estimation_method || null,
+        };
+      });
       return res.status(200).json({
         scope: 'sinistros_values_evolution',
         months,
