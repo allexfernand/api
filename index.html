@@ -1529,9 +1529,15 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
       <div style="font-size:11px;color:#64748b;font-weight:800;background:#eff6ff;border:1px solid #bfdbfe;border-radius:999px;padding:6px 12px" id="sinistro-period-context">Todos os meses</div>
     </div>
 
-    <div class="card-box">
-      <div class="section-title" style="margin-bottom:8px"><i class="fa-solid fa-chart-line" style="margin-right:6px"></i>Indicadores de sinistro</div>
-      <div style="font-size:13px;color:#64748b;line-height:1.6">Estrutura da aba criada. Os componentes desta análise devem consumir somente o período selecionado no filtro global, sem filtros de grupo econômico, empresa, parceiro ou tipo de beneficiário.</div>
+    <div class="chart-card" data-qtag="#AS01">
+      <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Evolução de volume de eventos de sinistro</h2>
+      <div style="font-size:11px;color:#94a3b8;margin-bottom:14px">Data do evento · <code>hive_metastore.sanus_prod.utilizacao_silver_stage</code> · <span id="sinistro-events-period">últimos 12 meses</span></div>
+      <div class="chart-wrap">
+        <div class="skeleton" id="skel-sinistro-events"></div>
+        <canvas id="sinistroEventsEvolutionChart" style="display:none"></canvas>
+      </div>
+      <div style="font-size:11px;color:#94a3b8;margin-top:10px;text-align:right" id="sinistro-events-meta">—</div>
+      <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="sinistro-events-error"></div>
     </div>
   </div>
 
@@ -1776,7 +1782,7 @@ const mN = {'01':'Jan','02':'Fev','03':'Mar','04':'Abr','05':'Mai','06':'Jun','0
 const SESSIONS_Q3_PRESENTATION_MONTHS = ['2025-09', '2025-10', '2025-11', '2025-12', '2026-01', '2026-02', '2026-03', '2026-04', '2026-05'];
 const AUTH_STORAGE_KEY = 'sanus-dashboard-basic-auth';
 
-let usersData = [], companiesData = [], sessionCompaniesData = [], eChart, agegroupChart, appointmentTypesTrendChart, careCoordinationLinesChart, careLinesEvolutionChart, careComplementChart, careActiveComplementChart, petitCareLinesChart, petitSessionsEvolChart, petitSessionsTotalEvolChart, sessionsEvolChart, sessionsJanMay2026EvolChart, sessionsTotalEvolChart, sessionsAttendanceChart, sessionsDailyChart, sessionsTopGroupsChart, qualityVolumeEvolutionChart, qualityEvolutionChart, qualityCriteriaEvolutionChart;
+let usersData = [], companiesData = [], sessionCompaniesData = [], eChart, agegroupChart, appointmentTypesTrendChart, careCoordinationLinesChart, careLinesEvolutionChart, careComplementChart, careActiveComplementChart, petitCareLinesChart, petitSessionsEvolChart, petitSessionsTotalEvolChart, sessionsEvolChart, sessionsJanMay2026EvolChart, sessionsTotalEvolChart, sessionsAttendanceChart, sessionsDailyChart, sessionsTopGroupsChart, sinistroEventsEvolutionChart, qualityVolumeEvolutionChart, qualityEvolutionChart, qualityCriteriaEvolutionChart;
 let currentGroup = '', currentType = '', currentCompany = '';
 let currentGroups = [];
 let currentPartnerBrokerId = '';
@@ -1794,6 +1800,7 @@ let typificationGroupsRequestId = 0;
 let sessionsRequestId = 0;
 let sessionsEvolutionRequestId = 0;
 let sessionsJanMay2026EvolutionRequestId = 0;
+let sinistroRequestId = 0;
 let petitComiteRequestId = 0;
 let petitMdsInitialized = false;
 let petitRenderVariant = 'default';
@@ -2872,15 +2879,99 @@ function loadPeriodFilteredTab() {
 
 function renderAnaliseSinistro() {
   const context = document.getElementById('sinistro-period-context');
-  if (!context) return;
   const months = [...selectedMonths].sort();
-  if (!months.length) {
-    context.textContent = 'Todos os meses';
-  } else if (months.length === 1) {
-    context.textContent = monthShortLabel(months[0]);
-  } else {
-    context.textContent = `${months.length} meses · ${monthShortLabel(months[0])} a ${monthShortLabel(months[months.length - 1])}`;
+  const periodLabel = sinistroPeriodLabel(months);
+  if (context) context.textContent = periodLabel;
+  const period = document.getElementById('sinistro-events-period');
+  if (period) period.textContent = periodLabel.toLowerCase();
+  loadSinistroEventsEvolution(months);
+}
+
+function sinistroPeriodLabel(months) {
+  const values = (months || []).filter(Boolean).sort();
+  if (!values.length) return 'Últimos 12 meses';
+  if (values.length === 1) return monthShortLabel(values[0]);
+  return `${values.length} meses · ${monthShortLabel(values[0])} a ${monthShortLabel(values[values.length - 1])}`;
+}
+
+async function loadSinistroEventsEvolution(months = [...selectedMonths].sort()) {
+  const requestId = ++sinistroRequestId;
+  const skel = document.getElementById('skel-sinistro-events');
+  const canvas = document.getElementById('sinistroEventsEvolutionChart');
+  const meta = document.getElementById('sinistro-events-meta');
+  const errorBox = document.getElementById('sinistro-events-error');
+  if (!canvas) return;
+  if (skel) {
+    skel.style.display = 'block';
+    skel.innerHTML = '';
   }
+  canvas.style.display = 'none';
+  if (meta) meta.textContent = '—';
+  if (errorBox) {
+    errorBox.style.display = 'none';
+    errorBox.textContent = '';
+  }
+
+  const p = new URLSearchParams();
+  const selected = (months || []).filter(Boolean).sort();
+  if (selected.length) p.set('meses', selected.join(','));
+  p.set('scope', 'sinistros_evolution');
+  const data = await safeGet('/api/data?' + p.toString());
+  if (requestId !== sinistroRequestId) return;
+
+  if (!data || data.error) {
+    if (skel) skel.style.display = 'none';
+    if (errorBox) {
+      errorBox.style.display = 'block';
+      errorBox.textContent = data?.error ? String(data.error).slice(0, 220) : 'Erro ao carregar eventos de sinistro';
+    }
+    return;
+  }
+
+  const series = data.series || [];
+  const labels = series.map((item) => monthShortLabel(item.mes));
+  const values = series.map((item) => Number(item.total) || 0);
+  if (sinistroEventsEvolutionChart) sinistroEventsEvolutionChart.destroy();
+  if (skel) skel.style.display = 'none';
+  canvas.style.display = 'block';
+  sinistroEventsEvolutionChart = new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Eventos de sinistro',
+        data: values,
+        borderColor: '#1d4ed8',
+        backgroundColor: 'rgba(29,78,216,0.10)',
+        borderWidth: 2,
+        pointRadius: 3,
+        pointBackgroundColor: '#1d4ed8',
+        fill: true,
+        tension: 0.35,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#1e293b',
+          borderColor: '#334155',
+          borderWidth: 1,
+          titleColor: '#94a3b8',
+          bodyColor: '#f1f5f9',
+          callbacks: { label: c => `${fmt(c.parsed.y)} eventos de sinistro` },
+        },
+      },
+      scales: {
+        x: { ticks: { font: { size: 10 }, color: '#94a3b8', maxRotation: 45, autoSkip: true, maxTicksLimit: 14 }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } },
+        y: { beginAtZero: true, ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => fmt(v) }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } },
+      },
+    },
+  });
+  const total = values.reduce((acc, value) => acc + value, 0);
+  if (meta) meta.textContent = `${fmt(total)} eventos · coluna de data: ${data.date_column || 'data do evento'}`;
 }
 
 // --- Período dropdown ---

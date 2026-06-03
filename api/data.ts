@@ -1,5 +1,5 @@
 // api/data.ts
-import { MDS_PARTNER_SCOPE, getDashboardAuth, requireBasicAuth, scopedPartnerBrokerId } from "../lib/basic-auth";
+import { MDS_PARTNER_SCOPE, getDashboardAuth, rejectMdsAuth, requireBasicAuth, scopedPartnerBrokerId } from "../lib/basic-auth";
 
 declare const process: { env: Record<string, string | undefined> };
 
@@ -61,6 +61,19 @@ const PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.partner_brokers`;
 const ORGANIZATION_PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.organization_partner_brokers`;
 const HEALTHCOACH_TABLE = `hive_metastore.sanus_prod.healthcoach_gold_live`;
 const BENEFICIARIES_TABLE = `hive_metastore.sanus_prod.beneficiaries`;
+const CLAIMS_TABLE = `hive_metastore.sanus_prod.utilizacao_silver_stage`;
+const CLAIMS_EVENT_DATE_CANDIDATES = [
+  'data_evento',
+  'dt_evento',
+  'data_do_evento',
+  'date_evento',
+  'event_date',
+  'data_atendimento',
+  'dt_atendimento',
+  'data_utilizacao',
+  'dt_utilizacao',
+  'competencia',
+];
 
 function partnerBrokerCondition(partnerBrokerId: unknown) {
   if (String(partnerBrokerId) === MDS_PARTNER_SCOPE) {
@@ -394,6 +407,29 @@ function literalRows(values: string[], columnName: string) {
   return values.map((value) => `SELECT '${escape(value)}' AS ${columnName}`).join('\nUNION ALL\n');
 }
 
+function lastNMonthsList(n: number) {
+  const out = [];
+  const d = new Date();
+  d.setUTCDate(1);
+  for (let i = n - 1; i >= 0; i--) {
+    const dd = new Date(d);
+    dd.setUTCMonth(d.getUTCMonth() - i);
+    const y = dd.getUTCFullYear();
+    const m = String(dd.getUTCMonth() + 1).padStart(2, '0');
+    out.push(`${y}-${m}`);
+  }
+  return out;
+}
+
+function parseMonthList(value: unknown) {
+  const raw = Array.isArray(value) ? value.join(',') : String(value || '');
+  return [...new Set(raw
+    .split(',')
+    .map((month) => month.trim())
+    .filter((month) => /^\d{4}-\d{2}$/.test(month))
+  )].sort();
+}
+
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
@@ -412,6 +448,43 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const { warehouses = [] } = await dbFetch("/api/2.0/sql/warehouses") as { warehouses?: Warehouse[] };
     const wh = warehouses.find((w) => w.state === "RUNNING") || warehouses[0];
     if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
+
+    if (scope === 'sinistros_evolution') {
+      if (rejectMdsAuth(req, res)) return;
+      const requestedMonths = parseMonthList(req.query.meses);
+      const months = requestedMonths.length ? requestedMonths : lastNMonthsList(12);
+      const columns = await getColumns(wh.id, CLAIMS_TABLE);
+      const eventDateColumn = pickColumn(columns, CLAIMS_EVENT_DATE_CANDIDATES);
+      if (!eventDateColumn) {
+        throw new Error(`Coluna de data do evento não encontrada em ${CLAIMS_TABLE}. Candidatas: ${CLAIMS_EVENT_DATE_CANDIDATES.join(', ')}`);
+      }
+
+      const eventDateExpr = `try_cast(${quoteIdent(eventDateColumn)} AS TIMESTAMP)`;
+      const monthExpr = `DATE_FORMAT(${eventDateExpr}, 'yyyy-MM')`;
+      const monthInList = months.map((month) => `'${month}'`).join(',');
+      const rows = await runQuery(wh.id, `
+        SELECT
+          ${monthExpr} AS mes,
+          COUNT(*) AS total
+        FROM ${CLAIMS_TABLE}
+        WHERE ${eventDateExpr} IS NOT NULL
+          AND ${monthExpr} IN (${monthInList})
+        GROUP BY ${monthExpr}
+        ORDER BY mes
+      `);
+
+      const byMonth = new Map(rows.map((row) => [String(getCell(row[0]) || ''), toInt(row[1])]));
+      const series = months.map((month) => ({ mes: month, total: byMonth.get(month) || 0 }));
+      return res.status(200).json({
+        scope: 'sinistros_evolution',
+        months,
+        series,
+        source: CLAIMS_TABLE,
+        date_column: eventDateColumn,
+        auth_role: getDashboardAuth(req)?.role || 'full',
+        updatedAt: new Date().toISOString(),
+      });
+    }
 
     if (scope === 'partners') {
       const partnerRows = await runQuery(wh.id, `
