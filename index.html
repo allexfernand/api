@@ -1607,6 +1607,17 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
         <div style="font-size:11px;color:#94a3b8;margin-top:10px;text-align:right" id="sinistro-values-meta">—</div>
         <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="sinistro-values-error"></div>
       </div>
+
+      <div class="chart-card" data-qtag="#AS03">
+        <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Evolução trimestral de eventos de sinistro</h2>
+        <div style="font-size:11px;color:#94a3b8;margin-bottom:14px">Trimestres maduros · Jul-Set/25, Out-Dez/25 e Jan-Mar/26 · usuários únicos por <code>codigo_usuario + cpf_titular</code></div>
+        <div class="chart-wrap">
+          <div class="skeleton" id="skel-sinistro-quarterly"></div>
+          <canvas id="sinistroQuarterlyEvolutionChart" style="display:none"></canvas>
+        </div>
+        <div style="font-size:11px;color:#94a3b8;margin-top:10px;text-align:right" id="sinistro-quarterly-meta">—</div>
+        <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="sinistro-quarterly-error"></div>
+      </div>
     </div>
   </div>
 
@@ -1850,9 +1861,10 @@ const fmt = n => Number(n).toLocaleString('pt-BR');
 const fmtCurrency = n => Number(n || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
 const mN = {'01':'Jan','02':'Fev','03':'Mar','04':'Abr','05':'Mai','06':'Jun','07':'Jul','08':'Ago','09':'Set','10':'Out','11':'Nov','12':'Dez'};
 const SESSIONS_Q3_PRESENTATION_MONTHS = ['2025-09', '2025-10', '2025-11', '2025-12', '2026-01', '2026-02', '2026-03', '2026-04', '2026-05'];
+const SINISTRO_AS03_MONTHS = ['2025-07', '2025-08', '2025-09', '2025-10', '2025-11', '2025-12', '2026-01', '2026-02', '2026-03'];
 const AUTH_STORAGE_KEY = 'sanus-dashboard-basic-auth';
 
-let usersData = [], companiesData = [], sessionCompaniesData = [], eChart, agegroupChart, appointmentTypesTrendChart, careCoordinationLinesChart, careLinesEvolutionChart, careComplementChart, careActiveComplementChart, petitCareLinesChart, petitSessionsEvolChart, petitSessionsTotalEvolChart, sessionsEvolChart, sessionsJanMay2026EvolChart, sessionsTotalEvolChart, sessionsAttendanceChart, sessionsDailyChart, sessionsTopGroupsChart, sinistroEventsEvolutionChart, sinistroValuesEvolutionChart, qualityVolumeEvolutionChart, qualityEvolutionChart, qualityCriteriaEvolutionChart;
+let usersData = [], companiesData = [], sessionCompaniesData = [], eChart, agegroupChart, appointmentTypesTrendChart, careCoordinationLinesChart, careLinesEvolutionChart, careComplementChart, careActiveComplementChart, petitCareLinesChart, petitSessionsEvolChart, petitSessionsTotalEvolChart, sessionsEvolChart, sessionsJanMay2026EvolChart, sessionsTotalEvolChart, sessionsAttendanceChart, sessionsDailyChart, sessionsTopGroupsChart, sinistroEventsEvolutionChart, sinistroValuesEvolutionChart, sinistroQuarterlyEvolutionChart, qualityVolumeEvolutionChart, qualityEvolutionChart, qualityCriteriaEvolutionChart;
 let currentGroup = '', currentType = '', currentCompany = '';
 let currentGroups = [];
 let currentPartnerBrokerId = '';
@@ -1872,6 +1884,7 @@ let sessionsEvolutionRequestId = 0;
 let sessionsJanMay2026EvolutionRequestId = 0;
 let sinistroRequestId = 0;
 let sinistroValuesRequestId = 0;
+let sinistroQuarterlyRequestId = 0;
 let petitComiteRequestId = 0;
 let petitMdsInitialized = false;
 let petitRenderVariant = 'default';
@@ -2959,6 +2972,7 @@ function renderAnaliseSinistro() {
   if (valuesPeriod) valuesPeriod.textContent = periodLabel.toLowerCase();
   loadSinistroEventsEvolution(months);
   loadSinistroValuesEvolution(months);
+  loadSinistroQuarterlyEvolution();
 }
 
 function sinistroPeriodLabel(months) {
@@ -3201,6 +3215,119 @@ async function loadSinistroEventsEvolution(months = [...selectedMonths].sort()) 
   renderSinistroBeforeAfter('events', series, (item) => Number(item.total) || 0, (v) => fmt(Math.round(v)));
   renderSinistroBeforeAfter('users', series, (item) => Number(item.usuarios_unicos) || 0, (v) => fmt(Math.round(v)), false);
   renderSinistroQuarters(data.quarters);
+}
+
+async function loadSinistroQuarterlyEvolution() {
+  const requestId = ++sinistroQuarterlyRequestId;
+  const skel = document.getElementById('skel-sinistro-quarterly');
+  const canvas = document.getElementById('sinistroQuarterlyEvolutionChart');
+  const meta = document.getElementById('sinistro-quarterly-meta');
+  const errorBox = document.getElementById('sinistro-quarterly-error');
+  if (!canvas) return;
+  if (skel) {
+    skel.style.display = 'block';
+    skel.innerHTML = '';
+  }
+  canvas.style.display = 'none';
+  if (meta) meta.textContent = '—';
+  if (errorBox) {
+    errorBox.style.display = 'none';
+    errorBox.textContent = '';
+  }
+
+  const p = new URLSearchParams();
+  p.set('meses', SINISTRO_AS03_MONTHS.join(','));
+  p.set('scope', 'sinistros_evolution');
+  const data = await safeGet('/api/data?' + p.toString());
+  if (requestId !== sinistroQuarterlyRequestId) return;
+
+  if (!data || data.error) {
+    if (skel) skel.style.display = 'none';
+    if (errorBox) {
+      errorBox.style.display = 'block';
+      errorBox.textContent = data?.error ? String(data.error).slice(0, 220) : 'Erro ao carregar evolução trimestral de sinistro';
+    }
+    return;
+  }
+
+  const targetQuarters = [
+    { id: '2025-T3', label: 'Jul-Set/25' },
+    { id: '2025-T4', label: 'Out-Dez/25' },
+    { id: '2026-T1', label: 'Jan-Mar/26' },
+  ];
+  const byQuarter = new Map((data.quarters || []).map((item) => [item.trimestre, item]));
+  const quarterSeries = targetQuarters.map((q) => ({
+    ...q,
+    total: Number(byQuarter.get(q.id)?.total) || 0,
+    usuarios_unicos: Number(byQuarter.get(q.id)?.usuarios_unicos) || 0,
+  }));
+  const labels = quarterSeries.map((item) => item.label);
+  const eventValues = quarterSeries.map((item) => item.total);
+  const userValues = quarterSeries.map((item) => item.usuarios_unicos);
+
+  if (sinistroQuarterlyEvolutionChart) sinistroQuarterlyEvolutionChart.destroy();
+  if (skel) skel.style.display = 'none';
+  canvas.style.display = 'block';
+  sinistroQuarterlyEvolutionChart = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Eventos no trimestre',
+          data: eventValues,
+          yAxisID: 'y',
+          backgroundColor: ['rgba(148,163,184,0.55)', 'rgba(0,166,156,0.55)', 'rgba(0,166,156,0.70)'],
+          borderColor: ['#94a3b8', '#00A69C', '#0f766e'],
+          borderWidth: 1,
+          borderRadius: 8,
+          maxBarThickness: 58,
+        },
+        {
+          type: 'line',
+          label: 'Usuários únicos',
+          data: userValues,
+          yAxisID: 'y1',
+          borderColor: '#1d4ed8',
+          backgroundColor: '#1d4ed8',
+          borderWidth: 2,
+          pointRadius: 4,
+          pointBackgroundColor: '#fff',
+          pointBorderColor: '#1d4ed8',
+          pointBorderWidth: 2,
+          tension: 0.3,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: true, position: 'bottom', labels: { font: { size: 11 }, color: '#64748b', usePointStyle: true, boxWidth: 8 } },
+        tooltip: {
+          backgroundColor: '#1e293b',
+          borderColor: '#334155',
+          borderWidth: 1,
+          titleColor: '#94a3b8',
+          bodyColor: '#f1f5f9',
+          callbacks: {
+            label: c => c.dataset.yAxisID === 'y1'
+              ? `${fmt(c.parsed.y)} usuários únicos`
+              : `${fmt(c.parsed.y)} eventos de sinistro`,
+          },
+        },
+      },
+      scales: {
+        x: { ticks: { font: { size: 10 }, color: '#94a3b8' }, grid: { display: false }, border: { display: false } },
+        y: { beginAtZero: true, position: 'left', ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => fmt(v) }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false }, title: { display: true, text: 'Eventos', font: { size: 10 }, color: '#94a3b8' } },
+        y1: { beginAtZero: true, position: 'right', ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => fmt(v) }, grid: { drawOnChartArea: false }, border: { display: false }, title: { display: true, text: 'Usuários únicos', font: { size: 10 }, color: '#94a3b8' } },
+      },
+    },
+  });
+  const eventDelta = eventValues[0] ? ((eventValues[2] - eventValues[0]) / eventValues[0]) * 100 : 0;
+  const usersDelta = userValues[0] ? ((userValues[2] - userValues[0]) / userValues[0]) * 100 : 0;
+  if (meta) meta.textContent = `T3/25 → T1/26: eventos ${eventDelta >= 0 ? '+' : ''}${eventDelta.toFixed(1).replace('.', ',')}% · usuários únicos ${usersDelta >= 0 ? '+' : ''}${usersDelta.toFixed(1).replace('.', ',')}%`;
 }
 
 async function loadSinistroValuesEvolution(months = [...selectedMonths].sort()) {
