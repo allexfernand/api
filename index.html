@@ -227,6 +227,21 @@ body {
 .sinistro-chart-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:stretch;margin-bottom:16px}
 .sinistro-chart-grid>.chart-card{margin-bottom:0}
 @media (max-width: 900px){.sinistro-chart-grid{grid-template-columns:1fr}}
+.sinistro-ba-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-bottom:16px}
+@media (max-width: 900px){.sinistro-ba-grid{grid-template-columns:1fr}}
+.sinistro-ba-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px 18px;position:relative;overflow:hidden}
+.sinistro-ba-card::before{content:"";position:absolute;inset:0 auto 0 0;width:3px;background:var(--brand)}
+.sinistro-ba-title{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:#64748b;margin-bottom:14px}
+.sinistro-ba-row{display:grid;grid-template-columns:1fr auto 1fr auto;gap:12px;align-items:center}
+.sinistro-ba-seg{display:flex;flex-direction:column;gap:3px;min-width:0}
+.sinistro-ba-seg .lbl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sinistro-ba-seg .val{font-size:21px;font-weight:800;color:#0f172a;letter-spacing:-.5px;line-height:1.05}
+.sinistro-ba-seg.is-after .val{color:#0f766e}
+.sinistro-ba-arrow{color:#cbd5e1;font-size:13px}
+.sinistro-ba-delta{font-size:12px;font-weight:800;border-radius:999px;padding:5px 10px;background:#f1f5f9;border:1px solid #e2e8f0;color:#475569;white-space:nowrap}
+.sinistro-ba-delta.up{background:#fef2f2;border-color:#fecaca;color:#b91c1c}
+.sinistro-ba-delta.down{background:#ecfdf5;border-color:#bbf7d0;color:#047857}
+.sinistro-ba-foot{font-size:10px;color:#94a3b8;margin-top:12px}
 
 .fluid-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:16px;align-items:stretch;margin-bottom:16px}
 .fluid-grid>.card-box,.fluid-grid>.chart-card{margin-bottom:0}
@@ -1530,6 +1545,29 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
         </div>
       </div>
       <div style="font-size:11px;color:#64748b;font-weight:800;background:#eff6ff;border:1px solid #bfdbfe;border-radius:999px;padding:6px 12px" id="sinistro-period-context">Todos os meses</div>
+    </div>
+
+    <div class="sinistro-ba-grid">
+      <div class="sinistro-ba-card">
+        <div class="sinistro-ba-title"><i class="fa-solid fa-notes-medical" style="margin-right:6px;color:var(--brand)"></i>Eventos de sinistro · média mensal</div>
+        <div class="sinistro-ba-row">
+          <div class="sinistro-ba-seg"><span class="lbl">Antes (até set/25)</span><span class="val" id="ba-events-before">—</span></div>
+          <div class="sinistro-ba-arrow"><i class="fa-solid fa-arrow-right-long"></i></div>
+          <div class="sinistro-ba-seg is-after"><span class="lbl">Com Sanus (out/25→)</span><span class="val" id="ba-events-after">—</span></div>
+          <div class="sinistro-ba-delta" id="ba-events-delta">—</div>
+        </div>
+        <div class="sinistro-ba-foot" id="ba-events-foot">Marco: Sanus entra em out/25</div>
+      </div>
+      <div class="sinistro-ba-card">
+        <div class="sinistro-ba-title"><i class="fa-solid fa-coins" style="margin-right:6px;color:var(--brand)"></i>Valor cobrado · média mensal</div>
+        <div class="sinistro-ba-row">
+          <div class="sinistro-ba-seg"><span class="lbl">Antes (até set/25)</span><span class="val" id="ba-values-before">—</span></div>
+          <div class="sinistro-ba-arrow"><i class="fa-solid fa-arrow-right-long"></i></div>
+          <div class="sinistro-ba-seg is-after"><span class="lbl">Com Sanus (out/25→)</span><span class="val" id="ba-values-after">—</span></div>
+          <div class="sinistro-ba-delta" id="ba-values-delta">—</div>
+        </div>
+        <div class="sinistro-ba-foot" id="ba-values-foot">Marco: Sanus entra em out/25</div>
+      </div>
     </div>
 
     <div class="sinistro-chart-grid">
@@ -2915,6 +2953,114 @@ function sinistroPeriodLabel(months) {
   return `${values.length} meses · ${monthShortLabel(values[0])} a ${monthShortLabel(values[values.length - 1])}`;
 }
 
+const SANUS_INFLECTION_MONTH = '2025-10';
+
+function buildSanusInflectionPlugin(months) {
+  const list = (months || []).filter(Boolean);
+  return {
+    id: 'sanusInflection',
+    beforeDatasetsDraw(chart) {
+      if (!list.length) return;
+      const x = chart.scales.x;
+      const area = chart.chartArea;
+      if (!x || !area) return;
+      const boundaryIdx = list.findIndex((m) => m >= SANUS_INFLECTION_MONTH);
+      const hasBefore = boundaryIdx > 0;
+      const hasAfter = boundaryIdx !== -1 && boundaryIdx < list.length;
+      let bx = area.left;
+      if (hasBefore) {
+        const prev = x.getPixelForValue(boundaryIdx - 1);
+        const cur = x.getPixelForValue(boundaryIdx);
+        bx = (prev + cur) / 2;
+      } else if (boundaryIdx === -1) {
+        bx = area.right;
+      }
+      const ctx = chart.ctx;
+      ctx.save();
+      if (hasBefore) {
+        ctx.fillStyle = 'rgba(148,163,184,0.10)';
+        ctx.fillRect(area.left, area.top, bx - area.left, area.bottom - area.top);
+      }
+      if (hasAfter) {
+        const startX = hasBefore ? bx : area.left;
+        ctx.fillStyle = 'rgba(0,166,156,0.07)';
+        ctx.fillRect(startX, area.top, area.right - startX, area.bottom - area.top);
+      }
+      ctx.restore();
+    },
+    afterDatasetsDraw(chart) {
+      const boundaryIdx = list.findIndex((m) => m >= SANUS_INFLECTION_MONTH);
+      if (boundaryIdx <= 0) return;
+      const x = chart.scales.x;
+      const area = chart.chartArea;
+      const bx = (x.getPixelForValue(boundaryIdx - 1) + x.getPixelForValue(boundaryIdx)) / 2;
+      const ctx = chart.ctx;
+      ctx.save();
+      ctx.beginPath();
+      ctx.setLineDash([4, 4]);
+      ctx.moveTo(bx, area.top);
+      ctx.lineTo(bx, area.bottom);
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = '#00A69C';
+      ctx.stroke();
+      ctx.setLineDash([]);
+      const label = 'Sanus · out/25';
+      ctx.font = '700 10px Inter, sans-serif';
+      const padX = 6;
+      const tw = ctx.measureText(label).width;
+      const rw = tw + padX * 2;
+      const rh = 16;
+      const r = 8;
+      const lx = Math.min(bx + 6, area.right - rw);
+      const ly = area.top + 2;
+      ctx.fillStyle = '#00A69C';
+      ctx.beginPath();
+      ctx.moveTo(lx + r, ly);
+      ctx.arcTo(lx + rw, ly, lx + rw, ly + rh, r);
+      ctx.arcTo(lx + rw, ly + rh, lx, ly + rh, r);
+      ctx.arcTo(lx, ly + rh, lx, ly, r);
+      ctx.arcTo(lx, ly, lx + rw, ly, r);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(label, lx + padX, ly + rh / 2 + 0.5);
+      ctx.restore();
+    },
+  };
+}
+
+function renderSinistroBeforeAfter(kind, series, getValue, fmtFn) {
+  const before = (series || []).filter((item) => item.mes < SANUS_INFLECTION_MONTH);
+  const after = (series || []).filter((item) => item.mes >= SANUS_INFLECTION_MONTH);
+  const avg = (arr) => arr.length ? arr.reduce((acc, item) => acc + (Number(getValue(item)) || 0), 0) / arr.length : null;
+  const beforeAvg = avg(before);
+  const afterAvg = avg(after);
+  const beforeEl = document.getElementById(`ba-${kind}-before`);
+  const afterEl = document.getElementById(`ba-${kind}-after`);
+  const deltaEl = document.getElementById(`ba-${kind}-delta`);
+  const footEl = document.getElementById(`ba-${kind}-foot`);
+  if (beforeEl) beforeEl.textContent = beforeAvg == null ? '—' : fmtFn(beforeAvg);
+  if (afterEl) afterEl.textContent = afterAvg == null ? '—' : fmtFn(afterAvg);
+  if (deltaEl) {
+    if (beforeAvg == null || afterAvg == null || beforeAvg === 0) {
+      deltaEl.textContent = '—';
+      deltaEl.className = 'sinistro-ba-delta';
+    } else {
+      const pct = ((afterAvg - beforeAvg) / beforeAvg) * 100;
+      const arrow = pct > 0.05 ? '▲' : (pct < -0.05 ? '▼' : '–');
+      const tone = pct > 0.05 ? 'up' : (pct < -0.05 ? 'down' : '');
+      deltaEl.textContent = `${arrow} ${Math.abs(pct).toFixed(1).replace('.', ',')}%`;
+      deltaEl.className = `sinistro-ba-delta ${tone}`.trim();
+    }
+  }
+  if (footEl) {
+    footEl.textContent = (before.length && after.length)
+      ? `${before.length} ${before.length > 1 ? 'meses' : 'mês'} antes · ${after.length} ${after.length > 1 ? 'meses' : 'mês'} com Sanus`
+      : 'Inclua meses antes e depois de out/25 no filtro de período';
+  }
+}
+
 async function loadSinistroEventsEvolution(months = [...selectedMonths].sort()) {
   const requestId = ++sinistroRequestId;
   const skel = document.getElementById('skel-sinistro-events');
@@ -2957,6 +3103,7 @@ async function loadSinistroEventsEvolution(months = [...selectedMonths].sort()) 
   canvas.style.display = 'block';
   sinistroEventsEvolutionChart = new Chart(canvas, {
     type: 'line',
+    plugins: [buildSanusInflectionPlugin(series.map((item) => item.mes))],
     data: {
       labels,
       datasets: [{
@@ -2993,6 +3140,7 @@ async function loadSinistroEventsEvolution(months = [...selectedMonths].sort()) 
   });
   const total = values.reduce((acc, value) => acc + value, 0);
   if (meta) meta.textContent = `${fmt(total)} eventos · coluna de data: ${data.date_column || 'data do evento'}`;
+  renderSinistroBeforeAfter('events', series, (item) => Number(item.total) || 0, (v) => fmt(Math.round(v)));
 }
 
 async function loadSinistroValuesEvolution(months = [...selectedMonths].sort()) {
@@ -3038,6 +3186,7 @@ async function loadSinistroValuesEvolution(months = [...selectedMonths].sort()) 
   canvas.style.display = 'block';
   sinistroValuesEvolutionChart = new Chart(canvas, {
     type: 'line',
+    plugins: [buildSanusInflectionPlugin(series.map((item) => item.mes))],
     data: {
       labels,
       datasets: [{
@@ -3081,6 +3230,7 @@ async function loadSinistroValuesEvolution(months = [...selectedMonths].sort()) 
   });
   const total = values.reduce((acc, value) => acc + value, 0);
   if (meta) meta.textContent = `${fmtCurrency(total)} cobrados · competência: ${data.date_column || 'competencia_cobranca'} · valor: sinistro + coparticipação${hasEstimatedValues ? ' · set/25 estimado por média ponderada' : ''}`;
+  renderSinistroBeforeAfter('values', series, (item) => Number(item.gasto_total) || 0, fmtCurrency);
 }
 
 // --- Período dropdown ---
