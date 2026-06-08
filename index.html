@@ -224,6 +224,16 @@ body {
 .chart-wrap{position:relative;width:100%;height:clamp(260px,32vw,360px)}
 .sessions-q3-compact-card{max-width:calc(50% - 8px);margin-right:auto}
 .sessions-q3-compact-card .chart-wrap{height:260px}
+.sessions-q3-presentation-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:stretch;margin-bottom:16px}
+.sessions-q3-presentation-grid>.chart-card{margin-bottom:0;max-width:none}
+.sessions-q3c-card .chart-wrap{height:300px}
+.sessions-q3c-kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:14px}
+.sessions-q3c-kpi{background:#1f2937;border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:12px 14px}
+.sessions-q3c-kpi-label{font-size:10px;font-weight:800;color:#cbd5e1;margin-bottom:6px}
+.sessions-q3c-kpi-value{font-size:24px;font-weight:800;color:#fff;letter-spacing:-.7px;line-height:1}
+.sessions-q3c-kpi-note{font-size:10px;color:#9ca3af;margin-top:7px}
+.sessions-q3c-meta{font-size:10px;color:#94a3b8;margin-top:10px;text-align:right}
+@media (max-width: 900px){.sessions-q3-presentation-grid{grid-template-columns:1fr}.sessions-q3c-kpis{grid-template-columns:1fr}}
 .sinistro-chart-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:stretch;margin-bottom:16px}
 .sinistro-chart-grid>.chart-card{margin-bottom:0}
 @media (max-width: 900px){.sinistro-chart-grid{grid-template-columns:1fr}}
@@ -1342,14 +1352,44 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
       </div>
     </div>
 
-    <div class="chart-card sessions-q3-compact-card" data-qtag="#Q3">
-      <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Evolução mensal de finalizações · Set/25-Mai/26</h2>
-      <div style="font-size:11px;color:#94a3b8;margin-bottom:14px">Setembro de 2025 a maio de 2026 · IA em setembro/25 como base 0 · <span id="s-evol-jan-may-2026-mode">global</span></div>
-      <div class="chart-wrap">
-        <div class="skeleton" id="skel-s-evol-jan-may-2026"></div>
-        <canvas id="sessionsJanMay2026EvolChart" style="display:none"></canvas>
+    <div class="sessions-q3-presentation-grid">
+      <div class="chart-card sessions-q3-compact-card" data-qtag="#Q3">
+        <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Evolução mensal de finalizações · Set/25-Mai/26</h2>
+        <div style="font-size:11px;color:#94a3b8;margin-bottom:14px">Setembro de 2025 a maio de 2026 · IA em setembro/25 como base 0 · <span id="s-evol-jan-may-2026-mode">global</span></div>
+        <div class="chart-wrap">
+          <div class="skeleton" id="skel-s-evol-jan-may-2026"></div>
+          <canvas id="sessionsJanMay2026EvolChart" style="display:none"></canvas>
+        </div>
+        <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="s-evol-jan-may-2026-error"></div>
       </div>
-      <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="s-evol-jan-may-2026-error"></div>
+
+      <div class="chart-card sessions-q3c-card" data-qtag="#Q3c" style="background:#111827;color:#e5e7eb;border-color:#1f2937">
+        <h2 style="font-size:13px;font-weight:700;color:#f9fafb;margin-bottom:4px">Sessões x usuários únicos · Jan-Mai/2026</h2>
+        <div style="font-size:11px;color:#9ca3af;margin-bottom:14px">Dados dinâmicos · barras em mil · linhas em % · <span id="s-q3c-mode">global</span></div>
+        <div class="sessions-q3c-kpis">
+          <div class="sessions-q3c-kpi">
+            <div class="sessions-q3c-kpi-label">Sessões totais (jan-mai)</div>
+            <div class="sessions-q3c-kpi-value" id="s-q3c-total-sessions">—</div>
+            <div class="sessions-q3c-kpi-note" id="s-q3c-total-sessions-note">Média mensal: —</div>
+          </div>
+          <div class="sessions-q3c-kpi">
+            <div class="sessions-q3c-kpi-label">Usuários únicos (jan-mai)</div>
+            <div class="sessions-q3c-kpi-value" id="s-q3c-unique-users">—</div>
+            <div class="sessions-q3c-kpi-note" id="s-q3c-unique-users-note">Média mensal: —</div>
+          </div>
+          <div class="sessions-q3c-kpi">
+            <div class="sessions-q3c-kpi-label">Cobertura média — só IA</div>
+            <div class="sessions-q3c-kpi-value" id="s-q3c-ia-avg">—</div>
+            <div class="sessions-q3c-kpi-note">Jan-Mai 2026</div>
+          </div>
+        </div>
+        <div class="chart-wrap">
+          <div class="skeleton" id="skel-s-q3c"></div>
+          <canvas id="sessionsQ3cChart" style="display:none"></canvas>
+        </div>
+        <div class="sessions-q3c-meta" id="s-q3c-meta">Totais acumulados Jan-Mai 2026 · Fonte: dados Sanus</div>
+        <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="s-q3c-error"></div>
+      </div>
     </div>
 
     <div style="text-align:center;padding:20px;color:#bbb;font-size:13px">Mais dados serão adicionados em breve.</div>
@@ -1873,10 +1913,11 @@ const fmt = n => Number(n).toLocaleString('pt-BR');
 const fmtCurrency = n => Number(n || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
 const mN = {'01':'Jan','02':'Fev','03':'Mar','04':'Abr','05':'Mai','06':'Jun','07':'Jul','08':'Ago','09':'Set','10':'Out','11':'Nov','12':'Dez'};
 const SESSIONS_Q3_PRESENTATION_MONTHS = ['2025-09', '2025-10', '2025-11', '2025-12', '2026-01', '2026-02', '2026-03', '2026-04', '2026-05'];
+const SESSIONS_Q3C_MONTHS = ['2026-01', '2026-02', '2026-03', '2026-04', '2026-05'];
 const SINISTRO_AS03_MONTHS = ['2025-07', '2025-08', '2025-09', '2025-10', '2025-11', '2025-12', '2026-01', '2026-02', '2026-03'];
 const AUTH_STORAGE_KEY = 'sanus-dashboard-basic-auth';
 
-let usersData = [], companiesData = [], sessionCompaniesData = [], eChart, agegroupChart, appointmentTypesTrendChart, careCoordinationLinesChart, careLinesEvolutionChart, careComplementChart, careActiveComplementChart, petitCareLinesChart, petitSessionsEvolChart, petitSessionsTotalEvolChart, sessionsEvolChart, sessionsJanMay2026EvolChart, sessionsTotalEvolChart, sessionsAttendanceChart, sessionsDailyChart, sessionsTopGroupsChart, sinistroEventsEvolutionChart, sinistroValuesEvolutionChart, sinistroQuarterlyEvolutionChart, sinistroCohortEvolutionChart, qualityVolumeEvolutionChart, qualityEvolutionChart, qualityCriteriaEvolutionChart;
+let usersData = [], companiesData = [], sessionCompaniesData = [], eChart, agegroupChart, appointmentTypesTrendChart, careCoordinationLinesChart, careLinesEvolutionChart, careComplementChart, careActiveComplementChart, petitCareLinesChart, petitSessionsEvolChart, petitSessionsTotalEvolChart, sessionsEvolChart, sessionsJanMay2026EvolChart, sessionsQ3cChart, sessionsTotalEvolChart, sessionsAttendanceChart, sessionsDailyChart, sessionsTopGroupsChart, sinistroEventsEvolutionChart, sinistroValuesEvolutionChart, sinistroQuarterlyEvolutionChart, sinistroCohortEvolutionChart, qualityVolumeEvolutionChart, qualityEvolutionChart, qualityCriteriaEvolutionChart;
 let currentGroup = '', currentType = '', currentCompany = '';
 let currentGroups = [];
 let currentPartnerBrokerId = '';
@@ -1894,6 +1935,7 @@ let typificationGroupsRequestId = 0;
 let sessionsRequestId = 0;
 let sessionsEvolutionRequestId = 0;
 let sessionsJanMay2026EvolutionRequestId = 0;
+let sessionsQ3cRequestId = 0;
 let sinistroRequestId = 0;
 let sinistroValuesRequestId = 0;
 let sinistroQuarterlyRequestId = 0;
@@ -6436,6 +6478,7 @@ async function loadSessions() {
 
   loadSessionsEvolution();
   loadSessionsJanMay2026Evolution();
+  loadSessionsQ3c();
   loadSessionsDailyEvolution();
 
   const sessions = await safeGet('/api/sessions' + qs);
@@ -7107,6 +7150,16 @@ function sessionsIaEvolutionTones(series) {
   });
 }
 
+function fmtCompactMil(value) {
+  const n = Number(value) || 0;
+  return `${(n / 1000).toLocaleString('pt-BR', { maximumFractionDigits: n >= 100000 ? 0 : 1 })} mil`;
+}
+
+function fmtPctNumber(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? `${n.toFixed(1).replace('.', ',')}%` : '—';
+}
+
 async function loadSessionsEvolution() {
   const requestId = ++sessionsEvolutionRequestId;
   const skel = document.getElementById('skel-s-evol');
@@ -7256,6 +7309,186 @@ async function loadSessionsJanMay2026Evolution() {
     highlightIa: true,
     iaPointLabels: sessionsIaEvolutionLabels(series),
     iaPointTones: sessionsIaEvolutionTones(series),
+  });
+}
+
+async function loadSessionsQ3c() {
+  const requestId = ++sessionsQ3cRequestId;
+  const skel = document.getElementById('skel-s-q3c');
+  const cv = document.getElementById('sessionsQ3cChart');
+  const errorBox = document.getElementById('s-q3c-error');
+  const modeLabel = document.getElementById('s-q3c-mode');
+  if (!cv) return;
+  if (skel) {
+    skel.style.display = 'block';
+    skel.innerHTML = '';
+  }
+  cv.style.display = 'none';
+  if (errorBox) {
+    errorBox.style.display = 'none';
+    errorBox.textContent = '';
+  }
+
+  const p = new URLSearchParams();
+  p.set('meses', SESSIONS_Q3C_MONTHS.join(','));
+  p.set('include_beneficiaries', '1');
+  appendGroupParams(p);
+  const data = await safeGet('/api/sessions-evolution?' + p.toString());
+  if (requestId !== sessionsQ3cRequestId) return;
+
+  if (!data || data.error) {
+    if (skel) skel.style.display = 'none';
+    if (errorBox) {
+      errorBox.style.display = 'block';
+      errorBox.textContent = data?.error ? String(data.error).slice(0, 220) : 'Erro ao carregar Q3c';
+    }
+    return;
+  }
+
+  const byMonth = new Map((data.series || []).map((item) => [item.mes, item]));
+  const series = SESSIONS_Q3C_MONTHS.map((month) => {
+    const row = byMonth.get(month) || {};
+    const humano = Number(row.humano) || 0;
+    const ia = Number(row.ia) || 0;
+    const total = Number(row.total) || humano + ia;
+    const unique = Number(row.unique_beneficiaries ?? row.unique_cpfs) || 0;
+    return { mes: month, humano, ia, total, unique };
+  });
+  const labels = series.map((item) => monthShortLabel(item.mes).split('/')[0]);
+  const totalSessions = series.reduce((acc, item) => acc + item.total, 0);
+  const totalUnique = series.reduce((acc, item) => acc + item.unique, 0);
+  const avgSessions = totalSessions / Math.max(series.length, 1);
+  const avgUnique = totalUnique / Math.max(series.length, 1);
+  const iaPcts = series.map((item) => item.total > 0 ? (item.ia / item.total) * 100 : 0);
+  const humanPcts = series.map((item) => item.total > 0 ? (item.humano / item.total) * 100 : 0);
+  const iaAvg = iaPcts.length ? iaPcts.reduce((acc, value) => acc + value, 0) / iaPcts.length : 0;
+  const sessionsMil = series.map((item) => item.total / 1000);
+  const usersMil = series.map((item) => item.unique / 1000);
+  const iaAvgLine = series.map(() => iaAvg);
+
+  const setText = (id, value) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = value;
+  };
+  setText('s-q3c-total-sessions', fmtCompactMil(totalSessions));
+  setText('s-q3c-total-sessions-note', `Média mensal: ${fmtCompactMil(avgSessions)}`);
+  setText('s-q3c-unique-users', fmtCompactMil(totalUnique));
+  setText('s-q3c-unique-users-note', `Média mensal: ${fmtCompactMil(avgUnique)}`);
+  setText('s-q3c-ia-avg', fmtPctNumber(iaAvg));
+  if (modeLabel) modeLabel.textContent = selectedSessionScopeText() || 'global';
+
+  if (sessionsQ3cChart) sessionsQ3cChart.destroy();
+  if (skel) skel.style.display = 'none';
+  cv.style.display = 'block';
+  sessionsQ3cChart = new Chart(cv, {
+    data: {
+      labels,
+      datasets: [
+        {
+          type: 'bar',
+          label: 'Sessões (mil)',
+          data: sessionsMil,
+          yAxisID: 'y',
+          backgroundColor: 'rgba(37,99,235,0.72)',
+          borderColor: '#2563eb',
+          borderWidth: 1,
+          borderRadius: 7,
+          maxBarThickness: 42,
+        },
+        {
+          type: 'bar',
+          label: 'Usuários únicos (mil)',
+          data: usersMil,
+          yAxisID: 'y',
+          backgroundColor: 'rgba(15,118,110,0.78)',
+          borderColor: '#0f766e',
+          borderWidth: 1,
+          borderRadius: 7,
+          maxBarThickness: 42,
+        },
+        {
+          type: 'line',
+          label: 'Somente IA respondeu (%)',
+          data: iaPcts,
+          yAxisID: 'y1',
+          borderColor: '#d97706',
+          backgroundColor: 'rgba(217,119,6,0.14)',
+          borderWidth: 2,
+          pointRadius: 4,
+          pointBackgroundColor: '#d97706',
+          tension: 0.35,
+          fill: true,
+        },
+        {
+          type: 'line',
+          label: 'Atendimento humano (%)',
+          data: humanPcts,
+          yAxisID: 'y1',
+          borderColor: '#d1d5db',
+          backgroundColor: '#d1d5db',
+          borderWidth: 1.5,
+          borderDash: [5, 4],
+          pointRadius: 3,
+          pointBackgroundColor: '#d1d5db',
+          tension: 0.35,
+        },
+        {
+          type: 'line',
+          label: `Média IA (${fmtPctNumber(iaAvg)})`,
+          data: iaAvgLine,
+          yAxisID: 'y1',
+          borderColor: 'rgba(180,83,9,0.72)',
+          backgroundColor: 'rgba(180,83,9,0.72)',
+          borderWidth: 1.5,
+          borderDash: [6, 5],
+          pointRadius: 0,
+          tension: 0,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          display: true,
+          position: 'top',
+          labels: { color: '#d1d5db', font: { size: 10 }, boxWidth: 10, usePointStyle: true },
+        },
+        tooltip: {
+          backgroundColor: '#111827',
+          borderColor: '#374151',
+          borderWidth: 1,
+          titleColor: '#e5e7eb',
+          bodyColor: '#f9fafb',
+          callbacks: {
+            label: c => c.dataset.yAxisID === 'y1'
+              ? `${c.dataset.label}: ${fmtPctNumber(c.parsed.y)}`
+              : `${c.dataset.label}: ${c.parsed.y.toFixed(1).replace('.', ',')} mil`,
+          },
+        },
+      },
+      scales: {
+        x: { ticks: { color: '#9ca3af', font: { size: 10 } }, grid: { display: false }, border: { display: false } },
+        y: {
+          beginAtZero: true,
+          title: { display: true, text: 'Sessões / Usuários (mil)', color: '#9ca3af', font: { size: 10 } },
+          ticks: { color: '#9ca3af', font: { size: 10 }, callback: v => `${v}k` },
+          grid: { color: 'rgba(255,255,255,0.08)' },
+          border: { display: false },
+        },
+        y1: {
+          beginAtZero: true,
+          max: 100,
+          position: 'right',
+          title: { display: true, text: 'Cobertura (%)', color: '#9ca3af', font: { size: 10 } },
+          ticks: { color: '#9ca3af', font: { size: 10 }, callback: v => `${v}%` },
+          grid: { drawOnChartArea: false },
+          border: { display: false },
+        },
+      },
+    },
   });
 }
 
