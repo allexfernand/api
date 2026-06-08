@@ -224,7 +224,7 @@ body {
 .chart-wrap{position:relative;width:100%;height:clamp(260px,32vw,360px)}
 .sessions-q3-compact-card{max-width:calc(50% - 8px);margin-right:auto}
 .sessions-q3-compact-card .chart-wrap{height:260px}
-.sessions-q3-presentation-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:stretch;margin-bottom:16px}
+.sessions-q3-presentation-grid{display:grid;grid-template-columns:1fr;gap:16px;align-items:stretch;margin-bottom:16px}
 .sessions-q3-presentation-grid>.chart-card{margin-bottom:0;max-width:none}
 .sessions-q3c-card .chart-wrap{height:300px}
 .sessions-q3c-kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:14px}
@@ -233,7 +233,7 @@ body {
 .sessions-q3c-kpi-value{font-size:24px;font-weight:800;color:#fff;letter-spacing:-.7px;line-height:1}
 .sessions-q3c-kpi-note{font-size:10px;color:#9ca3af;margin-top:7px}
 .sessions-q3c-meta{font-size:10px;color:#94a3b8;margin-top:10px;text-align:right}
-@media (max-width: 900px){.sessions-q3-presentation-grid{grid-template-columns:1fr}.sessions-q3c-kpis{grid-template-columns:1fr}}
+@media (max-width: 900px){.sessions-q3c-kpis{grid-template-columns:1fr}}
 .sinistro-chart-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:stretch;margin-bottom:16px}
 .sinistro-chart-grid>.chart-card{margin-bottom:0}
 @media (max-width: 900px){.sinistro-chart-grid{grid-template-columns:1fr}}
@@ -1353,7 +1353,7 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
     </div>
 
     <div class="sessions-q3-presentation-grid">
-      <div class="chart-card sessions-q3-compact-card" data-qtag="#Q3">
+      <div class="chart-card sessions-q3-compact-card" data-qtag="#Q3B">
         <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Evolução mensal de finalizações · Set/25-Mai/26</h2>
         <div style="font-size:11px;color:#94a3b8;margin-bottom:14px">Setembro de 2025 a maio de 2026 · IA em setembro/25 como base 0 · <span id="s-evol-jan-may-2026-mode">global</span></div>
         <div class="chart-wrap">
