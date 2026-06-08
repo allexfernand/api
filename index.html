@@ -1945,10 +1945,19 @@ function isMdsRoute() {
   return path === '/mds' || new URLSearchParams(window.location.search).get('dashboard') === 'mds';
 }
 
-async function applyRouteMode() {
-  if (!isMdsRoute()) return;
-  document.body.dataset.dashboardMode = 'mds';
-  await activateTab('petit-comite-mds');
+async function applyRouteMode(role = '') {
+  const isMdsMode = role === 'mds' || (!role && isMdsRoute());
+  if (isMdsMode) {
+    document.body.dataset.dashboardMode = 'mds';
+    await activateTab('petit-comite-mds');
+    return;
+  }
+  delete document.body.dataset.dashboardMode;
+  if (getActiveTab() === 'petit-comite-mds') {
+    await activateTab('demografica');
+  } else {
+    updateFilterVisibility();
+  }
 }
 
 function updateFilterVisibility() {
@@ -2418,6 +2427,7 @@ function authFetch(url, options = {}) {
 
 function handleAuthFailure(message = 'Usuário ou senha inválidos.') {
   localStorage.removeItem(AUTH_STORAGE_KEY);
+  delete document.body.dataset.dashboardMode;
   showAuthScreen(message);
 }
 
@@ -2442,6 +2452,7 @@ async function submitAuth(event) {
     try { body = await response.json(); } catch(_) {}
     if (!response.ok || !body?.ok) {
       localStorage.removeItem(AUTH_STORAGE_KEY);
+      delete document.body.dataset.dashboardMode;
       showAuthScreen(body?.error || 'Usuário ou senha inválidos.');
       return;
     }
@@ -2450,11 +2461,12 @@ async function submitAuth(event) {
       window.location.href = '/mds';
       return;
     }
-    await applyRouteMode();
+    await applyRouteMode(body?.role || '');
     hideAuthScreen();
     reload();
   } catch (error) {
     localStorage.removeItem(AUTH_STORAGE_KEY);
+    delete document.body.dataset.dashboardMode;
     showAuthScreen(error?.message || 'Não foi possível validar o acesso.');
   } finally {
     if (submit) {
@@ -2466,6 +2478,7 @@ async function submitAuth(event) {
 
 function logoutDashboard() {
   localStorage.removeItem(AUTH_STORAGE_KEY);
+  delete document.body.dataset.dashboardMode;
   showAuthScreen('Sessão encerrada.');
 }
 
@@ -8460,6 +8473,7 @@ async function loadAll(fetchOrgs=true) {
       window.location.href = '/mds';
       return;
     }
+    await applyRouteMode(json.auth_role || '');
     hideAuthScreen();
     usersData = json.users||[];
     if(fetchOrgs && Array.isArray(json.groups)){
