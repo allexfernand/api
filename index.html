@@ -1995,6 +1995,7 @@ async function applyRouteMode(role = '') {
     await activateTab('petit-comite-mds');
     return;
   }
+  clearMdsPartnerScopeIfNeeded();
   delete document.body.dataset.dashboardMode;
   if (getActiveTab() === 'petit-comite-mds') {
     await activateTab('demografica');
@@ -2246,11 +2247,7 @@ function resetCompanySelect() {
 
 async function loadCompanyOptions() {
   const sel = document.getElementById('company-select');
-  const hasPartnerScope = isPartnerFilteredTab() && Boolean(currentPartnerBrokerId);
-  if (!currentGroups.length && !hasPartnerScope) {
-    resetCompanySelect();
-    return;
-  }
+  if (!sel) return;
   // Estado de carregamento
   sel.innerHTML = '<option value="">⏳ Carregando empresas...</option>';
   sel.disabled = true;
@@ -2288,6 +2285,18 @@ function isMdsPartner(partner) {
 
 function getMdsPartnerOption() {
   return partnerOptionsCache.find(isMdsPartner) || null;
+}
+
+function clearMdsPartnerScopeIfNeeded() {
+  const wasMdsMode = document.body.dataset.dashboardMode === 'mds' || getActiveTab() === 'petit-comite-mds';
+  const selectedPartner = partnerOptionsCache.find((item) => String(item.broker_id) === String(currentPartnerBrokerId));
+  const selectedIsMds = selectedPartner ? isMdsPartner(selectedPartner) : false;
+  if (!wasMdsMode && !selectedIsMds) return;
+  currentPartnerBrokerId = '';
+  currentCompany = '';
+  const partnerSelect = document.getElementById('partner-select');
+  if (partnerSelect) partnerSelect.value = '';
+  if (partnerOptionsCache.length) renderPartnerOptions();
 }
 
 function renderPartnerOptions() {
@@ -2397,6 +2406,8 @@ async function clearFilters() {
   clearPeriodo(false);
   if (isPetitMdsTab(activeTab)) {
     await ensurePetitMdsScope();
+  } else if (activeTab !== 'sessoes' && !isSinistroTab(activeTab)) {
+    loadCompanyOptions();
   }
   if (activeTab === 'sessoes') {
     loadSessions();
