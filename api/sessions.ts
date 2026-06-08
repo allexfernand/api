@@ -187,31 +187,34 @@ function orgIdsSubquery(groupName: unknown, company: unknown) {
   )`;
 }
 
-function economicGroupNameCondition(groupName: unknown, tableAlias = 's') {
-  const g = escape(groupName);
-  const col = `${tableAlias}.${quoteIdent('economic_group_canonical')}`;
-  const canonicalLookup = `(
-    SELECT NULLIF(TRIM(CAST(name_economic_group AS STRING)), '')
-    FROM ${ORGANIZATIONS_TABLE}
-    WHERE active = true AND UPPER(TRIM(CAST(name AS STRING))) = UPPER(TRIM('${g}'))
-    LIMIT 1
-  )`;
-  return `UPPER(TRIM(CAST(${col} AS STRING))) = UPPER(TRIM(COALESCE(${canonicalLookup}, '${g}')))`;
-}
-
 function economicGroupNamesCondition(groupNames: string[], tableAlias = 's') {
-  const names = groupNames.filter(Boolean);
+  const names = groupNames.map((name) => String(name || '').trim()).filter(Boolean);
   if (!names.length) return null;
-  if (names.length === 1) return economicGroupNameCondition(names[0], tableAlias);
   const col = `${tableAlias}.${quoteIdent('economic_group_canonical')}`;
+  const orgIdCol = `CAST(${tableAlias}.${quoteIdent('organization_id')} AS STRING)`;
   const nameList = names.map((name) => `UPPER(TRIM('${escape(name)}'))`).join(',');
   const literalRows = names.map((name, index) => `${index ? 'UNION ALL ' : ''}SELECT UPPER(TRIM('${escape(name)}')) AS group_name`).join('\n    ');
-  return `UPPER(TRIM(CAST(${col} AS STRING))) IN (
-    SELECT UPPER(TRIM(CAST(COALESCE(NULLIF(TRIM(CAST(name_economic_group AS STRING)), ''), name) AS STRING)))
+  const matchedOrgs = `
+    SELECT CAST(id AS STRING) AS id
     FROM ${ORGANIZATIONS_TABLE}
     WHERE active = true AND UPPER(TRIM(CAST(name AS STRING))) IN (${nameList})
-    UNION
-    ${literalRows}
+  `;
+  return `(
+    UPPER(TRIM(CAST(${col} AS STRING))) IN (
+      SELECT UPPER(TRIM(CAST(COALESCE(NULLIF(TRIM(CAST(name_economic_group AS STRING)), ''), name) AS STRING)))
+      FROM ${ORGANIZATIONS_TABLE}
+      WHERE active = true AND UPPER(TRIM(CAST(name AS STRING))) IN (${nameList})
+      UNION
+      ${literalRows}
+    )
+    OR ${orgIdCol} IN (
+      SELECT id FROM (${matchedOrgs}) matched
+      UNION ALL
+      SELECT CAST(child.id AS STRING)
+      FROM ${ORGANIZATIONS_TABLE} child
+      INNER JOIN (${matchedOrgs}) matched
+        ON CAST(child.matriz_id AS STRING) = matched.id
+    )
   )`;
 }
 
