@@ -366,6 +366,13 @@ function lastNMonthsList(count) {
   return out;
 }
 
+function monthDaysList(month) {
+  const safeMonth = /^\d{4}-\d{2}$/.test(String(month || "")) ? String(month) : lastNMonthsList(1)[0];
+  const [year, mm] = safeMonth.split("-").map((value) => parseInt(value, 10));
+  const days = new Date(Date.UTC(year, mm, 0)).getUTCDate();
+  return Array.from({ length: days }, (_, index) => `${safeMonth}-${String(index + 1).padStart(2, "0")}`);
+}
+
 function orgIdsSubquery(groupName, company) {
   if (company) {
     const value = escapeSql(company);
@@ -453,6 +460,76 @@ async function loadQualityVolumeEvolution(warehouseId, criteriaColumns, scope) {
       total_evaluated_sessions: qualityByMonth.get(month) || 0,
       total_quality_rows: qualityByMonth.get(month) || 0,
       total_sessions: sessionsByMonth.get(month) || 0,
+    })),
+    filters: {
+      group_name: scope.groupName,
+      company: scope.company,
+    },
+    source: {
+      quality: EVALUATED_CRITERIA_TABLE,
+      sessions: SESSION_TABLE,
+    },
+  };
+}
+
+async function loadQualityDailyVolumeEvolution(warehouseId, criteriaColumns, scope, month) {
+  const selectedMonth = /^\d{4}-\d{2}$/.test(String(month || "")) ? String(month) : lastNMonthsList(1)[0];
+  const days = monthDaysList(selectedMonth);
+  const dayList = days.map((day) => `'${escapeSql(day)}'`).join(",");
+  const criteriaDateColumn = pickColumn(criteriaColumns, DATE_CANDIDATES);
+  const criteriaConversationColumn = pickColumn(criteriaColumns, [
+    "attendance_id", "atendimento_id", "appointment_id", "session_id",
+    "conversation_id", "botmaker_session_id", "ticket_id",
+  ]);
+  const qualityDayExpr = criteriaDateColumn
+    ? `DATE_FORMAT(try_cast(${qcol("c", criteriaDateColumn)} AS TIMESTAMP), 'yyyy-MM-dd')`
+    : null;
+  const qualityVolumeExpr = criteriaConversationColumn
+    ? `COUNT(DISTINCT CAST(${qcol("c", criteriaConversationColumn)} AS STRING))`
+    : "COUNT(*)";
+  const sessionDayExpr = `DATE_FORMAT(try_cast(s.${quoteIdent("creation_time")} AS TIMESTAMP), 'yyyy-MM-dd')`;
+  const criteriaOrgCondition = criteriaDateColumn ? buildCriteriaOrgCondition(criteriaColumns, scope) : "";
+  const sessionOrgFilter = scope.company
+    ? `CAST(o.${quoteIdent("id")} AS STRING) IN ${orgIdsSubquery(null, scope.company)}`
+    : (scope.groupNames?.length ? `CAST(o.${quoteIdent("id")} AS STRING) IN ${orgIdsSubquery(scope.groupNames, null)}` : null);
+  const sessionFrom = sessionOrgFilter
+    ? `${SESSION_TABLE} s INNER JOIN ${ORGANIZATIONS_TABLE} o ON CAST(s.${quoteIdent("organization_id")} AS STRING) = CAST(o.${quoteIdent("id")} AS STRING)`
+    : `${SESSION_TABLE} s`;
+
+  const [qualityRows, sessionRows] = await Promise.all([
+    criteriaDateColumn ? runQuery(warehouseId, `
+      SELECT
+        ${qualityDayExpr} AS day,
+        ${qualityVolumeExpr} AS total_evaluated_sessions
+      FROM ${EVALUATED_CRITERIA_TABLE} c
+      WHERE try_cast(${qcol("c", criteriaDateColumn)} AS TIMESTAMP) IS NOT NULL
+        AND ${qualityDayExpr} IN (${dayList})
+        ${criteriaOrgCondition}
+      GROUP BY ${qualityDayExpr}
+      ORDER BY day
+    `) : Promise.resolve([]),
+    runQuery(warehouseId, `
+      SELECT
+        ${sessionDayExpr} AS day,
+        COUNT(*) AS total_sessions
+      FROM ${sessionFrom}
+      WHERE try_cast(s.${quoteIdent("creation_time")} AS TIMESTAMP) IS NOT NULL
+        AND ${sessionDayExpr} IN (${dayList})
+        ${sessionOrgFilter ? `AND ${sessionOrgFilter}` : ""}
+      GROUP BY ${sessionDayExpr}
+      ORDER BY day
+    `),
+  ]);
+
+  const qualityByDay = new Map(qualityRows.map((row) => [String(getCell(row[0]) || ""), toInt(row[1])]));
+  const sessionsByDay = new Map(sessionRows.map((row) => [String(getCell(row[0]) || ""), toInt(row[1])]));
+  return {
+    month: selectedMonth,
+    daily: days.map((day) => ({
+      day,
+      total_evaluated_sessions: qualityByDay.get(day) || 0,
+      total_quality_rows: qualityByDay.get(day) || 0,
+      total_sessions: sessionsByDay.get(day) || 0,
     })),
     filters: {
       group_name: scope.groupName,
@@ -1057,7 +1134,7 @@ async function loadCollaboratorCriteriaDetail(warehouseId, criteriaColumns, scop
   };
 }
 
-async function loadStrategic(warehouseId, columns, criteriaColumns, scope, sharedKey, criteriaFinisher, summarySessionJoin, summaryFinishedByColumn, criteriaFinishedByColumn) {
+async function loadStrategic(warehouseId, columns, criteriaColumns, scope, sharedKey, criteriaFinisher, summarySessionJoin, summaryFinishedByColumn, criteriaFinishedByColumn, qualityDailyMonth) {
   const summaryScoreColumn = pickColumn(columns, SCORE_CANDIDATES);
   const resolvedColumn = pickColumn(columns, RESOLVED_CANDIDATES);
   const careLineColumn = pickColumn(columns, CARE_LINE_CANDIDATES);
@@ -1070,7 +1147,7 @@ async function loadStrategic(warehouseId, columns, criteriaColumns, scope, share
   const criteriaAttendanceColumn = pickColumn(criteriaColumns, ["attendance_id", "atendimento_id", "appointment_id"]);
   const strategicCriteriaWhere = buildEvaluatedCriteriaWhere(scope, "", null).replace(/\bq\./g, "c.");
 
-  const [summaryRows, criteriaRows, evaluatedVolume, evaluatedCriteria, overallCriteriaScore, qualityEvolution, volumeEvolution] = await Promise.all([
+  const [summaryRows, criteriaRows, evaluatedVolume, evaluatedCriteria, overallCriteriaScore, qualityEvolution, volumeEvolution, dailyVolumeEvolution] = await Promise.all([
     runQuery(warehouseId, `
       SELECT
         COUNT(*) AS total,
@@ -1098,6 +1175,7 @@ async function loadStrategic(warehouseId, columns, criteriaColumns, scope, share
     loadOverallCriteriaScore(warehouseId, scope),
     loadQualityEvolution(warehouseId, criteriaColumns),
     loadQualityVolumeEvolution(warehouseId, criteriaColumns, scope),
+    loadQualityDailyVolumeEvolution(warehouseId, criteriaColumns, scope, qualityDailyMonth),
   ]);
 
   const criteriaAgg = aggregateCriteria(criteriaRows);
@@ -1169,6 +1247,7 @@ async function loadStrategic(warehouseId, columns, criteriaColumns, scope, share
     criteria_finisher_filter: evaluatedCriteria.filter,
     evolution: qualityEvolution,
     volume_evolution: volumeEvolution,
+    daily_volume_evolution: dailyVolumeEvolution,
     collaborators,
     care_lines: careLines,
     insights: buildInsightCards(criteriaAgg.criteria, criteriaAgg.pillars),
@@ -1301,6 +1380,13 @@ export default async function handler(req, res) {
       getColumns(warehouse.id, SESSION_TABLE),
     ]);
     const scope = buildSummaryScope(summaryColumns, req.query);
+    const qualityDailyMonth = /^\d{4}-\d{2}$/.test(String(req.query.quality_daily_month || ""))
+      ? String(req.query.quality_daily_month)
+      : lastNMonthsList(1)[0];
+    if (String(req.query.mode || "") === "quality_daily_volume") {
+      const dailyVolumeEvolution = await loadQualityDailyVolumeEvolution(warehouse.id, criteriaColumns, scope, qualityDailyMonth);
+      return res.status(200).json({ daily_volume_evolution: dailyVolumeEvolution, updatedAt: new Date().toISOString() });
+    }
     if (String(req.query.mode || "") === "collaborator_criteria") {
       const detail = await loadCollaboratorCriteriaDetail(warehouse.id, criteriaColumns, scope, req.query);
       return res.status(200).json(detail);
@@ -1315,7 +1401,7 @@ export default async function handler(req, res) {
       : null;
 
     const [strategic, operational] = await Promise.all([
-      loadStrategic(warehouse.id, summaryColumns, criteriaColumns, scope, sharedKey, criteriaFinisher, summarySessionJoin, summaryFinishedByColumn, criteriaFinishedByColumn),
+      loadStrategic(warehouse.id, summaryColumns, criteriaColumns, scope, sharedKey, criteriaFinisher, summarySessionJoin, summaryFinishedByColumn, criteriaFinishedByColumn, qualityDailyMonth),
       loadOperational(warehouse.id, summaryColumns, criteriaColumns, scope, sharedKey),
     ]);
 
@@ -1326,6 +1412,7 @@ export default async function handler(req, res) {
         group_name: scope.groupName,
         company: scope.company,
         months: scope.months,
+        quality_daily_month: qualityDailyMonth,
         criteria_finisher: criteriaFinisher,
         applied: scope.filtersApplied,
       },

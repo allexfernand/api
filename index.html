@@ -1776,6 +1776,27 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
       </div>
     </div>
 
+    <div class="card-box">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;flex-wrap:wrap">
+        <div>
+          <div class="section-title" style="margin-bottom:4px"><i class="fa-solid fa-chart-line" style="margin-right:6px"></i>Volume diário de qualidade e sessões</div>
+          <div style="font-size:11px;color:#94a3b8">Conversas únicas · dias do mês · <span id="quality-daily-volume-period">mês selecionado</span></div>
+        </div>
+        <div class="filter-group" style="margin:0">
+          <label for="quality-daily-month-select">📅 Mês</label>
+          <select class="filter-select" id="quality-daily-month-select" onchange="onQualityDailyMonthChange(this.value)" style="min-width:160px"></select>
+        </div>
+      </div>
+      <div class="quality-volume-summary">
+        <div class="quality-volume-chip"><span class="quality-volume-dot" style="background:#0f766e"></span>Sessões avaliadas <strong id="quality-daily-volume-total">—</strong></div>
+        <div class="quality-volume-chip"><span class="quality-volume-dot" style="background:#6366f1"></span>Sessões <strong id="quality-daily-sessions-volume-total">—</strong></div>
+      </div>
+      <div class="chart-wrap" style="height:320px">
+        <div class="loading-box" id="quality-daily-volume-evolution-empty" style="display:none">Sem dados diários disponíveis.</div>
+        <canvas id="qualityDailyVolumeEvolutionChart"></canvas>
+      </div>
+    </div>
+
     <div class="quality-grid-2">
       <div class="card-box" style="margin-bottom:0">
         <div class="section-title"><i class="fa-solid fa-chart-line" style="margin-right:6px"></i>Evolução de qualidade</div>
@@ -1917,7 +1938,7 @@ const SESSIONS_Q3C_MONTHS = ['2026-01', '2026-02', '2026-03', '2026-04', '2026-0
 const SINISTRO_AS03_MONTHS = ['2025-07', '2025-08', '2025-09', '2025-10', '2025-11', '2025-12', '2026-01', '2026-02', '2026-03'];
 const AUTH_STORAGE_KEY = 'sanus-dashboard-basic-auth';
 
-let usersData = [], companiesData = [], sessionCompaniesData = [], eChart, agegroupChart, appointmentTypesTrendChart, careCoordinationLinesChart, careLinesEvolutionChart, careComplementChart, careActiveComplementChart, petitCareLinesChart, petitSessionsEvolChart, petitSessionsTotalEvolChart, sessionsEvolChart, sessionsJanMay2026EvolChart, sessionsQ3cChart, sessionsTotalEvolChart, sessionsAttendanceChart, sessionsDailyChart, sessionsTopGroupsChart, sinistroEventsEvolutionChart, sinistroValuesEvolutionChart, sinistroQuarterlyEvolutionChart, sinistroCohortEvolutionChart, qualityVolumeEvolutionChart, qualityEvolutionChart, qualityCriteriaEvolutionChart;
+let usersData = [], companiesData = [], sessionCompaniesData = [], eChart, agegroupChart, appointmentTypesTrendChart, careCoordinationLinesChart, careLinesEvolutionChart, careComplementChart, careActiveComplementChart, petitCareLinesChart, petitSessionsEvolChart, petitSessionsTotalEvolChart, sessionsEvolChart, sessionsJanMay2026EvolChart, sessionsQ3cChart, sessionsTotalEvolChart, sessionsAttendanceChart, sessionsDailyChart, sessionsTopGroupsChart, sinistroEventsEvolutionChart, sinistroValuesEvolutionChart, sinistroQuarterlyEvolutionChart, sinistroCohortEvolutionChart, qualityVolumeEvolutionChart, qualityDailyVolumeEvolutionChart, qualityEvolutionChart, qualityCriteriaEvolutionChart;
 let currentGroup = '', currentType = '', currentCompany = '';
 let currentGroups = [];
 let currentPartnerBrokerId = '';
@@ -1949,6 +1970,8 @@ let selectedQualitySubcriteriaCriterion = '';
 let selectedQualityFactualCriterion = '';
 let selectedQualityFactualResolved = '';
 let selectedQualityVolumeEvolutionMode = 'both';
+let selectedQualityDailyMonth = currentMonthValue();
+let qualityDailyVolumeRequestId = 0;
 let selectedQualityCollaboratorSort = 'score';
 let selectedQualityCollaboratorSortDir = 'desc';
 let selectedQualityCollaboratorName = '';
@@ -7693,6 +7716,31 @@ function onQualityVolumeEvolutionModeChange(value) {
   renderQualityVolumeEvolutionChart(qualityData?.strategic?.volume_evolution);
 }
 
+function buildQualityDailyMonthOptions() {
+  const select = document.getElementById('quality-daily-month-select');
+  if (!select) return;
+  const now = new Date();
+  const options = [];
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    options.push({ value, label: `${mN[mm]}/${d.getFullYear()}` });
+  }
+  if (!options.some((option) => option.value === selectedQualityDailyMonth)) {
+    selectedQualityDailyMonth = options[0]?.value || currentMonthValue();
+  }
+  select.innerHTML = options.map((option) => {
+    const selected = option.value === selectedQualityDailyMonth ? ' selected' : '';
+    return `<option value="${option.value}"${selected}>${option.label}</option>`;
+  }).join('');
+}
+
+function onQualityDailyMonthChange(value) {
+  selectedQualityDailyMonth = /^\d{4}-\d{2}$/.test(String(value || '')) ? value : currentMonthValue();
+  loadQualityDailyVolumeEvolution();
+}
+
 function isMissingQualityCollaborator(name) {
   return String(name || '') === 'Sem close_by preenchido';
 }
@@ -7928,6 +7976,11 @@ function qualityMonthLabel(value) {
   return month && year ? `${mN[month]}/${year.slice(2)}` : String(value || '');
 }
 
+function qualityDayLabel(value) {
+  const [, , day] = String(value || '').split('-');
+  return day ? day : String(value || '');
+}
+
 function qualityEvolutionTooltipLabel(context) {
   const value = Number(context.parsed.y) || 0;
   return context.dataset.yAxisID === 'y1'
@@ -7953,7 +8006,10 @@ function renderQualityVolumeEvolutionChart(evolution) {
 
   if (!items.length) {
     canvas.style.display = 'none';
-    if (empty) empty.style.display = 'block';
+    if (empty) {
+      empty.style.display = 'block';
+      empty.textContent = 'Sem dados de volume disponíveis.';
+    }
     return;
   }
 
@@ -8019,6 +8075,100 @@ function renderQualityVolumeEvolutionChart(evolution) {
         x: { ticks: { font: { size: 10 }, color: '#94a3b8' }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } },
         y: { beginAtZero: true, ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => fmt(v) }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } },
         y1: { display: false },
+      },
+    },
+  });
+}
+
+function renderQualityDailyVolumeEvolutionChart(evolution) {
+  buildQualityDailyMonthOptions();
+  const canvas = document.getElementById('qualityDailyVolumeEvolutionChart');
+  const empty = document.getElementById('quality-daily-volume-evolution-empty');
+  const period = document.getElementById('quality-daily-volume-period');
+  const qualityTotalEl = document.getElementById('quality-daily-volume-total');
+  const sessionsTotalEl = document.getElementById('quality-daily-sessions-volume-total');
+  const items = (evolution?.daily || []).filter((item) => item.day);
+  const month = evolution?.month || selectedQualityDailyMonth;
+  const [year, mm] = String(month || '').split('-');
+  if (period) period.textContent = mN[mm] ? `${mN[mm]}/${year}` : (month || 'mês selecionado');
+  const getEvaluatedSessions = (item) => Number(item.total_evaluated_sessions ?? item.total_quality_rows) || 0;
+  const totalQualityRows = items.reduce((acc, item) => acc + getEvaluatedSessions(item), 0);
+  const totalSessions = items.reduce((acc, item) => acc + (Number(item.total_sessions) || 0), 0);
+  if (qualityTotalEl) qualityTotalEl.textContent = fmt(totalQualityRows);
+  if (sessionsTotalEl) sessionsTotalEl.textContent = fmt(totalSessions);
+  if (qualityDailyVolumeEvolutionChart) qualityDailyVolumeEvolutionChart.destroy();
+  if (!canvas) return;
+
+  if (!items.length) {
+    canvas.style.display = 'none';
+    if (empty) {
+      empty.style.display = 'block';
+      empty.textContent = 'Sem dados diários disponíveis.';
+    }
+    return;
+  }
+
+  if (empty) empty.style.display = 'none';
+  canvas.style.display = 'block';
+  qualityDailyVolumeEvolutionChart = new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels: items.map((item) => qualityDayLabel(item.day)),
+      datasets: [
+        {
+          type: 'line',
+          label: 'Sessões avaliadas',
+          data: items.map(getEvaluatedSessions),
+          yAxisID: 'y',
+          borderColor: '#0f766e',
+          backgroundColor: 'rgba(15,118,110,0.08)',
+          borderWidth: 2,
+          pointRadius: 2.5,
+          pointBackgroundColor: '#0f766e',
+          tension: 0.28,
+          fill: false,
+        },
+        {
+          type: 'line',
+          label: 'Sessões',
+          data: items.map((item) => Number(item.total_sessions) || 0),
+          yAxisID: 'y',
+          borderColor: '#6366f1',
+          backgroundColor: 'rgba(99,102,241,0.08)',
+          borderWidth: 2,
+          borderDash: [6, 5],
+          pointRadius: 2.5,
+          pointBackgroundColor: '#6366f1',
+          tension: 0.28,
+          fill: false,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'bottom', labels: { boxWidth: 10, usePointStyle: true, font: { size: 10 }, color: '#64748b' } },
+        tooltip: {
+          backgroundColor: '#1e293b',
+          borderColor: '#334155',
+          borderWidth: 1,
+          titleColor: '#cbd5e1',
+          bodyColor: '#f8fafc',
+          callbacks: {
+            title: (items) => {
+              const index = items?.[0]?.dataIndex ?? 0;
+              const day = evolution?.daily?.[index]?.day;
+              return day ? day.split('-').reverse().join('/') : '';
+            },
+            label: c => `${c.dataset.label}: ${fmt(Number(c.parsed.y) || 0)}`,
+          },
+        },
+      },
+      scales: {
+        x: { ticks: { font: { size: 10 }, color: '#94a3b8', maxRotation: 0, autoSkip: true, maxTicksLimit: 16 }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } },
+        y: { beginAtZero: true, ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => fmt(v) }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } },
       },
     },
   });
@@ -8289,6 +8439,7 @@ async function loadQuality() {
   const meses = [...selectedMonths].sort();
   const p = new URLSearchParams();
   if (meses.length > 0) p.set('meses', meses.join(','));
+  p.set('quality_daily_month', selectedQualityDailyMonth || currentMonthValue());
   appendGroupParams(p);
   if (currentCompany) p.set('company', currentCompany);
   const data = await safeGet('/api/quality' + (p.toString() ? '?' + p.toString() : ''));
@@ -8308,6 +8459,40 @@ async function loadQuality() {
   loadQualityFactualInsight();
   setStatus('ok', '✓ Dados ao vivo');
   document.getElementById('last-upd').textContent = 'Atualizado: ' + new Date().toLocaleTimeString('pt-BR');
+}
+
+async function loadQualityDailyVolumeEvolution() {
+  if (getActiveTab() !== 'qualidade-estrategica') return;
+  buildQualityDailyMonthOptions();
+  const requestId = ++qualityDailyVolumeRequestId;
+  const empty = document.getElementById('quality-daily-volume-evolution-empty');
+  const canvas = document.getElementById('qualityDailyVolumeEvolutionChart');
+  if (empty) {
+    empty.style.display = 'block';
+    empty.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando volume diário...';
+  }
+  if (canvas) canvas.style.display = 'none';
+
+  const p = new URLSearchParams();
+  p.set('mode', 'quality_daily_volume');
+  p.set('quality_daily_month', selectedQualityDailyMonth || currentMonthValue());
+  appendGroupParams(p);
+  if (currentCompany) p.set('company', currentCompany);
+  const data = await safeGet('/api/quality?' + p.toString());
+  if (requestId !== qualityDailyVolumeRequestId) return;
+
+  if (!data || data.error) {
+    if (empty) {
+      empty.style.display = 'block';
+      empty.innerHTML = String(data?.error || 'Erro ao carregar volume diário').slice(0, 180);
+    }
+    return;
+  }
+
+  if (!qualityData) qualityData = { strategic: {} };
+  if (!qualityData.strategic) qualityData.strategic = {};
+  qualityData.strategic.daily_volume_evolution = data.daily_volume_evolution || {};
+  renderQualityDailyVolumeEvolutionChart(qualityData.strategic.daily_volume_evolution);
 }
 
 function renderQualityStrategic() {
@@ -8336,7 +8521,9 @@ function renderQualityStrategic() {
     : 'menor score por critério');
   setText('q-kpi-latest', `último registro: ${formatQualityDate(kpis.latest_at)}`);
   setText('quality-criteria-bullets-period', `${period} · is_applicable = true`);
+  buildQualityDailyMonthOptions();
   renderQualityVolumeEvolutionChart(strategic.volume_evolution || {});
+  renderQualityDailyVolumeEvolutionChart(strategic.daily_volume_evolution || {});
   renderQualityEvolutionCharts(strategic.evolution || {});
 
   const criteriaBulletsEl = document.getElementById('quality-criteria-bullets');
