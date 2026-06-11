@@ -753,6 +753,22 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
     </div>
 
   </div>
+  <div class="filter-group" id="filter-quality-operational-collaborator-group" style="display:none">
+    <label for="quality-operational-collaborator-filter">Colaborador</label>
+    <select class="filter-select" id="quality-operational-collaborator-filter" multiple size="3" onchange="onQualityOperationalCollaboratorFilterChange(this)" style="min-width:220px;height:76px"></select>
+  </div>
+  <div class="filter-group" id="filter-quality-operational-setor-group" style="display:none">
+    <label for="quality-operational-setor-filter">Setor</label>
+    <select class="filter-select" id="quality-operational-setor-filter" onchange="onQualityOperationalSetorFilterChange(this.value)" style="min-width:170px">
+      <option value="">Todos</option>
+    </select>
+  </div>
+  <div class="filter-group" id="filter-quality-operational-status-group" style="display:none">
+    <label for="quality-operational-status-filter">Status</label>
+    <select class="filter-select" id="quality-operational-status-filter" onchange="onQualityOperationalStatusFilterChange(this.value)" style="min-width:130px">
+      <option value="">Todos</option>
+    </select>
+  </div>
   <button class="clear-btn" onclick="clearFilters()">✕ Limpar</button>
   <div class="pdf-control filter-pdf-control is-busy" id="pdf-ready-control" title="Aguardando os quadros do Petit Comitê terminarem de renderizar" style="display:none">
     <button class="pdf-btn" id="pdf-download-btn" onclick="downloadDashboardPdf()" disabled><i class="fa-solid fa-file-pdf"></i>Baixar PDF</button>
@@ -1910,24 +1926,6 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
           <div class="section-title" style="margin-bottom:4px"><i class="fa-solid fa-users" style="margin-right:6px"></i>Colaboradores</div>
           <div style="font-size:11px;color:#94a3b8">Score e atendimentos avaliados · período selecionado</div>
         </div>
-        <div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap">
-          <div class="filter-group" style="margin:0">
-            <label for="quality-operational-collaborator-filter">Colaborador</label>
-            <select class="filter-select" id="quality-operational-collaborator-filter" multiple size="3" onchange="onQualityOperationalCollaboratorFilterChange(this)" style="min-width:220px;height:76px"></select>
-          </div>
-          <div class="filter-group" style="margin:0">
-            <label for="quality-operational-setor-filter">Setor</label>
-            <select class="filter-select" id="quality-operational-setor-filter" onchange="onQualityOperationalSetorFilterChange(this.value)" style="min-width:170px">
-              <option value="">Todos</option>
-            </select>
-          </div>
-          <div class="filter-group" style="margin:0">
-            <label for="quality-operational-status-filter">Status</label>
-            <select class="filter-select" id="quality-operational-status-filter" onchange="onQualityOperationalStatusFilterChange(this.value)" style="min-width:130px">
-              <option value="">Todos</option>
-            </select>
-          </div>
-        </div>
       </div>
       <div class="table-scroll quality-collab-scroll">
         <table class="quality-table">
@@ -2096,6 +2094,9 @@ function updateFilterVisibility() {
   const typeGroup = document.getElementById('filter-type-group');
   const companyGroup = document.getElementById('filter-company-group');
   const partnerGroup = document.getElementById('filter-partner-group');
+  const qualityCollaboratorGroup = document.getElementById('filter-quality-operational-collaborator-group');
+  const qualitySetorGroup = document.getElementById('filter-quality-operational-setor-group');
+  const qualityStatusGroup = document.getElementById('filter-quality-operational-status-group');
   const pdfControl = document.getElementById('pdf-ready-control');
   const activeTab = getActiveTab();
   const isSinistro = isSinistroTab(activeTab);
@@ -2111,6 +2112,9 @@ function updateFilterVisibility() {
   if (typeGroup) typeGroup.style.display = (activeTab === 'sessoes' || activeTab === 'coordenacao-cuidado' || isPetitTab(activeTab) || activeTab.startsWith('qualidade') || isSinistro) ? 'none' : 'flex';
   if (companyGroup) companyGroup.style.display = (activeTab === 'sessoes' || isSinistro || isQualityOperational) ? 'none' : 'flex';
   if (partnerGroup) partnerGroup.style.display = (!isSinistro && isPartnerFilteredTab(activeTab)) ? 'flex' : 'none';
+  if (qualityCollaboratorGroup) qualityCollaboratorGroup.style.display = isQualityOperational ? 'flex' : 'none';
+  if (qualitySetorGroup) qualitySetorGroup.style.display = isQualityOperational ? 'flex' : 'none';
+  if (qualityStatusGroup) qualityStatusGroup.style.display = isQualityOperational ? 'flex' : 'none';
   if (pdfControl) pdfControl.style.display = isPetitTab(activeTab) ? 'grid' : 'none';
   if (!isSinistro && isPartnerFilteredTab(activeTab)) loadPartnerOptions();
 }
@@ -2464,7 +2468,11 @@ function updateFilterInfo() {
     const periodLabel = periodFilter && periodFilter.style.display !== 'none'
       ? document.getElementById('periodo-label')?.textContent?.trim()
       : '';
-    document.getElementById('filter-info').textContent = periodLabel ? `Filtrando: ${periodLabel}` : '';
+    if (periodLabel) parts.push(periodLabel);
+    if (selectedQualityOperationalCollaborators.size) parts.push(`${selectedQualityOperationalCollaborators.size} colaborador(es)`);
+    if (selectedQualityOperationalSetor) parts.push(`Setor: ${selectedQualityOperationalSetor}`);
+    if (selectedQualityOperationalStatus) parts.push(`Status: ${selectedQualityOperationalStatus}`);
+    document.getElementById('filter-info').textContent = parts.length ? `Filtrando: ${parts.join(' · ')}` : '';
     return;
   }
   if (isSinistroTab(activeTab)) {
@@ -2488,6 +2496,9 @@ async function clearFilters() {
   currentPartnerBrokerId = '';
   currentCareBeneficiaryType = '';
   selectedSessionTypificationFinisher = '';
+  selectedQualityOperationalCollaborators = new Set();
+  selectedQualityOperationalSetor = '';
+  selectedQualityOperationalStatus = '';
   updateGroupSelectLabel();
   renderGroupOptions();
   const partnerSelect = document.getElementById('partner-select');
@@ -2502,7 +2513,7 @@ async function clearFilters() {
   clearPeriodo(false);
   if (isPetitMdsTab(activeTab)) {
     await ensurePetitMdsScope();
-  } else if (activeTab !== 'sessoes' && !isSinistroTab(activeTab)) {
+  } else if (activeTab !== 'sessoes' && !isSinistroTab(activeTab) && activeTab !== 'qualidade-operacional') {
     loadCompanyOptions();
   }
   if (activeTab === 'sessoes') {
@@ -7760,6 +7771,31 @@ function qualityCollaboratorDisplayName(value) {
   return parts.map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase()).join(' ');
 }
 
+function qualityCollaboratorKey(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase()
+    .replace(/@sanus\.tech$/i, '');
+}
+
+function qualityCollaboratorMetaForName(name) {
+  const key = qualityCollaboratorKey(name);
+  const collaborators = qualityData?.strategic?.collaborators || [];
+  return collaborators.find((item) => {
+    const keys = [item.name, item.display_name, ...(item.aliases || [])].map(qualityCollaboratorKey).filter(Boolean);
+    if (keys.includes(key)) return true;
+    return keys.some((candidate) => candidate && !candidate.includes('.') && key.startsWith(`${candidate}.`));
+  }) || {
+    name,
+    display_name: qualityCollaboratorDisplayName(name),
+    setor: 'Não mapeado',
+    status: 'Não mapeado',
+    aliases: [name],
+  };
+}
+
 function qualityInitials(name) {
   return qualityCollaboratorDisplayName(name).split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join('').toUpperCase() || 'NA';
 }
@@ -7797,17 +7833,23 @@ function onQualityCollaboratorSortChange(value) {
 
 function onQualityOperationalCollaboratorFilterChange(select) {
   selectedQualityOperationalCollaborators = new Set(Array.from(select?.selectedOptions || []).map((option) => option.value).filter(Boolean));
+  updateFilterInfo();
   renderQualityStrategic();
+  renderQualityOperational();
 }
 
 function onQualityOperationalSetorFilterChange(value) {
   selectedQualityOperationalSetor = value || '';
+  updateFilterInfo();
   renderQualityStrategic();
+  renderQualityOperational();
 }
 
 function onQualityOperationalStatusFilterChange(value) {
   selectedQualityOperationalStatus = value || '';
+  updateFilterInfo();
   renderQualityStrategic();
+  renderQualityOperational();
 }
 
 function renderQualityOperationalFilterOptions(collaborators) {
@@ -8879,13 +8921,21 @@ function renderQualityOperational() {
   const itemsEl = document.getElementById('quality-items');
   const loading = document.getElementById('quality-operational-loading');
   const items = qualityData?.operational?.items || [];
+  const scopedItems = items.filter((item) => {
+    const meta = qualityCollaboratorMetaForName(item.collaborator_name);
+    if (selectedQualityOperationalCollaborators.size && !selectedQualityOperationalCollaborators.has(meta.name)) return false;
+    if (selectedQualityOperationalSetor && String(meta.setor || 'Não mapeado') !== selectedQualityOperationalSetor) return false;
+    if (selectedQualityOperationalStatus && String(meta.status || 'Não mapeado') !== selectedQualityOperationalStatus) return false;
+    return true;
+  });
   const query = (document.getElementById('quality-search')?.value || '').trim().toLowerCase();
-  const filtered = query ? items.filter((item) => {
-    const haystack = [item.patient_name, item.collaborator_name, item.care_line, item.subject, item.summary_text].join(' ').toLowerCase();
+  const filtered = query ? scopedItems.filter((item) => {
+    const meta = qualityCollaboratorMetaForName(item.collaborator_name);
+    const haystack = [item.patient_name, item.collaborator_name, meta.display_name, meta.setor, meta.status, item.care_line, item.subject, item.summary_text].join(' ').toLowerCase();
     return haystack.includes(query);
-  }) : items;
+  }) : scopedItems;
 
-  setText('quality-operational-count', `${fmt(filtered.length)} de ${fmt(items.length)} atendimentos`);
+  setText('quality-operational-count', `${fmt(filtered.length)} de ${fmt(scopedItems.length)} atendimentos`);
   setText('quality-operational-period', `summary + criteria silver · ${qualityPeriodLabel()}`);
 
   if (!selectedQualityKey || !filtered.some((item) => item.key === selectedQualityKey)) {
@@ -8898,11 +8948,13 @@ function renderQualityOperational() {
       const cls = qualityScoreClass(score);
       const scoreText = Number.isFinite(score) ? Math.round(score) : '—';
       const status = item.resolved >= 0.5 ? 'Resolvido' : (item.status || 'Pendente');
+      const collaboratorMeta = qualityCollaboratorMetaForName(item.collaborator_name);
+      const collaboratorLabel = collaboratorMeta.display_name || qualityCollaboratorDisplayName(item.collaborator_name);
       const active = item.key === selectedQualityKey ? ' active' : '';
       return `<div class="quality-item${active}" onclick="selectQualityItem('${escapeJs(item.key)}')">
         <div class="quality-score-circle ${cls}">${scoreText}</div>
         <div style="min-width:0">
-          <div class="quality-item-title">${escapeHtml(item.patient_name)} · ${escapeHtml(item.collaborator_name)}</div>
+          <div class="quality-item-title">${escapeHtml(item.patient_name)} · ${escapeHtml(collaboratorLabel)}</div>
           <div class="quality-item-meta">${escapeHtml(item.subject || item.summary_text || 'Sem resumo')} · ${formatQualityDate(item.created_at)}</div>
         </div>
         <span class="quality-pill">${escapeHtml(item.care_line || 'sem linha')}</span>
