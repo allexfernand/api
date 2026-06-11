@@ -754,8 +754,22 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
 
   </div>
   <div class="filter-group" id="filter-quality-operational-collaborator-group" style="display:none">
-    <label for="quality-operational-collaborator-filter">Colaborador</label>
-    <select class="filter-select" id="quality-operational-collaborator-filter" multiple size="3" onchange="onQualityOperationalCollaboratorFilterChange(this)" style="min-width:220px;height:76px"></select>
+    <label>Colaborador</label>
+    <div class="multi-select" id="quality-operational-collaborator-select">
+      <button type="button" class="filter-select multi-select-button" id="quality-operational-collaborator-button" onclick="toggleQualityOperationalCollaboratorDropdown()">
+        <span id="quality-operational-collaborator-label">(Todos os colaboradores)</span>
+        <i class="fa-solid fa-chevron-down" style="font-size:10px;color:#94a3b8"></i>
+      </button>
+      <div class="multi-select-menu" id="quality-operational-collaborator-menu">
+        <input class="multi-select-search" id="quality-operational-collaborator-search" type="text" placeholder="Buscar colaborador..." oninput="renderQualityOperationalCollaboratorOptions()" />
+        <div class="multi-select-actions">
+          <button type="button" onclick="selectAllQualityOperationalCollaborators()">Selecionar todos</button>
+          <button type="button" onclick="clearQualityOperationalCollaborators()">Limpar</button>
+          <button type="button" onclick="closeQualityOperationalCollaboratorDropdown()">Fechar</button>
+        </div>
+        <div class="multi-select-options" id="quality-operational-collaborator-options"></div>
+      </div>
+    </div>
   </div>
   <div class="filter-group" id="filter-quality-operational-setor-group" style="display:none">
     <label for="quality-operational-setor-filter">Setor</label>
@@ -1920,6 +1934,23 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
 
   <!-- Tab: Qualidade Operacional -->
   <div class="tab-content" id="tab-qualidade-operacional">
+    <div class="card-box" data-qtag="#Qo02" style="display:flex;align-items:center;justify-content:space-between;gap:20px;padding:20px 28px;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:20px;min-width:260px">
+        <div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#0f766e,#4fc3b8);display:flex;align-items:center;justify-content:center">
+          <i class="fa-solid fa-shield-heart" style="font-size:20px;color:#fff"></i>
+        </div>
+        <div>
+          <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;margin-bottom:3px">Qualidade do atendimento</div>
+          <div style="font-size:34px;font-weight:800;color:#0b3b47;letter-spacing:-1px;line-height:1" id="quality-operational-score">—</div>
+          <div style="font-size:11px;color:#94a3b8;margin-top:5px" id="quality-operational-score-note">Score ponderado por atendimentos avaliados</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+        <div class="quality-volume-chip">Colaboradores <strong id="quality-operational-score-collabs">—</strong></div>
+        <div class="quality-volume-chip">Atendimentos <strong id="quality-operational-score-attendances">—</strong></div>
+      </div>
+    </div>
+
     <div class="card-box" data-qtag="#Qo01">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap">
         <div>
@@ -2284,6 +2315,8 @@ function onGroupSelectionChange() {
 document.addEventListener('click', (event) => {
   const wrap = document.getElementById('group-select');
   if (wrap && !wrap.contains(event.target)) closeGroupDropdown();
+  const qualityWrap = document.getElementById('quality-operational-collaborator-select');
+  if (qualityWrap && !qualityWrap.contains(event.target)) closeQualityOperationalCollaboratorDropdown();
 });
 
 document.getElementById('company-select').addEventListener('change', e => {
@@ -2499,6 +2532,7 @@ async function clearFilters() {
   selectedQualityOperationalCollaborators = new Set();
   selectedQualityOperationalSetor = '';
   selectedQualityOperationalStatus = '';
+  updateQualityOperationalCollaboratorLabel();
   updateGroupSelectLabel();
   renderGroupOptions();
   const partnerSelect = document.getElementById('partner-select');
@@ -7831,43 +7865,100 @@ function onQualityCollaboratorSortChange(value) {
   renderQualityStrategic();
 }
 
-function onQualityOperationalCollaboratorFilterChange(select) {
-  selectedQualityOperationalCollaborators = new Set(Array.from(select?.selectedOptions || []).map((option) => option.value).filter(Boolean));
+function selectedQualityOperationalCollaboratorsLabel() {
+  if (!selectedQualityOperationalCollaborators.size) return '(Todos os colaboradores)';
+  if (selectedQualityOperationalCollaborators.size === 1) {
+    const collaborator = (qualityData?.strategic?.collaborators || []).find((item) => selectedQualityOperationalCollaborators.has(item.name));
+    return collaborator?.display_name || qualityCollaboratorDisplayName([...selectedQualityOperationalCollaborators][0]);
+  }
+  return `${selectedQualityOperationalCollaborators.size} colaboradores`;
+}
+
+function updateQualityOperationalCollaboratorLabel() {
+  const label = document.getElementById('quality-operational-collaborator-label');
+  if (!label) return;
+  label.textContent = selectedQualityOperationalCollaboratorsLabel();
+  label.title = [...selectedQualityOperationalCollaborators].join(' · ');
+}
+
+function toggleQualityOperationalCollaboratorDropdown() {
+  const wrap = document.getElementById('quality-operational-collaborator-select');
+  if (!wrap) return;
+  wrap.classList.toggle('open');
+  if (wrap.classList.contains('open')) {
+    const search = document.getElementById('quality-operational-collaborator-search');
+    if (search) setTimeout(() => search.focus(), 0);
+  }
+}
+
+function closeQualityOperationalCollaboratorDropdown() {
+  const wrap = document.getElementById('quality-operational-collaborator-select');
+  if (wrap) wrap.classList.remove('open');
+}
+
+function applyQualityOperationalFilters() {
+  updateQualityOperationalCollaboratorLabel();
   updateFilterInfo();
   renderQualityStrategic();
   renderQualityOperational();
+}
+
+function onQualityOperationalCollaboratorCheckboxChange(value, checked) {
+  if (checked) selectedQualityOperationalCollaborators.add(value);
+  else selectedQualityOperationalCollaborators.delete(value);
+  applyQualityOperationalFilters();
+}
+
+function selectAllQualityOperationalCollaborators() {
+  const collaborators = qualityData?.strategic?.collaborators || [];
+  selectedQualityOperationalCollaborators = new Set(collaborators.map((item) => item.name).filter(Boolean));
+  applyQualityOperationalFilters();
+}
+
+function clearQualityOperationalCollaborators() {
+  selectedQualityOperationalCollaborators = new Set();
+  applyQualityOperationalFilters();
 }
 
 function onQualityOperationalSetorFilterChange(value) {
   selectedQualityOperationalSetor = value || '';
-  updateFilterInfo();
-  renderQualityStrategic();
-  renderQualityOperational();
+  applyQualityOperationalFilters();
 }
 
 function onQualityOperationalStatusFilterChange(value) {
   selectedQualityOperationalStatus = value || '';
-  updateFilterInfo();
-  renderQualityStrategic();
-  renderQualityOperational();
+  applyQualityOperationalFilters();
+}
+
+function renderQualityOperationalCollaboratorOptions() {
+  const list = document.getElementById('quality-operational-collaborator-options');
+  if (!list) return;
+  const collaborators = qualityData?.strategic?.collaborators || [];
+  const search = String(document.getElementById('quality-operational-collaborator-search')?.value || '').trim().toLowerCase();
+  const filtered = collaborators
+    .slice()
+    .sort((a, b) => String(a.display_name || qualityCollaboratorDisplayName(a.name)).localeCompare(String(b.display_name || qualityCollaboratorDisplayName(b.name)), 'pt-BR', { sensitivity: 'base' }))
+    .filter((item) => {
+      const haystack = [item.display_name, item.name, item.setor, item.status, ...(item.aliases || [])].join(' ').toLowerCase();
+      return !search || haystack.includes(search);
+    });
+  list.innerHTML = filtered.length ? filtered.map((item) => {
+    const checked = selectedQualityOperationalCollaborators.has(item.name) ? ' checked' : '';
+    const label = item.display_name || qualityCollaboratorDisplayName(item.name);
+    return `<label class="multi-select-option" title="${escapeAttr(item.name || '')}">
+      <input type="checkbox" value="${escapeAttr(item.name)}"${checked} onchange="onQualityOperationalCollaboratorCheckboxChange(this.value,this.checked)" />
+      <span>${escapeHtml(label)}</span>
+    </label>`;
+  }).join('') : '<div style="font-size:12px;color:#94a3b8;padding:10px;text-align:center">Nenhum colaborador encontrado.</div>';
+  updateQualityOperationalCollaboratorLabel();
 }
 
 function renderQualityOperationalFilterOptions(collaborators) {
-  const collaboratorSelect = document.getElementById('quality-operational-collaborator-filter');
   const setorSelect = document.getElementById('quality-operational-setor-filter');
   const statusSelect = document.getElementById('quality-operational-status-filter');
-  if (collaboratorSelect) {
-    const validNames = new Set((collaborators || []).map((item) => item.name).filter(Boolean));
-    selectedQualityOperationalCollaborators = new Set([...selectedQualityOperationalCollaborators].filter((name) => validNames.has(name)));
-    const options = [...(collaborators || [])].sort((a, b) =>
-      String(a.display_name || qualityCollaboratorDisplayName(a.name)).localeCompare(String(b.display_name || qualityCollaboratorDisplayName(b.name)), 'pt-BR', { sensitivity: 'base' })
-    );
-    collaboratorSelect.innerHTML = options.map((item) => {
-      const selected = selectedQualityOperationalCollaborators.has(item.name) ? ' selected' : '';
-      const label = item.display_name || qualityCollaboratorDisplayName(item.name);
-      return `<option value="${escapeAttr(item.name)}"${selected}>${escapeHtml(label)}</option>`;
-    }).join('');
-  }
+  const validNames = new Set((collaborators || []).map((item) => item.name).filter(Boolean));
+  selectedQualityOperationalCollaborators = new Set([...selectedQualityOperationalCollaborators].filter((name) => validNames.has(name)));
+  renderQualityOperationalCollaboratorOptions();
   if (setorSelect) {
     const setores = [...new Set((collaborators || []).map((item) => String(item.setor || 'Não mapeado')).filter(Boolean))]
       .sort((a, b) => a.localeCompare(b, 'pt-BR', { sensitivity: 'base' }));
@@ -7895,6 +7986,33 @@ function filterQualityOperationalCollaborators(collaborators) {
     if (selectedQualityOperationalStatus && String(item.status || 'Não mapeado') !== selectedQualityOperationalStatus) return false;
     return true;
   });
+}
+
+function renderQualityOperationalScoreCard(collaborators) {
+  const items = collaborators || [];
+  const totalAttendances = items.reduce((acc, item) => acc + (Number(item.total) || 0), 0);
+  const weightedScoreSum = items.reduce((acc, item) => {
+    const total = Number(item.total) || 0;
+    const score = Number(item.score_pct);
+    return Number.isFinite(score) ? acc + (score * total) : acc;
+  }, 0);
+  const score = totalAttendances > 0 ? weightedScoreSum / totalAttendances : NaN;
+  const scoreEl = document.getElementById('quality-operational-score');
+  const noteEl = document.getElementById('quality-operational-score-note');
+  const collabsEl = document.getElementById('quality-operational-score-collabs');
+  const attendancesEl = document.getElementById('quality-operational-score-attendances');
+  if (scoreEl) {
+    scoreEl.textContent = Number.isFinite(score) ? fmtPct(score) : '—';
+    scoreEl.style.color = Number.isFinite(score)
+      ? (score >= 80 ? '#0f8a6f' : (score >= 60 ? '#d97706' : '#c53030'))
+      : '#0b3b47';
+  }
+  if (noteEl) {
+    const hasFilters = selectedQualityOperationalCollaborators.size || selectedQualityOperationalSetor || selectedQualityOperationalStatus;
+    noteEl.textContent = hasFilters ? 'Score ponderado dos filtros selecionados' : 'Score ponderado por atendimentos avaliados';
+  }
+  if (collabsEl) collabsEl.textContent = fmt(items.length);
+  if (attendancesEl) attendancesEl.textContent = fmt(totalAttendances);
 }
 
 function onQualityVolumeEvolutionModeChange(value) {
@@ -8888,8 +9006,10 @@ function renderQualityStrategic() {
       collabTbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#94a3b8;padding:16px">Ranking indisponível no schema atual.</td></tr>';
     }
   };
+  const operationalCollaborators = filterQualityOperationalCollaborators(collaborators);
+  renderQualityOperationalScoreCard(operationalCollaborators);
   renderCollaboratorRankingRows(document.getElementById('quality-collab-tbody'));
-  renderCollaboratorRankingRows(document.getElementById('quality-operational-collab-tbody'), filterQualityOperationalCollaborators(collaborators));
+  renderCollaboratorRankingRows(document.getElementById('quality-operational-collab-tbody'), operationalCollaborators);
   if (!selectedQualityCollaboratorName) {
     const detailEl = document.getElementById('quality-collab-detail');
     if (detailEl) detailEl.innerHTML = '<div class="loading-box" style="padding:18px">Nenhum colaborador selecionado.</div>';
