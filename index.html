@@ -599,6 +599,8 @@ body {
 .tab-content{display:none}
 .tab-content.active{display:block}
 body[data-active-tab="sessoes"] #filter-company-group{display:none!important}
+body[data-active-tab="qualidade-operacional"] #filter-group-group,
+body[data-active-tab="qualidade-operacional"] #filter-company-group{display:none!important}
 body[data-dashboard-mode="mds"] .tab[data-tab="petit-comite"],
 body[data-dashboard-mode="mds"] .tab[data-tab="coordenacao-cuidado"],
 body[data-dashboard-mode="mds"] .tab[data-tab="analise-sinistro"],
@@ -2457,6 +2459,14 @@ function escapeAttr(s){return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quo
 function updateFilterInfo() {
   const parts = [];
   const activeTab = getActiveTab();
+  if (activeTab === 'qualidade-operacional') {
+    const periodFilter = document.getElementById('filter-periodo');
+    const periodLabel = periodFilter && periodFilter.style.display !== 'none'
+      ? document.getElementById('periodo-label')?.textContent?.trim()
+      : '';
+    document.getElementById('filter-info').textContent = periodLabel ? `Filtrando: ${periodLabel}` : '';
+    return;
+  }
   if (isSinistroTab(activeTab)) {
     const periodLabel = document.getElementById('periodo-label')?.textContent?.trim() || '(Todos os meses)';
     document.getElementById('filter-info').textContent = `Filtrando: ${periodLabel}`;
@@ -2504,7 +2514,7 @@ async function clearFilters() {
 }
 
 function buildQS() {
-  if (isSinistroTab()) return '';
+  if (isSinistroTab() || getActiveTab() === 'qualidade-operacional') return '';
   const p = new URLSearchParams();
   appendGroupParams(p);
   const activeTab = getActiveTab();
