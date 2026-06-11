@@ -155,6 +155,14 @@ const quoteIdent = (value) => `\`${String(value).replace(/`/g, "``")}\``;
 const qcol = (alias, column) => `${alias}.${quoteIdent(column)}`;
 
 const DEFAULT_COLLABORATOR_DEPARTMENTS = [
+  { name: "ANTONIA", aliases: ["Sem close_by preenchido", "Sem close By preenchido"], setor: "Gestão", status: "Ativo" },
+  { name: "Allex", setor: "Gestão", status: "Ativo" },
+  { name: "Joanna", aliases: ["joanna.pedrolongo"], setor: "Gestão", status: "Ativo" },
+  { name: "Joao Magalhaes", aliases: ["joao.magalhaes"], setor: "Gestão", status: "Ativo" },
+  { name: "Felipe", setor: "Gestão", status: "Inativo" },
+  { name: "Talita Ermini", aliases: ["talita.ermini"], setor: "Gestão", status: "Ativo" },
+  { name: "Ana Pacheco", aliases: ["ana.pacheco"], setor: "Gestão", status: "Ativo" },
+  { name: "Guilherme Dourado", aliases: ["guilherme.dourado"], setor: "Gestão", status: "Ativo" },
   { name: "wendel", aliases: ["wendel.melo"], setor: "Agendamento", status: "Ativo" },
   { name: "cilene", setor: "Agendamento", status: "Ativo" },
   { name: "diovanna", setor: "Agendamento", status: "Ativo" },
@@ -1246,9 +1254,7 @@ async function loadCollaboratorCriteriaDetail(warehouseId, criteriaColumns, scop
     throw new Error(`Colunas necessárias não encontradas. criterio=${criterionIdColumn || "n/a"} pontuacao=${criteriaScoreColumn || "n/a"} close_by=${criteriaCollaboratorColumn || "n/a"}`);
   }
 
-  const meta = missingCollaborator
-    ? { name: MISSING_COLLABORATOR_LABEL, setor: "Não mapeado", status: "Não mapeado", aliases: [MISSING_COLLABORATOR_LABEL] }
-    : collaboratorMeta(collaborator);
+  const meta = missingCollaborator ? collaboratorMeta(MISSING_COLLABORATOR_LABEL) : collaboratorMeta(collaborator);
   const collaboratorNames = meta.aliases.length ? meta.aliases : [meta.name];
   const collaboratorNameList = collaboratorNames.map((name) => `UPPER(TRIM('${escapeSql(name)}'))`).join(",");
   const criterionGroupExpr = `COALESCE(NULLIF(regexp_extract(regexp_replace(CAST(${qcol("c", criterionIdColumn)} AS STRING), ',', '.'), '^(\\\\d+)', 1), ''), CAST(${qcol("c", criterionIdColumn)} AS STRING))`;
