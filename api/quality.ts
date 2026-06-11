@@ -154,6 +154,37 @@ const escapeSql = (value) => String(value).replace(/'/g, "''");
 const quoteIdent = (value) => `\`${String(value).replace(/`/g, "``")}\``;
 const qcol = (alias, column) => `${alias}.${quoteIdent(column)}`;
 
+const DEFAULT_COLLABORATOR_DEPARTMENTS = [
+  { name: "wendel", aliases: ["wendel.melo"], setor: "Agendamento", status: "Ativo" },
+  { name: "cilene", setor: "Agendamento", status: "Ativo" },
+  { name: "diovanna", setor: "Agendamento", status: "Ativo" },
+  { name: "leila", setor: "Agendamento", status: "Ativo" },
+  { name: "bianca.mendes", setor: "Atendimento (enfermagem)", status: "Inativo" },
+  { name: "giovanna.solon", setor: "Atendimento (enfermagem)", status: "Inativo" },
+  { name: "gabriela", setor: "Atendimento (enfermagem)", status: "Ativo" },
+  { name: "ramon", setor: "Atendimento (enfermagem)", status: "Ativo" },
+  { name: "ramon.ila", canonical: "ramon", setor: "Atendimento (enfermagem)", status: "Ativo" },
+  { name: "karoline.oliveira", setor: "Atendimento (enfermagem)", status: "Inativo" },
+  { name: "beatriz.jesus", setor: "Atendimento (enfermagem)", status: "Inativo" },
+  { name: "thayna.sillig", setor: "Atendimento (enfermagem)", status: "Ativo" },
+  { name: "beatriz.ribeiro", setor: "Atendimento (enfermagem)", status: "Ativo" },
+  { name: "sabrina.damin", setor: "Atendimento (enfermagem)", status: "Ativo" },
+  { name: "kellen.santos", setor: "Atendimento (enfermagem)", status: "Inativo" },
+  { name: "milene.santana", setor: "Atendimento (enfermagem)", status: "Ativo" },
+  { name: "thais.silva", setor: "Atendimento (enfermagem)", status: "Ativo" },
+  { name: "clara.carvalho", setor: "Atendimento (enfermagem)", status: "Ativo" },
+  { name: "kahleen.evaristo", setor: "Atendimento (enfermagem)", status: "Ativo" },
+  { name: "lais.oliveira", setor: "Atendimento (enfermagem)", status: "Ativo" },
+  { name: "amanda.klen", setor: "Atendimento (enfermagem)", status: "Inativo" },
+  { name: "Vitoria.silva", setor: "Atendimento (enfermagem)", status: "Ativo" },
+  { name: "daniela.teixeira", setor: "Atendimento (enfermagem)", status: "Ativo" },
+  { name: "amanda.silva", setor: "Atendimento (enfermagem)", status: "Inativo" },
+  { name: "gabriela.damasio", setor: "Atendimento (enfermagem)", status: "Ativo" },
+  { name: "stephanie.santos", setor: "Atendimento (enfermagem)", status: "Ativo" },
+  { name: "maria.alves", setor: "Atendimento (enfermagem)", status: "Inativo" },
+  { name: "tomas.brito", setor: "Atendimento (enfermagem)", status: "Inativo" },
+];
+
 function normalizeCollaboratorKey(value) {
   return String(value || "")
     .normalize("NFD")
@@ -171,35 +202,43 @@ function collaboratorNameAliases(value) {
 }
 
 function collaboratorDepartmentConfig() {
-  const raw = process.env.QUALITY_COLLABORATOR_DEPARTMENTS || "[]";
+  const rawValue = String(process.env.QUALITY_COLLABORATOR_DEPARTMENTS || "").trim();
   try {
+    const raw = rawValue.replace(/^(['"])(.*)\1$/, "$2");
     const parsed = JSON.parse(raw);
     const items = Array.isArray(parsed)
       ? parsed
       : Object.entries(parsed || {}).map(([name, value]) => ({ name, ...(typeof value === "object" && value ? value : {}) }));
-    return items
+    const mapped = items
       .map((item) => ({
         name: String(item.name || "").trim(),
         canonical: String(item.canonical || item.name || "").trim(),
         setor: String(item.setor || "").trim(),
         status: String(item.status || "").trim(),
+        aliases: Array.isArray(item.aliases) ? item.aliases.map((alias) => String(alias || "").trim()).filter(Boolean) : [],
       }))
       .filter((item) => item.name);
+    return mapped.length ? mapped : DEFAULT_COLLABORATOR_DEPARTMENTS;
   } catch {
-    return [];
+    return DEFAULT_COLLABORATOR_DEPARTMENTS;
   }
 }
 
 function collaboratorMeta(name) {
   const rawName = String(name || "").trim();
   const config = collaboratorDepartmentConfig();
-  const byName = new Map(config.map((item) => [normalizeCollaboratorKey(item.name), item]));
-  const direct = byName.get(normalizeCollaboratorKey(rawName));
+  const allConfiguredNames = (item) => [item.name, item.canonical, ...(item.aliases || [])].filter(Boolean);
+  const byName = new Map(config.flatMap((item) => allConfiguredNames(item).map((alias) => [normalizeCollaboratorKey(alias), item])));
+  const rawKey = normalizeCollaboratorKey(rawName);
+  const direct = byName.get(rawKey) || config.find((item) => {
+    const itemKey = normalizeCollaboratorKey(item.name);
+    return itemKey && !itemKey.includes(".") && rawKey.startsWith(`${itemKey}.`);
+  });
   const canonicalName = direct?.canonical || rawName;
   const canonical = byName.get(normalizeCollaboratorKey(canonicalName)) || direct;
   const aliases = config
     .filter((item) => normalizeCollaboratorKey(item.canonical || item.name) === normalizeCollaboratorKey(canonicalName))
-    .flatMap((item) => collaboratorNameAliases(item.name));
+    .flatMap((item) => [item.name, ...(item.aliases || [])].flatMap((alias) => collaboratorNameAliases(alias)));
   if (!aliases.some((alias) => normalizeCollaboratorKey(alias) === normalizeCollaboratorKey(canonicalName))) aliases.push(canonicalName);
   collaboratorNameAliases(canonicalName).forEach((alias) => aliases.push(alias));
   return {
