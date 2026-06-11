@@ -1855,9 +1855,9 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
           <table class="quality-table">
             <thead>
               <tr>
-                <th>Colaborador</th>
-                <th>Setor</th>
-                <th>Status</th>
+                <th><button class="quality-sort-button" type="button" onclick="onQualityCollaboratorSortChange('name')">Colaborador <span id="quality-collab-name-sort"></span></button></th>
+                <th><button class="quality-sort-button" type="button" onclick="onQualityCollaboratorSortChange('setor')">Setor <span id="quality-collab-setor-sort"></span></button></th>
+                <th><button class="quality-sort-button" type="button" onclick="onQualityCollaboratorSortChange('status')">Status <span id="quality-collab-status-sort"></span></button></th>
                 <th style="text-align:right"><button class="quality-sort-button" type="button" onclick="onQualityCollaboratorSortChange('score')">Score <span id="quality-collab-score-sort">↓</span></button></th>
                 <th style="text-align:right"><button class="quality-sort-button" type="button" onclick="onQualityCollaboratorSortChange('attendance')">Atend. <span id="quality-collab-attendance-sort"></span></button></th>
               </tr>
@@ -1909,9 +1909,9 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
         <table class="quality-table">
           <thead>
             <tr>
-              <th>Colaborador</th>
-              <th>Setor</th>
-              <th>Status</th>
+              <th><button class="quality-sort-button" type="button" onclick="onQualityCollaboratorSortChange('name')">Colaborador <span id="quality-operational-collab-name-sort"></span></button></th>
+              <th><button class="quality-sort-button" type="button" onclick="onQualityCollaboratorSortChange('setor')">Setor <span id="quality-operational-collab-setor-sort"></span></button></th>
+              <th><button class="quality-sort-button" type="button" onclick="onQualityCollaboratorSortChange('status')">Status <span id="quality-operational-collab-status-sort"></span></button></th>
               <th style="text-align:right"><button class="quality-sort-button" type="button" onclick="onQualityCollaboratorSortChange('score')">Score <span id="quality-operational-collab-score-sort">↓</span></button></th>
               <th style="text-align:right"><button class="quality-sort-button" type="button" onclick="onQualityCollaboratorSortChange('attendance')">Atend. <span id="quality-operational-collab-attendance-sort"></span></button></th>
             </tr>
@@ -7707,8 +7707,18 @@ function formatQualityDate(value) {
   return d.toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
 }
 
+function qualityCollaboratorDisplayName(value) {
+  const withoutDomain = String(value || '')
+    .replace(/@sanus\.tech$/i, '')
+    .replace(/[_-]+/g, '.')
+    .trim();
+  const parts = withoutDomain.split('.').filter(Boolean);
+  if (!parts.length) return String(value || 'Não informado');
+  return parts.map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase()).join(' ');
+}
+
 function qualityInitials(name) {
-  return String(name || 'NA').split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join('').toUpperCase() || 'NA';
+  return qualityCollaboratorDisplayName(name).split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join('').toUpperCase() || 'NA';
 }
 
 function escapeJs(s) {
@@ -7731,12 +7741,13 @@ function onQualityCriteriaSortChange(value) {
 }
 
 function onQualityCollaboratorSortChange(value) {
-  const nextSort = value === 'attendance' ? 'attendance' : 'score';
+  const allowed = ['name', 'setor', 'status', 'score', 'attendance'];
+  const nextSort = allowed.includes(value) ? value : 'score';
   if (selectedQualityCollaboratorSort === nextSort) {
     selectedQualityCollaboratorSortDir = selectedQualityCollaboratorSortDir === 'desc' ? 'asc' : 'desc';
   } else {
     selectedQualityCollaboratorSort = nextSort;
-    selectedQualityCollaboratorSortDir = 'desc';
+    selectedQualityCollaboratorSortDir = ['name', 'setor', 'status'].includes(nextSort) ? 'asc' : 'desc';
   }
   renderQualityStrategic();
 }
@@ -8449,7 +8460,7 @@ async function loadQualityCollaboratorCriteria(name) {
   content.innerHTML = `
     <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px;flex-wrap:wrap">
       <div>
-        <div style="font-size:13px;font-weight:800;color:#0f172a">${escapeHtml(data.collaborator || selectedQualityCollaboratorName)}</div>
+        <div style="font-size:13px;font-weight:800;color:#0f172a">${escapeHtml(qualityCollaboratorDisplayName(data.collaborator || selectedQualityCollaboratorName))}</div>
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:6px">
           <span class="quality-sector-pill">${escapeHtml(data.setor || 'Não mapeado')}</span>
           <span class="quality-status-pill ${statusClass}">${escapeHtml(status)}</span>
@@ -8670,23 +8681,31 @@ function renderQualityStrategic() {
   syncQualityDistributionHeights();
 
   const collaborators = strategic.collaborators || [];
-  setText('quality-collab-score-sort', selectedQualityCollaboratorSort === 'score' ? (selectedQualityCollaboratorSortDir === 'desc' ? '↓' : '↑') : '');
-  setText('quality-collab-attendance-sort', selectedQualityCollaboratorSort === 'attendance' ? (selectedQualityCollaboratorSortDir === 'desc' ? '↓' : '↑') : '');
-  setText('quality-operational-collab-score-sort', selectedQualityCollaboratorSort === 'score' ? (selectedQualityCollaboratorSortDir === 'desc' ? '↓' : '↑') : '');
-  setText('quality-operational-collab-attendance-sort', selectedQualityCollaboratorSort === 'attendance' ? (selectedQualityCollaboratorSortDir === 'desc' ? '↓' : '↑') : '');
+  const sortArrow = (key) => selectedQualityCollaboratorSort === key ? (selectedQualityCollaboratorSortDir === 'desc' ? '↓' : '↑') : '';
+  ['name', 'setor', 'status', 'score', 'attendance'].forEach((key) => {
+    setText(`quality-collab-${key}-sort`, sortArrow(key));
+    setText(`quality-operational-collab-${key}-sort`, sortArrow(key));
+  });
   const renderCollaboratorRankingRows = (collabTbody) => {
     if (!collabTbody) return;
     if (collaborators.length) {
       const direction = selectedQualityCollaboratorSortDir === 'asc' ? 1 : -1;
+      const sortValue = (item, key) => {
+        if (key === 'attendance') return Number(item.total) || 0;
+        if (key === 'score') return Number(item.score_pct) || 0;
+        if (key === 'setor') return String(item.setor || 'Não mapeado');
+        if (key === 'status') return String(item.status || 'Não mapeado');
+        return qualityCollaboratorDisplayName(item.name);
+      };
       const sortedCollaborators = [...collaborators].sort((a, b) => {
-        const primaryA = selectedQualityCollaboratorSort === 'attendance' ? Number(a.total) || 0 : Number(a.score_pct) || 0;
-        const primaryB = selectedQualityCollaboratorSort === 'attendance' ? Number(b.total) || 0 : Number(b.score_pct) || 0;
-        const primarySort = (primaryA - primaryB) * direction;
+        const primaryA = sortValue(a, selectedQualityCollaboratorSort);
+        const primaryB = sortValue(b, selectedQualityCollaboratorSort);
+        const primarySort = typeof primaryA === 'number' && typeof primaryB === 'number'
+          ? (primaryA - primaryB) * direction
+          : String(primaryA).localeCompare(String(primaryB), 'pt-BR', { sensitivity: 'base' }) * direction;
         if (primarySort) return primarySort;
-        const fallbackA = selectedQualityCollaboratorSort === 'attendance' ? Number(a.score_pct) || 0 : Number(a.total) || 0;
-        const fallbackB = selectedQualityCollaboratorSort === 'attendance' ? Number(b.score_pct) || 0 : Number(b.total) || 0;
-        const fallbackSort = (fallbackA - fallbackB) * direction;
-        return fallbackSort || String(a.name).localeCompare(String(b.name), 'pt-BR', { sensitivity: 'base' });
+        const scoreSort = ((Number(a.score_pct) || 0) - (Number(b.score_pct) || 0)) * -1;
+        return scoreSort || qualityCollaboratorDisplayName(a.name).localeCompare(qualityCollaboratorDisplayName(b.name), 'pt-BR', { sensitivity: 'base' });
       });
       const collaboratorRows = sortedCollaborators.map((item) => {
       const scoreValue = Number(item.score_pct);
@@ -8694,8 +8713,9 @@ function renderQualityStrategic() {
       const isActive = selectedQualityCollaboratorName === item.name;
       const status = String(item.status || 'Não mapeado');
       const statusClass = status.toLowerCase() === 'ativo' ? 'active' : (status.toLowerCase() === 'inativo' ? 'inactive' : 'unknown');
+      const displayName = qualityCollaboratorDisplayName(item.name);
       return `<tr class="quality-collab-row${isActive ? ' active' : ''}">
-        <td><button class="quality-collab-button" type="button" onclick="loadQualityCollaboratorCriteria('${escapeJs(item.name)}')" title="Carregar notas por critério"><div style="display:flex;align-items:center;gap:8px"><span style="width:28px;height:28px;border-radius:50%;background:#e6fffb;color:#0f766e;display:grid;place-items:center;font-size:11px;font-weight:800">${escapeHtml(qualityInitials(item.name))}</span>${escapeHtml(item.name)}</div></button></td>
+        <td><button class="quality-collab-button" type="button" onclick="loadQualityCollaboratorCriteria('${escapeJs(item.name)}')" title="${escapeAttr(item.name || '')}"><div style="display:flex;align-items:center;gap:8px"><span style="width:28px;height:28px;border-radius:50%;background:#e6fffb;color:#0f766e;display:grid;place-items:center;font-size:11px;font-weight:800">${escapeHtml(qualityInitials(item.name))}</span>${escapeHtml(displayName)}</div></button></td>
         <td><span class="quality-sector-pill">${escapeHtml(item.setor || 'Não mapeado')}</span></td>
         <td><span class="quality-status-pill ${statusClass}">${escapeHtml(status)}</span></td>
         <td style="text-align:right"><span class="quality-score ${cls}">${fmtPct(scoreValue)}</span></td>
