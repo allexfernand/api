@@ -488,6 +488,11 @@ body {
 .quality-collab-scroll thead th{position:sticky;top:0;background:#fff;z-index:2}
 .quality-sort-button{border:0;background:transparent;color:inherit;font:inherit;text-transform:inherit;letter-spacing:inherit;padding:0;cursor:pointer}
 .quality-sort-button:hover{color:#0f766e}
+.quality-sector-pill,.quality-status-pill{display:inline-flex;align-items:center;border-radius:999px;padding:4px 8px;font-size:10px;font-weight:800;line-height:1;white-space:nowrap}
+.quality-sector-pill{background:#eef2ff;color:#3730a3;border:1px solid #c7d2fe}
+.quality-status-pill.active{background:#dcfce7;color:#166534;border:1px solid #86efac}
+.quality-status-pill.inactive{background:#fee2e2;color:#991b1b;border:1px solid #fecaca}
+.quality-status-pill.unknown{background:#f1f5f9;color:#475569;border:1px solid #cbd5e1}
 .quality-total-row{background:#f8fafc;border-top:2px solid #e2e8f0}
 .quality-total-row td{position:sticky;bottom:0;background:#f8fafc;z-index:1}
 .quality-collab-button{border:0;background:transparent;color:inherit;font:inherit;text-align:left;padding:0;cursor:pointer}
@@ -1851,6 +1856,8 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
             <thead>
               <tr>
                 <th>Colaborador</th>
+                <th>Setor</th>
+                <th>Status</th>
                 <th style="text-align:right"><button class="quality-sort-button" type="button" onclick="onQualityCollaboratorSortChange('score')">Score <span id="quality-collab-score-sort">↓</span></button></th>
                 <th style="text-align:right"><button class="quality-sort-button" type="button" onclick="onQualityCollaboratorSortChange('attendance')">Atend. <span id="quality-collab-attendance-sort"></span></button></th>
               </tr>
@@ -1903,6 +1910,8 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
           <thead>
             <tr>
               <th>Colaborador</th>
+              <th>Setor</th>
+              <th>Status</th>
               <th style="text-align:right"><button class="quality-sort-button" type="button" onclick="onQualityCollaboratorSortChange('score')">Score <span id="quality-operational-collab-score-sort">↓</span></button></th>
               <th style="text-align:right"><button class="quality-sort-button" type="button" onclick="onQualityCollaboratorSortChange('attendance')">Atend. <span id="quality-operational-collab-attendance-sort"></span></button></th>
             </tr>
@@ -8419,6 +8428,8 @@ async function loadQualityCollaboratorCriteria(name) {
   const weightedScore = totalEvaluations > 0
     ? items.reduce((acc, item) => acc + ((Number(item.score_pct) || 0) * (Number(item.total_avaliacoes) || 0)), 0) / totalEvaluations
     : 0;
+  const status = String(data.status || 'Não mapeado');
+  const statusClass = status.toLowerCase() === 'ativo' ? 'active' : (status.toLowerCase() === 'inativo' ? 'inactive' : 'unknown');
   const rowsHtml = items.map((item) => {
     const criterionId = qualityCriterionGroupId(item.criterion_id);
     const definition = qualityCriterionDefinitions[criterionId];
@@ -8439,7 +8450,11 @@ async function loadQualityCollaboratorCriteria(name) {
     <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px;flex-wrap:wrap">
       <div>
         <div style="font-size:13px;font-weight:800;color:#0f172a">${escapeHtml(data.collaborator || selectedQualityCollaboratorName)}</div>
-        <div style="font-size:11px;color:#94a3b8">${qualityPeriodLabel()} · ${fmt(totalAttendances)} atend. · ${fmt(totalEvaluations)} avaliações</div>
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:6px">
+          <span class="quality-sector-pill">${escapeHtml(data.setor || 'Não mapeado')}</span>
+          <span class="quality-status-pill ${statusClass}">${escapeHtml(status)}</span>
+        </div>
+        <div style="font-size:11px;color:#94a3b8;margin-top:6px">${qualityPeriodLabel()} · ${fmt(totalAttendances)} atend. · ${fmt(totalEvaluations)} avaliações</div>
       </div>
       <div class="quality-score ${qualityScoreClass(weightedScore)}" style="font-size:18px">${fmtPct(weightedScore)}</div>
     </div>
@@ -8677,8 +8692,12 @@ function renderQualityStrategic() {
       const scoreValue = Number(item.score_pct);
       const cls = qualityScoreClass(scoreValue);
       const isActive = selectedQualityCollaboratorName === item.name;
+      const status = String(item.status || 'Não mapeado');
+      const statusClass = status.toLowerCase() === 'ativo' ? 'active' : (status.toLowerCase() === 'inativo' ? 'inactive' : 'unknown');
       return `<tr class="quality-collab-row${isActive ? ' active' : ''}">
         <td><button class="quality-collab-button" type="button" onclick="loadQualityCollaboratorCriteria('${escapeJs(item.name)}')" title="Carregar notas por critério"><div style="display:flex;align-items:center;gap:8px"><span style="width:28px;height:28px;border-radius:50%;background:#e6fffb;color:#0f766e;display:grid;place-items:center;font-size:11px;font-weight:800">${escapeHtml(qualityInitials(item.name))}</span>${escapeHtml(item.name)}</div></button></td>
+        <td><span class="quality-sector-pill">${escapeHtml(item.setor || 'Não mapeado')}</span></td>
+        <td><span class="quality-status-pill ${statusClass}">${escapeHtml(status)}</span></td>
         <td style="text-align:right"><span class="quality-score ${cls}">${fmtPct(scoreValue)}</span></td>
         <td style="text-align:right;font-weight:700">${fmt(Number(item.total) || 0)}</td>
       </tr>`;
@@ -8693,12 +8712,12 @@ function renderQualityStrategic() {
       const totalCls = qualityScoreClass(totalScore);
       collabTbody.innerHTML = `${collaboratorRows}
         <tr class="quality-total-row">
-          <td style="font-weight:800;color:#0f172a">Total da lista</td>
+          <td colspan="3" style="font-weight:800;color:#0f172a">Total da lista</td>
           <td style="text-align:right"><span class="quality-score ${totalCls}">${fmtPct(totalScore)}</span></td>
           <td style="text-align:right;font-weight:800;color:#0f172a">${fmt(totalAttendances)}</td>
         </tr>`;
     } else {
-      collabTbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:#94a3b8;padding:16px">Ranking indisponível no schema atual.</td></tr>';
+      collabTbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#94a3b8;padding:16px">Ranking indisponível no schema atual.</td></tr>';
     }
   };
   renderCollaboratorRankingRows(document.getElementById('quality-collab-tbody'));

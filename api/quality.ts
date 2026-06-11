@@ -154,6 +154,93 @@ const escapeSql = (value) => String(value).replace(/'/g, "''");
 const quoteIdent = (value) => `\`${String(value).replace(/`/g, "``")}\``;
 const qcol = (alias, column) => `${alias}.${quoteIdent(column)}`;
 
+function normalizeCollaboratorKey(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+function collaboratorDepartmentConfig() {
+  const raw = process.env.QUALITY_COLLABORATOR_DEPARTMENTS || "[]";
+  try {
+    const parsed = JSON.parse(raw);
+    const items = Array.isArray(parsed)
+      ? parsed
+      : Object.entries(parsed || {}).map(([name, value]) => ({ name, ...(typeof value === "object" && value ? value : {}) }));
+    return items
+      .map((item) => ({
+        name: String(item.name || "").trim(),
+        canonical: String(item.canonical || item.name || "").trim(),
+        setor: String(item.setor || "").trim(),
+        status: String(item.status || "").trim(),
+      }))
+      .filter((item) => item.name);
+  } catch {
+    return [];
+  }
+}
+
+function collaboratorMeta(name) {
+  const rawName = String(name || "").trim();
+  const config = collaboratorDepartmentConfig();
+  const byName = new Map(config.map((item) => [normalizeCollaboratorKey(item.name), item]));
+  const direct = byName.get(normalizeCollaboratorKey(rawName));
+  const canonicalName = direct?.canonical || rawName;
+  const canonical = byName.get(normalizeCollaboratorKey(canonicalName)) || direct;
+  const aliases = config
+    .filter((item) => normalizeCollaboratorKey(item.canonical || item.name) === normalizeCollaboratorKey(canonicalName))
+    .map((item) => item.name);
+  if (!aliases.some((alias) => normalizeCollaboratorKey(alias) === normalizeCollaboratorKey(canonicalName))) aliases.push(canonicalName);
+  return {
+    name: canonicalName || rawName || MISSING_COLLABORATOR_LABEL,
+    setor: canonical?.setor || direct?.setor || "Não mapeado",
+    status: canonical?.status || direct?.status || "Não mapeado",
+    aliases: [...new Set(aliases.filter(Boolean))],
+  };
+}
+
+function mergeCollaboratorsWithMeta(items) {
+  const grouped = new Map();
+  (items || []).forEach((item) => {
+    const meta = collaboratorMeta(item.name);
+    const key = normalizeCollaboratorKey(meta.name);
+    const current = grouped.get(key) || {
+      name: meta.name,
+      setor: meta.setor,
+      status: meta.status,
+      aliases: new Set(),
+      total: 0,
+      total_avaliacoes: 0,
+      scoreWeight: 0,
+      weightedScore: 0,
+    };
+    meta.aliases.forEach((alias) => current.aliases.add(alias));
+    current.aliases.add(item.name);
+    const total = Number(item.total) || 0;
+    const totalAvaliacoes = Number(item.total_avaliacoes) || 0;
+    const score = Number(item.score_pct);
+    current.total += total;
+    current.total_avaliacoes += totalAvaliacoes;
+    if (Number.isFinite(score)) {
+      const weight = total || totalAvaliacoes || 1;
+      current.scoreWeight += weight;
+      current.weightedScore += score * weight;
+    }
+    grouped.set(key, current);
+  });
+  return [...grouped.values()].map((item) => ({
+    name: item.name,
+    setor: item.setor,
+    status: item.status,
+    aliases: [...item.aliases].filter(Boolean),
+    total: item.total,
+    total_avaliacoes: item.total_avaliacoes,
+    score_pct: item.scoreWeight > 0 ? Number((item.weightedScore / item.scoreWeight).toFixed(1)) : null,
+  }));
+}
+
 async function getColumns(warehouseId, tableName) {
   const rows = await runQuery(warehouseId, `DESCRIBE TABLE ${tableName}`);
   return rows
@@ -1098,7 +1185,11 @@ async function loadCollaboratorCriteriaDetail(warehouseId, criteriaColumns, scop
     throw new Error(`Colunas necessárias não encontradas. criterio=${criterionIdColumn || "n/a"} pontuacao=${criteriaScoreColumn || "n/a"} close_by=${criteriaCollaboratorColumn || "n/a"}`);
   }
 
-  const collaboratorName = missingCollaborator ? MISSING_COLLABORATOR_LABEL : collaborator;
+  const meta = missingCollaborator
+    ? { name: MISSING_COLLABORATOR_LABEL, setor: "Não mapeado", status: "Não mapeado", aliases: [MISSING_COLLABORATOR_LABEL] }
+    : collaboratorMeta(collaborator);
+  const collaboratorNames = meta.aliases.length ? meta.aliases : [meta.name];
+  const collaboratorNameList = collaboratorNames.map((name) => `UPPER(TRIM('${escapeSql(name)}'))`).join(",");
   const criterionGroupExpr = `COALESCE(NULLIF(regexp_extract(regexp_replace(CAST(${qcol("c", criterionIdColumn)} AS STRING), ',', '.'), '^(\\\\d+)', 1), ''), CAST(${qcol("c", criterionIdColumn)} AS STRING))`;
   const collaboratorExpr = stringExpr("c", criteriaCollaboratorColumn, MISSING_COLLABORATOR_LABEL);
   const rows = await runQuery(warehouseId, `
@@ -1110,13 +1201,16 @@ async function loadCollaboratorCriteriaDetail(warehouseId, criteriaColumns, scop
       COALESCE(SUM(COALESCE(${numberExpr("c", criteriaScoreColumn)}, 0)), 0) / NULLIF(COUNT(*) * ${CRITERION_MAX_SCORE}, 0) * 100 AS score_pct
     FROM ${EVALUATED_CRITERIA_TABLE} c
     ${buildEvaluatedCriteriaWhere(scope, "", null).replace(/\bq\./g, "c.")}
-      AND ${collaboratorExpr} = '${escapeSql(collaboratorName)}'
+      AND UPPER(TRIM(CAST(${collaboratorExpr} AS STRING))) IN (${collaboratorNameList})
     GROUP BY ${criterionGroupExpr}
     ORDER BY criterion_id
   `);
 
   return {
-    collaborator: collaboratorName,
+    collaborator: meta.name,
+    setor: meta.setor,
+    status: meta.status,
+    aliases: collaboratorNames,
     items: rows.map((row) => ({
       criterion_id: String(getCell(row[0]) || "Critério"),
       total_atendimentos: toInt(row[1]),
@@ -1200,12 +1294,12 @@ async function loadStrategic(warehouseId, columns, criteriaColumns, scope, share
       GROUP BY 1
       ORDER BY score_pct DESC, total_atendimentos DESC
     `);
-    collaborators = rows.map((row) => ({
+    collaborators = mergeCollaboratorsWithMeta(rows.map((row) => ({
       name: String(getCell(row[0]) || "Sem colaborador"),
       total: toInt(row[1]),
       total_avaliacoes: toInt(row[2]),
       score_pct: toNumber(row[3]),
-    }));
+    })));
   }
 
   let careLines = [];
