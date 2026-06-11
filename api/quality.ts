@@ -159,7 +159,15 @@ function normalizeCollaboratorKey(value) {
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .trim()
-    .toLowerCase();
+    .toLowerCase()
+    .replace(/@sanus\.tech$/, "");
+}
+
+function collaboratorNameAliases(value) {
+  const name = String(value || "").trim();
+  if (!name) return [];
+  const withoutDomain = name.replace(/@sanus\.tech$/i, "");
+  return [...new Set([name, withoutDomain, `${withoutDomain}@sanus.tech`].filter(Boolean))];
 }
 
 function collaboratorDepartmentConfig() {
@@ -191,8 +199,9 @@ function collaboratorMeta(name) {
   const canonical = byName.get(normalizeCollaboratorKey(canonicalName)) || direct;
   const aliases = config
     .filter((item) => normalizeCollaboratorKey(item.canonical || item.name) === normalizeCollaboratorKey(canonicalName))
-    .map((item) => item.name);
+    .flatMap((item) => collaboratorNameAliases(item.name));
   if (!aliases.some((alias) => normalizeCollaboratorKey(alias) === normalizeCollaboratorKey(canonicalName))) aliases.push(canonicalName);
+  collaboratorNameAliases(canonicalName).forEach((alias) => aliases.push(alias));
   return {
     name: canonicalName || rawName || MISSING_COLLABORATOR_LABEL,
     setor: canonical?.setor || direct?.setor || "Não mapeado",
