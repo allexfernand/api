@@ -253,7 +253,7 @@ function collaboratorMeta(name) {
     const itemKey = normalizeCollaboratorKey(item.name);
     return itemKey && !itemKey.includes(".") && rawKey.startsWith(`${itemKey}.`);
   });
-  const canonicalName = direct?.canonical || rawName;
+  const canonicalName = direct?.canonical || direct?.name || rawName;
   const canonical = byName.get(normalizeCollaboratorKey(canonicalName)) || direct;
   const aliases = config
     .filter((item) => normalizeCollaboratorKey(item.canonical || item.name) === normalizeCollaboratorKey(canonicalName))
