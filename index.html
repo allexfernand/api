@@ -603,6 +603,10 @@ body[data-dashboard-mode="mds"] .tab[data-tab="petit-comite"],
 body[data-dashboard-mode="mds"] .tab[data-tab="coordenacao-cuidado"],
 body[data-dashboard-mode="mds"] .tab[data-tab="analise-sinistro"],
 body[data-dashboard-mode="mds"] .tab[data-tab="qualidade-operacional"]{display:none!important}
+body[data-dashboard-mode="mds"] #tab-petit-comite,
+body[data-dashboard-mode="mds"] #tab-coordenacao-cuidado,
+body[data-dashboard-mode="mds"] #tab-analise-sinistro,
+body[data-dashboard-mode="mds"] #tab-qualidade-operacional{display:none!important}
 .loading-box{text-align:center;padding:32px;color:var(--text-faint);font-size:13px}
 footer{text-align:center;padding:20px;font-size:11px;color:var(--text-faint)}
 .auth-overlay{position:fixed;inset:0;z-index:20000;background:linear-gradient(135deg,#172554,#3346c7);display:none;place-items:center;padding:24px}
@@ -1901,8 +1905,26 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
     <div class="card-box" data-qtag="#Qo01">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap">
         <div>
-          <div class="section-title" style="margin-bottom:4px"><i class="fa-solid fa-ranking-star" style="margin-right:6px"></i>Ranking de colaboradores</div>
+          <div class="section-title" style="margin-bottom:4px"><i class="fa-solid fa-users" style="margin-right:6px"></i>Colaboradores</div>
           <div style="font-size:11px;color:#94a3b8">Score e atendimentos avaliados · período selecionado</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap">
+          <div class="filter-group" style="margin:0">
+            <label for="quality-operational-collaborator-filter">Colaborador</label>
+            <select class="filter-select" id="quality-operational-collaborator-filter" multiple size="3" onchange="onQualityOperationalCollaboratorFilterChange(this)" style="min-width:220px;height:76px"></select>
+          </div>
+          <div class="filter-group" style="margin:0">
+            <label for="quality-operational-setor-filter">Setor</label>
+            <select class="filter-select" id="quality-operational-setor-filter" onchange="onQualityOperationalSetorFilterChange(this.value)" style="min-width:170px">
+              <option value="">Todos</option>
+            </select>
+          </div>
+          <div class="filter-group" style="margin:0">
+            <label for="quality-operational-status-filter">Status</label>
+            <select class="filter-select" id="quality-operational-status-filter" onchange="onQualityOperationalStatusFilterChange(this.value)" style="min-width:130px">
+              <option value="">Todos</option>
+            </select>
+          </div>
         </div>
       </div>
       <div class="table-scroll quality-collab-scroll">
@@ -2005,6 +2027,9 @@ let qualityDailyVolumeRequestId = 0;
 let selectedQualityCollaboratorSort = 'score';
 let selectedQualityCollaboratorSortDir = 'desc';
 let selectedQualityCollaboratorName = '';
+let selectedQualityOperationalCollaborators = new Set();
+let selectedQualityOperationalSetor = '';
+let selectedQualityOperationalStatus = '';
 let qualityData = null, selectedQualityKey = null;
 let pdfReadinessTimer = null;
 let isPdfGenerating = false;
@@ -2014,7 +2039,14 @@ document.querySelectorAll('.tab').forEach(t => {
   t.addEventListener('click', () => activateTab(t.dataset.tab));
 });
 
+function isMdsRestrictedTab(tabName) {
+  return ['petit-comite', 'coordenacao-cuidado', 'analise-sinistro', 'qualidade-operacional'].includes(tabName);
+}
+
 async function activateTab(tabName) {
+  if (document.body.dataset.dashboardMode === 'mds' && isMdsRestrictedTab(tabName)) {
+    tabName = 'petit-comite-mds';
+  }
   const tab = document.querySelector(`.tab[data-tab="${tabName}"]`);
   const content = document.getElementById('tab-' + tabName);
   if (!tab || !content) return;
@@ -2065,16 +2097,17 @@ function updateFilterVisibility() {
   const pdfControl = document.getElementById('pdf-ready-control');
   const activeTab = getActiveTab();
   const isSinistro = isSinistroTab(activeTab);
+  const isQualityOperational = activeTab === 'qualidade-operacional';
   document.body.dataset.activeTab = activeTab;
   if (activeTab === 'sessoes') {
     currentCompany = '';
     resetCompanySelect();
-  } else if (!isSinistro && currentGroups.length) {
+  } else if (!isSinistro && !isQualityOperational && currentGroups.length) {
     loadCompanyOptions();
   }
-  if (groupGroup) groupGroup.style.display = isSinistro ? 'none' : 'flex';
+  if (groupGroup) groupGroup.style.display = (isSinistro || isQualityOperational) ? 'none' : 'flex';
   if (typeGroup) typeGroup.style.display = (activeTab === 'sessoes' || activeTab === 'coordenacao-cuidado' || isPetitTab(activeTab) || activeTab.startsWith('qualidade') || isSinistro) ? 'none' : 'flex';
-  if (companyGroup) companyGroup.style.display = (activeTab === 'sessoes' || isSinistro) ? 'none' : 'flex';
+  if (companyGroup) companyGroup.style.display = (activeTab === 'sessoes' || isSinistro || isQualityOperational) ? 'none' : 'flex';
   if (partnerGroup) partnerGroup.style.display = (!isSinistro && isPartnerFilteredTab(activeTab)) ? 'flex' : 'none';
   if (pdfControl) pdfControl.style.display = isPetitTab(activeTab) ? 'grid' : 'none';
   if (!isSinistro && isPartnerFilteredTab(activeTab)) loadPartnerOptions();
@@ -7752,6 +7785,66 @@ function onQualityCollaboratorSortChange(value) {
   renderQualityStrategic();
 }
 
+function onQualityOperationalCollaboratorFilterChange(select) {
+  selectedQualityOperationalCollaborators = new Set(Array.from(select?.selectedOptions || []).map((option) => option.value).filter(Boolean));
+  renderQualityStrategic();
+}
+
+function onQualityOperationalSetorFilterChange(value) {
+  selectedQualityOperationalSetor = value || '';
+  renderQualityStrategic();
+}
+
+function onQualityOperationalStatusFilterChange(value) {
+  selectedQualityOperationalStatus = value || '';
+  renderQualityStrategic();
+}
+
+function renderQualityOperationalFilterOptions(collaborators) {
+  const collaboratorSelect = document.getElementById('quality-operational-collaborator-filter');
+  const setorSelect = document.getElementById('quality-operational-setor-filter');
+  const statusSelect = document.getElementById('quality-operational-status-filter');
+  if (collaboratorSelect) {
+    const validNames = new Set((collaborators || []).map((item) => item.name).filter(Boolean));
+    selectedQualityOperationalCollaborators = new Set([...selectedQualityOperationalCollaborators].filter((name) => validNames.has(name)));
+    const options = [...(collaborators || [])].sort((a, b) =>
+      String(a.display_name || qualityCollaboratorDisplayName(a.name)).localeCompare(String(b.display_name || qualityCollaboratorDisplayName(b.name)), 'pt-BR', { sensitivity: 'base' })
+    );
+    collaboratorSelect.innerHTML = options.map((item) => {
+      const selected = selectedQualityOperationalCollaborators.has(item.name) ? ' selected' : '';
+      const label = item.display_name || qualityCollaboratorDisplayName(item.name);
+      return `<option value="${escapeAttr(item.name)}"${selected}>${escapeHtml(label)}</option>`;
+    }).join('');
+  }
+  if (setorSelect) {
+    const setores = [...new Set((collaborators || []).map((item) => String(item.setor || 'Não mapeado')).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, 'pt-BR', { sensitivity: 'base' }));
+    if (selectedQualityOperationalSetor && !setores.includes(selectedQualityOperationalSetor)) selectedQualityOperationalSetor = '';
+    setorSelect.innerHTML = '<option value="">Todos</option>' + setores.map((setor) => {
+      const selected = setor === selectedQualityOperationalSetor ? ' selected' : '';
+      return `<option value="${escapeAttr(setor)}"${selected}>${escapeHtml(setor)}</option>`;
+    }).join('');
+  }
+  if (statusSelect) {
+    const statuses = [...new Set((collaborators || []).map((item) => String(item.status || 'Não mapeado')).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, 'pt-BR', { sensitivity: 'base' }));
+    if (selectedQualityOperationalStatus && !statuses.includes(selectedQualityOperationalStatus)) selectedQualityOperationalStatus = '';
+    statusSelect.innerHTML = '<option value="">Todos</option>' + statuses.map((status) => {
+      const selected = status === selectedQualityOperationalStatus ? ' selected' : '';
+      return `<option value="${escapeAttr(status)}"${selected}>${escapeHtml(status)}</option>`;
+    }).join('');
+  }
+}
+
+function filterQualityOperationalCollaborators(collaborators) {
+  return (collaborators || []).filter((item) => {
+    if (selectedQualityOperationalCollaborators.size && !selectedQualityOperationalCollaborators.has(item.name)) return false;
+    if (selectedQualityOperationalSetor && String(item.setor || 'Não mapeado') !== selectedQualityOperationalSetor) return false;
+    if (selectedQualityOperationalStatus && String(item.status || 'Não mapeado') !== selectedQualityOperationalStatus) return false;
+    return true;
+  });
+}
+
 function onQualityVolumeEvolutionModeChange(value) {
   selectedQualityVolumeEvolutionMode = ['quality', 'sessions'].includes(value) ? value : 'both';
   renderQualityVolumeEvolutionChart(qualityData?.strategic?.volume_evolution);
@@ -8487,8 +8580,10 @@ async function loadQuality() {
   const p = new URLSearchParams();
   if (meses.length > 0) p.set('meses', meses.join(','));
   p.set('quality_daily_month', selectedQualityDailyMonth || currentMonthValue());
-  appendGroupParams(p);
-  if (currentCompany) p.set('company', currentCompany);
+  if (getActiveTab() !== 'qualidade-operacional') {
+    appendGroupParams(p);
+    if (currentCompany) p.set('company', currentCompany);
+  }
   const data = await safeGet('/api/quality' + (p.toString() ? '?' + p.toString() : ''));
 
   if (!data || data.error) {
@@ -8681,14 +8776,15 @@ function renderQualityStrategic() {
   syncQualityDistributionHeights();
 
   const collaborators = strategic.collaborators || [];
+  renderQualityOperationalFilterOptions(collaborators);
   const sortArrow = (key) => selectedQualityCollaboratorSort === key ? (selectedQualityCollaboratorSortDir === 'desc' ? '↓' : '↑') : '';
   ['name', 'setor', 'status', 'score', 'attendance'].forEach((key) => {
     setText(`quality-collab-${key}-sort`, sortArrow(key));
     setText(`quality-operational-collab-${key}-sort`, sortArrow(key));
   });
-  const renderCollaboratorRankingRows = (collabTbody) => {
+  const renderCollaboratorRankingRows = (collabTbody, items = collaborators) => {
     if (!collabTbody) return;
-    if (collaborators.length) {
+    if (items.length) {
       const direction = selectedQualityCollaboratorSortDir === 'asc' ? 1 : -1;
       const sortValue = (item, key) => {
         if (key === 'attendance') return Number(item.total) || 0;
@@ -8697,7 +8793,7 @@ function renderQualityStrategic() {
         if (key === 'status') return String(item.status || 'Não mapeado');
         return item.display_name || qualityCollaboratorDisplayName(item.name);
       };
-      const sortedCollaborators = [...collaborators].sort((a, b) => {
+      const sortedCollaborators = [...items].sort((a, b) => {
         const primaryA = sortValue(a, selectedQualityCollaboratorSort);
         const primaryB = sortValue(b, selectedQualityCollaboratorSort);
         const primarySort = typeof primaryA === 'number' && typeof primaryB === 'number'
@@ -8722,8 +8818,8 @@ function renderQualityStrategic() {
         <td style="text-align:right;font-weight:700">${fmt(Number(item.total) || 0)}</td>
       </tr>`;
       }).join('');
-      const totalAttendances = collaborators.reduce((acc, item) => acc + (Number(item.total) || 0), 0);
-      const weightedScoreSum = collaborators.reduce((acc, item) => {
+      const totalAttendances = items.reduce((acc, item) => acc + (Number(item.total) || 0), 0);
+      const weightedScoreSum = items.reduce((acc, item) => {
         const total = Number(item.total) || 0;
         const scoreValue = Number(item.score_pct);
         return Number.isFinite(scoreValue) ? acc + (scoreValue * total) : acc;
@@ -8741,7 +8837,7 @@ function renderQualityStrategic() {
     }
   };
   renderCollaboratorRankingRows(document.getElementById('quality-collab-tbody'));
-  renderCollaboratorRankingRows(document.getElementById('quality-operational-collab-tbody'));
+  renderCollaboratorRankingRows(document.getElementById('quality-operational-collab-tbody'), filterQualityOperationalCollaborators(collaborators));
   if (!selectedQualityCollaboratorName) {
     const detailEl = document.getElementById('quality-collab-detail');
     if (detailEl) detailEl.innerHTML = '<div class="loading-box" style="padding:18px">Nenhum colaborador selecionado.</div>';
