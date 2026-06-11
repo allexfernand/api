@@ -1891,6 +1891,27 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
 
   <!-- Tab: Qualidade Operacional -->
   <div class="tab-content" id="tab-qualidade-operacional">
+    <div class="card-box" data-qtag="#Qo01">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+        <div>
+          <div class="section-title" style="margin-bottom:4px"><i class="fa-solid fa-ranking-star" style="margin-right:6px"></i>Ranking de colaboradores</div>
+          <div style="font-size:11px;color:#94a3b8">Score e atendimentos avaliados · período selecionado</div>
+        </div>
+      </div>
+      <div class="table-scroll quality-collab-scroll">
+        <table class="quality-table">
+          <thead>
+            <tr>
+              <th>Colaborador</th>
+              <th style="text-align:right"><button class="quality-sort-button" type="button" onclick="onQualityCollaboratorSortChange('score')">Score <span id="quality-operational-collab-score-sort">↓</span></button></th>
+              <th style="text-align:right"><button class="quality-sort-button" type="button" onclick="onQualityCollaboratorSortChange('attendance')">Atend. <span id="quality-operational-collab-attendance-sort"></span></button></th>
+            </tr>
+          </thead>
+          <tbody id="quality-operational-collab-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
     <div class="card-box" style="display:flex;align-items:center;justify-content:space-between;gap:16px;padding:20px 28px;flex-wrap:wrap">
       <div style="display:flex;align-items:center;gap:20px">
         <div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#4fc3b8,#0f766e);display:flex;align-items:center;justify-content:center">
@@ -8633,11 +8654,13 @@ function renderQualityStrategic() {
   }
   syncQualityDistributionHeights();
 
-  const collabTbody = document.getElementById('quality-collab-tbody');
   const collaborators = strategic.collaborators || [];
   setText('quality-collab-score-sort', selectedQualityCollaboratorSort === 'score' ? (selectedQualityCollaboratorSortDir === 'desc' ? '↓' : '↑') : '');
   setText('quality-collab-attendance-sort', selectedQualityCollaboratorSort === 'attendance' ? (selectedQualityCollaboratorSortDir === 'desc' ? '↓' : '↑') : '');
-  if (collabTbody) {
+  setText('quality-operational-collab-score-sort', selectedQualityCollaboratorSort === 'score' ? (selectedQualityCollaboratorSortDir === 'desc' ? '↓' : '↑') : '');
+  setText('quality-operational-collab-attendance-sort', selectedQualityCollaboratorSort === 'attendance' ? (selectedQualityCollaboratorSortDir === 'desc' ? '↓' : '↑') : '');
+  const renderCollaboratorRankingRows = (collabTbody) => {
+    if (!collabTbody) return;
     if (collaborators.length) {
       const direction = selectedQualityCollaboratorSortDir === 'asc' ? 1 : -1;
       const sortedCollaborators = [...collaborators].sort((a, b) => {
@@ -8677,7 +8700,9 @@ function renderQualityStrategic() {
     } else {
       collabTbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:#94a3b8;padding:16px">Ranking indisponível no schema atual.</td></tr>';
     }
-  }
+  };
+  renderCollaboratorRankingRows(document.getElementById('quality-collab-tbody'));
+  renderCollaboratorRankingRows(document.getElementById('quality-operational-collab-tbody'));
   if (!selectedQualityCollaboratorName) {
     const detailEl = document.getElementById('quality-collab-detail');
     if (detailEl) detailEl.innerHTML = '<div class="loading-box" style="padding:18px">Nenhum colaborador selecionado.</div>';
