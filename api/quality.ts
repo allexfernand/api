@@ -155,7 +155,7 @@ const quoteIdent = (value) => `\`${String(value).replace(/`/g, "``")}\``;
 const qcol = (alias, column) => `${alias}.${quoteIdent(column)}`;
 
 const DEFAULT_COLLABORATOR_DEPARTMENTS = [
-  { name: "ANTONIA", aliases: ["Sem close_by preenchido", "Sem close By preenchido"], setor: "Gestão", status: "Ativo" },
+  { name: "Antonia", aliases: ["Sem close_by preenchido", "Sem close By preenchido"], setor: "IA", status: "Ativo" },
   { name: "Allex", setor: "Gestão", status: "Ativo" },
   { name: "Joanna", aliases: ["joanna.pedrolongo"], setor: "Gestão", status: "Ativo" },
   { name: "Joao Magalhaes", aliases: ["joao.magalhaes"], setor: "Gestão", status: "Ativo" },
