@@ -201,6 +201,16 @@ function collaboratorNameAliases(value) {
   return [...new Set([name, withoutDomain, `${withoutDomain}@sanus.tech`].filter(Boolean))];
 }
 
+function collaboratorDisplayName(value) {
+  const withoutDomain = String(value || "")
+    .replace(/@sanus\.tech$/i, "")
+    .replace(/[_-]+/g, ".")
+    .trim();
+  const parts = withoutDomain.split(".").filter(Boolean);
+  if (!parts.length) return String(value || "Não informado");
+  return parts.map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase()).join(" ");
+}
+
 function collaboratorDepartmentConfig() {
   const rawValue = String(process.env.QUALITY_COLLABORATOR_DEPARTMENTS || "").trim();
   try {
@@ -243,6 +253,7 @@ function collaboratorMeta(name) {
   collaboratorNameAliases(canonicalName).forEach((alias) => aliases.push(alias));
   return {
     name: canonicalName || rawName || MISSING_COLLABORATOR_LABEL,
+    display_name: collaboratorDisplayName(canonicalName || rawName || MISSING_COLLABORATOR_LABEL),
     setor: canonical?.setor || direct?.setor || "Não mapeado",
     status: canonical?.status || direct?.status || "Não mapeado",
     aliases: [...new Set(aliases.filter(Boolean))],
@@ -256,6 +267,7 @@ function mergeCollaboratorsWithMeta(items) {
     const key = normalizeCollaboratorKey(meta.name);
     const current = grouped.get(key) || {
       name: meta.name,
+      display_name: meta.display_name,
       setor: meta.setor,
       status: meta.status,
       aliases: new Set(),
@@ -280,6 +292,7 @@ function mergeCollaboratorsWithMeta(items) {
   });
   return [...grouped.values()].map((item) => ({
     name: item.name,
+    display_name: item.display_name,
     setor: item.setor,
     status: item.status,
     aliases: [...item.aliases].filter(Boolean),
@@ -1256,6 +1269,7 @@ async function loadCollaboratorCriteriaDetail(warehouseId, criteriaColumns, scop
 
   return {
     collaborator: meta.name,
+    display_name: meta.display_name || collaboratorDisplayName(meta.name),
     setor: meta.setor,
     status: meta.status,
     aliases: collaboratorNames,
