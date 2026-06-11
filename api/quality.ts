@@ -959,6 +959,72 @@ async function loadEvaluatedCriteriaBullets(warehouseId, scope, criteriaFinisher
   };
 }
 
+async function loadEvaluatedCriteriaByCollaborator(warehouseId, scope, criteriaFinisher, summarySessionJoin, summaryFinishedByColumn, criteriaFinishedByColumn, criteriaCollaboratorColumn) {
+  if (!criteriaCollaboratorColumn) return [];
+  const finisherSql = buildCriteriaFinisherSql(criteriaFinisher, summarySessionJoin, summaryFinishedByColumn, criteriaFinishedByColumn);
+  const summaryJoinSelect = summarySessionJoin
+    ? `MAX(CAST(s.${quoteIdent(summarySessionJoin.summary)} AS STRING))`
+    : "CAST(NULL AS STRING)";
+  const collaboratorExpr = stringExpr("q", criteriaCollaboratorColumn, MISSING_COLLABORATOR_LABEL);
+  const rows = await runQuery(warehouseId, `
+    WITH criteria_by_attendance AS (
+      SELECT
+        ${collaboratorExpr} AS collaborator,
+        CAST(q.${quoteIdent("criterio_id")} AS STRING) AS criterio_id,
+        COALESCE(NULLIF(TRIM(CAST(q.${quoteIdent("sub_criterio")} AS STRING)), ''), 'Sem subcritério') AS sub_criterio,
+        CAST(q.${quoteIdent("attendance_id")} AS STRING) AS attendance_id,
+        AVG(${numberExpr("q", "pontuacao")}) AS pontuacao_criterio,
+        COUNT(*) AS total_avaliacoes
+      FROM ${EVALUATED_CRITERIA_TABLE} q
+      ${buildEvaluatedCriteriaWhere(scope, criteriaFinisher, criteriaFinishedByColumn)}
+      GROUP BY
+        ${collaboratorExpr},
+        CAST(q.${quoteIdent("criterio_id")} AS STRING),
+        COALESCE(NULLIF(TRIM(CAST(q.${quoteIdent("sub_criterio")} AS STRING)), ''), 'Sem subcritério'),
+        CAST(q.${quoteIdent("attendance_id")} AS STRING)
+    ),
+    summary_by_attendance AS (
+      SELECT
+        CAST(s.${quoteIdent("attendance_id")} AS STRING) AS attendance_id,
+        ${summaryJoinSelect} AS session_join_key,
+        ${finisherSql.summarySelect} AS criteria_finisher,
+        AVG(${numberExpr("s", "nota_atendimento")}) AS nota_atendimento,
+        AVG(${numberExpr("s", "nota_maxima_possivel")}) AS nota_maxima_possivel
+      FROM ${EVALUATED_VOLUME_TABLE} s
+      GROUP BY CAST(s.${quoteIdent("attendance_id")} AS STRING)
+    )
+    ${finisherSql.cte}
+    SELECT
+      c.collaborator,
+      c.criterio_id,
+      c.sub_criterio,
+      COUNT(*) AS total_atendimentos,
+      SUM(c.total_avaliacoes) AS total_avaliacoes,
+      AVG(c.pontuacao_criterio) AS pontuacao_media,
+      AVG(c.pontuacao_criterio) / ${CRITERION_MAX_SCORE} AS percentual_criterio,
+      AVG(s.nota_atendimento / NULLIF(s.nota_maxima_possivel, 0)) AS percentual_atendimento
+    FROM criteria_by_attendance c
+    LEFT JOIN summary_by_attendance s
+      ON c.attendance_id = s.attendance_id
+    ${finisherSql.join}
+    ${finisherSql.where}
+    GROUP BY c.collaborator, c.criterio_id, c.sub_criterio
+    ORDER BY c.collaborator, c.criterio_id, c.sub_criterio
+  `);
+
+  return rows.map((row) => ({
+    collaborator: String(getCell(row[0]) || MISSING_COLLABORATOR_LABEL),
+    criterio_id: String(getCell(row[1]) || "Critério"),
+    sub_criterio: String(getCell(row[2]) || "Sem subcritério"),
+    total_atendimentos: toInt(row[3]),
+    total_avaliacoes: toInt(row[4]),
+    pontuacao_media: toNumber(row[5]),
+    percentual_criterio: toNumber(row[6]),
+    percentual_atendimento: toNumber(row[7]),
+    criterio_max_score: CRITERION_MAX_SCORE,
+  }));
+}
+
 function criteriaRecordDateCondition(scope, criteriaDateColumn) {
   if (!criteriaDateColumn) return null;
   if (scope.months.length) {
@@ -1310,7 +1376,7 @@ async function loadStrategic(warehouseId, columns, criteriaColumns, scope, share
   const criteriaAttendanceColumn = pickColumn(criteriaColumns, ["attendance_id", "atendimento_id", "appointment_id"]);
   const strategicCriteriaWhere = buildEvaluatedCriteriaWhere(scope, "", null).replace(/\bq\./g, "c.");
 
-  const [summaryRows, criteriaRows, evaluatedVolume, evaluatedCriteria, overallCriteriaScore, qualityEvolution, volumeEvolution, dailyVolumeEvolution] = await Promise.all([
+  const [summaryRows, criteriaRows, evaluatedVolume, evaluatedCriteria, evaluatedCriteriaByCollaborator, overallCriteriaScore, qualityEvolution, volumeEvolution, dailyVolumeEvolution] = await Promise.all([
     runQuery(warehouseId, `
       SELECT
         COUNT(*) AS total,
@@ -1335,6 +1401,7 @@ async function loadStrategic(warehouseId, columns, criteriaColumns, scope, share
     `),
     loadEvaluatedVolume(warehouseId, scope),
     loadEvaluatedCriteriaBullets(warehouseId, scope, criteriaFinisher, summarySessionJoin, summaryFinishedByColumn, criteriaFinishedByColumn),
+    loadEvaluatedCriteriaByCollaborator(warehouseId, scope, criteriaFinisher, summarySessionJoin, summaryFinishedByColumn, criteriaFinishedByColumn, criteriaCollaboratorColumn),
     loadOverallCriteriaScore(warehouseId, scope),
     loadQualityEvolution(warehouseId, criteriaColumns),
     loadQualityVolumeEvolution(warehouseId, criteriaColumns, scope),
@@ -1407,6 +1474,7 @@ async function loadStrategic(warehouseId, columns, criteriaColumns, scope, share
     pillars: criteriaAgg.pillars,
     criteria: criteriaAgg.criteria,
     evaluated_criteria: evaluatedCriteria.items,
+    evaluated_criteria_by_collaborator: evaluatedCriteriaByCollaborator,
     criteria_finisher_filter: evaluatedCriteria.filter,
     evolution: qualityEvolution,
     volume_evolution: volumeEvolution,

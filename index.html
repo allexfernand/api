@@ -1974,6 +1974,12 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
       </div>
     </div>
 
+    <div class="card-box" data-qtag="#Qo03">
+      <div class="section-title"><i class="fa-solid fa-clipboard-check" style="margin-right:6px"></i>Critérios avaliados</div>
+      <div style="font-size:11px;color:#94a3b8;margin-bottom:14px"><code>quality_analysis_silver_criteria</code> · aplicáveis · respeita os filtros globais da seção</div>
+      <div class="quality-criteria-bullets" id="quality-operational-criteria-bullets"></div>
+    </div>
+
     <div class="card-box" style="display:flex;align-items:center;justify-content:space-between;gap:16px;padding:20px 28px;flex-wrap:wrap">
       <div style="display:flex;align-items:center;gap:20px">
         <div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#4fc3b8,#0f766e);display:flex;align-items:center;justify-content:center">
@@ -8015,6 +8021,27 @@ function renderQualityOperationalScoreCard(collaborators) {
   if (attendancesEl) attendancesEl.textContent = fmt(totalAttendances);
 }
 
+function filterQualityOperationalEvaluatedCriteria(items) {
+  return (items || []).filter((item) => {
+    const meta = qualityCollaboratorMetaForName(item.collaborator);
+    if (selectedQualityOperationalCollaborators.size && !selectedQualityOperationalCollaborators.has(meta.name)) return false;
+    if (selectedQualityOperationalSetor && String(meta.setor || 'Não mapeado') !== selectedQualityOperationalSetor) return false;
+    if (selectedQualityOperationalStatus && String(meta.status || 'Não mapeado') !== selectedQualityOperationalStatus) return false;
+    return true;
+  });
+}
+
+function renderQualityOperationalCriteriaBullets(items) {
+  const el = document.getElementById('quality-operational-criteria-bullets');
+  if (!el) return;
+  const evaluatedCriteria = aggregateQualityEvaluatedCriteria(items || [])
+    .sort((a, b) => {
+      const idSort = String(a.criterio_id).localeCompare(String(b.criterio_id), 'pt-BR', { numeric: true });
+      return idSort || String(a.sub_criterio).localeCompare(String(b.sub_criterio), 'pt-BR', { sensitivity: 'base' });
+    });
+  el.innerHTML = qualityCriteriaBulletsHtml(evaluatedCriteria);
+}
+
 function onQualityVolumeEvolutionModeChange(value) {
   selectedQualityVolumeEvolutionMode = ['quality', 'sessions'].includes(value) ? value : 'both';
   renderQualityVolumeEvolutionChart(qualityData?.strategic?.volume_evolution);
@@ -8237,6 +8264,29 @@ function aggregateQualityEvaluatedCriteria(items) {
       criterio_max_score: item.criterio_max_score,
     };
   });
+}
+
+function qualityCriteriaBulletsHtml(items) {
+  return items.length ? items.map((item) => {
+    const avg = Number(item.pontuacao_media);
+    const maxScore = Number(item.criterio_max_score) || 2;
+    const criterionPct = Number(item.percentual_criterio);
+    const attendancePct = Number(item.percentual_atendimento);
+    const avgLabel = Number.isFinite(avg)
+      ? avg.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 2 })
+      : '—';
+    const criterionPctLabel = Number.isFinite(criterionPct) ? fmtPct(criterionPct * 100) : '—';
+    const attendancePctLabel = Number.isFinite(attendancePct) ? ` · atend. ${fmtPct(attendancePct * 100)}` : '';
+    return `<div class="quality-criteria-bullet">
+      <div class="quality-criteria-bullet-head">
+        <span class="quality-criteria-bullet-id">${escapeHtml(item.criterio_id)}</span>
+        <span class="quality-criteria-bullet-score">média ${avgLabel}/${maxScore}</span>
+      </div>
+      <div class="quality-criteria-bullet-title" title="${escapeAttr(item.sub_criterio)}">${escapeHtml(item.sub_criterio)}</div>
+      <div class="quality-criteria-bullet-value">${criterionPctLabel}</div>
+      <div class="quality-criteria-bullet-meta">${fmt(Number(item.total_atendimentos) || 0)} atendimentos · ${fmt(Number(item.total_avaliacoes) || 0)} avaliações${attendancePctLabel}</div>
+    </div>`;
+  }).join('') : '<div class="loading-box" style="grid-column:1/-1">Nenhum critério aplicável encontrado no recorte.</div>';
 }
 
 function syncQualityDistributionHeights() {
@@ -8845,26 +8895,7 @@ function renderQualityStrategic() {
       return idSort || String(a.sub_criterio).localeCompare(String(b.sub_criterio), 'pt-BR', { sensitivity: 'base' });
     });
   if (criteriaBulletsEl) {
-    criteriaBulletsEl.innerHTML = evaluatedCriteria.length ? evaluatedCriteria.map((item) => {
-      const avg = Number(item.pontuacao_media);
-      const maxScore = Number(item.criterio_max_score) || 2;
-      const criterionPct = Number(item.percentual_criterio);
-      const attendancePct = Number(item.percentual_atendimento);
-      const avgLabel = Number.isFinite(avg)
-        ? avg.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 2 })
-        : '—';
-      const criterionPctLabel = Number.isFinite(criterionPct) ? fmtPct(criterionPct * 100) : '—';
-      const attendancePctLabel = Number.isFinite(attendancePct) ? ` · atend. ${fmtPct(attendancePct * 100)}` : '';
-      return `<div class="quality-criteria-bullet">
-        <div class="quality-criteria-bullet-head">
-          <span class="quality-criteria-bullet-id">${escapeHtml(item.criterio_id)}</span>
-          <span class="quality-criteria-bullet-score">média ${avgLabel}/${maxScore}</span>
-        </div>
-        <div class="quality-criteria-bullet-title" title="${escapeAttr(item.sub_criterio)}">${escapeHtml(item.sub_criterio)}</div>
-        <div class="quality-criteria-bullet-value">${criterionPctLabel}</div>
-        <div class="quality-criteria-bullet-meta">${fmt(Number(item.total_atendimentos) || 0)} atendimentos · ${fmt(Number(item.total_avaliacoes) || 0)} avaliações${attendancePctLabel}</div>
-      </div>`;
-    }).join('') : '<div class="loading-box" style="grid-column:1/-1">Nenhum critério aplicável encontrado no recorte.</div>';
+    criteriaBulletsEl.innerHTML = qualityCriteriaBulletsHtml(evaluatedCriteria);
   }
 
   const criteriaSortSelect = document.getElementById('quality-criteria-sort');
@@ -9007,7 +9038,12 @@ function renderQualityStrategic() {
     }
   };
   const operationalCollaborators = filterQualityOperationalCollaborators(collaborators);
+  const operationalCriteriaSource = strategic.evaluated_criteria_by_collaborator || [];
+  const operationalCriteria = operationalCriteriaSource.length
+    ? filterQualityOperationalEvaluatedCriteria(operationalCriteriaSource)
+    : (selectedQualityOperationalCollaborators.size || selectedQualityOperationalSetor || selectedQualityOperationalStatus ? [] : (strategic.evaluated_criteria || []));
   renderQualityOperationalScoreCard(operationalCollaborators);
+  renderQualityOperationalCriteriaBullets(operationalCriteria);
   renderCollaboratorRankingRows(document.getElementById('quality-collab-tbody'));
   renderCollaboratorRankingRows(document.getElementById('quality-operational-collab-tbody'), operationalCollaborators);
   if (!selectedQualityCollaboratorName) {
