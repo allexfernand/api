@@ -1,18 +1,7 @@
 // api/agegroups.ts
 import { MDS_PARTNER_SCOPE, requireBasicAuth, scopedPartnerBrokerId } from "../lib/basic-auth";
-
-declare const process: { env: Record<string, string | undefined> };
-
-const HOST = process.env.DATABRICKS_HOST;
-const TOKEN = process.env.DATABRICKS_TOKEN;
-const HEADERS = { "Authorization": `Bearer ${TOKEN}`, "Content-Type": "application/json" };
-
-type DbOptions = RequestInit & {
-  headers?: Record<string, string>;
-};
-
-type DatabricksCell = null | undefined | string | number | boolean | { string_value?: string };
-type DatabricksRow = DatabricksCell[];
+import { escape, getCell, resolveWarehouseId, runQuery } from "../lib/databricks";
+import { setApiCors, setStableCache } from "../lib/http";
 
 type ApiRequest = {
   method?: string;
@@ -24,39 +13,12 @@ type ApiResponse = {
   status(code: number): { json(body: unknown): void; end(): void };
 };
 
-type Warehouse = {
-  id: string;
-  state?: string;
-};
-
 type AgeGroupTotals = {
   feminino: number;
   masculino: number;
   outros: number;
 };
 
-async function dbFetch(path: string, options: DbOptions = {}) {
-  const res = await fetch(`${HOST}${path}`, { ...options, headers: { ...HEADERS, ...(options.headers || {}) } });
-  if (!res.ok) throw new Error(`Databricks ${res.status}: ${await res.text()}`);
-  return res.json();
-}
-
-async function runQuery(warehouseId: string, sql: string): Promise<DatabricksRow[]> {
-  let data = await dbFetch("/api/2.0/sql/statements", {
-    method: "POST",
-    body: JSON.stringify({ warehouse_id: warehouseId, statement: sql, wait_timeout: "50s", on_wait_timeout: "CONTINUE" }),
-  });
-  let { statement_id: sid, status: { state } } = data;
-  while (state === "PENDING" || state === "RUNNING") {
-    await new Promise((r) => setTimeout(r, 2000));
-    data = await dbFetch(`/api/2.0/sql/statements/${sid}`);
-    state = data.status.state;
-  }
-  if (state !== "SUCCEEDED") throw new Error(data.status?.error?.message || "Query falhou: " + state);
-  return data.result?.data_array || [];
-}
-
-function escape(s: unknown) { return String(s).replace(/'/g, "''"); }
 function parseGroupNames(query: Record<string, any>) {
   const raw = query.group_names;
   if (raw) {
@@ -68,11 +30,6 @@ function parseGroupNames(query: Record<string, any>) {
   return query.group_name ? [String(query.group_name).trim()].filter(Boolean) : [];
 }
 
-const getCell = (cell: DatabricksCell) => {
-  if (cell === null || cell === undefined) return null;
-  if (typeof cell === "object" && cell.string_value !== undefined) return cell.string_value;
-  return cell;
-};
 const ORGANIZATIONS_TABLE = `hive_metastore.sanus_prod.organizations`;
 const PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.partner_brokers`;
 const ORGANIZATION_PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.organization_partner_brokers`;
@@ -129,9 +86,7 @@ function buildFilters(groupNames: string[], typeFilter: unknown, partnerBrokerId
 }
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  setApiCors(res);
   if (req.method === "OPTIONS") return res.status(200).end();
   if (!requireBasicAuth(req, res)) return;
 
@@ -141,11 +96,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   const extraFilter = buildFilters(groupNames, typeFilter, partnerBrokerId);
 
   try {
-    const { warehouses = [] } = await dbFetch("/api/2.0/sql/warehouses") as { warehouses?: Warehouse[] };
-    const wh = warehouses.find((w) => w.state === "RUNNING") || warehouses[0];
-    if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
+    const warehouseId = await resolveWarehouseId();
 
-    const rows = await runQuery(wh.id, `
+    const rows = await runQuery(warehouseId, `
       SELECT
         CASE
           WHEN idade BETWEEN 0  AND 18 THEN '0-18'
@@ -203,6 +156,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       outros:    result[f]?.outros    || 0,
     })).filter(f => f.feminino + f.masculino + f.outros > 0);
 
+    setStableCache(res);
     res.status(200).json({ agegroups });
   } catch (err) {
     res.status(500).json({ error: (err as { message?: string }).message });

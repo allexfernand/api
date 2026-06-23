@@ -7,7 +7,19 @@
   ],
   "functions": {
     "api/*.ts": {
-      "maxDuration": 60
+      "maxDuration": 120
+    },
+    "api/data.ts": {
+      "maxDuration": 180
+    },
+    "api/quality.ts": {
+      "maxDuration": 180
+    },
+    "api/sessions.ts": {
+      "maxDuration": 180
+    },
+    "api/sessions-evolution.ts": {
+      "maxDuration": 180
     }
   }
 }

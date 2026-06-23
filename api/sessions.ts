@@ -1,45 +1,13 @@
 // api/sessions.ts
 import { MDS_PARTNER_SCOPE, requireBasicAuth, scopedPartnerBrokerId } from "../lib/basic-auth";
+import { escape, getCell, quoteIdent, resolveWarehouseId, runQuery, toInt } from "../lib/databricks";
+import { setApiCors, setStableCache } from "../lib/http";
 
-declare const process: { env: Record<string, string | undefined> };
-
-const HOST  = process.env.DATABRICKS_HOST;
-const TOKEN = process.env.DATABRICKS_TOKEN;
-const HEADERS = { "Authorization": `Bearer ${TOKEN}`, "Content-Type": "application/json" };
-
-type DbOptions = RequestInit & { headers?: Record<string, string> };
-type DatabricksCell = null | undefined | string | number | boolean | { string_value?: string };
-type DatabricksRow = DatabricksCell[];
 type ApiRequest = { method?: string; query: Record<string, any> };
 type ApiResponse = {
   setHeader(name: string, value: string): void;
   status(code: number): { json(body: unknown): void; end(): void };
 };
-type Warehouse = { id: string; state?: string };
-
-async function dbFetch(path: string, options: DbOptions = {}) {
-  const res = await fetch(`${HOST}${path}`, { ...options, headers: { ...HEADERS, ...(options.headers || {}) } });
-  if (!res.ok) throw new Error(`Databricks ${res.status}: ${await res.text()}`);
-  return res.json();
-}
-
-async function runQuery(warehouseId: string, sql: string): Promise<DatabricksRow[]> {
-  let data = await dbFetch("/api/2.0/sql/statements", {
-    method: "POST",
-    body: JSON.stringify({ warehouse_id: warehouseId, statement: sql, wait_timeout: "50s", on_wait_timeout: "CONTINUE" }),
-  });
-  let { statement_id: sid, status: { state } } = data;
-  while (state === "PENDING" || state === "RUNNING") {
-    await new Promise((r) => setTimeout(r, 2000));
-    data = await dbFetch(`/api/2.0/sql/statements/${sid}`);
-    state = data.status.state;
-  }
-  if (state !== "SUCCEEDED") throw new Error(data.status?.error?.message || "Query falhou: " + state);
-  return data.result?.data_array || [];
-}
-
-function escape(s: unknown) { return String(s).replace(/'/g, "''"); }
-function quoteIdent(s: unknown) { return `\`${String(s).replace(/`/g, "``")}\``; }
 function parseGroupNames(query: Record<string, any>) {
   const raw = query.group_names;
   if (raw) {
@@ -50,13 +18,6 @@ function parseGroupNames(query: Record<string, any>) {
   }
   return query.group_name ? [String(query.group_name).trim()].filter(Boolean) : [];
 }
-
-const getCell = (cell: DatabricksCell) => {
-  if (cell === null || cell === undefined) return null;
-  if (typeof cell === "object" && cell.string_value !== undefined) return cell.string_value;
-  return cell;
-};
-const toInt = (v: DatabricksCell) => { const n = parseInt(String(getCell(v))); return Number.isFinite(n) ? n : 0; };
 
 const SESSION_TABLE = `hive_metastore.sanus_prod.botmaker_session`;
 const MESSAGE_TABLE = `hive_metastore.sanus_prod.botmaker_message`;
@@ -276,9 +237,7 @@ function lastNMonthsList(n: number) {
 }
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  setApiCors(res);
   if (req.method === "OPTIONS") return res.status(200).end();
   if (!requireBasicAuth(req, res)) return;
 
@@ -299,10 +258,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     : null;
 
   try {
-    const { warehouses = [] } = await dbFetch("/api/2.0/sql/warehouses") as { warehouses?: Warehouse[] };
-    const wh = warehouses.find((w) => w.state === "RUNNING") || warehouses[0];
-    if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
-    const dashboardSessionsTable = await resolveDashboardSessionsTable(wh.id);
+    const warehouseId = await resolveWarehouseId();
+    const dashboardSessionsTable = await resolveDashboardSessionsTable(warehouseId);
 
     const companySessionsDateFilter = meses.length > 0
       ? `s.${quoteIdent('mes')} IN (${meses.map((m: string) => `'${m}'`).join(',')})`
@@ -323,11 +280,12 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
     if (scope === 'total') {
       const where = [companySessionsDateFilter, companySessionsScopeFilter].filter(Boolean).join(' AND ');
-      const rows = await runQuery(wh.id, `
+      const rows = await runQuery(warehouseId, `
         SELECT COUNT(*) AS total_sessions
         FROM ${dashboardSessionsTable} s
         ${where ? `WHERE ${where}` : ''}
       `);
+      setStableCache(res);
       return res.status(200).json({
         scope: 'total',
         total_sessions: toInt(rows[0]?.[0]),
@@ -341,11 +299,12 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
     if (scope === 'unique_users') {
       const where = [companySessionsDateFilter, companySessionsScopeFilter].filter(Boolean).join(' AND ');
-      const rows = await runQuery(wh.id, `
+      const rows = await runQuery(warehouseId, `
         SELECT COUNT(DISTINCT s.${quoteIdent('beneficiary_key')}) AS unique_users
         FROM ${dashboardSessionsTable} s
         ${where ? `WHERE ${where} AND s.${quoteIdent('beneficiary_key')} IS NOT NULL` : `WHERE s.${quoteIdent('beneficiary_key')} IS NOT NULL`}
       `);
+      setStableCache(res);
       return res.status(200).json({
         scope: 'unique_users',
         unique_users: toInt(rows[0]?.[0]),
@@ -359,7 +318,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
     if (scope === 'human_interaction') {
       const where = [companySessionsDateFilter, companySessionsScopeFilter].filter(Boolean).join(' AND ');
-      const rows = await runQuery(wh.id, `
+      const rows = await runQuery(warehouseId, `
         SELECT
           s.${quoteIdent('tipo_atendimento_agent')} AS tipo_atendimento,
           COUNT(*) AS total_sessions
@@ -368,6 +327,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         GROUP BY s.${quoteIdent('tipo_atendimento_agent')}
         ORDER BY total_sessions DESC
       `);
+      setStableCache(res);
       return res.status(200).json({
         scope: 'human_interaction',
         message_agent_finishers: rows.map((row) => ({
@@ -388,7 +348,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         .filter(Boolean)
         .join(' AND ');
       try {
-        const rows = await runQuery(wh.id, `
+        const rows = await runQuery(warehouseId, `
           SELECT
             s.${quoteIdent('economic_group_canonical')} AS grupo,
             COUNT(*) AS total_sessions
@@ -441,7 +401,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const topGroupFromSql = `${dashboardSessionsTable} s`;
 
     const messageAgentFinishersPromise = companySessionsMode === "company"
-      ? runQuery(wh.id, `
+      ? runQuery(warehouseId, `
         SELECT
           s.${quoteIdent('tipo_atendimento_agent')} AS tipo_atendimento,
           COUNT(*) AS total_sessions
@@ -450,7 +410,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         GROUP BY s.${quoteIdent('tipo_atendimento_agent')}
         ORDER BY total_sessions DESC
       `)
-      : runQuery(wh.id, `
+      : runQuery(warehouseId, `
         SELECT
           s.${quoteIdent('tipo_atendimento_agent')} AS tipo_atendimento,
           COUNT(*) AS total_sessions
@@ -461,7 +421,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       `);
 
     const companySessionsPromise = companySessionsMode === "company"
-      ? runQuery(wh.id, `
+      ? runQuery(warehouseId, `
         SELECT
           COALESCE(NULLIF(TRIM(CAST(s.${quoteIdent('organization_name')} AS STRING)), ''), 'Sem empresa') AS empresa,
           COUNT(*) AS total_sessions
@@ -470,7 +430,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         GROUP BY COALESCE(NULLIF(TRIM(CAST(s.${quoteIdent('organization_name')} AS STRING)), ''), 'Sem empresa')
         ORDER BY total_sessions DESC
       `)
-      : runQuery(wh.id, `
+      : runQuery(warehouseId, `
         SELECT
           s.${quoteIdent('economic_group_canonical')} AS empresa,
           COUNT(*) AS total_sessions
@@ -481,7 +441,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       `);
 
     const typificationsPromise = companySessionsMode === "company"
-      ? runQuery(wh.id, `
+      ? runQuery(warehouseId, `
         SELECT
           s.${quoteIdent('tipificacao')} AS tipificacao,
           COUNT(*) AS total_sessions
@@ -491,7 +451,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         ORDER BY total_sessions DESC
         LIMIT 30
       `)
-      : runQuery(wh.id, `
+      : runQuery(warehouseId, `
         SELECT
           s.${quoteIdent('tipificacao')} AS tipificacao,
           COUNT(*) AS total_sessions
@@ -502,7 +462,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         LIMIT 30
       `);
 
-    const topGroupsEvolutionPromise = topGroupByCompany ? runQuery(wh.id, `
+    const topGroupsEvolutionPromise = topGroupByCompany ? runQuery(warehouseId, `
       WITH scoped_sessions AS (
         SELECT
           s.${quoteIdent('mes')} AS mes,
@@ -534,7 +494,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       INNER JOIN top_groups tg ON tg.grupo = ss.grupo
       GROUP BY ss.mes, ss.grupo, tg.current_sessions
       ORDER BY tg.current_sessions DESC, ss.grupo, ss.mes
-    `) : runQuery(wh.id, `
+    `) : runQuery(warehouseId, `
       WITH scoped_sessions AS (
         SELECT
           s.${quoteIdent('mes')} AS mes,
@@ -617,6 +577,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       : [];
     const topGroups = [...new Set(topGroupsEvolutionRows.map((row) => row.grupo))];
 
+    setStableCache(res);
     res.status(200).json({
       economic_group_total: economicGroupTotal,
       economic_group_total_error: economicGroupTotalError,

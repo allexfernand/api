@@ -1,12 +1,8 @@
 // api/appointment-types.ts
 // Tipos de consulta/agendamento na atendimento_summarized_gold_live.
 import { MDS_PARTNER_SCOPE, requireBasicAuth, scopedPartnerBrokerId } from "../lib/basic-auth";
-
-declare const process: { env: Record<string, string | undefined> };
-
-const HOST  = process.env.DATABRICKS_HOST;
-const TOKEN = process.env.DATABRICKS_TOKEN;
-const HEADERS = { "Authorization": `Bearer ${TOKEN}`, "Content-Type": "application/json" };
+import { escape, getCell, getColumns, quoteIdent, resolveWarehouseId, runQuery, toInt } from "../lib/databricks";
+import { setApiCors } from "../lib/http";
 
 const APPOINTMENTS_TABLE = `hive_metastore.sanus_prod.atendimento_summarized_gold_live`;
 const APPOINTMENTS_DATE_COLUMN = 'hora_criacao_atendimento';
@@ -14,45 +10,11 @@ const ORGANIZATIONS_TABLE = `hive_metastore.sanus_prod.organizations`;
 const PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.partner_brokers`;
 const ORGANIZATION_PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.organization_partner_brokers`;
 
-type DbOptions = RequestInit & { headers?: Record<string, string> };
-type DatabricksCell = null | undefined | string | number | boolean | { string_value?: string };
-type DatabricksRow = DatabricksCell[];
 type ApiRequest = { method?: string; query: Record<string, string | string[] | undefined> };
 type ApiResponse = {
   setHeader(name: string, value: string): void;
   status(code: number): { json(body: unknown): void; end(): void };
 };
-type Warehouse = { id: string; state?: string };
-
-async function dbFetch(path: string, options: DbOptions = {}) {
-  const res = await fetch(`${HOST}${path}`, { ...options, headers: { ...HEADERS, ...(options.headers || {}) } });
-  if (!res.ok) throw new Error(`Databricks ${res.status}: ${await res.text()}`);
-  return res.json();
-}
-
-async function runQuery(warehouseId: string, sql: string): Promise<DatabricksRow[]> {
-  let data = await dbFetch("/api/2.0/sql/statements", {
-    method: "POST",
-    body: JSON.stringify({ warehouse_id: warehouseId, statement: sql, wait_timeout: "50s", on_wait_timeout: "CONTINUE" }),
-  });
-  let { statement_id: sid, status: { state } } = data;
-  while (state === "PENDING" || state === "RUNNING") {
-    await new Promise((r) => setTimeout(r, 2000));
-    data = await dbFetch(`/api/2.0/sql/statements/${sid}`);
-    state = data.status.state;
-  }
-  if (state !== "SUCCEEDED") throw new Error(data.status?.error?.message || "Query falhou: " + state);
-  return data.result?.data_array || [];
-}
-
-const escape = (s: unknown) => String(s).replace(/'/g, "''");
-const quoteIdent = (s: unknown) => `\`${String(s).replace(/`/g, "``")}\``;
-const getCell = (cell: DatabricksCell) => {
-  if (cell === null || cell === undefined) return null;
-  if (typeof cell === "object" && cell.string_value !== undefined) return cell.string_value;
-  return cell;
-};
-const toInt = (v: DatabricksCell) => { const n = parseInt(String(getCell(v))); return Number.isFinite(n) ? n : 0; };
 
 function pickColumn(columns: string[], candidates: string[]) {
   const byLower = new Map(columns.map((column) => [column.toLowerCase(), column]));
@@ -61,13 +23,6 @@ function pickColumn(columns: string[], candidates: string[]) {
     if (column) return column;
   }
   return null;
-}
-
-async function getColumns(warehouseId: string, tableName: string) {
-  const rows = await runQuery(warehouseId, `DESCRIBE TABLE ${tableName}`);
-  return rows
-    .map((row) => String(getCell(row[0]) || '').trim())
-    .filter((column) => column && !column.startsWith('#'));
 }
 
 function orgNamesSubquery(groupName: unknown) {
@@ -185,9 +140,7 @@ function nextMonth(month: string) {
 }
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  setApiCors(res);
   res.setHeader("Cache-Control", "no-store, max-age=0");
   if (req.method === "OPTIONS") return res.status(200).end();
   if (!requireBasicAuth(req, res)) return;
@@ -226,10 +179,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   END`;
 
   try {
-    const { warehouses = [] } = await dbFetch("/api/2.0/sql/warehouses") as { warehouses?: Warehouse[] };
-    const wh = warehouses.find((w) => w.state === "RUNNING") || warehouses[0];
-    if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
-    const columns = (groupNames.length || company || partnerBrokerId) ? await getColumns(wh.id, APPOINTMENTS_TABLE) : [];
+    const warehouseId = await resolveWarehouseId();
+    const columns = (groupNames.length || company || partnerBrokerId) ? await getColumns(warehouseId, APPOINTMENTS_TABLE) : [];
     const groupFilter = buildGroupFilter(columns, groupNames);
     const companyFilter = buildCompanyFilter(columns, company);
     const partnerFilter = buildPartnerFilter(columns, partnerBrokerId);
@@ -268,7 +219,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         THEN 'Análises clínicas'
         ELSE COALESCE(NULLIF(INITCAP(LOWER(${normalizedAssuntoExpr})), ''), 'Exame sem descrição')
       END`;
-      const rows = await runQuery(wh.id, `
+      const rows = await runQuery(warehouseId, `
         WITH filtered_exams AS (
           SELECT ${examExpr} AS exame
           FROM ${APPOINTMENTS_TABLE}
@@ -352,7 +303,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         THEN 'Psiquiatria'
         ELSE COALESCE(NULLIF(INITCAP(LOWER(TRIM(REGEXP_REPLACE(${normalizedAssuntoExpr}, '^(CONSULTA|CONSULTAS|MEDICO|MEDICA) ', '')))), ''), 'Especialidade sem descrição')
       END`;
-      const rows = await runQuery(wh.id, `
+      const rows = await runQuery(warehouseId, `
         WITH filtered_consultations AS (
           SELECT ${specialtyExpr} AS especialidade
           FROM ${APPOINTMENTS_TABLE}
@@ -414,7 +365,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       });
       return;
     }
-    const rows = await runQuery(wh.id, distinctCpf ? `
+    const rows = await runQuery(warehouseId, distinctCpf ? `
       WITH typed_rows AS (
         SELECT
           ${groupByMonth ? `${monthExpr} AS mes,` : ''}

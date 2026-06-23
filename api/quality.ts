@@ -2,12 +2,8 @@
 // Visões estratégica e operacional de qualidade a partir das tabelas silver.
 
 import { rejectMdsAuth, requireBasicAuth } from "../lib/basic-auth";
-
-declare const process: { env: Record<string, string | undefined> };
-
-const HOST = process.env.DATABRICKS_HOST;
-const TOKEN = process.env.DATABRICKS_TOKEN;
-const HEADERS = { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" };
+import { getCell, getColumns, quoteIdent, resolveWarehouseId, runQuery } from "../lib/databricks";
+import { setApiCors } from "../lib/http";
 
 const SUMMARY_TABLE = "hive_metastore.sanus_prod.quality_analysis_silver_summary";
 const EVALUATED_VOLUME_TABLE = "hive_metastore.sanus_prod.quality_analysis_silver_summary";
@@ -106,40 +102,6 @@ const SUMMARY_SESSION_JOIN_PAIRS = [
 ];
 const CRITERION_MAX_SCORE = 2;
 
-async function dbFetch(path, options: any = {}) {
-  const res = await fetch(`${HOST}${path}`, {
-    ...options,
-    headers: { ...HEADERS, ...(options.headers || {}) },
-  });
-  if (!res.ok) throw new Error(`Databricks ${res.status}: ${await res.text()}`);
-  return res.json();
-}
-
-async function runQuery(warehouseId, sql) {
-  let data = await dbFetch("/api/2.0/sql/statements", {
-    method: "POST",
-    body: JSON.stringify({
-      warehouse_id: warehouseId,
-      statement: sql,
-      wait_timeout: "50s",
-      on_wait_timeout: "CONTINUE",
-    }),
-  });
-  let { statement_id: sid, status: { state } } = data;
-  while (state === "PENDING" || state === "RUNNING") {
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-    data = await dbFetch(`/api/2.0/sql/statements/${sid}`);
-    state = data.status.state;
-  }
-  if (state !== "SUCCEEDED") throw new Error(data.status?.error?.message || `Query falhou: ${state}`);
-  return data.result?.data_array || [];
-}
-
-const getCell = (cell) => {
-  if (cell === null || cell === undefined) return null;
-  if (typeof cell === "object" && cell.string_value !== undefined) return cell.string_value;
-  return cell;
-};
 const toInt = (value) => {
   const number = parseInt(getCell(value), 10);
   return Number.isFinite(number) ? number : 0;
@@ -151,7 +113,6 @@ const toNumber = (value) => {
   return Number.isFinite(number) ? number : null;
 };
 const escapeSql = (value) => String(value).replace(/'/g, "''");
-const quoteIdent = (value) => `\`${String(value).replace(/`/g, "``")}\``;
 const qcol = (alias, column) => `${alias}.${quoteIdent(column)}`;
 
 const DEFAULT_COLLABORATOR_DEPARTMENTS = [
@@ -309,13 +270,6 @@ function mergeCollaboratorsWithMeta(items) {
     total_avaliacoes: item.total_avaliacoes,
     score_pct: item.scoreWeight > 0 ? Number((item.weightedScore / item.scoreWeight).toFixed(1)) : null,
   }));
-}
-
-async function getColumns(warehouseId, tableName) {
-  const rows = await runQuery(warehouseId, `DESCRIBE TABLE ${tableName}`);
-  return rows
-    .map((row) => String(getCell(row[0]) || "").trim())
-    .filter((column) => column && !column.startsWith("#"));
 }
 
 function pickColumn(columns, candidates) {
@@ -1589,9 +1543,7 @@ async function loadOperational(warehouseId, columns, criteriaColumns, scope, sha
 }
 
 export default async function handler(req, res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  setApiCors(res);
   res.setHeader("Cache-Control", "no-store, max-age=0");
   if (req.method === "OPTIONS") return res.status(200).end();
   if (!requireBasicAuth(req, res)) return;
@@ -1601,25 +1553,23 @@ export default async function handler(req, res) {
     const criteriaFinisher = ["humano", "ia"].includes(String(req.query.criteria_finisher || "").toLowerCase())
       ? String(req.query.criteria_finisher).toLowerCase()
       : "";
-    const { warehouses = [] } = await dbFetch("/api/2.0/sql/warehouses");
-    const warehouse = warehouses.find((item) => item.state === "RUNNING") || warehouses[0];
-    if (!warehouse) throw new Error("Nenhum SQL Warehouse disponível.");
+    const warehouseId = await resolveWarehouseId();
 
     const [summaryColumns, criteriaColumns, sessionColumns] = await Promise.all([
-      getColumns(warehouse.id, SUMMARY_TABLE),
-      getColumns(warehouse.id, CRITERIA_TABLE),
-      getColumns(warehouse.id, SESSION_TABLE),
+      getColumns(warehouseId, SUMMARY_TABLE),
+      getColumns(warehouseId, CRITERIA_TABLE),
+      getColumns(warehouseId, SESSION_TABLE),
     ]);
     const scope = buildSummaryScope(summaryColumns, req.query);
     const qualityDailyMonth = /^\d{4}-\d{2}$/.test(String(req.query.quality_daily_month || ""))
       ? String(req.query.quality_daily_month)
       : lastNMonthsList(1)[0];
     if (String(req.query.mode || "") === "quality_daily_volume") {
-      const dailyVolumeEvolution = await loadQualityDailyVolumeEvolution(warehouse.id, criteriaColumns, scope, qualityDailyMonth);
+      const dailyVolumeEvolution = await loadQualityDailyVolumeEvolution(warehouseId, criteriaColumns, scope, qualityDailyMonth);
       return res.status(200).json({ daily_volume_evolution: dailyVolumeEvolution, updatedAt: new Date().toISOString() });
     }
     if (String(req.query.mode || "") === "collaborator_criteria") {
-      const detail = await loadCollaboratorCriteriaDetail(warehouse.id, criteriaColumns, scope, req.query);
+      const detail = await loadCollaboratorCriteriaDetail(warehouseId, criteriaColumns, scope, req.query);
       return res.status(200).json(detail);
     }
 
@@ -1628,12 +1578,12 @@ export default async function handler(req, res) {
     const criteriaFinishedByColumn = pickColumn(criteriaColumns, FINISHER_CANDIDATES);
     const summarySessionJoinCandidates = pickSummarySessionJoin(summaryColumns, sessionColumns);
     const summarySessionJoin = criteriaFinisher && !summaryFinishedByColumn && !criteriaFinishedByColumn
-      ? await resolveSummarySessionJoin(warehouse.id, summarySessionJoinCandidates, scope)
+      ? await resolveSummarySessionJoin(warehouseId, summarySessionJoinCandidates, scope)
       : null;
 
     const [strategic, operational] = await Promise.all([
-      loadStrategic(warehouse.id, summaryColumns, criteriaColumns, scope, sharedKey, criteriaFinisher, summarySessionJoin, summaryFinishedByColumn, criteriaFinishedByColumn, qualityDailyMonth),
-      loadOperational(warehouse.id, summaryColumns, criteriaColumns, scope, sharedKey),
+      loadStrategic(warehouseId, summaryColumns, criteriaColumns, scope, sharedKey, criteriaFinisher, summarySessionJoin, summaryFinishedByColumn, criteriaFinishedByColumn, qualityDailyMonth),
+      loadOperational(warehouseId, summaryColumns, criteriaColumns, scope, sharedKey),
     ]);
 
     res.status(200).json({

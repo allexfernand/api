@@ -2,12 +2,8 @@
 // Insights sob demanda a partir das justificativas factuais dos critérios de qualidade.
 
 import { rejectMdsAuth, requireBasicAuth } from "../lib/basic-auth";
-
-declare const process: { env: Record<string, string | undefined> };
-
-const HOST = process.env.DATABRICKS_HOST;
-const TOKEN = process.env.DATABRICKS_TOKEN;
-const HEADERS = { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" };
+import { escape as escapeSql, getCell, getColumns, quoteIdent, resolveWarehouseId, runQuery, toInt } from "../lib/databricks";
+import { setApiCors } from "../lib/http";
 
 const CRITERIA_TABLE = "hive_metastore.sanus_prod.quality_analysis_silver_criteria";
 const SUMMARY_TABLES = [
@@ -39,54 +35,6 @@ const RESOLVED_CANDIDATES = [
   "concluido",
   "concluida",
 ];
-
-async function dbFetch(path, options: any = {}) {
-  const res = await fetch(`${HOST}${path}`, {
-    ...options,
-    headers: { ...HEADERS, ...(options.headers || {}) },
-  });
-  if (!res.ok) throw new Error(`Databricks ${res.status}: ${await res.text()}`);
-  return res.json();
-}
-
-async function runQuery(warehouseId, sql) {
-  let data = await dbFetch("/api/2.0/sql/statements", {
-    method: "POST",
-    body: JSON.stringify({
-      warehouse_id: warehouseId,
-      statement: sql,
-      wait_timeout: "50s",
-      on_wait_timeout: "CONTINUE",
-    }),
-  });
-  let { statement_id: sid, status: { state } } = data;
-  while (state === "PENDING" || state === "RUNNING") {
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-    data = await dbFetch(`/api/2.0/sql/statements/${sid}`);
-    state = data.status.state;
-  }
-  if (state !== "SUCCEEDED") throw new Error(data.status?.error?.message || `Query falhou: ${state}`);
-  return data.result?.data_array || [];
-}
-
-const getCell = (cell) => {
-  if (cell === null || cell === undefined) return null;
-  if (typeof cell === "object" && cell.string_value !== undefined) return cell.string_value;
-  return cell;
-};
-const toInt = (value) => {
-  const number = parseInt(getCell(value), 10);
-  return Number.isFinite(number) ? number : 0;
-};
-const escapeSql = (value) => String(value).replace(/'/g, "''");
-const quoteIdent = (value) => `\`${String(value).replace(/`/g, "``")}\``;
-
-async function getColumns(warehouseId, tableName) {
-  const rows = await runQuery(warehouseId, `DESCRIBE TABLE ${tableName}`);
-  return rows
-    .map((row) => String(getCell(row[0]) || "").trim())
-    .filter((column) => column && !column.startsWith("#"));
-}
 
 function pickColumn(columns, candidates) {
   const byLower = new Map(columns.map((column) => [column.toLowerCase(), column]));
@@ -283,9 +231,7 @@ function buildSummary({ criterio, total, atendimentos, themes }) {
 }
 
 export default async function handler(req, res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  setApiCors(res);
   res.setHeader("Cache-Control", "no-store, max-age=0");
   if (req.method === "OPTIONS") return res.status(200).end();
   if (!requireBasicAuth(req, res)) return;
@@ -299,18 +245,16 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { warehouses = [] } = await dbFetch("/api/2.0/sql/warehouses");
-    const warehouse = warehouses.find((item) => item.state === "RUNNING") || warehouses[0];
-    if (!warehouse) throw new Error("Nenhum SQL Warehouse disponível.");
+    const warehouseId = await resolveWarehouseId();
 
-    const columns = await getColumns(warehouse.id, CRITERIA_TABLE);
+    const columns = await getColumns(warehouseId, CRITERIA_TABLE);
     const criterionColumn = pickColumn(columns, CRITERION_ID_CANDIDATES);
     const dateColumn = pickColumn(columns, DATE_CANDIDATES);
     const applicableColumn = pickColumn(columns, APPLICABLE_CANDIDATES);
     const justificationColumn = pickColumn(columns, FACTUAL_JUSTIFICATION_CANDIDATES);
     const attendanceColumn = pickColumn(columns, ATTENDANCE_CANDIDATES);
     const summaryFilter = resolved
-      ? await resolveSummaryFilterSchema(warehouse.id)
+      ? await resolveSummaryFilterSchema(warehouseId)
       : { summaryTable: null, summaryAttendanceColumn: null, resolvedColumn: null };
     if (!criterionColumn || !justificationColumn) {
       throw new Error(`Colunas necessárias não encontradas. criterio=${criterionColumn || "n/a"} justificativa=${justificationColumn || "n/a"}`);
@@ -330,14 +274,14 @@ export default async function handler(req, res) {
       resolvedColumn: summaryFilter.resolvedColumn,
     });
     const [summaryRows, justificationRows] = await Promise.all([
-      runQuery(warehouse.id, `
+      runQuery(warehouseId, `
         SELECT
           COUNT(*) AS total_justificativas,
           ${attendanceColumn ? `COUNT(DISTINCT CAST(q.${quoteIdent(attendanceColumn)} AS STRING))` : "COUNT(*)"} AS total_atendimentos
         FROM ${CRITERIA_TABLE} q
         WHERE ${where}
       `),
-      runQuery(warehouse.id, `
+      runQuery(warehouseId, `
         SELECT
           TRIM(CAST(q.${quoteIdent(justificationColumn)} AS STRING)) AS justificativa,
           COUNT(*) AS total

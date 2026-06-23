@@ -1,43 +1,25 @@
 // api/data.ts
 import { MDS_PARTNER_SCOPE, getDashboardAuth, rejectMdsAuth, requireBasicAuth, scopedPartnerBrokerId } from "../lib/basic-auth";
+import {
+  DatabricksRow,
+  escape,
+  getCell,
+  getColumns,
+  quoteIdent,
+  resolveWarehouseId,
+  runQuery,
+  toInt,
+  toNum,
+} from "../lib/databricks";
+import { setApiCors, setStableCache } from "../lib/http";
 
-declare const process: { env: Record<string, string | undefined> };
-
-const HOST  = process.env.DATABRICKS_HOST;
-const TOKEN = process.env.DATABRICKS_TOKEN;
-const HEADERS = { "Authorization": `Bearer ${TOKEN}`, "Content-Type": "application/json" };
-
-type DatabricksCell = null | undefined | string | number | boolean | { string_value?: string };
-type DatabricksRow = DatabricksCell[];
 type ApiRequest = { method?: string; query: Record<string, any> };
 type ApiResponse = {
   setHeader(name: string, value: string): void;
   status(code: number): { json(body: unknown): void; end(): void };
 };
-type Warehouse = { id: string; state?: string };
 
-async function dbFetch(path: string, options: any = {}) {
-  const res = await fetch(`${HOST}${path}`, { ...options, headers: { ...HEADERS, ...(options.headers || {}) } });
-  if (!res.ok) throw new Error(`Databricks ${res.status}: ${await res.text()}`);
-  return res.json();
-}
-
-async function runQuery(warehouseId: string, sql: string): Promise<DatabricksRow[]> {
-  let data = await dbFetch("/api/2.0/sql/statements", {
-    method: "POST",
-    body: JSON.stringify({ warehouse_id: warehouseId, statement: sql, wait_timeout: "50s", on_wait_timeout: "CONTINUE" }),
-  });
-  let { statement_id: sid, status: { state } } = data;
-  while (state === "PENDING" || state === "RUNNING") {
-    await new Promise((r) => setTimeout(r, 2000));
-    data = await dbFetch(`/api/2.0/sql/statements/${sid}`);
-    state = data.status.state;
-  }
-  if (state !== "SUCCEEDED") throw new Error(data.status?.error?.message || "Query falhou: " + state);
-  return data.result?.data_array || [];
-}
-
-function escape(s: unknown) { return String(s).replace(/'/g, "''"); }
+const toDate = (v: Parameters<typeof getCell>[0]) => { const raw = getCell(v); return raw ? String(raw).slice(0, 10) : ""; };
 function parseGroupNames(query: Record<string, any>) {
   const raw = query.group_names;
   if (raw) {
@@ -49,14 +31,6 @@ function parseGroupNames(query: Record<string, any>) {
   return query.group_name ? [String(query.group_name).trim()].filter(Boolean) : [];
 }
 
-const getCell = (cell: DatabricksCell) => {
-  if (cell === null || cell === undefined) return null;
-  if (typeof cell === "object" && cell.string_value !== undefined) return cell.string_value;
-  return cell;
-};
-const toInt = (v: DatabricksCell) => { const n = parseInt(String(getCell(v))); return Number.isFinite(n) ? n : 0; };
-const toNum = (v: DatabricksCell) => { const n = parseFloat(String(getCell(v))); return Number.isFinite(n) ? n : 0; };
-const toDate = (v: DatabricksCell) => { const raw = getCell(v); return raw ? String(raw).slice(0, 10) : ""; };
 const ORGANIZATIONS_TABLE = `hive_metastore.sanus_prod.organizations`;
 const PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.partner_brokers`;
 const ORGANIZATION_PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.organization_partner_brokers`;
@@ -103,15 +77,6 @@ function partnerOrgIdsSubquery(partnerBrokerId: unknown) {
     WHERE ${partnerCondition}
       AND opb.deleted_at IS NULL
   )`;
-}
-
-function quoteIdent(s: unknown) { return `\`${String(s).replace(/`/g, "``")}\``; }
-
-async function getColumns(warehouseId: string, tableName: string) {
-  const rows = await runQuery(warehouseId, `DESCRIBE TABLE ${tableName}`);
-  return rows
-    .map((row) => String(getCell(row[0]) || '').trim())
-    .filter((column) => column && !column.startsWith('#'));
 }
 
 function pickColumn(columns: string[], candidates: string[]) {
@@ -432,9 +397,7 @@ function parseMonthList(value: unknown) {
 }
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  setApiCors(res);
   if (req.method === "OPTIONS") return res.status(200).end();
   if (!requireBasicAuth(req, res)) return;
 
@@ -446,15 +409,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   const groupFilter = buildFilters(groupNames, typeFilter, partnerBrokerId);
 
   try {
-    const { warehouses = [] } = await dbFetch("/api/2.0/sql/warehouses") as { warehouses?: Warehouse[] };
-    const wh = warehouses.find((w) => w.state === "RUNNING") || warehouses[0];
-    if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
+    const warehouseId = await resolveWarehouseId();
 
     if (scope === 'sinistros_evolution') {
       if (rejectMdsAuth(req, res)) return;
       const requestedMonths = parseMonthList(req.query.meses);
       const months = requestedMonths.length ? requestedMonths : lastNMonthsList(12);
-      const columns = await getColumns(wh.id, CLAIMS_TABLE);
+      const columns = await getColumns(warehouseId, CLAIMS_TABLE);
       const eventDateColumn = pickColumn(columns, CLAIMS_EVENT_DATE_CANDIDATES);
       if (!eventDateColumn) {
         throw new Error(`Coluna de data do evento não encontrada em ${CLAIMS_TABLE}. Candidatas: ${CLAIMS_EVENT_DATE_CANDIDATES.join(', ')}`);
@@ -464,7 +425,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const monthExpr = `DATE_FORMAT(${eventDateExpr}, 'yyyy-MM')`;
       const userKeyExpr = `CONCAT(COALESCE(CAST(codigo_usuario AS STRING), ''), '|', COALESCE(CAST(cpf_titular AS STRING), ''))`;
       const monthInList = months.map((month) => `'${month}'`).join(',');
-      const rows = await runQuery(wh.id, `
+      const rows = await runQuery(warehouseId, `
         SELECT
           ${monthExpr} AS mes,
           COUNT(*) AS total,
@@ -487,7 +448,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       }));
 
       const quarterExpr = `CONCAT(YEAR(${eventDateExpr}), '-T', QUARTER(${eventDateExpr}))`;
-      const quarterRows = await runQuery(wh.id, `
+      const quarterRows = await runQuery(warehouseId, `
         SELECT
           ${quarterExpr} AS trimestre,
           COUNT(*) AS total,
@@ -519,7 +480,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
     if (scope === 'sinistros_cohort_quarterly') {
       if (rejectMdsAuth(req, res)) return;
-      const columns = await getColumns(wh.id, CLAIMS_TABLE);
+      const columns = await getColumns(warehouseId, CLAIMS_TABLE);
       const eventDateColumn = pickColumn(columns, CLAIMS_EVENT_DATE_CANDIDATES);
       if (!eventDateColumn) {
         throw new Error(`Coluna de data do evento não encontrada em ${CLAIMS_TABLE}. Candidatas: ${CLAIMS_EVENT_DATE_CANDIDATES.join(', ')}`);
@@ -542,7 +503,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       )`;
       const analysisMonths = ['2025-07', '2025-08', '2025-09', '2025-10', '2025-11', '2025-12', '2026-01', '2026-02', '2026-03'];
       const monthInList = analysisMonths.map((month) => `'${month}'`).join(',');
-      const rows = await runQuery(wh.id, `
+      const rows = await runQuery(warehouseId, `
         WITH target_quarters AS (
           SELECT '2025-T3' AS trimestre, 1 AS ord
           UNION ALL SELECT '2025-T4' AS trimestre, 2 AS ord
@@ -635,7 +596,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         ...(months.includes('2025-09') ? ['2025-08', '2025-10'] : []),
       ])].sort();
       const monthInList = queryMonths.map((month) => `'${month}'`).join(',');
-      const rows = await runQuery(wh.id, `
+      const rows = await runQuery(warehouseId, `
         SELECT
           ${monthExpr} AS mes,
           COUNT(*) AS qtd_itens,
@@ -700,7 +661,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     }
 
     if (scope === 'partners') {
-      const partnerRows = await runQuery(wh.id, `
+      const partnerRows = await runQuery(warehouseId, `
         WITH partner_orgs AS (
           SELECT
             CAST(opb.partner_broker_id AS STRING) AS partner_broker_id,
@@ -749,6 +710,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         broker_active: String(getCell(r[3])).toLowerCase() === 'true',
         total_orgs: toInt(r[4]),
       })).filter((partner) => partner.broker_id);
+      setStableCache(res);
       return res.status(200).json({ partners, auth_role: getDashboardAuth(req)?.role || 'full', updatedAt: new Date().toISOString() });
     }
 
@@ -756,8 +718,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const includeActiveMapped = String(req.query.include_active_mapped || '') === '1';
       const activeOnly = String(req.query.active_only || '') === '1';
       const [columns, beneficiaryColumns] = await Promise.all([
-        getColumns(wh.id, HEALTHCOACH_TABLE),
-        getColumns(wh.id, BENEFICIARIES_TABLE).catch(() => []),
+        getColumns(warehouseId, HEALTHCOACH_TABLE),
+        getColumns(warehouseId, BENEFICIARIES_TABLE).catch(() => []),
       ]);
       const company = req.query.company || null;
       const where = buildCareLineFilters(columns, beneficiaryColumns, req.query, groupNames, company, partnerBrokerId);
@@ -768,7 +730,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const activeStatusColumn = activeOnly ? pickCareStatusColumn(columns) : null;
       if (activeOnly && !activeDateColumn) return res.status(400).json({ error: "Coluna de data não encontrada em healthcoach_gold_live." });
       if (activeOnly && !activeStatusColumn) return res.status(400).json({ error: "Coluna de status não encontrada em healthcoach_gold_live." });
-      const rows = await runQuery(wh.id, activeOnly ? `
+      const rows = await runQuery(warehouseId, activeOnly ? `
         WITH raw AS (
           SELECT
             LPAD(REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', ''), 11, '0') AS cpf_norm,
@@ -817,7 +779,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         ORDER BY total_cpfs DESC
         LIMIT 30
       `);
-      const mappedRows = await runQuery(wh.id, `
+      const mappedRows = await runQuery(warehouseId, `
         SELECT
           COUNT(DISTINCT LPAD(REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', ''), 11, '0')) AS mapped_cpfs
         FROM ${HEALTHCOACH_TABLE}
@@ -825,7 +787,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       `);
       const dateColumn = includeActiveMapped ? pickCareDateColumn(columns) : null;
       const statusColumn = includeActiveMapped ? pickCareStatusColumn(columns) : null;
-      const activeMappedRows = includeActiveMapped && dateColumn && statusColumn ? await runQuery(wh.id, `
+      const activeMappedRows = includeActiveMapped && dateColumn && statusColumn ? await runQuery(warehouseId, `
         WITH raw AS (
           SELECT
             LPAD(REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', ''), 11, '0') AS cpf_norm,
@@ -854,7 +816,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       `) : [];
       const beneficiaryCpfColumn = pickBeneficiaryCpfColumn(beneficiaryColumns);
       const beneficiaryKinshipColumn = pickBeneficiaryKinshipColumn(beneficiaryColumns);
-      const typeBreakdownRows = beneficiaryCpfColumn && beneficiaryKinshipColumn ? await runQuery(wh.id, activeOnly ? `
+      const typeBreakdownRows = beneficiaryCpfColumn && beneficiaryKinshipColumn ? await runQuery(warehouseId, activeOnly ? `
         WITH raw AS (
           SELECT
             LPAD(REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', ''), 11, '0') AS cpf_norm,
@@ -955,8 +917,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       if (!detailClasses.length) return res.status(400).json({ error: "Classificação obrigatória." });
       const activeOnly = String(req.query.active_only || '') === '1';
       const [columns, beneficiaryColumns] = await Promise.all([
-        getColumns(wh.id, HEALTHCOACH_TABLE),
-        getColumns(wh.id, BENEFICIARIES_TABLE).catch(() => []),
+        getColumns(warehouseId, HEALTHCOACH_TABLE),
+        getColumns(warehouseId, BENEFICIARIES_TABLE).catch(() => []),
       ]);
       const company = req.query.company || null;
       const baseWhere = buildCareLineFilters(columns, beneficiaryColumns, req.query, groupNames, company, partnerBrokerId);
@@ -980,7 +942,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         : category;
       if (!dateColumn) return res.status(400).json({ error: "Coluna de data não encontrada em healthcoach_gold_live." });
       if (activeOnly && !statusColumn) return res.status(400).json({ error: "Coluna de status não encontrada em healthcoach_gold_live." });
-      const rows = await runQuery(wh.id, activeOnly ? `
+      const rows = await runQuery(warehouseId, activeOnly ? `
         WITH raw AS (
           SELECT
             LPAD(REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', ''), 11, '0') AS cpf_norm,
@@ -1035,7 +997,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         ORDER BY total_cpfs DESC
         LIMIT 50
       `);
-      const exampleRows = await runQuery(wh.id, activeOnly ? `
+      const exampleRows = await runQuery(warehouseId, activeOnly ? `
         WITH raw AS (
           SELECT
             LPAD(REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', ''), 11, '0') AS cpf_norm,
@@ -1161,7 +1123,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       `);
       const beneficiaryCpfColumn = pickBeneficiaryCpfColumn(beneficiaryColumns);
       const beneficiaryKinshipColumn = pickBeneficiaryKinshipColumn(beneficiaryColumns);
-      const typeBreakdownRows = beneficiaryCpfColumn && beneficiaryKinshipColumn ? await runQuery(wh.id, activeOnly ? `
+      const typeBreakdownRows = beneficiaryCpfColumn && beneficiaryKinshipColumn ? await runQuery(warehouseId, activeOnly ? `
         WITH raw AS (
           SELECT
             LPAD(REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', ''), 11, '0') AS cpf_norm,
@@ -1280,8 +1242,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       if (!categoria) return res.status(400).json({ error: "Categoria obrigatória." });
       const activeOnly = String(req.query.active_only || '') === '1';
       const [columns, beneficiaryColumns] = await Promise.all([
-        getColumns(wh.id, HEALTHCOACH_TABLE),
-        getColumns(wh.id, BENEFICIARIES_TABLE).catch(() => []),
+        getColumns(warehouseId, HEALTHCOACH_TABLE),
+        getColumns(warehouseId, BENEFICIARIES_TABLE).catch(() => []),
       ]);
       const bmiColumn = pickBmiColumn(columns);
       if (!bmiColumn) return res.status(400).json({ error: "Coluna de IMC não encontrada em healthcoach_gold_live." });
@@ -1295,7 +1257,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const classification = careClassificationExpr();
       const caseIdExpr = careCaseIdExpr(columns);
       const bmiValue = `try_cast(REPLACE(CAST(${quoteIdent(bmiColumn)} AS STRING), ',', '.') AS DOUBLE)`;
-      const rows = await runQuery(wh.id, `
+      const rows = await runQuery(warehouseId, `
         WITH raw AS (
           SELECT
             LPAD(REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', ''), 11, '0') AS cpf_norm,
@@ -1394,8 +1356,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       if (!categoria) return res.status(400).json({ error: "Categoria obrigatória." });
       const activeOnly = String(req.query.active_only || '') === '1';
       const [columns, beneficiaryColumns] = await Promise.all([
-        getColumns(wh.id, HEALTHCOACH_TABLE),
-        getColumns(wh.id, BENEFICIARIES_TABLE).catch(() => []),
+        getColumns(warehouseId, HEALTHCOACH_TABLE),
+        getColumns(warehouseId, BENEFICIARIES_TABLE).catch(() => []),
       ]);
       const riskColumn = pickRiskPriorityColumn(columns);
       if (!riskColumn) return res.status(400).json({ error: "Coluna prioridade_atendimento não encontrada em healthcoach_gold_live." });
@@ -1409,7 +1371,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const classification = careClassificationExpr();
       const caseIdExpr = careCaseIdExpr(columns);
       const riskValue = `LOWER(TRIM(CAST(${quoteIdent(riskColumn)} AS STRING)))`;
-      const rows = await runQuery(wh.id, `
+      const rows = await runQuery(warehouseId, `
         WITH raw AS (
           SELECT
             LPAD(REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', ''), 11, '0') AS cpf_norm,
@@ -1497,8 +1459,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const categoria = String(req.query.categoria || 'Gestantes').trim();
       const activeOnly = String(req.query.active_only || '') === '1';
       const [columns, beneficiaryColumns] = await Promise.all([
-        getColumns(wh.id, HEALTHCOACH_TABLE),
-        getColumns(wh.id, BENEFICIARIES_TABLE).catch(() => []),
+        getColumns(warehouseId, HEALTHCOACH_TABLE),
+        getColumns(warehouseId, BENEFICIARIES_TABLE).catch(() => []),
       ]);
       const weekColumn = pickGestationalWeekColumn(columns);
       if (!weekColumn) return res.status(400).json({ error: "Coluna qual_semana_gestacional não encontrada em healthcoach_gold_live." });
@@ -1512,7 +1474,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const classification = careClassificationExpr();
       const caseIdExpr = careCaseIdExpr(columns);
       const weekRawExpr = `LOWER(TRIM(CAST(${quoteIdent(weekColumn)} AS STRING)))`;
-      const rows = await runQuery(wh.id, `
+      const rows = await runQuery(warehouseId, `
         WITH raw AS (
           SELECT
             LPAD(REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', ''), 11, '0') AS cpf_norm,
@@ -1645,8 +1607,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
     if (scope === 'care_comorbidity_distribution') {
       const [columns, beneficiaryColumns] = await Promise.all([
-        getColumns(wh.id, HEALTHCOACH_TABLE),
-        getColumns(wh.id, BENEFICIARIES_TABLE).catch(() => []),
+        getColumns(warehouseId, HEALTHCOACH_TABLE),
+        getColumns(warehouseId, BENEFICIARIES_TABLE).catch(() => []),
       ]);
       const dateColumn = pickCareDateColumn(columns);
       if (!dateColumn) return res.status(400).json({ error: "Coluna de data não encontrada em healthcoach_gold_live." });
@@ -1657,7 +1619,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const category = careCategoryExpr();
       const classification = careClassificationExpr();
       const caseIdExpr = careCaseIdExpr(columns);
-      const rows = await runQuery(wh.id, `
+      const rows = await runQuery(warehouseId, `
         WITH raw AS (
           SELECT
             LPAD(REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', ''), 11, '0') AS cpf_norm,
@@ -1773,8 +1735,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const visibleClasses = includeOthers ? [...classNames, 'Outros'] : classNames;
       const activeOnly = String(req.query.active_only || '') === '1';
       const [columns, beneficiaryColumns] = await Promise.all([
-        getColumns(wh.id, HEALTHCOACH_TABLE),
-        getColumns(wh.id, BENEFICIARIES_TABLE).catch(() => []),
+        getColumns(warehouseId, HEALTHCOACH_TABLE),
+        getColumns(warehouseId, BENEFICIARIES_TABLE).catch(() => []),
       ]);
       const dateColumn = pickCareDateColumn(columns);
       if (!dateColumn) return res.status(400).json({ error: "Coluna de data não encontrada em healthcoach_gold_live." });
@@ -1786,7 +1748,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const category = careCategoryExpr();
       const caseIdExpr = careCaseIdExpr(columns);
       const classList = classNames.map((name) => `'${escape(name)}'`).join(',');
-      const rows = await runQuery(wh.id, `
+      const rows = await runQuery(warehouseId, `
         WITH base AS (
           SELECT
             DATE_FORMAT(try_cast(${quoteIdent(dateColumn)} AS TIMESTAMP), 'yyyy-MM') AS mes,
@@ -1884,8 +1846,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
     if (scope === 'care_new_beneficiaries') {
       const [columns, beneficiaryColumns] = await Promise.all([
-        getColumns(wh.id, HEALTHCOACH_TABLE),
-        getColumns(wh.id, BENEFICIARIES_TABLE).catch(() => []),
+        getColumns(warehouseId, HEALTHCOACH_TABLE),
+        getColumns(warehouseId, BENEFICIARIES_TABLE).catch(() => []),
       ]);
       const dateColumn = pickCareDateColumn(columns);
       if (!dateColumn) return res.status(400).json({ error: "Coluna de data não encontrada em healthcoach_gold_live." });
@@ -1895,7 +1857,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const firstDateFilter = meses.length
         ? `WHERE DATE_FORMAT(primeira_data, 'yyyy-MM') IN (${meses.map((month) => `'${escape(month)}'`).join(',')})`
         : '';
-      const rows = await runQuery(wh.id, `
+      const rows = await runQuery(warehouseId, `
         WITH primeiro_atendimento AS (
           SELECT
             LPAD(REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', ''), 11, '0') AS cpf_norm,
@@ -1937,13 +1899,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     }
 
     const [userRows, groupRows, sessionGroupRows] = await Promise.all([
-      runQuery(wh.id, `
+      runQuery(warehouseId, `
         SELECT DATE_TRUNC('DAY', b.created_at) AS dia, COUNT(DISTINCT b.id) AS n
         FROM hive_metastore.sanus_prod.beneficiaries b
         ${groupFilter}
         GROUP BY 1 ORDER BY 1
       `),
-      !groupNames.length ? runQuery(wh.id, partnerBrokerId ? `
+      !groupNames.length ? runQuery(warehouseId, partnerBrokerId ? `
         WITH partner_orgs AS (
           SELECT CAST(opb.organization_id AS STRING) AS organization_id
           FROM ${ORGANIZATION_PARTNER_BROKERS_TABLE} opb
@@ -1987,7 +1949,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           AND (o.is_matriz = true OR o.matriz_id IS NULL)
         ORDER BY o.name ASC
       `) : Promise.resolve(null),
-      !groupNames.length ? runQuery(wh.id, `
+      !groupNames.length ? runQuery(warehouseId, `
         SELECT economic_group_canonical AS grupo, COUNT(*) AS total_sessions
         FROM hive_metastore.sanus_prod.dashboard_sessions_base_gold
         WHERE economic_group_canonical IS NOT NULL
@@ -2011,6 +1973,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         })).filter((g) => g.economic_group)
       : null;
 
+    setStableCache(res);
     res.status(200).json({ users: parse(userRows), groups, sessions_groups, auth_role: getDashboardAuth(req)?.role || 'full', updatedAt: new Date().toISOString() });
   } catch (err) {
     res.status(500).json({ error: (err as { message?: string }).message });

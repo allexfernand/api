@@ -4,12 +4,8 @@
 // - Com filtro: JOIN por botmaker_session.organization_id x organizations.id.
 // Aceita ?group_name=, ?company=, ?type=, ?months=12 ou ?meses=2026-01,2026-02.
 import { MDS_PARTNER_SCOPE, requireBasicAuth, scopedPartnerBrokerId } from "../lib/basic-auth";
-
-declare const process: { env: Record<string, string | undefined> };
-
-const HOST  = process.env.DATABRICKS_HOST;
-const TOKEN = process.env.DATABRICKS_TOKEN;
-const HEADERS = { "Authorization": `Bearer ${TOKEN}`, "Content-Type": "application/json" };
+import { escape, getCell, quoteIdent, resolveWarehouseId, runQuery, toInt } from "../lib/databricks";
+import { setApiCors, setStableCache } from "../lib/http";
 
 const SESSION_TABLE       = `hive_metastore.sanus_prod.botmaker_session`;
 const MESSAGE_TABLE       = `hive_metastore.sanus_prod.botmaker_message`;
@@ -103,39 +99,6 @@ function dashboardSessionsInlineSql() {
   )`;
 }
 
-type DbOptions = RequestInit & { headers?: Record<string, string> };
-type DatabricksCell = null | undefined | string | number | boolean | { string_value?: string };
-type DatabricksRow = DatabricksCell[];
-type ApiRequest = { method?: string; query: Record<string, any> };
-type ApiResponse = {
-  setHeader(name: string, value: string): void;
-  status(code: number): { json(body: unknown): void; end(): void };
-};
-type Warehouse = { id: string; state?: string };
-
-async function dbFetch(path: string, options: DbOptions = {}) {
-  const res = await fetch(`${HOST}${path}`, { ...options, headers: { ...HEADERS, ...(options.headers || {}) } });
-  if (!res.ok) throw new Error(`Databricks ${res.status}: ${await res.text()}`);
-  return res.json();
-}
-
-async function runQuery(warehouseId: string, sql: string): Promise<DatabricksRow[]> {
-  let data = await dbFetch("/api/2.0/sql/statements", {
-    method: "POST",
-    body: JSON.stringify({ warehouse_id: warehouseId, statement: sql, wait_timeout: "50s", on_wait_timeout: "CONTINUE" }),
-  });
-  let { statement_id: sid, status: { state } } = data;
-  while (state === "PENDING" || state === "RUNNING") {
-    await new Promise((r) => setTimeout(r, 2000));
-    data = await dbFetch(`/api/2.0/sql/statements/${sid}`);
-    state = data.status.state;
-  }
-  if (state !== "SUCCEEDED") throw new Error(data.status?.error?.message || "Query falhou: " + state);
-  return data.result?.data_array || [];
-}
-
-const escape = (s: unknown) => String(s).replace(/'/g, "''");
-const quoteIdent = (s: unknown) => `\`${String(s).replace(/`/g, "``")}\``;
 function parseGroupNames(query: Record<string, any>) {
   const raw = query.group_names;
   if (raw) {
@@ -147,12 +110,11 @@ function parseGroupNames(query: Record<string, any>) {
   return query.group_name ? [String(query.group_name).trim()].filter(Boolean) : [];
 }
 
-const getCell = (cell: DatabricksCell) => {
-  if (cell === null || cell === undefined) return null;
-  if (typeof cell === "object" && cell.string_value !== undefined) return cell.string_value;
-  return cell;
+type ApiRequest = { method?: string; query: Record<string, any> };
+type ApiResponse = {
+  setHeader(name: string, value: string): void;
+  status(code: number): { json(body: unknown): void; end(): void };
 };
-const toInt = (v: DatabricksCell) => { const n = parseInt(String(getCell(v))); return Number.isFinite(n) ? n : 0; };
 
 function pickColumn(columns: string[], candidates: string[]) {
   const byLower = new Map(columns.map((column) => [column.toLowerCase(), column]));
@@ -161,21 +123,6 @@ function pickColumn(columns: string[], candidates: string[]) {
     if (column) return column;
   }
   return null;
-}
-
-async function getColumns(warehouseId: string, tableName: string) {
-  const rows = await runQuery(warehouseId, `DESCRIBE TABLE ${tableName}`);
-  return rows
-    .map((row) => String(getCell(row[0]) || '').trim())
-    .filter((column) => column && !column.startsWith('#'));
-}
-
-let sessionColumnsCache: string[] | null = null;
-async function getSessionColumns(warehouseId: string) {
-  if (!sessionColumnsCache) {
-    sessionColumnsCache = await getColumns(warehouseId, SESSION_TABLE);
-  }
-  return sessionColumnsCache;
 }
 
 type DashboardSessionsCache = { warehouseId: string; sql: string; usingGold: boolean };
@@ -388,9 +335,7 @@ function nextMonth(month: string) {
 }
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  setApiCors(res);
   if (req.method === "OPTIONS") return res.status(200).end();
   if (!requireBasicAuth(req, res)) return;
 
@@ -421,10 +366,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     AND s.${quoteIdent('dia')} < '${nextMonth(selectedDayMonth)}-01'`;
 
   try {
-    const { warehouses = [] } = await dbFetch("/api/2.0/sql/warehouses") as { warehouses?: Warehouse[] };
-    const wh = warehouses.find((w) => w.state === "RUNNING") || warehouses[0];
-    if (!wh) throw new Error("Nenhum SQL Warehouse disponível.");
-    const dashboardSessionsTable = await resolveDashboardSessionsTable(wh.id);
+    const warehouseId = await resolveWarehouseId();
+    const dashboardSessionsTable = await resolveDashboardSessionsTable(warehouseId);
 
     const filters = [granularity === 'day' ? daySqlFilter : monthsSqlFilter];
     const orgFilters = [
@@ -438,7 +381,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       ? (partnerBrokerId ? "partner_broker" : (company ? "organization_subquery" : "economic_group_name"))
       : "global";
     if (granularity === 'day') {
-      const rows = await runQuery(wh.id, `
+      const rows = await runQuery(warehouseId, `
         SELECT
           s.${quoteIdent('dia')} AS dia,
           s.${quoteIdent('tipo_atendimento_agent')} AS tipo_atendimento,
@@ -478,7 +421,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     }
 
     const [rows, beneficiaryRows] = await Promise.all([
-      onlyBeneficiaries ? Promise.resolve([]) : runQuery(wh.id, `
+      onlyBeneficiaries ? Promise.resolve([]) : runQuery(warehouseId, `
       WITH scoped_sessions AS (
         SELECT
           s.${quoteIdent('mes')} AS mes,
@@ -496,7 +439,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         ss.tipo_atendimento
       ORDER BY ss.mes
     `),
-      includeBeneficiaries ? runQuery(wh.id, `
+      includeBeneficiaries ? runQuery(warehouseId, `
       WITH beneficiary_base AS (
         SELECT
           s.${quoteIdent('mes')} AS mes,
@@ -552,6 +495,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       return { mes: m, humano, ia, total: humano + ia, unique_cpfs: uniqueBeneficiaries, unique_beneficiaries: uniqueBeneficiaries };
     });
 
+    setStableCache(res);
     res.status(200).json({
       months: monthList.length,
       period_months: monthList,
