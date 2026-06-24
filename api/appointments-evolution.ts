@@ -132,6 +132,36 @@ function nextMonth(month: string) {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
 }
 
+function assuntoExclusionSql() {
+  const assuntoTextExpr = `UPPER(COALESCE(CAST(assunto AS STRING), ''))`;
+  const assuntoNormalizedExpr = `UPPER(TRIM(REGEXP_REPLACE(COALESCE(CAST(assunto AS STRING), ''), '[^A-Za-z0-9]+', ' ')))`;
+  return `
+    AND UPPER(assunto) NOT IN (
+      'ATENDIMENTO WHATSAPP',
+      'ATENDIMENTO HUMANO',
+      'FORA DE HORÁRIO DE ATENDIMENTO'
+    )
+    AND LOWER(COALESCE(CAST(assunto AS STRING), '')) NOT LIKE '%http%'
+    AND ${assuntoTextExpr} NOT LIKE '%ATENDIMENTO HUMANO%'
+    AND ${assuntoNormalizedExpr} NOT LIKE '%ATENDIMENTO%HUMANO%'
+    AND NOT (
+      assunto RLIKE '^[A-Z][a-z]+ [A-Z]'
+      OR assunto RLIKE '^[A-Z][A-Z]+ [A-Z]'
+      OR assunto RLIKE '^ [A-Z]'
+    )
+  `;
+}
+
+function daysInMonth(month: string) {
+  const days = [];
+  const start = new Date(`${month}-01T00:00:00Z`);
+  const end = new Date(`${nextMonth(month)}-01T00:00:00Z`);
+  for (const d = new Date(start); d < end; d.setUTCDate(d.getUTCDate() + 1)) {
+    days.push(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`);
+  }
+  return days;
+}
+
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   setApiCors(res);
   res.setHeader("Cache-Control", "no-store, max-age=0");
@@ -142,15 +172,19 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   const groupName = groupNames[0] || null;
   const company = req.query.company || null;
   const partnerBrokerId = scopedPartnerBrokerId(req, req.query.partner_broker_id || null);
+  const granularity = String(req.query.granularity || "month");
+  const dayMonth = req.query.mes && /^\d{4}-\d{2}$/.test(String(req.query.mes)) ? String(req.query.mes) : null;
   const meses = req.query.meses ? String(req.query.meses).split(',').filter((m) => /^\d{4}-\d{2}$/.test(m)) : [];
   const monthList = meses.length ? meses.sort() : lastNMonthsList(Math.min(Math.max(parseInt(String(req.query.months)) || 12, 1), 24));
   const monthExpr = `DATE_FORMAT(${quoteIdent(APPOINTMENTS_DATE_COLUMN)}, 'yyyy-MM')`;
+  const dayExpr = `DATE_FORMAT(${quoteIdent(APPOINTMENTS_DATE_COLUMN)}, 'yyyy-MM-dd')`;
   const monthRangeFilter = monthList.map((month) => `(
     ${quoteIdent(APPOINTMENTS_DATE_COLUMN)} >= '${month}-01'
     AND ${quoteIdent(APPOINTMENTS_DATE_COLUMN)} < '${nextMonth(month)}-01'
   )`).join(' OR ');
-  const assuntoTextExpr = `UPPER(COALESCE(CAST(assunto AS STRING), ''))`;
-  const assuntoNormalizedExpr = `UPPER(TRIM(REGEXP_REPLACE(COALESCE(CAST(assunto AS STRING), ''), '[^A-Za-z0-9]+', ' ')))`;
+  const selectedDayMonth = dayMonth || monthList[monthList.length - 1];
+  const dayRangeFilter = `${quoteIdent(APPOINTMENTS_DATE_COLUMN)} >= '${selectedDayMonth}-01'
+    AND ${quoteIdent(APPOINTMENTS_DATE_COLUMN)} < '${nextMonth(selectedDayMonth)}-01'`;
 
   try {
     const warehouseId = await resolveWarehouseId();
@@ -164,25 +198,42 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       ? `AND UPPER(TRIM(CAST(${quoteIdent(companyColumn)} AS STRING))) = UPPER(TRIM('${escape(company)}'))`
       : '';
 
+    if (granularity === "day") {
+      const rows = await runQuery(warehouseId, `
+        SELECT
+          ${dayExpr} AS dia,
+          COUNT(*) AS total
+        FROM ${APPOINTMENTS_TABLE}
+        WHERE ${dayRangeFilter}
+          ${assuntoExclusionSql()}
+          ${groupFilter}
+          ${companyFilter}
+          ${partnerFilter}
+        GROUP BY ${dayExpr}
+        ORDER BY dia
+      `);
+
+      const byDia = Object.fromEntries(rows.map((r) => [String(getCell(r[0]) || ''), toInt(r[1])]));
+      const series = daysInMonth(selectedDayMonth).map((dia) => ({ dia, total: byDia[dia] || 0 }));
+
+      return res.status(200).json({
+        granularity: "day",
+        month: selectedDayMonth,
+        series,
+        source: "atendimento_summarized_gold_live.hora_criacao_atendimento",
+        filters: { group_name: groupName, company, partner_broker_id: partnerBrokerId },
+        company_column: companyColumn,
+        company_filter_applied: !company || Boolean(companyColumn),
+      });
+    }
+
     const rows = await runQuery(warehouseId, `
       SELECT
         ${monthExpr} AS mes,
         COUNT(*) AS total
       FROM ${APPOINTMENTS_TABLE}
       WHERE (${monthRangeFilter})
-        AND UPPER(assunto) NOT IN (
-          'ATENDIMENTO WHATSAPP',
-          'ATENDIMENTO HUMANO',
-          'FORA DE HORÁRIO DE ATENDIMENTO'
-        )
-        AND LOWER(COALESCE(CAST(assunto AS STRING), '')) NOT LIKE '%http%'
-        AND ${assuntoTextExpr} NOT LIKE '%ATENDIMENTO HUMANO%'
-        AND ${assuntoNormalizedExpr} NOT LIKE '%ATENDIMENTO%HUMANO%'
-        AND NOT (
-          assunto RLIKE '^[A-Z][a-z]+ [A-Z]'
-          OR assunto RLIKE '^[A-Z][A-Z]+ [A-Z]'
-          OR assunto RLIKE '^ [A-Z]'
-        )
+        ${assuntoExclusionSql()}
         ${groupFilter}
         ${companyFilter}
         ${partnerFilter}
