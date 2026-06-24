@@ -152,6 +152,16 @@ function assuntoExclusionSql() {
   `;
 }
 
+function appointmentDailyGroupExpr() {
+  return `CASE
+    WHEN UPPER(COALESCE(CAST(assunto AS STRING), '')) LIKE '%CONEXA%' THEN 'CONEXA'
+    WHEN UPPER(COALESCE(CAST(assunto AS STRING), '')) LIKE '%DASA%' THEN 'Exames'
+    WHEN tipo_solicitacao = 'Médico' THEN 'Consultas'
+    WHEN tipo_solicitacao IN ('Exame', 'Exames') THEN 'Exames'
+    ELSE 'OUTROS'
+  END`;
+}
+
 function daysInMonth(month: string) {
   const days = [];
   const start = new Date(`${month}-01T00:00:00Z`);
@@ -199,9 +209,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       : '';
 
     if (granularity === "day") {
+      const groupExpr = appointmentDailyGroupExpr();
       const rows = await runQuery(warehouseId, `
         SELECT
           ${dayExpr} AS dia,
+          ${groupExpr} AS grupo,
           COUNT(*) AS total
         FROM ${APPOINTMENTS_TABLE}
         WHERE ${dayRangeFilter}
@@ -209,16 +221,25 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           ${groupFilter}
           ${companyFilter}
           ${partnerFilter}
-        GROUP BY ${dayExpr}
-        ORDER BY dia
+        GROUP BY ${dayExpr}, ${groupExpr}
+        ORDER BY dia, grupo
       `);
 
-      const byDia = Object.fromEntries(rows.map((r) => [String(getCell(r[0]) || ''), toInt(r[1])]));
-      const series = daysInMonth(selectedDayMonth).map((dia) => ({ dia, total: byDia[dia] || 0 }));
+      const groups = ['CONEXA', 'Consultas', 'Exames', 'OUTROS'];
+      const byDiaGrupo = new Map(rows.map((r) => [
+        `${String(getCell(r[0]) || '')}|${String(getCell(r[1]) || '')}`,
+        toInt(r[2]),
+      ]));
+      const series = daysInMonth(selectedDayMonth).map((dia) => {
+        const values = Object.fromEntries(groups.map((group) => [group, byDiaGrupo.get(`${dia}|${group}`) || 0]));
+        const total = groups.reduce((sum, group) => sum + Number(values[group] || 0), 0);
+        return { dia, ...values, total };
+      });
 
       return res.status(200).json({
         granularity: "day",
         month: selectedDayMonth,
+        groups,
         series,
         source: "atendimento_summarized_gold_live.hora_criacao_atendimento",
         filters: { group_name: groupName, company, partner_broker_id: partnerBrokerId },

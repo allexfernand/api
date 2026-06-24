@@ -980,8 +980,8 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
     <div class="chart-card" data-qtag="#AG04">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap">
         <div>
-          <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Volume diário de agendamentos</h2>
-          <div style="font-size:11px;color:#94a3b8">Dias do mês · <span id="agend-daily-mode">mês atual</span></div>
+          <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Volume diário de agendamentos por grupo</h2>
+          <div style="font-size:11px;color:#94a3b8">CONEXA, Consultas, Exames e OUTROS · <span id="agend-daily-mode">mês atual</span></div>
         </div>
         <div class="filter-group">
           <label for="appointments-daily-month-select">📅 Mês</label>
@@ -6080,9 +6080,27 @@ async function loadAppointmentsDailyEvolution() {
       : weekdayFmt.format(date).replace('.', '').replace(/^./, c => c.toUpperCase());
     return [day.slice(8, 10), weekday];
   });
-  const totalValues = series.map((it) => Number(it.total) || 0);
-  const total = totalValues.reduce((acc, value) => acc + value, 0);
-  if (meta) meta.textContent = `${fmt(total)} agendamentos no mês · ${series.length} dias · atendimento_summarized_gold_live`;
+  const groups = data.groups || ['CONEXA', 'Consultas', 'Exames', 'OUTROS'];
+  const groupColors = {
+    CONEXA: '#6366f1',
+    Consultas: '#0f766e',
+    Exames: '#ea580c',
+    OUTROS: '#64748b',
+  };
+  const total = series.reduce((acc, item) => acc + (Number(item.total) || 0), 0);
+  const datasets = groups.map((group) => ({
+    label: group,
+    data: series.map((it) => Number(it[group]) || 0),
+    borderColor: groupColors[group] || '#475569',
+    backgroundColor: 'transparent',
+    borderWidth: 2,
+    pointRadius: 2.5,
+    pointHoverRadius: 4,
+    pointBackgroundColor: groupColors[group] || '#475569',
+    fill: false,
+    tension: 0.32,
+  }));
+  if (meta) meta.textContent = `${fmt(total)} agendamentos no mês · ${groups.length} grupos · atendimento_summarized_gold_live`;
 
   if (appointmentsDailyChart) appointmentsDailyChart.destroy();
   if (skel) skel.style.display = 'none';
@@ -6092,23 +6110,19 @@ async function loadAppointmentsDailyEvolution() {
       type: 'line',
       data: {
         labels,
-        datasets: [{
-          label: 'Agendamentos',
-          data: totalValues,
-          borderColor: '#6366f1',
-          backgroundColor: 'rgba(99,102,241,0.08)',
-          borderWidth: 2,
-          pointRadius: 3,
-          pointBackgroundColor: '#6366f1',
-          fill: true,
-          tension: 0.35,
-        }],
+        datasets,
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
         plugins: {
-          legend: { display: false },
+          legend: {
+            display: true,
+            position: 'top',
+            align: 'end',
+            labels: { boxWidth: 10, boxHeight: 10, color: '#475569', font: { size: 11 } },
+          },
           tooltip: {
             backgroundColor: '#1e293b', borderColor: '#334155', borderWidth: 1,
             titleColor: '#94a3b8', bodyColor: '#f1f5f9',
@@ -6121,7 +6135,11 @@ async function loadAppointmentsDailyEvolution() {
                 const weekday = Number.isNaN(date.getTime()) ? '' : weekdayFmt.format(date);
                 return `${raw.split('-').reverse().join('/')} · ${weekday}`;
               },
-              label: c => `${fmt(c.parsed.y)} agendamentos`,
+              label: c => `${c.dataset.label}: ${fmt(c.parsed.y)} agendamentos`,
+              footer: (items) => {
+                const dayTotal = items.reduce((acc, item) => acc + (Number(item.parsed.y) || 0), 0);
+                return `Total do dia: ${fmt(dayTotal)} agendamentos`;
+              },
             },
           },
         },
