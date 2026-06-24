@@ -980,12 +980,32 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
     <div class="chart-card" data-qtag="#AG04">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap">
         <div>
-          <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Evolução diária · Conexa x Agendamentos</h2>
-          <div style="font-size:11px;color:#94a3b8">Barras empilhadas por dia + linha de total · <span id="agend-daily-mode">mês atual</span></div>
+          <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Evolução diária de agendamentos físicos</h2>
+          <div style="font-size:11px;color:#94a3b8">Barras = físicos, linha turquesa = Conexa online · <span id="agend-daily-mode">mês atual</span></div>
         </div>
         <div class="filter-group">
           <label for="appointments-daily-month-select">📅 Mês</label>
           <select class="filter-select" id="appointments-daily-month-select" onchange="onAppointmentsDailyMonthChange(this.value)" style="min-width:160px"></select>
+        </div>
+      </div>
+      <div id="agend-daily-kpis" style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:14px">
+        <div style="border:1px solid #e2e8f0;border-radius:12px;padding:12px 14px;background:#f8fafc">
+          <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.6px">Total físico</div>
+          <div style="font-size:22px;font-weight:800;color:#4f46e5;line-height:1.1;margin-top:4px" id="agend-daily-physical-total">—</div>
+        </div>
+        <div style="border:1px solid #e2e8f0;border-radius:12px;padding:12px 14px;background:#f8fafc">
+          <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.6px">Média/dia físico</div>
+          <div style="font-size:22px;font-weight:800;color:#334155;line-height:1.1;margin-top:4px" id="agend-daily-physical-avg">—</div>
+        </div>
+        <div style="border:1px solid #e2e8f0;border-radius:12px;padding:12px 14px;background:#f8fafc">
+          <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.6px">Pico físico</div>
+          <div style="font-size:22px;font-weight:800;color:#334155;line-height:1.1;margin-top:4px" id="agend-daily-physical-peak">—</div>
+          <div style="font-size:10px;color:#94a3b8;margin-top:2px" id="agend-daily-physical-peak-day">—</div>
+        </div>
+        <div style="border:1px solid #ccfbf1;border-radius:12px;padding:12px 14px;background:#f0fdfa">
+          <div style="font-size:10px;font-weight:700;color:#0f766e;text-transform:uppercase;letter-spacing:.6px">Conexa online</div>
+          <div style="font-size:22px;font-weight:800;color:#0f766e;line-height:1.1;margin-top:4px" id="agend-daily-conexa-total">—</div>
+          <div style="font-size:10px;color:#0f766e;margin-top:2px" id="agend-daily-conexa-share">—</div>
         </div>
       </div>
       <div class="chart-wrap">
@@ -6080,48 +6100,72 @@ async function loadAppointmentsDailyEvolution() {
       : weekdayFmt.format(date).replace('.', '').replace(/^./, c => c.toUpperCase());
     return [day.slice(8, 10), weekday];
   });
-  const total = series.reduce((acc, item) => acc + (Number(item.total) || 0), 0);
-  const totalValues = series.map((it) => Number(it.total) || 0);
+  const physicalValues = series.map((it) => Number(it.Agendamentos) || 0);
+  const conexaValues = series.map((it) => Number(it.Conexa) || 0);
+  const physicalTotal = physicalValues.reduce((acc, value) => acc + value, 0);
+  const conexaTotal = conexaValues.reduce((acc, value) => acc + value, 0);
+  const total = physicalTotal + conexaTotal;
+  const physicalAvg = series.length ? Math.round(physicalTotal / series.length) : 0;
+  const peakValue = physicalValues.reduce((max, value) => Math.max(max, value), 0);
+  const peakIndex = physicalValues.findIndex((value) => value === peakValue);
+  const peakDay = peakIndex >= 0 ? String(series[peakIndex]?.dia || '') : '';
+  const movingAvg = physicalValues.map((_, index) => {
+    const start = Math.max(0, index - 6);
+    const values = physicalValues.slice(start, index + 1);
+    return Math.round(values.reduce((acc, value) => acc + value, 0) / values.length);
+  });
+  const setText = (id, value) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = value;
+  };
+  setText('agend-daily-physical-total', fmt(physicalTotal));
+  setText('agend-daily-physical-avg', fmt(physicalAvg));
+  setText('agend-daily-physical-peak', fmt(peakValue));
+  setText('agend-daily-physical-peak-day', peakDay ? peakDay.split('-').reverse().join('/') : '—');
+  setText('agend-daily-conexa-total', fmt(conexaTotal));
+  setText('agend-daily-conexa-share', total > 0 ? `${((conexaTotal / total) * 100).toFixed(1).replace('.', ',')}% do total` : '—');
   const datasets = [
     {
       type: 'bar',
-      label: 'Agendamentos',
-      data: series.map((it) => Number(it.Agendamentos) || 0),
+      label: 'Físicos',
+      data: physicalValues,
       backgroundColor: 'rgba(99,102,241,0.78)',
       borderColor: '#6366f1',
       borderWidth: 1,
       borderRadius: 5,
       borderSkipped: false,
-      stack: 'volume',
-      order: 2,
-    },
-    {
-      type: 'bar',
-      label: 'Conexa',
-      data: series.map((it) => Number(it.Conexa) || 0),
-      backgroundColor: 'rgba(20,184,166,0.78)',
-      borderColor: '#14b8a6',
-      borderWidth: 1,
-      borderRadius: 5,
-      borderSkipped: false,
-      stack: 'volume',
       order: 2,
     },
     {
       type: 'line',
-      label: 'Total',
-      data: totalValues,
-      borderColor: '#0f172a',
-      backgroundColor: '#0f172a',
+      label: 'Conexa',
+      data: conexaValues,
+      borderColor: '#14b8a6',
+      backgroundColor: '#14b8a6',
       borderWidth: 2,
       pointRadius: 2.5,
       pointHoverRadius: 4,
+      tension: 0.32,
+      fill: false,
+      yAxisID: 'yConexa',
+      order: 1,
+    },
+    {
+      type: 'line',
+      label: 'Média móvel física (7d)',
+      data: movingAvg,
+      borderColor: '#0f172a',
+      backgroundColor: '#0f172a',
+      borderWidth: 2,
+      borderDash: [5, 4],
+      pointRadius: 0,
+      pointHoverRadius: 3,
       tension: 0.35,
       fill: false,
       order: 1,
     },
   ];
-  if (meta) meta.textContent = `${fmt(total)} agendamentos no mês · Conexa isolada dos demais agendamentos`;
+  if (meta) meta.textContent = `${fmt(physicalTotal)} físicos · ${fmt(conexaTotal)} Conexa · físicos desconsideram consultas online`;
 
   if (appointmentsDailyChart) appointmentsDailyChart.destroy();
   if (skel) skel.style.display = 'none';
@@ -6159,8 +6203,9 @@ async function loadAppointmentsDailyEvolution() {
               label: c => `${c.dataset.label}: ${fmt(c.parsed.y)} agendamentos`,
               footer: (items) => {
                 const idx = items[0]?.dataIndex ?? 0;
-                const dayTotal = Number(series[idx]?.total) || 0;
-                return `Total do dia: ${fmt(dayTotal)} agendamentos`;
+                const physical = Number(series[idx]?.Agendamentos) || 0;
+                const conexa = Number(series[idx]?.Conexa) || 0;
+                return `Físicos: ${fmt(physical)} · Conexa: ${fmt(conexa)}`;
               },
             },
           },
@@ -6169,13 +6214,18 @@ async function loadAppointmentsDailyEvolution() {
           x: {
             ticks: { font: { size: 10 }, color: '#94a3b8', maxRotation: 0, autoSkip: true, maxTicksLimit: 16 },
             grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false },
-            stacked: true,
           },
           y: {
             beginAtZero: true,
             ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => fmt(v) },
             grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false },
-            stacked: true,
+          },
+          yConexa: {
+            position: 'right',
+            beginAtZero: true,
+            ticks: { font: { size: 10 }, color: '#0f766e', callback: v => fmt(v) },
+            grid: { drawOnChartArea: false },
+            border: { display: false },
           },
         },
       },
