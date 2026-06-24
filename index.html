@@ -988,7 +988,7 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
           <select class="filter-select" id="appointments-daily-month-select" onchange="onAppointmentsDailyMonthChange(this.value)" style="min-width:160px"></select>
         </div>
       </div>
-      <div id="agend-daily-kpis" style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:14px">
+      <div id="agend-daily-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:14px">
         <div style="border:1px solid #e2e8f0;border-radius:12px;padding:12px 14px;background:#f8fafc">
           <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.6px">Total físico</div>
           <div style="font-size:22px;font-weight:800;color:#4f46e5;line-height:1.1;margin-top:4px" id="agend-daily-physical-total">—</div>
@@ -1006,6 +1006,15 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
           <div style="font-size:10px;font-weight:700;color:#0f766e;text-transform:uppercase;letter-spacing:.6px">Conexa online</div>
           <div style="font-size:22px;font-weight:800;color:#0f766e;line-height:1.1;margin-top:4px" id="agend-daily-conexa-total">—</div>
           <div style="font-size:10px;color:#0f766e;margin-top:2px" id="agend-daily-conexa-share">—</div>
+        </div>
+        <div style="border:1px solid #ccfbf1;border-radius:12px;padding:12px 14px;background:#f0fdfa">
+          <div style="font-size:10px;font-weight:700;color:#0f766e;text-transform:uppercase;letter-spacing:.6px">Média/dia Conexa</div>
+          <div style="font-size:22px;font-weight:800;color:#0f766e;line-height:1.1;margin-top:4px" id="agend-daily-conexa-avg">—</div>
+        </div>
+        <div style="border:1px solid #ccfbf1;border-radius:12px;padding:12px 14px;background:#f0fdfa">
+          <div style="font-size:10px;font-weight:700;color:#0f766e;text-transform:uppercase;letter-spacing:.6px">Pico Conexa</div>
+          <div style="font-size:22px;font-weight:800;color:#0f766e;line-height:1.1;margin-top:4px" id="agend-daily-conexa-peak">—</div>
+          <div style="font-size:10px;color:#0f766e;margin-top:2px" id="agend-daily-conexa-peak-day">—</div>
         </div>
       </div>
       <div class="chart-wrap">
@@ -6106,9 +6115,13 @@ async function loadAppointmentsDailyEvolution() {
   const conexaTotal = conexaValues.reduce((acc, value) => acc + value, 0);
   const total = physicalTotal + conexaTotal;
   const physicalAvg = series.length ? Math.round(physicalTotal / series.length) : 0;
+  const conexaAvg = series.length ? Math.round(conexaTotal / series.length) : 0;
   const peakValue = physicalValues.reduce((max, value) => Math.max(max, value), 0);
   const peakIndex = physicalValues.findIndex((value) => value === peakValue);
   const peakDay = peakIndex >= 0 ? String(series[peakIndex]?.dia || '') : '';
+  const conexaPeakValue = conexaValues.reduce((max, value) => Math.max(max, value), 0);
+  const conexaPeakIndex = conexaValues.findIndex((value) => value === conexaPeakValue);
+  const conexaPeakDay = conexaPeakIndex >= 0 ? String(series[conexaPeakIndex]?.dia || '') : '';
   const movingAvg = physicalValues.map((_, index) => {
     const start = Math.max(0, index - 6);
     const values = physicalValues.slice(start, index + 1);
@@ -6124,6 +6137,9 @@ async function loadAppointmentsDailyEvolution() {
   setText('agend-daily-physical-peak-day', peakDay ? peakDay.split('-').reverse().join('/') : '—');
   setText('agend-daily-conexa-total', fmt(conexaTotal));
   setText('agend-daily-conexa-share', total > 0 ? `${((conexaTotal / total) * 100).toFixed(1).replace('.', ',')}% do total` : '—');
+  setText('agend-daily-conexa-avg', fmt(conexaAvg));
+  setText('agend-daily-conexa-peak', fmt(conexaPeakValue));
+  setText('agend-daily-conexa-peak-day', conexaPeakDay ? conexaPeakDay.split('-').reverse().join('/') : '—');
   const datasets = [
     {
       type: 'bar',
