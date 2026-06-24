@@ -154,11 +154,8 @@ function assuntoExclusionSql() {
 
 function appointmentDailyGroupExpr() {
   return `CASE
-    WHEN UPPER(COALESCE(CAST(assunto AS STRING), '')) LIKE '%CONEXA%' THEN 'CONEXA'
-    WHEN UPPER(COALESCE(CAST(assunto AS STRING), '')) LIKE '%DASA%' THEN 'Exames'
-    WHEN tipo_solicitacao = 'Médico' THEN 'Consultas'
-    WHEN tipo_solicitacao IN ('Exame', 'Exames') THEN 'Exames'
-    ELSE 'OUTROS'
+    WHEN UPPER(COALESCE(CAST(assunto AS STRING), '')) LIKE '%CONEXA%' THEN 'Conexa'
+    ELSE 'Agendamentos'
   END`;
 }
 
@@ -225,7 +222,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         ORDER BY dia, grupo
       `);
 
-      const groups = ['CONEXA', 'Consultas', 'Exames', 'OUTROS'];
+      const groups = ['Agendamentos', 'Conexa'];
       const byDiaGrupo = new Map(rows.map((r) => [
         `${String(getCell(r[0]) || '')}|${String(getCell(r[1]) || '')}`,
         toInt(r[2]),
