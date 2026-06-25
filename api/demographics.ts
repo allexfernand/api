@@ -1,7 +1,7 @@
 // api/demographics.ts
 import { MDS_PARTNER_SCOPE, requireBasicAuth, scopedPartnerBrokerId } from "../lib/basic-auth";
 import { escape, getCell, resolveWarehouseId, runQuery, toInt, toNum } from "../lib/databricks";
-import { setApiCors, setStableCache } from "../lib/http";
+import { setApiCors } from "../lib/http";
 
 type ApiRequest = { method?: string; query: Record<string, any> };
 type ApiResponse = {
@@ -96,13 +96,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   try {
     const warehouseId = await resolveWarehouseId();
 
-    const [totalRows, rows] = await Promise.all([
-      runQuery(warehouseId, `
-        SELECT COUNT(*) AS total_beneficiarios
-        FROM hive_metastore.sanus_prod.beneficiaries b
-        ${groupFilter}
-      `),
-      runQuery(warehouseId, `
+    const rows = await runQuery(warehouseId, `
       SELECT
         COUNT(*)                                                                                               AS total_vidas,
         AVG(CASE WHEN b.birthday IS NOT NULL
@@ -122,15 +116,14 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
             THEN 1 ELSE 0 END)                                                                                AS mulheres_19_38
       FROM hive_metastore.sanus_prod.beneficiaries b
       ${groupFilter}
-    `),
-    ]);
+    `);
 
-    const total = totalRows[0] || [];
     const r = rows[0] || [];
-    setStableCache(res);
+    res.setHeader("Cache-Control", "no-store, max-age=0");
+    const totalVidas = toInt(r[0]);
     res.status(200).json({
-      total_beneficiarios: toInt(total[0]),
-      total_vidas:         toInt(r[0]),
+      total_beneficiarios: totalVidas,
+      total_vidas:         totalVidas,
       idade_media:         Math.round(toNum(r[1])),
       menores_18:          toInt(r[2]),
       mais_49:             toInt(r[3]),
