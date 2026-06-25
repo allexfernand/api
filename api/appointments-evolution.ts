@@ -159,6 +159,69 @@ function appointmentDailyGroupExpr() {
   END`;
 }
 
+function normalizedTextExpr(column: string) {
+  return `UPPER(TRIM(REGEXP_REPLACE(TRANSLATE(
+    COALESCE(CAST(${quoteIdent(column)} AS STRING), ''),
+    'ÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇáàâãäéèêëíìîïóòôõöúùûüç',
+    'AAAAAEEEEIIIIOOOOOUUUUCaaaaaeeeeiiiiooooouuuuc'
+  ), '[^A-Za-z0-9]+', ' ')))`;
+}
+
+function appointmentStatusGroupExpr(statusColumn: string) {
+  const normalizedStatus = normalizedTextExpr(statusColumn);
+  return `CASE
+    WHEN ${normalizedStatus} LIKE '%LIBERADO%AGENDAMENTO%' THEN 'Liberado para agendamento'
+    WHEN ${normalizedStatus} LIKE '%EM%ANDAMENTO%' THEN 'Em andamento'
+    WHEN ${normalizedStatus} LIKE '%AGUARDANDO%CONFIRMACAO%BENEFICIARIO%' THEN 'Aguardando confirmação do beneficiário'
+    WHEN ${normalizedStatus} LIKE '%FECHADO%' THEN 'Fechado'
+    WHEN ${normalizedStatus} LIKE '%REINICIADA%BUSCA%' THEN 'Reiniciada busca'
+    WHEN ${normalizedStatus} LIKE '%ESPERA%REDE%' THEN 'Em espera de rede'
+    ELSE NULL
+  END`;
+}
+
+const appointmentRecordColumnCandidates = [
+  'card_id',
+  'id_card',
+  'agendamento_id',
+  'id_agendamento',
+  'appointment_id',
+  'atendimento_id',
+  'id_atendimento',
+  'ticket_id',
+  'solicitacao_id',
+  'id_solicitacao',
+  'protocolo',
+  'protocol',
+  'id',
+];
+
+const appointmentStatusColumnCandidates = [
+  'status_card',
+  'status_agendamento',
+  'status_atendimento',
+  'status',
+  'situacao',
+  'state',
+  'fase',
+  'etapa',
+];
+
+const appointmentStatusDateColumnCandidates = [
+  'status_updated_at',
+  'status_atualizado_em',
+  'data_status',
+  'hora_status',
+  'updated_at',
+  'update_at',
+  'modified_at',
+  'data_atualizacao',
+  'hora_atualizacao',
+  'ultima_atualizacao',
+  'created_at',
+  APPOINTMENTS_DATE_COLUMN,
+];
+
 function daysInMonth(month: string) {
   const days = [];
   const start = new Date(`${month}-01T00:00:00Z`);
@@ -197,13 +260,96 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const warehouseId = await resolveWarehouseId();
 
     let companyColumn = null;
-    const columns = (groupNames.length || company || partnerBrokerId) ? await getColumns(warehouseId, APPOINTMENTS_TABLE) : [];
+    const columns = (granularity === "status_month" || groupNames.length || company || partnerBrokerId) ? await getColumns(warehouseId, APPOINTMENTS_TABLE) : [];
     const groupFilter = buildGroupFilter(columns, groupNames);
     const partnerFilter = buildPartnerFilter(columns, partnerBrokerId);
     if (company) companyColumn = pickColumn(columns, companyColumnCandidates);
     const companyFilter = company && companyColumn
       ? `AND UPPER(TRIM(CAST(${quoteIdent(companyColumn)} AS STRING))) = UPPER(TRIM('${escape(company)}'))`
       : '';
+
+    if (granularity === "status_month") {
+      const recordColumn = pickColumn(columns, appointmentRecordColumnCandidates);
+      const statusColumn = pickColumn(columns, appointmentStatusColumnCandidates);
+      const statusDateColumn = pickColumn(columns, appointmentStatusDateColumnCandidates);
+      if (!recordColumn || !statusColumn || !statusDateColumn) {
+        return res.status(400).json({
+          error: "Colunas obrigatórias para A05 não encontradas.",
+          missing: {
+            record_column: !recordColumn,
+            status_column: !statusColumn,
+            status_date_column: !statusDateColumn,
+          },
+          available_columns: columns,
+        });
+      }
+
+      const firstMonth = monthList[0];
+      const lastMonth = monthList[monthList.length - 1];
+      const statusTsExpr = `COALESCE(try_cast(${quoteIdent(statusDateColumn)} AS TIMESTAMP), try_cast(${quoteIdent(APPOINTMENTS_DATE_COLUMN)} AS TIMESTAMP))`;
+      const creationTsExpr = `try_cast(${quoteIdent(APPOINTMENTS_DATE_COLUMN)} AS TIMESTAMP)`;
+      const statusGroupExpr = appointmentStatusGroupExpr(statusColumn);
+      const monthInList = `(${monthList.map((month) => `'${month}'`).join(',')})`;
+
+      const rows = await runQuery(warehouseId, `
+        WITH base AS (
+          SELECT
+            CAST(${quoteIdent(recordColumn)} AS STRING) AS record_key,
+            DATE_FORMAT(${statusTsExpr}, 'yyyy-MM') AS mes,
+            ${statusGroupExpr} AS status_group,
+            ROW_NUMBER() OVER (
+              PARTITION BY CAST(${quoteIdent(recordColumn)} AS STRING)
+              ORDER BY ${statusTsExpr} DESC NULLS LAST, ${creationTsExpr} DESC NULLS LAST
+            ) AS rn
+          FROM ${APPOINTMENTS_TABLE}
+          WHERE ${statusTsExpr} >= '${firstMonth}-01'
+            AND ${statusTsExpr} < '${nextMonth(lastMonth)}-01'
+            AND ${quoteIdent(recordColumn)} IS NOT NULL
+            ${assuntoExclusionSql()}
+            ${groupFilter}
+            ${companyFilter}
+            ${partnerFilter}
+        )
+        SELECT
+          mes,
+          status_group,
+          COUNT(*) AS total
+        FROM base
+        WHERE rn = 1
+          AND mes IN ${monthInList}
+          AND status_group IS NOT NULL
+        GROUP BY mes, status_group
+        ORDER BY mes, status_group
+      `);
+
+      const statuses = [
+        'Liberado para agendamento',
+        'Em andamento',
+        'Aguardando confirmação do beneficiário',
+        'Fechado',
+        'Reiniciada busca',
+        'Em espera de rede',
+      ];
+      const byMonthStatus = new Map(rows.map((row) => [
+        `${String(getCell(row[0]) || '')}|${String(getCell(row[1]) || '')}`,
+        toInt(row[2]),
+      ]));
+      const series = monthList.map((month) => {
+        const values = Object.fromEntries(statuses.map((status) => [status, byMonthStatus.get(`${month}|${status}`) || 0]));
+        const total = statuses.reduce((sum, status) => sum + Number(values[status] || 0), 0);
+        return { mes: month, ...values, total };
+      });
+
+      return res.status(200).json({
+        granularity: "status_month",
+        months: monthList,
+        statuses,
+        series,
+        source: "atendimento_summarized_gold_live.latest_status",
+        columns_used: { record: recordColumn, status: statusColumn, status_date: statusDateColumn },
+        filters: { group_name: groupName, company, partner_broker_id: partnerBrokerId },
+      });
+    }
 
     if (granularity === "day") {
       const groupExpr = appointmentDailyGroupExpr();

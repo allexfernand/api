@@ -1024,6 +1024,22 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
       <div style="font-size:11px;color:#64748b;margin-top:10px;text-align:right" id="agend-daily-meta">—</div>
       <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="agend-daily-error"></div>
     </div>
+
+    <div class="chart-card" data-qtag="#A05">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap">
+        <div>
+          <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Volume mensal por status do agendamento</h2>
+          <div style="font-size:11px;color:#94a3b8">Considera sempre o último status atrelado ao card · últimos 12 meses</div>
+        </div>
+        <div style="font-size:11px;color:#64748b;text-align:right" id="agend-status-total">—</div>
+      </div>
+      <div class="chart-wrap" style="height:clamp(300px,36vw,420px)">
+        <div class="skeleton" id="skel-agend-status"></div>
+        <canvas id="appointmentsStatusChart" style="display:none"></canvas>
+      </div>
+      <div style="font-size:11px;color:#64748b;margin-top:10px;text-align:right" id="agend-status-meta">—</div>
+      <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="agend-status-error"></div>
+    </div>
   </div>
 
   <!-- Tab: Coordenação de Cuidado -->
@@ -2073,7 +2089,7 @@ const SESSIONS_Q3C_MONTHS = ['2026-01', '2026-02', '2026-03', '2026-04', '2026-0
 const SINISTRO_AS03_MONTHS = ['2025-07', '2025-08', '2025-09', '2025-10', '2025-11', '2025-12', '2026-01', '2026-02', '2026-03'];
 const AUTH_STORAGE_KEY = 'sanus-dashboard-basic-auth';
 
-let usersData = [], companiesData = [], sessionCompaniesData = [], eChart, agegroupChart, appointmentTypesTrendChart, appointmentsDailyChart, careCoordinationLinesChart, careLinesEvolutionChart, careComplementChart, careActiveComplementChart, petitCareLinesChart, petitSessionsEvolChart, petitSessionsTotalEvolChart, sessionsEvolChart, sessionsJanMay2026EvolChart, sessionsQ3cChart, sessionsTotalEvolChart, sessionsAttendanceChart, sessionsDailyChart, sessionsTopGroupsChart, sinistroEventsEvolutionChart, sinistroValuesEvolutionChart, sinistroQuarterlyEvolutionChart, sinistroCohortEvolutionChart, qualityVolumeEvolutionChart, qualityDailyVolumeEvolutionChart, qualityEvolutionChart, qualityCriteriaEvolutionChart;
+let usersData = [], companiesData = [], sessionCompaniesData = [], eChart, agegroupChart, appointmentTypesTrendChart, appointmentsDailyChart, appointmentsStatusChart, careCoordinationLinesChart, careLinesEvolutionChart, careComplementChart, careActiveComplementChart, petitCareLinesChart, petitSessionsEvolChart, petitSessionsTotalEvolChart, sessionsEvolChart, sessionsJanMay2026EvolChart, sessionsQ3cChart, sessionsTotalEvolChart, sessionsAttendanceChart, sessionsDailyChart, sessionsTopGroupsChart, sinistroEventsEvolutionChart, sinistroValuesEvolutionChart, sinistroQuarterlyEvolutionChart, sinistroCohortEvolutionChart, qualityVolumeEvolutionChart, qualityDailyVolumeEvolutionChart, qualityEvolutionChart, qualityCriteriaEvolutionChart;
 let currentGroup = '', currentType = '', currentCompany = '';
 let currentGroups = [];
 let currentPartnerBrokerId = '';
@@ -6050,6 +6066,7 @@ async function loadAppointments() {
   loadAppointmentTypes(meses, 'agendamento-appointment-types');
   loadAppointmentTypesTrend();
   loadAppointmentsDailyEvolution();
+  loadAppointmentsStatusEvolution();
 
   if (appt && !appt.error) {
     document.getElementById('bullet-agend').textContent = fmt(appt.total);
@@ -6241,6 +6258,132 @@ async function loadAppointmentsDailyEvolution() {
             beginAtZero: true,
             ticks: { font: { size: 10 }, color: '#0f766e', callback: v => fmt(v) },
             grid: { drawOnChartArea: false },
+            border: { display: false },
+          },
+        },
+      },
+    });
+  }
+}
+
+function appointmentStatusColor(status) {
+  const colors = {
+    'Liberado para agendamento': '#3b82f6',
+    'Em andamento': '#f59e0b',
+    'Aguardando confirmação do beneficiário': '#8b5cf6',
+    'Fechado': '#16a34a',
+    'Reiniciada busca': '#ef4444',
+    'Em espera de rede': '#64748b',
+  };
+  return colors[status] || '#475569';
+}
+
+async function loadAppointmentsStatusEvolution() {
+  const skel = document.getElementById('skel-agend-status');
+  const cv = document.getElementById('appointmentsStatusChart');
+  const errorBox = document.getElementById('agend-status-error');
+  const meta = document.getElementById('agend-status-meta');
+  const totalEl = document.getElementById('agend-status-total');
+  if (skel) {
+    skel.style.display = 'block';
+    skel.innerHTML = '';
+  }
+  if (cv) cv.style.display = 'none';
+  if (errorBox) { errorBox.style.display = 'none'; errorBox.textContent = ''; }
+  if (meta) meta.textContent = 'Carregando status...';
+  if (totalEl) totalEl.textContent = '—';
+
+  const months = selectedMonths.size ? [...selectedMonths].sort() : recentMonthValues(12);
+  const p = new URLSearchParams();
+  p.set('granularity', 'status_month');
+  p.set('meses', months.join(','));
+  appendGroupParams(p);
+  if (currentCompany) p.set('company', currentCompany);
+
+  const data = await safeGet('/api/appointments-evolution?' + p.toString());
+  if (!data || data.error) {
+    if (errorBox) {
+      errorBox.style.display = 'block';
+      const missing = data?.missing ? ' Verifique colunas de ID, status e data do status.' : '';
+      errorBox.textContent = String(data?.error || 'Erro ao carregar status de agendamentos').slice(0, 220) + missing;
+    }
+    if (meta) meta.textContent = '';
+    if (skel) skel.style.display = 'none';
+    return;
+  }
+
+  const statuses = data.statuses || [];
+  const series = data.series || [];
+  const chartMonths = data.months || months;
+  const total = series.reduce((acc, item) => acc + (Number(item.total) || 0), 0);
+  const datasets = statuses.map((status) => ({
+    label: status,
+    data: series.map((item) => Number(item[status]) || 0),
+    backgroundColor: appointmentStatusColor(status),
+    borderColor: '#ffffff',
+    borderWidth: 1,
+    borderRadius: 5,
+    borderSkipped: false,
+    stack: 'status',
+    barPercentage: 0.78,
+    categoryPercentage: 0.72,
+  }));
+
+  if (totalEl) totalEl.textContent = `${fmt(total)} cards`;
+  if (meta) {
+    const columns = data.columns_used || {};
+    const statusDate = columns.status_date ? `status: ${columns.status_date}` : 'último status';
+    meta.textContent = `${chartMonths.length} meses · ${fmt(total)} cards · ${statusDate}`;
+  }
+
+  if (appointmentsStatusChart) appointmentsStatusChart.destroy();
+  if (skel) skel.style.display = 'none';
+  if (cv) {
+    cv.style.display = 'block';
+    appointmentsStatusChart = new Chart(cv, {
+      type: 'bar',
+      data: {
+        labels: chartMonths.map(monthShortLabel),
+        datasets,
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: {
+            display: true,
+            position: 'top',
+            align: 'end',
+            labels: { boxWidth: 10, boxHeight: 10, color: '#475569', font: { size: 10 }, usePointStyle: true },
+          },
+          tooltip: {
+            backgroundColor: '#1e293b',
+            borderColor: '#334155',
+            borderWidth: 1,
+            titleColor: '#cbd5e1',
+            bodyColor: '#f8fafc',
+            callbacks: {
+              label: c => `${c.dataset.label}: ${fmt(c.parsed.y)} cards`,
+              footer: (items) => {
+                const totalMes = items.reduce((acc, item) => acc + (Number(item.parsed.y) || 0), 0);
+                return `Total do mês: ${fmt(totalMes)} cards`;
+              },
+            },
+          },
+        },
+        scales: {
+          x: {
+            stacked: true,
+            ticks: { color: '#64748b', font: { size: 11, weight: '600' } },
+            grid: { display: false },
+            border: { display: false },
+          },
+          y: {
+            stacked: true,
+            beginAtZero: true,
+            ticks: { color: '#94a3b8', font: { size: 10 }, callback: v => fmt(v) },
+            grid: { color: 'rgba(148,163,184,0.18)' },
             border: { display: false },
           },
         },
