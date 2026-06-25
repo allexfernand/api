@@ -159,16 +159,16 @@ function appointmentDailyGroupExpr() {
   END`;
 }
 
-function normalizedTextExpr(column: string) {
+function normalizedSqlTextExpr(rawExpr: string) {
   return `UPPER(TRIM(REGEXP_REPLACE(TRANSLATE(
-    COALESCE(CAST(${quoteIdent(column)} AS STRING), ''),
+    COALESCE(CAST(${rawExpr} AS STRING), ''),
     'ÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇáàâãäéèêëíìîïóòôõöúùûüç',
     'AAAAAEEEEIIIIOOOOOUUUUCaaaaaeeeeiiiiooooouuuuc'
   ), '[^A-Za-z0-9]+', ' ')))`;
 }
 
-function appointmentStatusGroupExpr(statusColumn: string) {
-  const normalizedStatus = normalizedTextExpr(statusColumn);
+function appointmentStatusGroupExpr(statusExpr: string) {
+  const normalizedStatus = normalizedSqlTextExpr(statusExpr);
   return `CASE
     WHEN ${normalizedStatus} LIKE '%LIBERADO%AGENDAMENTO%' THEN 'Liberado para agendamento'
     WHEN ${normalizedStatus} LIKE '%EM%ANDAMENTO%' THEN 'Em andamento'
@@ -181,8 +181,12 @@ function appointmentStatusGroupExpr(statusColumn: string) {
 }
 
 const appointmentRecordColumnCandidates = [
+  'record_id',
+  'registro_id',
+  'card_uuid',
   'card_id',
   'id_card',
+  'cardId',
   'agendamento_id',
   'id_agendamento',
   'appointment_id',
@@ -197,21 +201,34 @@ const appointmentRecordColumnCandidates = [
 ];
 
 const appointmentStatusColumnCandidates = [
+  'card_status',
+  'kanban_status',
   'status_card',
+  'status_card_nome',
   'status_agendamento',
+  'status_name',
+  'status_nome',
+  'status_descricao',
   'status_atendimento',
   'status',
   'situacao',
   'state',
   'fase',
   'etapa',
+  'etapa_atual',
+  'coluna',
+  'nome_coluna',
 ];
 
 const appointmentStatusDateColumnCandidates = [
   'status_updated_at',
   'status_atualizado_em',
+  'status_created_at',
+  'status_criado_em',
   'data_status',
   'hora_status',
+  'data_movimentacao',
+  'hora_movimentacao',
   'updated_at',
   'update_at',
   'modified_at',
@@ -270,14 +287,16 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
     if (granularity === "status_month") {
       const recordColumn = pickColumn(columns, appointmentRecordColumnCandidates);
-      const statusColumn = pickColumn(columns, appointmentStatusColumnCandidates);
+      const statusColumns = appointmentStatusColumnCandidates
+        .map((candidate) => pickColumn(columns, [candidate]))
+        .filter((column, index, list): column is string => Boolean(column) && list.indexOf(column) === index);
       const statusDateColumn = pickColumn(columns, appointmentStatusDateColumnCandidates);
-      if (!recordColumn || !statusColumn || !statusDateColumn) {
+      if (!recordColumn || !statusColumns.length || !statusDateColumn) {
         return res.status(400).json({
           error: "Colunas obrigatórias para A05 não encontradas.",
           missing: {
             record_column: !recordColumn,
-            status_column: !statusColumn,
+            status_column: !statusColumns.length,
             status_date_column: !statusDateColumn,
           },
           available_columns: columns,
@@ -288,22 +307,24 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const lastMonth = monthList[monthList.length - 1];
       const statusTsExpr = `COALESCE(try_cast(${quoteIdent(statusDateColumn)} AS TIMESTAMP), try_cast(${quoteIdent(APPOINTMENTS_DATE_COLUMN)} AS TIMESTAMP))`;
       const creationTsExpr = `try_cast(${quoteIdent(APPOINTMENTS_DATE_COLUMN)} AS TIMESTAMP)`;
-      const statusGroupExpr = appointmentStatusGroupExpr(statusColumn);
+      const statusRawExpr = `COALESCE(${statusColumns.map((column) => `NULLIF(TRIM(CAST(${quoteIdent(column)} AS STRING)), '')`).join(', ')})`;
+      const statusGroupExpr = appointmentStatusGroupExpr(statusRawExpr);
       const monthInList = `(${monthList.map((month) => `'${month}'`).join(',')})`;
 
       const rows = await runQuery(warehouseId, `
         WITH base AS (
           SELECT
             CAST(${quoteIdent(recordColumn)} AS STRING) AS record_key,
-            DATE_FORMAT(${statusTsExpr}, 'yyyy-MM') AS mes,
+            DATE_FORMAT(${creationTsExpr}, 'yyyy-MM') AS mes,
+            ${statusRawExpr} AS status_raw,
             ${statusGroupExpr} AS status_group,
             ROW_NUMBER() OVER (
               PARTITION BY CAST(${quoteIdent(recordColumn)} AS STRING)
               ORDER BY ${statusTsExpr} DESC NULLS LAST, ${creationTsExpr} DESC NULLS LAST
             ) AS rn
           FROM ${APPOINTMENTS_TABLE}
-          WHERE ${statusTsExpr} >= '${firstMonth}-01'
-            AND ${statusTsExpr} < '${nextMonth(lastMonth)}-01'
+          WHERE ${creationTsExpr} >= '${firstMonth}-01'
+            AND ${creationTsExpr} < '${nextMonth(lastMonth)}-01'
             AND ${quoteIdent(recordColumn)} IS NOT NULL
             ${assuntoExclusionSql()}
             ${groupFilter}
@@ -320,6 +341,35 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           AND status_group IS NOT NULL
         GROUP BY mes, status_group
         ORDER BY mes, status_group
+      `);
+
+      const rawStatusRows = rows.length ? [] : await runQuery(warehouseId, `
+        WITH base AS (
+          SELECT
+            CAST(${quoteIdent(recordColumn)} AS STRING) AS record_key,
+            ${statusRawExpr} AS status_raw,
+            ${statusGroupExpr} AS status_group,
+            ROW_NUMBER() OVER (
+              PARTITION BY CAST(${quoteIdent(recordColumn)} AS STRING)
+              ORDER BY ${statusTsExpr} DESC NULLS LAST, ${creationTsExpr} DESC NULLS LAST
+            ) AS rn
+          FROM ${APPOINTMENTS_TABLE}
+          WHERE ${creationTsExpr} >= '${firstMonth}-01'
+            AND ${creationTsExpr} < '${nextMonth(lastMonth)}-01'
+            AND ${quoteIdent(recordColumn)} IS NOT NULL
+            ${assuntoExclusionSql()}
+            ${groupFilter}
+            ${companyFilter}
+            ${partnerFilter}
+        )
+        SELECT status_raw, COUNT(*) AS total
+        FROM base
+        WHERE rn = 1
+          AND status_raw IS NOT NULL
+          AND status_group IS NULL
+        GROUP BY status_raw
+        ORDER BY total DESC
+        LIMIT 12
       `);
 
       const statuses = [
@@ -346,7 +396,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         statuses,
         series,
         source: "atendimento_summarized_gold_live.latest_status",
-        columns_used: { record: recordColumn, status: statusColumn, status_date: statusDateColumn },
+        columns_used: { record: recordColumn, status: statusColumns, status_date: statusDateColumn, month_date: APPOINTMENTS_DATE_COLUMN },
+        unmapped_statuses: rawStatusRows.map((row) => ({ status: String(getCell(row[0]) || ''), total: toInt(row[1]) })),
         filters: { group_name: groupName, company, partner_broker_id: partnerBrokerId },
       });
     }

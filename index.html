@@ -6316,6 +6316,22 @@ async function loadAppointmentsStatusEvolution() {
   const series = data.series || [];
   const chartMonths = data.months || months;
   const total = series.reduce((acc, item) => acc + (Number(item.total) || 0), 0);
+  if (total === 0 && Array.isArray(data.unmapped_statuses) && data.unmapped_statuses.length) {
+    if (errorBox) {
+      const examples = data.unmapped_statuses
+        .slice(0, 6)
+        .map((item) => `${item.status} (${fmt(Number(item.total) || 0)})`)
+        .join(' · ');
+      errorBox.style.display = 'block';
+      errorBox.textContent = `Nenhum status mapeado para o A05. Status encontrados: ${examples}`;
+    }
+    if (meta) {
+      const columns = data.columns_used || {};
+      meta.textContent = `Colunas usadas · ID: ${columns.record || '—'} · Status: ${Array.isArray(columns.status) ? columns.status.join(', ') : (columns.status || '—')} · Data: ${columns.status_date || '—'}`;
+    }
+    if (skel) skel.style.display = 'none';
+    return;
+  }
   const datasets = statuses.map((status) => ({
     label: status,
     data: series.map((item) => Number(item[status]) || 0),
