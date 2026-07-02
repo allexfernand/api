@@ -366,6 +366,12 @@ body {
 .petit-human-pct{font-size:10px;font-weight:800;color:var(--sanus-brand-strong);margin-top:3px}
 .petit-human-bar{height:8px;border-radius:999px;background:#e2e8f0;overflow:hidden;display:flex;margin-top:10px}
 .petit-human-bar span{height:100%;transition:width .35s var(--ease)}
+.petit-beneficiary-split{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+.petit-beneficiary-item{border:1px solid #dbe3f0;border-radius:12px;background:linear-gradient(180deg,#fff,#f8fafc);padding:8px;min-width:0}
+.petit-beneficiary-label{font-size:10px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.35px;margin-bottom:5px}
+.petit-beneficiary-row{display:flex;align-items:baseline;justify-content:space-between;gap:6px}
+.petit-beneficiary-value{font-size:18px;font-weight:800;color:#0f172a;letter-spacing:-.3px;line-height:1}
+.petit-beneficiary-pct{font-size:10px;font-weight:800;color:var(--sanus-brand-strong);white-space:nowrap}
 .petit-grid-2{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(320px,.75fr);gap:16px;margin-bottom:16px}
 .petit-grid-2.care-evolution-grid{grid-template-columns:repeat(2,minmax(0,1fr));align-items:stretch}
 .care-evolution-card{display:flex;flex-direction:column;min-height:560px;margin-bottom:0}
@@ -1518,6 +1524,22 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
         <div class="petit-kpi-icon"><i class="fa-solid fa-people-group"></i></div>
         <div class="petit-kpi-label">Beneficiários</div>
         <div class="petit-kpi-value" id="petit-kpi-beneficiaries">—</div>
+        <div class="petit-beneficiary-split" aria-label="Distribuição por vínculo">
+          <div class="petit-beneficiary-item">
+            <div class="petit-beneficiary-label">Titular</div>
+            <div class="petit-beneficiary-row">
+              <span class="petit-beneficiary-value" id="petit-kpi-beneficiaries-titular">—</span>
+              <span class="petit-beneficiary-pct" id="petit-kpi-beneficiaries-titular-pct">—</span>
+            </div>
+          </div>
+          <div class="petit-beneficiary-item">
+            <div class="petit-beneficiary-label">Dependente</div>
+            <div class="petit-beneficiary-row">
+              <span class="petit-beneficiary-value" id="petit-kpi-beneficiaries-dependent">—</span>
+              <span class="petit-beneficiary-pct" id="petit-kpi-beneficiaries-dependent-pct">—</span>
+            </div>
+          </div>
+        </div>
         <div class="petit-kpi-note" id="petit-kpi-beneficiaries-note">beneficiários ativos · filtros aplicados</div>
       </div>
       <div class="petit-kpi">
@@ -4122,10 +4144,38 @@ function petitBeneficiariesFilterNote() {
   return parts.length ? `beneficiários ativos · ${parts.join(' · ')}` : 'total de beneficiários ativos';
 }
 
+function petitDemographicPct(value, total) {
+  const n = Number(value) || 0;
+  const base = Number(total) || 0;
+  return base > 0 ? ((n / base) * 100).toFixed(1).replace('.', ',') + ' %' : '—';
+}
+
+function setPetitBeneficiaryBreakdown(data) {
+  const titularValue = petitElementById('petit-kpi-beneficiaries-titular');
+  const titularPct = petitElementById('petit-kpi-beneficiaries-titular-pct');
+  const dependentValue = petitElementById('petit-kpi-beneficiaries-dependent');
+  const dependentPct = petitElementById('petit-kpi-beneficiaries-dependent-pct');
+  if (!data) {
+    if (titularValue) titularValue.textContent = '—';
+    if (titularPct) titularPct.textContent = '—';
+    if (dependentValue) dependentValue.textContent = '—';
+    if (dependentPct) dependentPct.textContent = '—';
+    return;
+  }
+  const titulares = Number(data?.titulares) || 0;
+  const dependentes = Number(data?.dependentes) || 0;
+  const total = Number(data?.total_vidas) || 0;
+  if (titularValue) titularValue.textContent = fmt(titulares);
+  if (titularPct) titularPct.textContent = petitDemographicPct(titulares, total);
+  if (dependentValue) dependentValue.textContent = fmt(dependentes);
+  if (dependentPct) dependentPct.textContent = petitDemographicPct(dependentes, total);
+}
+
 async function loadPetitBeneficiariesKpi(requestId) {
   const value = petitElementById('petit-kpi-beneficiaries');
   const note = petitElementById('petit-kpi-beneficiaries-note');
   if (value) value.textContent = '…';
+  setPetitBeneficiaryBreakdown(null);
   if (note) note.textContent = petitBeneficiariesFilterNote();
 
   const data = await safeGet('/api/demographics' + buildQS());
@@ -4134,9 +4184,11 @@ async function loadPetitBeneficiariesKpi(requestId) {
   if (data && !data.error) {
     const total = Number(data.total_beneficiarios ?? data.total_vidas) || 0;
     if (value) value.textContent = fmt(total);
+    setPetitBeneficiaryBreakdown(data);
     if (note) note.textContent = petitBeneficiariesFilterNote();
   } else {
     if (value) value.textContent = 'Erro';
+    setPetitBeneficiaryBreakdown(null);
     if (note) note.textContent = String(data?.error || 'Erro ao carregar beneficiários').slice(0, 140);
   }
   schedulePdfReadinessUpdate();
