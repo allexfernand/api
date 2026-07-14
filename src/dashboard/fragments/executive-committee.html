@@ -1,0 +1,194 @@
+<!-- Tab: Petit Comitê -->
+  <div class="tab-content" id="tab-petit-comite">
+    <div class="card-box petit-hero">
+      <div class="petit-hero-content">
+        <div>
+          <div class="petit-eyebrow">Resumo executivo</div>
+          <img class="petit-hero-logo" src="/assets/logo_sanus.svg" alt="Sanus" />
+          <div class="petit-subtitle">Visão sintética de usabilidade, linhas de cuidado, solicitações e oportunidades de atuação. Estrutura baseada no material do comitê, adaptada ao design system do dashboard.</div>
+        </div>
+        <div class="petit-hero-actions">
+          <div class="petit-period-pill" id="petit-period">Período: DD/MM/2026 a DD/MM/2026</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="petit-kpi-grid">
+      <div class="petit-kpi">
+        <div class="petit-kpi-icon"><i class="fa-solid fa-people-group"></i></div>
+        <div class="petit-kpi-label">Beneficiários</div>
+        <div class="petit-kpi-value" id="petit-kpi-beneficiaries">—</div>
+        <div class="petit-beneficiary-split" aria-label="Distribuição por vínculo">
+          <div class="petit-beneficiary-item">
+            <div class="petit-beneficiary-label">Titular</div>
+            <div class="petit-beneficiary-row">
+              <span class="petit-beneficiary-value" id="petit-kpi-beneficiaries-titular">—</span>
+              <span class="petit-beneficiary-pct" id="petit-kpi-beneficiaries-titular-pct">—</span>
+            </div>
+          </div>
+          <div class="petit-beneficiary-item">
+            <div class="petit-beneficiary-label">Dependente</div>
+            <div class="petit-beneficiary-row">
+              <span class="petit-beneficiary-value" id="petit-kpi-beneficiaries-dependent">—</span>
+              <span class="petit-beneficiary-pct" id="petit-kpi-beneficiaries-dependent-pct">—</span>
+            </div>
+          </div>
+        </div>
+        <div class="petit-kpi-note" id="petit-kpi-beneficiaries-note">beneficiários ativos · filtros aplicados</div>
+      </div>
+      <div class="petit-kpi">
+        <div class="petit-kpi-icon"><i class="fa-solid fa-headset"></i></div>
+        <div class="petit-kpi-label">Atendimentos</div>
+        <div class="petit-kpi-value" id="petit-kpi-sessions">—</div>
+        <div class="petit-kpi-note" id="petit-kpi-sessions-note">volume de sessões · filtros aplicados</div>
+      </div>
+      <div class="petit-kpi">
+        <div class="petit-kpi-icon"><i class="fa-solid fa-comments"></i></div>
+        <div class="petit-kpi-label">Interação humana</div>
+        <div class="petit-human-split">
+          <div class="petit-human-item">
+            <div class="petit-human-label">Humano</div>
+            <div class="petit-human-value" id="petit-kpi-human-sessions">—</div>
+            <div class="petit-human-pct" id="petit-kpi-human-pct">—</div>
+          </div>
+          <div class="petit-human-item">
+            <div class="petit-human-label">IA</div>
+            <div class="petit-human-value" id="petit-kpi-ia-sessions">—</div>
+            <div class="petit-human-pct" id="petit-kpi-ia-pct">—</div>
+          </div>
+        </div>
+        <div class="petit-human-bar">
+          <span id="petit-kpi-human-bar" style="width:0;background:#6366f1"></span>
+          <span id="petit-kpi-ia-bar" style="width:0;background:#14b8a6"></span>
+        </div>
+        <div class="petit-kpi-note" id="petit-kpi-human-note">mesma regra do Q12B</div>
+      </div>
+      <div class="petit-kpi">
+        <div class="petit-kpi-icon"><i class="fa-solid fa-user-group"></i></div>
+        <div class="petit-kpi-label">Beneficiários Únicos</div>
+        <div class="petit-kpi-value" id="petit-kpi-users">—</div>
+        <div class="petit-kpi-note" id="petit-kpi-users-note">beneficiários únicos · filtros aplicados</div>
+      </div>
+      <div class="petit-kpi">
+        <div class="petit-kpi-icon"><i class="fa-solid fa-calendar-check"></i></div>
+        <div class="petit-kpi-label">Agendamentos</div>
+        <div class="petit-kpi-value" id="petit-kpi-appointments">—</div>
+        <div class="petit-kpi-note" id="petit-kpi-appointments-note">mesma regra da aba Agendamentos</div>
+      </div>
+    </div>
+
+    <div class="petit-grid-2">
+      <div class="chart-card">
+        <h2 style="font-size:13px;font-weight:700;color:#334155;margin-bottom:4px">Evolução mensal de atendimentos</h2>
+        <div style="font-size:11px;color:#94a3b8;margin-bottom:14px">Últimos 12 meses · <span id="petit-s-evol-mode">global</span></div>
+        <div class="chart-wrap">
+          <div class="skeleton" id="skel-petit-s-evol"></div>
+          <canvas id="petitSessionsEvolChart" style="display:none"></canvas>
+        </div>
+        <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="petit-s-evol-error"></div>
+      </div>
+
+      <div class="chart-card">
+        <h2 style="font-size:13px;font-weight:700;color:#334155;margin-bottom:4px">Evolução mensal de atendimentos x beneficiários únicos</h2>
+        <div style="font-size:11px;color:#94a3b8;margin-bottom:14px">Últimos 12 meses · <span id="petit-s-total-evol-mode">global</span></div>
+        <div class="chart-wrap">
+          <div class="skeleton" id="skel-petit-s-total-evol"></div>
+          <canvas id="petitSessionsTotalEvolChart" style="display:none"></canvas>
+        </div>
+        <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="petit-s-total-evol-error"></div>
+      </div>
+    </div>
+
+    <div class="petit-grid-2">
+      <div class="card-box" style="grid-column:1 / -1">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap">
+          <div>
+            <div class="section-title" style="margin-bottom:4px"><i class="fa-solid fa-users-viewfinder" style="margin-right:6px"></i>Utilização da base de beneficiários</div>
+            <div style="font-size:11px;color:#94a3b8">Mesma regra do Q16 da aba Sessões · respeita todos os filtros globais</div>
+          </div>
+          <div style="font-size:11px;color:#64748b;font-weight:700" id="petit-base-utilization-context">global</div>
+        </div>
+        <div class="loading-box" id="petit-base-utilization-loading"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando utilização...</div>
+        <div class="sessions-utilization-grid" id="petit-base-utilization-content" style="display:none"></div>
+        <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="petit-base-utilization-error"></div>
+      </div>
+    </div>
+
+    <div class="petit-grid-3">
+      <div class="card-box">
+        <div class="section-title"><i class="fa-solid fa-list-check" style="margin-right:6px"></i>Distribuição das solicitações</div>
+        <div class="loading-box" id="petit-appointment-types-loading"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...</div>
+        <div id="petit-appointment-types-content" style="display:none">
+          <div style="font-size:11px;color:#94a3b8;margin-bottom:10px">Mesma regra do quadro Tipos de consulta da aba Agendamentos</div>
+          <div class="table-scroll">
+            <table class="appointment-types-table">
+              <thead>
+                <tr style="border-bottom:1px solid #e2e8f0;color:#64748b">
+                  <th style="text-align:left;padding:9px 10px;font-weight:600">Tipo</th>
+                  <th style="text-align:right;padding:9px 10px;font-weight:600">Total</th>
+                  <th style="text-align:right;padding:9px 10px;font-weight:600">%</th>
+                </tr>
+              </thead>
+              <tbody id="petit-appointment-types-tbody"></tbody>
+            </table>
+          </div>
+          <div style="font-size:11px;color:#94a3b8;margin-top:10px;text-align:right" id="petit-appointment-types-meta">—</div>
+        </div>
+      </div>
+
+      <div class="card-box petit-top-list-card">
+        <div class="section-title"><i class="fa-solid fa-vial" style="margin-right:6px"></i>Principais exames solicitados</div>
+        <div class="loading-box" id="petit-top-exams-loading"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...</div>
+        <div class="petit-top-list-content" id="petit-top-exams-content" style="display:none">
+          <div style="font-size:11px;color:#94a3b8;margin-bottom:14px">Top 9 + outros · tipos: Exames e Exames - DASA</div>
+          <div class="petit-dist-list petit-top-exams-list" id="petit-top-exams-list"></div>
+          <div style="font-size:11px;color:#94a3b8;margin-top:10px;text-align:right" id="petit-top-exams-meta">—</div>
+        </div>
+      </div>
+
+      <div class="card-box petit-top-list-card">
+        <div class="section-title"><i class="fa-solid fa-user-doctor" style="margin-right:6px"></i>Principais especialidades solicitadas</div>
+        <div class="loading-box" id="petit-top-consultations-loading"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...</div>
+        <div class="petit-top-list-content" id="petit-top-consultations-content" style="display:none">
+          <div style="font-size:11px;color:#94a3b8;margin-bottom:14px">Top 9 + outros · tipo: Consultas</div>
+          <div class="petit-dist-list petit-top-exams-list" id="petit-top-consultations-list"></div>
+          <div style="font-size:11px;color:#94a3b8;margin-top:10px;text-align:right" id="petit-top-consultations-meta">—</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card-box" data-qtag="#PC07">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap">
+        <div>
+          <div class="section-title" style="margin-bottom:4px"><i class="fa-solid fa-heart-pulse" style="margin-right:6px"></i>Linhas de cuidado</div>
+        </div>
+        <span class="petit-chip">PC07</span>
+      </div>
+      <div class="petit-metric-stack" style="grid-template-columns:repeat(3,minmax(0,1fr))">
+        <div class="petit-metric">
+          <span>Total de pessoas<small>linha de cuidado</small></span>
+          <strong>0</strong>
+        </div>
+        <div class="petit-metric">
+          <span>Crônicos<small>linha ativa</small></span>
+          <strong>0</strong>
+        </div>
+        <div class="petit-metric">
+          <span>Outras condições<small>linha ativa</small></span>
+          <strong>0</strong>
+        </div>
+        <div class="petit-metric">
+          <span>Em investigação de saúde<small>linha ativa</small></span>
+          <strong>0</strong>
+        </div>
+        <div class="petit-metric">
+          <span>Saudável<small>linha ativa</small></span>
+          <strong>0</strong>
+        </div>
+        <div class="petit-metric">
+          <span>Obesidade<small>linha ativa</small></span>
+          <strong>0</strong>
+        </div>
+      </div>
+    </div>
+  </div>

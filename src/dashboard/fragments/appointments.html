@@ -1,0 +1,113 @@
+<!-- Tab: Agendamentos -->
+  <div class="tab-content" id="tab-agendamentos">
+    <div class="card-box" style="display:flex;align-items:center;gap:20px;padding:20px 28px">
+      <div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#6366f1,#4f46e5);display:flex;align-items:center;justify-content:center">
+        <i class="fa-solid fa-calendar-check" style="font-size:20px;color:#fff"></i>
+      </div>
+      <div>
+        <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;margin-bottom:3px">Total de Agendamentos</div>
+        <div style="font-size:34px;font-weight:700;color:#6366f1;letter-spacing:-1px;line-height:1" id="bullet-agend">—</div>
+        <div style="font-size:11px;color:#94a3b8;margin-top:3px" id="bullet-agend-periodo">Mesma base de Tipos de consulta · últimos 12 meses</div>
+      </div>
+    </div>
+
+    <div class="appointments-analysis-grid">
+      <div class="chart-card">
+        <h2 style="font-size:13px;font-weight:700;color:#334155;margin-bottom:4px">Tipos de consulta por mês</h2>
+        <div class="appointment-trend-meta">
+          <div style="font-size:11px;color:#94a3b8">Mês atual + 3 meses anteriores · barras lado a lado</div>
+          <div class="appointment-trend-pill" id="appointment-types-trend-period">Últimos 4 meses</div>
+        </div>
+        <div class="chart-wrap" style="height:clamp(280px,34vw,380px)">
+          <div class="skeleton" id="skel-appointment-types-trend"></div>
+          <canvas id="appointmentTypesTrendChart" style="display:none"></canvas>
+        </div>
+        <div style="font-size:11px;color:#64748b;margin-top:10px;text-align:right" id="appointment-types-trend-meta">—</div>
+      </div>
+
+      <div class="card-box">
+        <div class="section-title"><i class="fa-solid fa-stethoscope" style="margin-right:6px"></i>Tipos de consulta</div>
+        <div class="loading-box" id="agendamento-appointment-types-loading"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...</div>
+        <div id="agendamento-appointment-types-content" style="display:none">
+          <div style="font-size:11px;color:#94a3b8;margin-bottom:10px">Agrupamento por assunto/tipo de solicitação · <code>atendimento_summarized_gold_live</code></div>
+          <div class="table-scroll">
+            <table class="appointment-types-table">
+              <thead>
+                <tr style="border-bottom:1px solid #e2e8f0;color:#64748b">
+                  <th style="text-align:left;padding:9px 10px;font-weight:600">Tipo</th>
+                  <th style="text-align:right;padding:9px 10px;font-weight:600">Total</th>
+                  <th style="text-align:right;padding:9px 10px;font-weight:600">%</th>
+                </tr>
+              </thead>
+              <tbody id="agendamento-appointment-types-tbody"></tbody>
+            </table>
+          </div>
+          <div style="font-size:11px;color:#94a3b8;margin-top:10px;text-align:right" id="agendamento-appointment-types-meta">—</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="chart-card" data-qtag="#AG04">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap">
+        <div>
+          <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Evolução diária de agendamentos físicos</h2>
+          <div style="font-size:11px;color:#94a3b8">Barras = físicos, linha turquesa = Conexa online · <span id="agend-daily-mode">mês atual</span></div>
+        </div>
+        <div class="filter-group">
+          <label for="appointments-daily-month-select">📅 Mês</label>
+          <select class="filter-select" id="appointments-daily-month-select" onchange="onAppointmentsDailyMonthChange(this.value)" style="min-width:160px"></select>
+        </div>
+      </div>
+      <div id="agend-daily-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:14px">
+        <div style="border:1px solid #e2e8f0;border-radius:12px;padding:12px 14px;background:#f8fafc">
+          <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.6px">Total físico</div>
+          <div style="font-size:22px;font-weight:800;color:#4f46e5;line-height:1.1;margin-top:4px" id="agend-daily-physical-total">—</div>
+        </div>
+        <div style="border:1px solid #e2e8f0;border-radius:12px;padding:12px 14px;background:#f8fafc">
+          <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.6px">Média/dia físico</div>
+          <div style="font-size:22px;font-weight:800;color:#334155;line-height:1.1;margin-top:4px" id="agend-daily-physical-avg">—</div>
+        </div>
+        <div style="border:1px solid #e2e8f0;border-radius:12px;padding:12px 14px;background:#f8fafc">
+          <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.6px">Pico físico</div>
+          <div style="font-size:22px;font-weight:800;color:#334155;line-height:1.1;margin-top:4px" id="agend-daily-physical-peak">—</div>
+          <div style="font-size:10px;color:#94a3b8;margin-top:2px" id="agend-daily-physical-peak-day">—</div>
+        </div>
+        <div style="border:1px solid #ccfbf1;border-radius:12px;padding:12px 14px;background:#f0fdfa">
+          <div style="font-size:10px;font-weight:700;color:#0f766e;text-transform:uppercase;letter-spacing:.6px">Conexa online</div>
+          <div style="font-size:22px;font-weight:800;color:#0f766e;line-height:1.1;margin-top:4px" id="agend-daily-conexa-total">—</div>
+          <div style="font-size:10px;color:#0f766e;margin-top:2px" id="agend-daily-conexa-share">—</div>
+        </div>
+        <div style="border:1px solid #ccfbf1;border-radius:12px;padding:12px 14px;background:#f0fdfa">
+          <div style="font-size:10px;font-weight:700;color:#0f766e;text-transform:uppercase;letter-spacing:.6px">Média/dia Conexa</div>
+          <div style="font-size:22px;font-weight:800;color:#0f766e;line-height:1.1;margin-top:4px" id="agend-daily-conexa-avg">—</div>
+        </div>
+        <div style="border:1px solid #ccfbf1;border-radius:12px;padding:12px 14px;background:#f0fdfa">
+          <div style="font-size:10px;font-weight:700;color:#0f766e;text-transform:uppercase;letter-spacing:.6px">Pico Conexa</div>
+          <div style="font-size:22px;font-weight:800;color:#0f766e;line-height:1.1;margin-top:4px" id="agend-daily-conexa-peak">—</div>
+          <div style="font-size:10px;color:#0f766e;margin-top:2px" id="agend-daily-conexa-peak-day">—</div>
+        </div>
+      </div>
+      <div class="chart-wrap">
+        <div class="skeleton" id="skel-agend-daily"></div>
+        <canvas id="appointmentsDailyChart" style="display:none"></canvas>
+      </div>
+      <div style="font-size:11px;color:#64748b;margin-top:10px;text-align:right" id="agend-daily-meta">—</div>
+      <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="agend-daily-error"></div>
+    </div>
+
+    <div class="chart-card" data-qtag="#A05">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap">
+        <div>
+          <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Volume mensal por status do agendamento</h2>
+          <div style="font-size:11px;color:#94a3b8">Considera sempre o último status atrelado ao card · últimos 12 meses</div>
+        </div>
+        <div style="font-size:11px;color:#64748b;text-align:right" id="agend-status-total">—</div>
+      </div>
+      <div class="chart-wrap" style="height:clamp(300px,36vw,420px)">
+        <div class="skeleton" id="skel-agend-status"></div>
+        <canvas id="appointmentsStatusChart" style="display:none"></canvas>
+      </div>
+      <div style="font-size:11px;color:#64748b;margin-top:10px;text-align:right" id="agend-status-meta">—</div>
+      <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="agend-status-error"></div>
+    </div>
+  </div>

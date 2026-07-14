@@ -1,7 +1,11 @@
 declare const process: { env: Record<string, string | undefined> };
 declare const Buffer: { from(value: string, encoding: string): { toString(encoding: string): string } };
+import { validateDashboardCredentials } from "../src/server/auth/credentials";
+import { readSessionCookie } from "../src/server/auth/session";
 
-type AuthRequest = {
+type AuthRequest = object;
+
+type AuthRequestWithHeaders = {
   headers?: Record<string, string | string[] | undefined>;
 };
 
@@ -13,7 +17,7 @@ type AuthResponse = {
 export const MDS_PARTNER_SCOPE = "__SANUS_MDS_PARTNER__";
 
 function headerValue(req: AuthRequest, name: string) {
-  const headers = req.headers || {};
+  const headers = (req as AuthRequestWithHeaders).headers || {};
   const direct = headers[name] || headers[name.toLowerCase()];
   const value = Array.isArray(direct) ? direct[0] : direct;
   return value ? String(value) : "";
@@ -36,27 +40,10 @@ function decodeBasicAuth(value: string) {
 }
 
 export function getDashboardAuth(req: AuthRequest) {
-  const expectedUser = process.env.DASHBOARD_AUTH_USER;
-  const expectedPassword = process.env.DASHBOARD_AUTH_PASSWORD;
-  const mdsUser = process.env.DASHBOARD_MDS_AUTH_USER;
-  const mdsPassword = process.env.DASHBOARD_MDS_AUTH_PASSWORD;
+  const session = readSessionCookie(headerValue(req, "cookie"));
+  if (session) return { user: session.user, role: session.role };
   const credentials = decodeBasicAuth(headerValue(req, "authorization"));
-
-  if (
-    credentials &&
-    mdsUser &&
-    mdsPassword &&
-    credentials.user === mdsUser &&
-    credentials.password === mdsPassword
-  ) {
-    return { user: credentials.user, role: "mds" as const };
-  }
-
-  if (credentials?.user === expectedUser && credentials.password === expectedPassword) {
-    return { user: credentials.user, role: credentials.user.toLowerCase() === "mds" ? "mds" as const : "full" as const };
-  }
-
-  return null;
+  return credentials ? validateDashboardCredentials(credentials.user, credentials.password) : null;
 }
 
 export function requireBasicAuth(req: AuthRequest, res: AuthResponse) {

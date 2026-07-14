@@ -1,0 +1,80 @@
+<!-- Tab: Qualidade Operacional -->
+  <div class="tab-content" id="tab-qualidade-operacional">
+    <div class="card-box" data-qtag="#Qo02" style="display:flex;align-items:center;justify-content:space-between;gap:20px;padding:20px 28px;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:20px;min-width:260px">
+        <div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#0f766e,#4fc3b8);display:flex;align-items:center;justify-content:center">
+          <i class="fa-solid fa-shield-heart" style="font-size:20px;color:#fff"></i>
+        </div>
+        <div>
+          <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;margin-bottom:3px">Qualidade do atendimento</div>
+          <div style="font-size:34px;font-weight:800;color:#0b3b47;letter-spacing:-1px;line-height:1" id="quality-operational-score">—</div>
+          <div style="font-size:11px;color:#94a3b8;margin-top:5px" id="quality-operational-score-note">Score ponderado por atendimentos avaliados</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+        <div class="quality-volume-chip">Colaboradores <strong id="quality-operational-score-collabs">—</strong></div>
+        <div class="quality-volume-chip">Atendimentos <strong id="quality-operational-score-attendances">—</strong></div>
+      </div>
+    </div>
+
+    <div class="card-box" data-qtag="#Qo01">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+        <div>
+          <div class="section-title" style="margin-bottom:4px"><i class="fa-solid fa-users" style="margin-right:6px"></i>Colaboradores</div>
+          <div style="font-size:11px;color:#94a3b8">Score e atendimentos avaliados · período selecionado</div>
+        </div>
+      </div>
+      <div class="table-scroll quality-collab-scroll">
+        <table class="quality-table">
+          <thead>
+            <tr>
+              <th><button class="quality-sort-button" type="button" onclick="onQualityCollaboratorSortChange('name')">Colaborador <span id="quality-operational-collab-name-sort"></span></button></th>
+              <th><button class="quality-sort-button" type="button" onclick="onQualityCollaboratorSortChange('setor')">Setor <span id="quality-operational-collab-setor-sort"></span></button></th>
+              <th><button class="quality-sort-button" type="button" onclick="onQualityCollaboratorSortChange('status')">Status <span id="quality-operational-collab-status-sort"></span></button></th>
+              <th style="text-align:right"><button class="quality-sort-button" type="button" onclick="onQualityCollaboratorSortChange('score')">Score <span id="quality-operational-collab-score-sort">↓</span></button></th>
+              <th style="text-align:right"><button class="quality-sort-button" type="button" onclick="onQualityCollaboratorSortChange('attendance')">Atend. <span id="quality-operational-collab-attendance-sort"></span></button></th>
+            </tr>
+          </thead>
+          <tbody id="quality-operational-collab-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card-box" data-qtag="#Qo03">
+      <div class="section-title"><i class="fa-solid fa-clipboard-check" style="margin-right:6px"></i>Critérios avaliados</div>
+      <div style="font-size:11px;color:#94a3b8;margin-bottom:14px"><code>quality_analysis_silver_criteria</code> · aplicáveis · respeita os filtros globais da seção</div>
+      <div class="quality-criteria-bullets" id="quality-operational-criteria-bullets"></div>
+    </div>
+
+    <div class="card-box" style="display:flex;align-items:center;justify-content:space-between;gap:16px;padding:20px 28px;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:20px">
+        <div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#4fc3b8,#0f766e);display:flex;align-items:center;justify-content:center">
+          <i class="fa-solid fa-clipboard-check" style="font-size:20px;color:#fff"></i>
+        </div>
+        <div>
+          <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;margin-bottom:3px">Atendimentos Avaliados</div>
+          <div style="font-size:26px;font-weight:800;color:#0b3b47;letter-spacing:-.6px;line-height:1">Detalhamento por subcritério</div>
+          <div style="font-size:11px;color:#94a3b8;margin-top:5px" id="quality-operational-period">summary + criteria silver</div>
+        </div>
+      </div>
+      <input id="quality-search" type="text" placeholder="Buscar paciente, colaborador ou assunto..." oninput="renderQualityOperational()" style="font-size:12px;padding:8px 12px;border-radius:8px;border:1px solid #e2e8f0;outline:none;width:min(100%,320px);color:#334155"/>
+    </div>
+
+    <div class="quality-main-grid">
+      <div class="card-box">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px">
+          <div class="section-title" style="margin-bottom:0"><i class="fa-solid fa-list-ul" style="margin-right:6px"></i>Últimos atendimentos</div>
+          <span style="font-size:11px;color:#94a3b8" id="quality-operational-count">—</span>
+        </div>
+        <div class="loading-box" id="quality-operational-loading"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando atendimentos...</div>
+        <div class="quality-list" id="quality-items" style="display:none"></div>
+      </div>
+
+      <div class="card-box" id="quality-detail-card">
+        <div class="section-title"><i class="fa-solid fa-magnifying-glass-chart" style="margin-right:6px"></i>Detalhe do atendimento</div>
+        <div id="quality-detail">
+          <div style="text-align:center;padding:28px 12px;color:#94a3b8;font-size:13px">Selecione um atendimento para ver os critérios.</div>
+        </div>
+      </div>
+    </div>
+  </div>

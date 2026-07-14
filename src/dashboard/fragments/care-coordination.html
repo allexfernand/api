@@ -1,0 +1,165 @@
+<!-- Tab: Coordenação de Cuidado -->
+  <div class="tab-content" id="tab-coordenacao-cuidado">
+    <div class="petit-kpi-grid care-kpi-grid">
+      <div class="petit-kpi">
+        <div class="petit-kpi-icon"><i class="fa-solid fa-people-group"></i></div>
+        <div class="petit-kpi-label">Beneficiários</div>
+        <div class="petit-kpi-value" id="care-kpi-beneficiaries">—</div>
+        <div class="petit-kpi-note" id="care-kpi-beneficiaries-note">ativos · filtros aplicados</div>
+      </div>
+      <div class="petit-kpi">
+        <div class="petit-kpi-icon"><i class="fa-solid fa-map-location-dot"></i></div>
+        <div class="petit-kpi-label">Beneficiários Mapeados / Ativos</div>
+        <div class="petit-kpi-value" id="care-kpi-mapped-static">—</div>
+        <div class="petit-kpi-note" id="care-kpi-mapped-static-note">mapeados / ativos · sem filtro de data</div>
+      </div>
+      <div class="petit-kpi care-kpi-stacked">
+        <div class="petit-kpi-icon"><i class="fa-solid fa-headset"></i></div>
+        <div class="petit-kpi-label">Atendimentos</div>
+        <div class="petit-kpi-value" id="care-kpi-sessions">—</div>
+        <div class="petit-kpi-note" id="care-kpi-sessions-note">volume de sessões · filtros aplicados</div>
+        <div class="petit-kpi-label">Novos beneficiários</div>
+        <div class="petit-kpi-value" id="care-kpi-new-beneficiaries">—</div>
+        <div class="petit-kpi-note" id="care-kpi-new-beneficiaries-note">primeira aparição · filtros aplicados</div>
+      </div>
+      <div class="petit-kpi">
+        <div class="petit-kpi-icon"><i class="fa-solid fa-map-location-dot"></i></div>
+        <div class="petit-kpi-label">Beneficiários Mapeados</div>
+        <div class="petit-kpi-value" id="care-kpi-mapped">—</div>
+        <div class="petit-kpi-note" id="care-kpi-mapped-note">linhas de cuidado · filtros aplicados</div>
+      </div>
+      <div class="petit-kpi care-kpi-wide">
+        <div class="petit-kpi-icon"><i class="fa-solid fa-layer-group"></i></div>
+        <div class="petit-kpi-label">Comorbidades ativas</div>
+        <div class="petit-kpi-value" id="care-kpi-comorbidities">—</div>
+        <div class="petit-kpi-note" id="care-kpi-comorbidities-note">sem filtro de data · status aberto</div>
+      </div>
+    </div>
+
+    <div class="petit-grid-2">
+      <div class="chart-card" data-qtag="#CC01">
+        <div class="petit-card-header">
+          <div>
+            <h2 style="font-size:13px;font-weight:700;color:#334155;margin-bottom:4px">Evolução das linhas de cuidado</h2>
+            <div style="font-size:11px;color:#94a3b8">CPF-categorias ativos por classificação · <span id="care-coordination-filter-context">todos os filtros globais</span></div>
+          </div>
+          <div class="care-card-actions">
+            <label class="care-card-filter" for="care-beneficiary-type-select-cc01">
+              Vínculo
+              <select id="care-beneficiary-type-select-cc01" onchange="onCareBeneficiaryTypeChange(this.value)">
+                <option value="">Titular e dependente</option>
+                <option value="TITULAR">Titular</option>
+                <option value="DEPENDENTE">Dependente</option>
+              </select>
+            </label>
+            <span class="petit-chip">CC01</span>
+          </div>
+        </div>
+        <div class="chart-wrap" style="height:340px">
+          <div class="skeleton" id="skel-care-coordination-lines"></div>
+          <canvas id="careCoordinationLinesChart" style="display:none"></canvas>
+        </div>
+        <div class="care-card-totals" id="care-coordination-lines-footer" style="display:none">
+          <div class="care-card-total">
+            <span class="care-card-total-label">CPF-categorias nas classificações</span>
+            <span class="care-card-total-value" id="care-coord-lines-total-sum">—</span>
+            <span class="care-card-total-hint">soma — CPF com N categorias ativas conta N vezes</span>
+          </div>
+          <div class="care-card-total">
+            <span class="care-card-total-label">CPFs únicos com card ativo</span>
+            <span class="care-card-total-value" id="care-coord-lines-total-unique">—</span>
+            <span class="care-card-total-hint">distintos — equivale ao KPI "Mapeados Ativos"</span>
+          </div>
+        </div>
+        <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="care-coordination-lines-error"></div>
+      </div>
+
+      <div class="card-box" data-qtag="#CC02" style="display:flex;flex-direction:column;min-height:0">
+        <div class="petit-card-header">
+          <div>
+            <h2 style="font-size:13px;font-weight:700;color:#334155;margin-bottom:4px">Detalhamento das linhas de cuidado</h2>
+            <div style="font-size:11px;color:#94a3b8" id="care-detail-context">Selecione uma linha no CC01 para detalhar</div>
+          </div>
+          <span class="petit-chip">CC02</span>
+        </div>
+        <div class="loading-box" id="care-detail-loading" style="display:none"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando detalhamento...</div>
+        <div class="petit-placeholder" id="care-detail-empty" style="min-height:280px;display:flex;align-items:center;justify-content:center;text-align:center">
+          Selecione uma barra no CC01 para carregar as condições.
+        </div>
+        <div id="care-detail-content" style="display:none;flex:1;min-height:0">
+          <div class="petit-dist-list petit-top-exams-list" id="care-detail-list" style="max-height:340px"></div>
+          <div style="font-size:11px;color:#94a3b8;margin-top:10px;text-align:right" id="care-detail-meta">—</div>
+          <div id="care-detail-examples" style="display:none;margin-top:12px"></div>
+        </div>
+        <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="care-detail-error"></div>
+      </div>
+    </div>
+
+    <div class="petit-grid-2 care-evolution-grid">
+      <div class="chart-card care-evolution-card care-evolution-card-wide" data-qtag="#CC07">
+        <div class="petit-card-header">
+          <div>
+            <h2 style="font-size:13px;font-weight:700;color:#334155;margin-bottom:4px">Composição mensal das classificações</h2>
+            <div style="font-size:11px;color:#94a3b8">Últimos 3 meses · acumulado até o mês · 1 CPF por categoria ativa · status diferente de fechado</div>
+          </div>
+          <span class="petit-chip">CC07</span>
+        </div>
+        <div class="chart-wrap" style="height:320px">
+          <div class="skeleton" id="skel-care-lines-evolution"></div>
+          <canvas id="careLinesEvolutionChart" style="display:none"></canvas>
+        </div>
+        <div class="petit-metric-stack" id="care-lines-evolution-summary" style="display:none;margin-top:14px;grid-template-columns:repeat(3,minmax(0,1fr))"></div>
+        <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="care-lines-evolution-error"></div>
+      </div>
+    </div>
+
+    <div class="petit-grid-2">
+      <div class="card-box" data-qtag="#CC05" style="display:flex;flex-direction:column;min-height:0">
+        <div class="petit-card-header">
+          <div>
+            <h2 style="font-size:13px;font-weight:700;color:#334155;margin-bottom:4px">Condições ativas</h2>
+            <div style="font-size:11px;color:#94a3b8" id="care-active-chronic-context">Crônicos e situacionais · último status diferente de fechado</div>
+          </div>
+          <div class="care-card-actions">
+            <label class="care-card-filter" for="care-beneficiary-type-select-cc05">
+              Vínculo
+              <select id="care-beneficiary-type-select-cc05" onchange="onCareBeneficiaryTypeChange(this.value)">
+                <option value="">Titular e dependente</option>
+                <option value="TITULAR">Titular</option>
+                <option value="DEPENDENTE">Dependente</option>
+              </select>
+            </label>
+            <span class="petit-chip">CC05</span>
+          </div>
+        </div>
+        <div class="loading-box" id="care-active-chronic-loading" style="display:none"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando condições ativas...</div>
+        <div class="petit-placeholder" id="care-active-chronic-empty" style="min-height:280px;display:none;align-items:center;justify-content:center;text-align:center">
+          Nenhuma condição ativa encontrada para o filtro atual.
+        </div>
+        <div id="care-active-chronic-content" style="display:none;flex:1;min-height:0">
+          <div class="petit-dist-list petit-top-exams-list" id="care-active-chronic-list" style="max-height:340px"></div>
+          <div style="font-size:11px;color:#94a3b8;margin-top:10px;text-align:right" id="care-active-chronic-meta">—</div>
+        </div>
+        <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="care-active-chronic-error"></div>
+      </div>
+
+      <div class="card-box" data-qtag="#CC06" style="display:flex;flex-direction:column;min-height:0">
+        <div class="petit-card-header">
+          <div>
+            <h2 style="font-size:13px;font-weight:700;color:#334155;margin-bottom:4px" id="care-active-complement-title">Detalhamento complementar ativo</h2>
+            <div style="font-size:11px;color:#94a3b8" id="care-active-complement-context">Clique em uma barra do CC05 para detalhar</div>
+          </div>
+          <span class="petit-chip">CC06</span>
+        </div>
+        <div class="loading-box" id="care-active-complement-loading" style="display:none"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando detalhamento...</div>
+        <div class="petit-placeholder" id="care-active-complement-empty" style="min-height:280px;display:flex;align-items:center;justify-content:center;text-align:center">
+          Detalhamento ativo em definição.
+        </div>
+        <div class="chart-wrap" id="care-active-complement-chart-wrap" style="height:280px;display:none">
+          <canvas id="careActiveComplementChart"></canvas>
+        </div>
+        <div style="font-size:11px;color:#94a3b8;margin-top:10px;text-align:right;display:none" id="care-active-complement-meta">—</div>
+        <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="care-active-complement-error"></div>
+      </div>
+    </div>
+  </div>

@@ -1,0 +1,195 @@
+// --- Evolução ---
+function renderEvol() {
+  if (!usersData.length) return;
+  const m = {};
+  usersData.forEach(([d,v]) => { const k = d.slice(0,7); m[k] = (m[k]||0)+v; });
+  const all = Object.entries(m).sort((a,b) => a[0]>b[0]?1:-1);
+  let acc = 0; const accM = {};
+  all.forEach(([k,v]) => { acc+=v; accM[k]=acc; });
+  const now = new Date(), cut = new Date(now.getFullYear(), now.getMonth()-11, 1);
+  const cutStr = cut.toISOString().slice(0,7);
+  const entries = all.filter(([k]) => k >= cutStr);
+  const labels = entries.map(([k]) => { const [y,mm]=k.split('-'); return `${mN[mm]}/${y.slice(2)}`; });
+  const values = entries.map(([k]) => accM[k]);
+  document.getElementById('skel-e').style.display = 'none';
+  const cv = document.getElementById('evolChart'); cv.style.display = 'block';
+  if (eChart) eChart.destroy();
+  eChart = new Chart(cv, {
+    type:'line',
+    data:{labels,datasets:[{data:values,borderColor:'#00A69C',backgroundColor:'rgba(0,166,156,0.08)',borderWidth:2,pointRadius:3,pointBackgroundColor:'#00A69C',fill:true,tension:0.35}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{backgroundColor:'#1e293b',borderColor:'#334155',borderWidth:1,titleColor:'#94a3b8',bodyColor:'#f1f5f9',callbacks:{label:c=>`${fmt(c.parsed.y)} vidas`}}},scales:{x:{ticks:{font:{size:10},color:'#94a3b8',maxRotation:45,autoSkip:true,maxTicksLimit:14},grid:{color:'rgba(0,0,0,0.04)'},border:{display:false}},y:{beginAtZero:false,ticks:{font:{size:10},color:'#94a3b8',callback:v=>fmt(v)},grid:{color:'rgba(0,0,0,0.04)'},border:{display:false}}}}
+  });
+}
+
+// --- Demografia ---
+function renderDemographics(d) {
+  document.getElementById('demo-loading').style.display = 'none';
+  document.getElementById('demo-content').style.display = 'block';
+  const total = Number(d.total_vidas)||0;
+  const totalBeneficiarios = Number(d.total_beneficiarios ?? d.total_vidas)||0;
+  const pct = n => total>0 ? ((n/total)*100).toFixed(1).replace('.',',')+' %' : '—';
+  const s = (id,v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
+  s('bullet-vidas', fmt(totalBeneficiarios));
+  s('d-total',fmt(totalBeneficiarios)); s('d-idade',d.idade_media||'—'); s('d-menores-18',fmt(Number(d.menores_18)||0)); s('d-49',fmt(Number(d.mais_49)||0));
+  s('d-mulheres-19-38',fmt(Number(d.mulheres_19_38)||0));
+  s('d-dep',fmt(Number(d.dependentes)||0)); s('d-tit',fmt(Number(d.titulares)||0));
+  s('d-dep-pct',pct(Number(d.dependentes)||0)); s('d-tit-pct',pct(Number(d.titulares)||0));
+  s('bullet-tit',fmt(Number(d.titulares)||0)); s('bullet-dep',fmt(Number(d.dependentes)||0));
+  const fem=Number(d.feminino)||0, masc=Number(d.masculino)||0, ni=Number(d.nao_informado)||0;
+  const gt=fem+masc+ni||1;
+  const pg = n => ((n/gt)*100).toFixed(1).replace('.',',')+' %';
+  s('d-fem',fmt(fem)); s('d-masc',fmt(masc)); s('d-ni',fmt(ni));
+  s('d-fem-pct',pg(fem)); s('d-masc-pct',pg(masc)); s('d-ni-pct',pg(ni));
+  const bf=document.getElementById('bar-fem'), bm=document.getElementById('bar-masc'), bn=document.getElementById('bar-ni');
+  if(bf) bf.style.width=((fem/gt)*100).toFixed(1)+'%';
+  if(bm) bm.style.width=((masc/gt)*100).toFixed(1)+'%';
+  if(bn) bn.style.width=((ni/gt)*100).toFixed(1)+'%';
+  const tit=Number(d.titulares)||0, dep=Number(d.dependentes)||0;
+  s('d-ratio', tit>0?(dep/tit).toFixed(2).replace('.',','):'—');
+}
+
+// --- Empresas (quadro Beneficiários por Empresa) ---
+function filterCompanies() {
+  const q = document.getElementById('company-search').value.toLowerCase();
+  renderCompaniesTable(companiesData.filter(c => c.empresa.toLowerCase().includes(q)));
+}
+function renderCompaniesTable(data) {
+  const grand = companiesData.reduce((a,c)=>a+c.total,0);
+  document.getElementById('companies-tbody').innerHTML = data.slice(0,100).map((c,i) => {
+    const bw = companiesData[0]?.total>0 ? Math.round(c.total/companiesData[0].total*100) : 0;
+    const pct = grand>0 ? ((c.total/grand)*100).toFixed(1) : '0';
+    return `<tr onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
+      <td style="padding:6px 8px;color:#cbd5e1;font-size:10px">${i+1}</td>
+      <td style="padding:6px 8px;color:#334155;font-weight:500">${escapeHtml(c.empresa)}</td>
+      <td style="padding:6px 8px;text-align:right;font-weight:700;color:#1e293b">${fmt(c.total)}</td>
+      <td style="padding:6px 8px"><div style="background:#f1f5f9;border-radius:3px;height:5px;overflow:hidden"><div style="height:100%;width:${bw}%;background:linear-gradient(90deg,#00A69C,#2E7D9A);border-radius:3px"></div></div><div style="font-size:10px;color:#94a3b8;text-align:right">${pct}%</div></td>
+    </tr>`;
+  }).join('');
+  const f = document.getElementById('companies-footer');
+  if(f) f.textContent = `${Math.min(data.length,100)} de ${data.length} · ${fmt(grand)} total`;
+}
+
+// --- Faixa etária ---
+function renderAgeGroups(data) {
+  document.getElementById('agegroup-loading').style.display = 'none';
+  document.getElementById('agegroup-wrap').style.display = 'block';
+  const cv = document.getElementById('agegroupChart');
+  if (agegroupChart) agegroupChart.destroy();
+  agegroupChart = new Chart(cv, {
+    type:'bar',
+    data:{labels:data.map(d=>d.faixa),datasets:[
+      {label:'Feminino', data:data.map(d=>d.feminino), backgroundColor:'rgba(232,121,160,0.85)',borderRadius:3},
+      {label:'Masculino',data:data.map(d=>d.masculino),backgroundColor:'rgba(59,130,246,0.85)', borderRadius:3},
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',plugins:{legend:{display:false},tooltip:{backgroundColor:'#1e293b',borderColor:'#334155',borderWidth:1,titleColor:'#94a3b8',bodyColor:'#f1f5f9',callbacks:{label:c=>`${c.dataset.label}: ${fmt(c.parsed.x)}`}}},scales:{x:{ticks:{font:{size:10},color:'#94a3b8',callback:v=>fmt(v)},grid:{color:'rgba(0,0,0,0.04)'},border:{display:false}},y:{ticks:{font:{size:11},color:'#64748b'},grid:{display:false},border:{display:false}}}}
+  });
+}
+
+// --- Cargas ---
+async function safeGet(url) {
+  try {
+    const r = await authFetch(url);
+    let body = null;
+    try { body = await r.json(); } catch(_) {}
+    if (r.status === 401) {
+      handleAuthFailure(body?.error || 'Usuário ou senha inválidos.');
+      return { error: body?.error || 'Não autorizado' };
+    }
+    if (!r.ok) {
+      const msg = body && body.error ? body.error : `HTTP ${r.status}`;
+      console.error(`[safeGet] ${url} -> ${msg}`);
+      return { error: msg };
+    }
+    return body;
+  } catch(e) {
+    console.error(`[safeGet] ${url} -> ${e.message}`);
+    return { error: e.message };
+  }
+}
+
+function setText(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = value;
+}
+
+function fmtPct(value, fallback='—') {
+  const n = Number(value);
+  return Number.isFinite(n) ? `${n.toFixed(1).replace('.', ',')}%` : fallback;
+}
+
+function sessionsPointTooltipLabel(context, totalValues) {
+  const label = String(context.dataset.label || '');
+  const value = Number(context.parsed?.y) || 0;
+  const total = Number(totalValues?.[context.dataIndex]) || 0;
+  const pct = total > 0 ? (value / total) * 100 : NaN;
+  return `${label}: ${fmt(value)} sessões · ${fmtPct(pct)}`;
+}
+
+function qualityScoreClass(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 'warn';
+  if (n >= 80) return 'good';
+  if (n >= 60) return 'warn';
+  return 'bad';
+}
+
+function qualityPeriodLabel() {
+  const meses = [...selectedMonths].sort();
+  if (!meses.length) return 'últimos 30 dias';
+  if (meses.length === 1) {
+    const [y, mm] = meses[0].split('-');
+    return `${mN[mm]}/${y}`;
+  }
+  return `${meses.length} meses selecionados`;
+}
+
+function formatQualityDate(value) {
+  if (!value) return '—';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value).slice(0, 16);
+  return d.toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
+}
+
+function qualityCollaboratorDisplayName(value) {
+  const withoutDomain = String(value || '')
+    .replace(/@sanus\.tech$/i, '')
+    .replace(/[_-]+/g, '.')
+    .trim();
+  const parts = withoutDomain.split('.').filter(Boolean);
+  if (!parts.length) return String(value || 'Não informado');
+  return parts.map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase()).join(' ');
+}
+
+function qualityCollaboratorKey(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase()
+    .replace(/@sanus\.tech$/i, '');
+}
+
+function qualityCollaboratorMetaForName(name) {
+  const key = qualityCollaboratorKey(name);
+  const collaborators = qualityData?.strategic?.collaborators || [];
+  return collaborators.find((item) => {
+    const keys = [item.name, item.display_name, ...(item.aliases || [])].map(qualityCollaboratorKey).filter(Boolean);
+    if (keys.includes(key)) return true;
+    return keys.some((candidate) => candidate && !candidate.includes('.') && key.startsWith(`${candidate}.`));
+  }) || {
+    name,
+    display_name: qualityCollaboratorDisplayName(name),
+    setor: 'Não mapeado',
+    status: 'Não mapeado',
+    aliases: [name],
+  };
+}
+
+function qualityInitials(name) {
+  return qualityCollaboratorDisplayName(name).split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join('').toUpperCase() || 'NA';
+}
+
+function escapeJs(s) {
+  return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;').replace(/\n/g, ' ');
+}
+

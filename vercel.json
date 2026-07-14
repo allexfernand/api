@@ -2,12 +2,7 @@
   "rewrites": [
     {
       "source": "/mds",
-      "destination": "/index.html"
+      "destination": "/"
     }
-  ],
-  "functions": {
-    "api/*.ts": {
-      "maxDuration": 60
-    }
-  }
+  ]
 }

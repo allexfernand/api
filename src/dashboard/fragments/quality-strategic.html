@@ -1,0 +1,217 @@
+<!-- Tab: Qualidade Estratégica -->
+  <div class="tab-content" id="tab-qualidade-estrategica">
+    <div class="card-box" style="display:flex;align-items:center;gap:20px;padding:20px 28px">
+      <div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#0b3b47,#4fc3b8);display:flex;align-items:center;justify-content:center">
+        <i class="fa-solid fa-shield-heart" style="font-size:20px;color:#fff"></i>
+      </div>
+      <div>
+        <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;margin-bottom:3px">Qualidade do Atendimento</div>
+        <div style="font-size:34px;font-weight:800;color:#0b3b47;letter-spacing:-1px;line-height:1" id="quality-head-score">—</div>
+        <div style="font-size:11px;color:#94a3b8;margin-top:3px" id="quality-head-period">Pipeline de avaliação · critérios silver</div>
+      </div>
+    </div>
+
+    <div class="quality-kpi-grid">
+      <div class="quality-kpi">
+        <div class="quality-kpi-label">Score geral</div>
+        <div class="quality-kpi-value" id="q-kpi-score">—</div>
+        <div class="quality-kpi-note">pontuação / máximo dos critérios aplicáveis</div>
+      </div>
+      <div class="quality-kpi">
+        <div class="quality-kpi-label">Atendimentos avaliados</div>
+        <div class="quality-kpi-value" id="q-kpi-total">—</div>
+        <div class="quality-kpi-note" id="q-kpi-latest">último registro: —</div>
+      </div>
+      <div class="quality-kpi">
+        <div class="quality-kpi-label">Problema resolvido</div>
+        <div class="quality-kpi-value" id="q-kpi-resolved">—</div>
+        <div class="quality-kpi-note">quando disponível no summary</div>
+      </div>
+      <div class="quality-kpi">
+        <div class="quality-kpi-label">Critérios aplicáveis</div>
+        <div class="quality-kpi-value" id="q-kpi-na">—</div>
+        <div class="quality-kpi-note" id="q-kpi-applicable-note">aplicáveis / disponíveis</div>
+      </div>
+      <div class="quality-kpi">
+        <div class="quality-kpi-label">Critério mais fraco</div>
+        <div class="quality-kpi-value" id="q-kpi-weak" style="font-size:18px;margin-top:6px">—</div>
+        <div class="quality-kpi-note" id="q-kpi-weak-note">menor score por critério</div>
+      </div>
+    </div>
+
+    <div class="card-box">
+      <div class="section-title"><i class="fa-solid fa-clipboard-check" style="margin-right:6px"></i>Critérios avaliados</div>
+      <div style="font-size:11px;color:#94a3b8;margin-bottom:14px"><code>quality_analysis_silver_criteria</code> · aplicáveis · <span id="quality-criteria-bullets-period">período atual</span></div>
+      <div class="quality-criteria-bullets" id="quality-criteria-bullets"></div>
+    </div>
+
+    <div class="quality-grid-2 quality-distribution-grid">
+      <div class="card-box quality-distribution-card compact" id="quality-criteria-card" style="margin-bottom:0">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+          <div class="section-title" style="margin-bottom:0"><i class="fa-solid fa-chart-simple" style="margin-right:6px"></i>Distribuição por critério</div>
+          <select class="filter-select" id="quality-criteria-sort" onchange="onQualityCriteriaSortChange(this.value)" style="min-width:180px">
+            <option value="worst">Pior → melhor</option>
+            <option value="best">Melhor → pior</option>
+          </select>
+        </div>
+        <div class="quality-distribution-list" id="quality-criteria-only-dist"></div>
+      </div>
+
+      <div class="card-box quality-distribution-card" id="quality-subcriteria-card" style="margin-bottom:0">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+          <div class="section-title" style="margin-bottom:0"><i class="fa-solid fa-chart-simple" style="margin-right:6px"></i>Distribuição por subcritério</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <select class="filter-select" id="quality-subcriteria-criterion" onchange="onQualitySubcriteriaCriterionChange(this.value)" style="min-width:180px">
+              <option value="">Todos os critérios</option>
+            </select>
+            <select class="filter-select" id="quality-subcriteria-sort" onchange="onQualitySubcriteriaSortChange(this.value)" style="min-width:180px">
+              <option value="worst">Pior → melhor</option>
+              <option value="best">Melhor → pior</option>
+            </select>
+          </div>
+        </div>
+        <div class="quality-distribution-list scrollable" id="quality-criteria-dist"></div>
+        <div class="quality-distribution-legend">
+          <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#0f8a6f;margin-right:4px"></span>Nota 2</span>
+          <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#d97706;margin-right:4px"></span>Nota 1</span>
+          <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#c53030;margin-right:4px"></span>Nota 0</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card-box">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;flex-wrap:wrap">
+        <div>
+          <div class="section-title" style="margin-bottom:4px"><i class="fa-solid fa-chart-column" style="margin-right:6px"></i>Volume mensal de qualidade e sessões</div>
+          <div style="font-size:11px;color:#94a3b8">Conversas únicas · últimos 12 meses</div>
+        </div>
+        <select class="filter-select" id="quality-volume-evolution-mode" onchange="onQualityVolumeEvolutionModeChange(this.value)" style="min-width:210px">
+          <option value="both">Qualidade + sessões</option>
+          <option value="quality">Sessões avaliadas</option>
+          <option value="sessions">Sessões</option>
+        </select>
+      </div>
+      <div class="quality-volume-summary">
+        <div class="quality-volume-chip"><span class="quality-volume-dot" style="background:#0f766e"></span>Sessões avaliadas <strong id="quality-volume-total">—</strong></div>
+        <div class="quality-volume-chip"><span class="quality-volume-dot" style="background:#6366f1"></span>Sessões <strong id="quality-sessions-volume-total">—</strong></div>
+      </div>
+      <div class="chart-wrap" style="height:320px">
+        <div class="loading-box" id="quality-volume-evolution-empty" style="display:none">Sem dados de volume disponíveis.</div>
+        <canvas id="qualityVolumeEvolutionChart"></canvas>
+      </div>
+    </div>
+
+    <div class="card-box">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;flex-wrap:wrap">
+        <div>
+          <div class="section-title" style="margin-bottom:4px"><i class="fa-solid fa-chart-line" style="margin-right:6px"></i>Volume diário de qualidade e sessões</div>
+          <div style="font-size:11px;color:#94a3b8">Conversas únicas · dias do mês · <span id="quality-daily-volume-period">mês selecionado</span></div>
+        </div>
+        <div class="filter-group" style="margin:0">
+          <label for="quality-daily-month-select">📅 Mês</label>
+          <select class="filter-select" id="quality-daily-month-select" onchange="onQualityDailyMonthChange(this.value)" style="min-width:160px"></select>
+        </div>
+      </div>
+      <div class="quality-volume-summary">
+        <div class="quality-volume-chip"><span class="quality-volume-dot" style="background:#0f766e"></span>Sessões avaliadas <strong id="quality-daily-volume-total">—</strong></div>
+        <div class="quality-volume-chip"><span class="quality-volume-dot" style="background:#6366f1"></span>Sessões <strong id="quality-daily-sessions-volume-total">—</strong></div>
+      </div>
+      <div class="chart-wrap" style="height:320px">
+        <div class="loading-box" id="quality-daily-volume-evolution-empty" style="display:none">Sem dados diários disponíveis.</div>
+        <canvas id="qualityDailyVolumeEvolutionChart"></canvas>
+      </div>
+    </div>
+
+    <div class="quality-grid-2">
+      <div class="card-box" style="margin-bottom:0">
+        <div class="section-title"><i class="fa-solid fa-chart-line" style="margin-right:6px"></i>Evolução de qualidade</div>
+        <div style="font-size:11px;color:#94a3b8;margin-bottom:14px"><code>quality_analysis_silver_criteria.event_timestamp</code> · últimos 12 meses · não impactado pelo filtro de data</div>
+        <div class="chart-wrap" style="height:320px">
+          <div class="loading-box" id="quality-evolution-empty" style="display:none">Sem dados de evolução disponíveis.</div>
+          <canvas id="qualityEvolutionChart"></canvas>
+        </div>
+      </div>
+      <div class="card-box" style="margin-bottom:0">
+        <div class="section-title"><i class="fa-solid fa-chart-line" style="margin-right:6px"></i>Evolução de qualidade por critério</div>
+        <div style="font-size:11px;color:#94a3b8;margin-bottom:14px"><code>quality_analysis_silver_criteria.event_timestamp</code> · critérios agrupados · últimos 12 meses</div>
+        <div class="chart-wrap" style="height:320px">
+          <div class="loading-box" id="quality-criteria-evolution-empty" style="display:none">Sem dados por critério disponíveis.</div>
+          <canvas id="qualityCriteriaEvolutionChart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <div class="quality-grid-2">
+      <div class="card-box quality-factual-insight" style="margin-bottom:0;grid-column:1/-1">
+        <div class="quality-factual-header">
+          <div class="section-title" style="margin-bottom:0"><i class="fa-solid fa-lightbulb" style="margin-right:6px"></i>Insights por justificativa factual</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <select class="filter-select" id="quality-factual-criterion" onchange="onQualityFactualCriterionChange(this.value)" style="min-width:260px">
+              <option value="">Selecione um critério</option>
+              <option value="1">Critério 1 — Humanização e Vínculo</option>
+              <option value="2">Critério 2 — Efetividade e Resolução</option>
+              <option value="3">Critério 3 — Comunicação Profissional</option>
+              <option value="4">Critério 4 — Proatividade e Gestão</option>
+              <option value="5">Critério 5 — Segurança Clínica</option>
+            </select>
+            <select class="filter-select" id="quality-factual-resolved" onchange="onQualityFactualResolvedChange(this.value)" style="min-width:190px">
+              <option value="">Problema resolvido: todos</option>
+              <option value="sim">Problema resolvido: sim</option>
+              <option value="nao">Problema resolvido: não</option>
+            </select>
+          </div>
+        </div>
+        <div style="font-size:11px;color:#64748b;margin-bottom:12px"><code>justificativa factual</code> · aplicáveis · <span id="quality-factual-period">período atual</span></div>
+        <div id="quality-factual-content">
+          <div class="loading-box" style="padding:18px">Selecione um critério para gerar o insight do período.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="quality-grid-2">
+      <div class="card-box" style="margin-bottom:0">
+        <div class="section-title"><i class="fa-solid fa-ranking-star" style="margin-right:6px"></i>Ranking de colaboradores</div>
+        <div class="table-scroll quality-collab-scroll">
+          <table class="quality-table">
+            <thead>
+              <tr>
+                <th><button class="quality-sort-button" type="button" onclick="onQualityCollaboratorSortChange('name')">Colaborador <span id="quality-collab-name-sort"></span></button></th>
+                <th><button class="quality-sort-button" type="button" onclick="onQualityCollaboratorSortChange('setor')">Setor <span id="quality-collab-setor-sort"></span></button></th>
+                <th><button class="quality-sort-button" type="button" onclick="onQualityCollaboratorSortChange('status')">Status <span id="quality-collab-status-sort"></span></button></th>
+                <th style="text-align:right"><button class="quality-sort-button" type="button" onclick="onQualityCollaboratorSortChange('score')">Score <span id="quality-collab-score-sort">↓</span></button></th>
+                <th style="text-align:right"><button class="quality-sort-button" type="button" onclick="onQualityCollaboratorSortChange('attendance')">Atend. <span id="quality-collab-attendance-sort"></span></button></th>
+              </tr>
+            </thead>
+            <tbody id="quality-collab-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card-box" style="margin-bottom:0">
+        <div class="section-title"><i class="fa-solid fa-user-check" style="margin-right:6px"></i>Notas por critério do colaborador</div>
+        <div style="font-size:11px;color:#94a3b8;margin-bottom:14px"><code>quality_analysis_silver_criteria.close_by</code> · clique em um colaborador no ranking para carregar as notas do período selecionado.</div>
+        <div id="quality-collab-detail">
+          <div class="loading-box" style="padding:18px">Nenhum colaborador selecionado.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="quality-grid-2">
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div class="card-box quality-insight" style="margin-bottom:0">
+          <div class="section-title">Insight automático</div>
+          <div class="quality-insight-title" id="quality-insight-title">—</div>
+          <div class="quality-insight-desc" id="quality-insight-desc">—</div>
+        </div>
+        <div class="card-box quality-insight warning" style="margin-bottom:0">
+          <div class="section-title" style="color:#c084fc">Alerta de segurança</div>
+          <div class="quality-insight-title" id="quality-alert-title">—</div>
+          <div class="quality-insight-desc" id="quality-alert-desc">—</div>
+        </div>
+      </div>
+      <div class="card-box" style="margin-bottom:0">
+        <div class="section-title"><i class="fa-solid fa-route" style="margin-right:6px"></i>Qualidade por linha de cuidado</div>
+        <div id="quality-care-lines"></div>
+      </div>
+    </div>
+  </div>

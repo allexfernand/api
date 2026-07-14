@@ -1,0 +1,11 @@
+.next
+node_modules
+legacy
+public/scripts
+src/dashboard/fragments
+src/server/routes
+styles
+scripts/*.mjs
+!scripts/migrate-dashboard-to-next.mjs
+!scripts/split-dashboard-runtime.mjs
+package-lock.json

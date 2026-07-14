@@ -1,0 +1,7725 @@
+const fmt = n => Number(n).toLocaleString('pt-BR');
+const fmtCurrency = n => Number(n || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
+const mN = {'01':'Jan','02':'Fev','03':'Mar','04':'Abr','05':'Mai','06':'Jun','07':'Jul','08':'Ago','09':'Set','10':'Out','11':'Nov','12':'Dez'};
+const SESSIONS_Q3_PRESENTATION_MONTHS = ['2025-09', '2025-10', '2025-11', '2025-12', '2026-01', '2026-02', '2026-03', '2026-04', '2026-05'];
+const SESSIONS_Q3C_MONTHS = ['2026-01', '2026-02', '2026-03', '2026-04', '2026-05'];
+const SINISTRO_AS03_MONTHS = ['2025-07', '2025-08', '2025-09', '2025-10', '2025-11', '2025-12', '2026-01', '2026-02', '2026-03'];
+window.__SANUS_DASHBOARD_BUILD__ = '20260714-tabs';
+let hasAuthenticatedSession = false;
+
+let usersData = [], companiesData = [], sessionCompaniesData = [], eChart, agegroupChart, appointmentTypesTrendChart, appointmentsDailyChart, appointmentsStatusChart, careCoordinationLinesChart, careLinesEvolutionChart, careComplementChart, careActiveComplementChart, petitCareLinesChart, petitSessionsEvolChart, petitSessionsTotalEvolChart, sessionsEvolChart, sessionsJanMay2026EvolChart, sessionsQ3cChart, sessionsTotalEvolChart, sessionsAttendanceChart, sessionsDailyChart, sessionsTopGroupsChart, sinistroEventsEvolutionChart, sinistroValuesEvolutionChart, sinistroQuarterlyEvolutionChart, sinistroCohortEvolutionChart, qualityVolumeEvolutionChart, qualityDailyVolumeEvolutionChart, qualityEvolutionChart, qualityCriteriaEvolutionChart;
+let currentGroup = '', currentType = '', currentCompany = '';
+let currentGroups = [];
+let currentPartnerBrokerId = '';
+let currentCareBeneficiaryType = '';
+let partnerOptionsCache = [];
+let groupOptionsCache = { orgs: null, sessions: null, petitMds: null };
+let activeGroupSource = 'orgs';
+let selectedMonths = new Set();
+let selectedAppointmentTypeMonths = new Set();
+let appointmentTypesBaseMonths = [];
+let selectedSessionsDailyMonth = currentMonthValue();
+let selectedAppointmentsDailyMonth = currentMonthValue();
+let selectedSessionTypificationFinisher = '';
+let selectedTypification = null;
+let typificationGroupsRequestId = 0;
+let sessionsRequestId = 0;
+let sessionsEvolutionRequestId = 0;
+let sessionsJanMay2026EvolutionRequestId = 0;
+let sessionsQ3cRequestId = 0;
+let sinistroRequestId = 0;
+let sinistroValuesRequestId = 0;
+let sinistroQuarterlyRequestId = 0;
+let sinistroCohortRequestId = 0;
+let petitComiteRequestId = 0;
+let petitMdsInitialized = false;
+let petitRenderVariant = 'default';
+let selectedQualityCriteriaSort = 'worst';
+let selectedQualitySubcriteriaSort = 'worst';
+let selectedQualitySubcriteriaCriterion = '';
+let selectedQualityFactualCriterion = '';
+let selectedQualityFactualResolved = '';
+let selectedQualityVolumeEvolutionMode = 'both';
+let selectedQualityDailyMonth = currentMonthValue();
+let qualityDailyVolumeRequestId = 0;
+let selectedQualityCollaboratorSort = 'score';
+let selectedQualityCollaboratorSortDir = 'desc';
+let selectedQualityCollaboratorName = '';
+let selectedQualityOperationalCollaborators = new Set();
+let selectedQualityOperationalSetor = '';
+let selectedQualityOperationalStatus = '';
+let qualityData = null, selectedQualityKey = null;
+let pdfReadinessTimer = null;
+let isPdfGenerating = false;
+
+// --- Tabs ---
+// Delegacao no document evita perder a navegacao caso o Next reconcilie os
+// fragmentos durante a hidratacao e substitua algum elemento da barra.
+document.addEventListener('click', event => {
+  const tab = event.target.closest?.('.tab[data-tab]');
+  if (tab) activateTab(tab.dataset.tab);
+});
+
+function isMdsRestrictedTab(tabName) {
+  return ['petit-comite', 'coordenacao-cuidado', 'analise-sinistro', 'qualidade-operacional'].includes(tabName);
+}
+
+async function activateTab(tabName) {
+  if (document.body.dataset.dashboardMode === 'mds' && isMdsRestrictedTab(tabName)) {
+    tabName = 'petit-comite-mds';
+  }
+  const tab = document.querySelector(`.tab[data-tab="${tabName}"]`);
+  const content = document.getElementById('tab-' + tabName);
+  if (!tab || !content) return;
+  document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(x => x.classList.remove('active'));
+  tab.classList.add('active');
+  content.classList.add('active');
+  const activeTab = tabName;
+  document.body.dataset.activeTab = activeTab;
+  const hasPeriodo = isPeriodFilteredTab(activeTab);
+  document.getElementById('filter-periodo').style.display = hasPeriodo ? 'flex' : 'none';
+  updateFilterVisibility();
+  if (isPetitMdsTab(activeTab)) {
+    await ensurePetitMdsScope();
+  }
+  ensureGroupOptionsForActiveTab();
+  updateFilterInfo();
+  schedulePdfReadinessUpdate();
+  if (hasPeriodo) { buildPeriodoOptions(); loadPeriodFilteredTab(); }
+  document.dispatchEvent(new CustomEvent('sanus:tabchange', { detail: tabName }));
+}
+
+function isMdsRoute() {
+  const path = window.location.pathname.replace(/\/+$/, '').toLowerCase();
+  return path === '/mds' || new URLSearchParams(window.location.search).get('dashboard') === 'mds';
+}
+
+async function applyRouteMode(role = '') {
+  const isMdsMode = role === 'mds' || (!role && isMdsRoute());
+  if (isMdsMode) {
+    document.body.dataset.dashboardMode = 'mds';
+    await activateTab('petit-comite-mds');
+    return;
+  }
+  clearMdsPartnerScopeIfNeeded();
+  delete document.body.dataset.dashboardMode;
+  if (getActiveTab() === 'petit-comite-mds') {
+    await activateTab('demografica');
+  } else {
+    updateFilterVisibility();
+  }
+}
+
+function updateFilterVisibility() {
+  const groupGroup = document.getElementById('filter-group-group');
+  const typeGroup = document.getElementById('filter-type-group');
+  const companyGroup = document.getElementById('filter-company-group');
+  const partnerGroup = document.getElementById('filter-partner-group');
+  const qualityCollaboratorGroup = document.getElementById('filter-quality-operational-collaborator-group');
+  const qualitySetorGroup = document.getElementById('filter-quality-operational-setor-group');
+  const qualityStatusGroup = document.getElementById('filter-quality-operational-status-group');
+  const pdfControl = document.getElementById('pdf-ready-control');
+  const activeTab = getActiveTab();
+  const isSinistro = isSinistroTab(activeTab);
+  const isQualityOperational = activeTab === 'qualidade-operacional';
+  document.body.dataset.activeTab = activeTab;
+  if (activeTab === 'sessoes') {
+    currentCompany = '';
+    resetCompanySelect();
+  } else if (!isSinistro && !isQualityOperational && currentGroups.length) {
+    loadCompanyOptions();
+  }
+  if (groupGroup) groupGroup.style.display = (isSinistro || isQualityOperational) ? 'none' : 'flex';
+  if (typeGroup) typeGroup.style.display = (activeTab === 'sessoes' || activeTab === 'coordenacao-cuidado' || isPetitTab(activeTab) || activeTab.startsWith('qualidade') || isSinistro) ? 'none' : 'flex';
+  if (companyGroup) companyGroup.style.display = (activeTab === 'sessoes' || isSinistro || isQualityOperational) ? 'none' : 'flex';
+  if (partnerGroup) partnerGroup.style.display = (!isSinistro && isPartnerFilteredTab(activeTab)) ? 'flex' : 'none';
+  if (qualityCollaboratorGroup) qualityCollaboratorGroup.style.display = isQualityOperational ? 'flex' : 'none';
+  if (qualitySetorGroup) qualitySetorGroup.style.display = isQualityOperational ? 'flex' : 'none';
+  if (qualityStatusGroup) qualityStatusGroup.style.display = isQualityOperational ? 'flex' : 'none';
+  if (pdfControl) pdfControl.style.display = isPetitTab(activeTab) ? 'grid' : 'none';
+  if (!isSinistro && isPartnerFilteredTab(activeTab)) loadPartnerOptions();
+}
+
+// --- Filtros ---
+function syncCurrentGroup() {
+  currentGroup = currentGroups[0] || '';
+}
+
+function appendGroupParams(params) {
+  const groups = currentGroups.filter(Boolean);
+  if (groups.length > 1) params.set('group_names', JSON.stringify(groups));
+  else if (groups.length === 1) params.set('group_name', groups[0]);
+  if (isPartnerFilteredTab() && currentPartnerBrokerId) {
+    params.set('partner_broker_id', currentPartnerBrokerId);
+  }
+}
+
+function careBeneficiaryTypeLabel(value = currentCareBeneficiaryType) {
+  if (value === 'TITULAR') return 'Titular';
+  if (value === 'DEPENDENTE') return 'Dependente';
+  return 'Titular e dependente';
+}
+
+function careTypeBreakdownText(breakdown) {
+  if (!breakdown) return '';
+  const titulares = Number(breakdown.titulares) || 0;
+  const dependentes = Number(breakdown.dependentes) || 0;
+  const semCadastro = Number(breakdown.sem_cadastro) || 0;
+  const total = titulares + dependentes + semCadastro;
+  if (total <= 0) return '';
+  const titularPct = (titulares / total) * 100;
+  const dependentePct = (dependentes / total) * 100;
+  const parts = [
+    `Titulares: ${fmt(titulares)} (${fmtPct(titularPct)})`,
+    `Dependentes: ${fmt(dependentes)} (${fmtPct(dependentePct)})`,
+  ];
+  if (semCadastro > 0) {
+    const semPct = (semCadastro / total) * 100;
+    parts.push(`Sem cadastro: ${fmt(semCadastro)} (${fmtPct(semPct)})`);
+  }
+  return parts.join(' · ');
+}
+
+function careContextHtml(baseText, breakdown) {
+  const breakdownText = careTypeBreakdownText(breakdown);
+  const safeBase = escapeHtml(baseText || '');
+  if (!breakdownText) return safeBase;
+  return `${safeBase}<span class="care-context-breakdown">${escapeHtml(breakdownText)}</span>`;
+}
+
+function appendCareBeneficiaryTypeParam(params) {
+  if (currentCareBeneficiaryType) params.set('type', currentCareBeneficiaryType);
+}
+
+function syncCareBeneficiaryTypeControls() {
+  ['care-beneficiary-type-select-cc01', 'care-beneficiary-type-select-cc05'].forEach((id) => {
+    const select = document.getElementById(id);
+    if (select) select.value = currentCareBeneficiaryType;
+  });
+}
+
+function onCareBeneficiaryTypeChange(value) {
+  currentCareBeneficiaryType = value === 'TITULAR' || value === 'DEPENDENTE' ? value : '';
+  syncCareBeneficiaryTypeControls();
+  updateFilterInfo();
+  renderCareCoordination();
+}
+
+function isPartnerFilteredTab(tab = getActiveTab()) {
+  return tab === 'demografica' || tab === 'sessoes' || tab === 'coordenacao-cuidado' || isPetitTab(tab);
+}
+
+function isPetitTab(tab = getActiveTab()) {
+  return tab === 'petit-comite' || tab === 'petit-comite-mds';
+}
+
+function isPetitMdsTab(tab = getActiveTab()) {
+  return tab === 'petit-comite-mds';
+}
+
+function isSinistroTab(tab = getActiveTab()) {
+  return tab === 'analise-sinistro';
+}
+
+function selectedGroupsLabel() {
+  if (!currentGroups.length) return '(Todos os grupos)';
+  if (currentGroups.length === 1) return currentGroups[0];
+  return `${currentGroups[0]} +${currentGroups.length - 1}`;
+}
+
+function selectedGroupsText() {
+  if (!currentGroups.length) return '';
+  if (currentGroups.length === 1) return currentGroups[0];
+  return `${currentGroups.length} grupos selecionados`;
+}
+
+function selectedSessionScopeText() {
+  const parts = [];
+  if (currentGroups.length) parts.push(selectedGroupsText());
+  if (currentPartnerBrokerId) parts.push(`Parceiro: ${selectedPartnerLabel()}`);
+  return parts.join(' · ');
+}
+
+function updateGroupSelectLabel() {
+  const label = document.getElementById('group-select-label');
+  if (label) {
+    label.textContent = selectedGroupsLabel();
+    label.title = currentGroups.join(' · ');
+  }
+}
+
+function toggleGroupDropdown() {
+  const wrap = document.getElementById('group-select');
+  if (!wrap) return;
+  wrap.classList.toggle('open');
+  if (wrap.classList.contains('open')) {
+    const search = document.getElementById('group-select-search');
+    if (search) setTimeout(() => search.focus(), 0);
+  }
+}
+
+function closeGroupDropdown() {
+  const wrap = document.getElementById('group-select');
+  if (wrap) wrap.classList.remove('open');
+}
+
+function clearGroupSelection() {
+  currentGroups = [];
+  onGroupSelectionChange();
+  renderGroupOptions();
+}
+
+function selectAllGroupSelection() {
+  const options = groupOptionsCache[activeGroupSource] || [];
+  currentGroups = [...new Set(options.map((g) => String(g.economic_group || '').trim()).filter(Boolean))];
+  onGroupSelectionChange();
+  renderGroupOptions();
+}
+
+function onGroupCheckboxChange(value, checked) {
+  if (checked) {
+    if (!currentGroups.includes(value)) currentGroups.push(value);
+  } else {
+    currentGroups = currentGroups.filter((group) => group !== value);
+  }
+  onGroupSelectionChange();
+}
+
+function onGroupSelectionChange() {
+  syncCurrentGroup();
+  const activeTab = getActiveTab();
+  // Ao trocar grupo, limpa empresa e recarrega lista
+  currentCompany = '';
+  if (activeTab === 'sessoes') resetCompanySelect();
+  else loadCompanyOptions();
+  updateGroupSelectLabel();
+  updateFilterInfo();
+  if (activeTab === 'sessoes') {
+    loadSessions();
+    return;
+  }
+  loadAll(false);
+  if (isPeriodFilteredTab()) loadPeriodFilteredTab();
+}
+
+document.addEventListener('click', (event) => {
+  const wrap = document.getElementById('group-select');
+  if (wrap && !wrap.contains(event.target)) closeGroupDropdown();
+  const qualityWrap = document.getElementById('quality-operational-collaborator-select');
+  if (qualityWrap && !qualityWrap.contains(event.target)) closeQualityOperationalCollaboratorDropdown();
+});
+
+document.getElementById('company-select').addEventListener('change', e => {
+  currentCompany = e.target.value;
+  updateFilterInfo();
+  loadAll(false);
+  if (isPeriodFilteredTab()) loadPeriodFilteredTab();
+});
+
+document.getElementById('type-select').addEventListener('change', e => {
+  currentType = e.target.value; updateFilterInfo(); loadAll(false);
+  if (isPeriodFilteredTab()) loadPeriodFilteredTab();
+});
+
+document.getElementById('partner-select').addEventListener('change', async e => {
+  currentPartnerBrokerId = e.target.value;
+  currentCompany = '';
+  updateFilterInfo();
+  const activeTab = getActiveTab();
+  if (isPetitMdsTab(activeTab)) {
+    await ensurePetitMdsScope();
+  } else if (activeTab !== 'sessoes') {
+    loadCompanyOptions();
+  }
+  if (activeTab === 'sessoes') {
+    loadSessions();
+    return;
+  }
+  if (activeTab === 'demografica') {
+    loadAll(false);
+    return;
+  }
+  if (activeTab === 'coordenacao-cuidado') {
+    renderCareCoordination();
+    return;
+  }
+  if (activeTab === 'petit-comite') {
+    renderPetitComite();
+    schedulePdfReadinessUpdate();
+  } else if (activeTab === 'petit-comite-mds') {
+    renderPetitComiteMds();
+    schedulePdfReadinessUpdate();
+  }
+});
+
+// Carrega empresas do grupo selecionado para o dropdown de empresa
+function resetCompanySelect() {
+  const sel = document.getElementById('company-select');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">(Selecione um grupo primeiro)</option>';
+  sel.disabled = true;
+}
+
+async function loadCompanyOptions() {
+  const sel = document.getElementById('company-select');
+  if (!sel) return;
+  // Estado de carregamento
+  sel.innerHTML = '<option value="">⏳ Carregando empresas...</option>';
+  sel.disabled = true;
+
+  const p = new URLSearchParams();
+  appendGroupParams(p);
+  const d = await safeGet('/api/companies?' + p.toString());
+
+  if (d && !d.error && Array.isArray(d.companies) && d.companies.length > 0) {
+    const ordered = [...d.companies].sort((a,b) =>
+      a.empresa.localeCompare(b.empresa, 'pt-BR', {sensitivity:'base'})
+    );
+    sel.innerHTML = '<option value="">(Todas as empresas)</option>' +
+      ordered.map(c => `<option value="${escapeAttr(c.empresa)}">${escapeHtml(c.empresa)} (${fmt(c.total)})</option>`).join('');
+    sel.disabled = false;
+  } else {
+    sel.innerHTML = '<option value="">(Nenhuma empresa encontrada)</option>';
+    sel.disabled = true;
+  }
+}
+
+function selectedPartnerLabel() {
+  if (!currentPartnerBrokerId) return '';
+  const partner = partnerOptionsCache.find((item) => String(item.broker_id) === String(currentPartnerBrokerId));
+  return partner ? partner.broker_name : currentPartnerBrokerId;
+}
+
+function isMdsPartner(partner) {
+  const text = `${partner?.broker_name || ''} ${partner?.broker_name_secondary || ''}`
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+  return /(^|[^a-z0-9])mds([^a-z0-9]|$)/.test(text);
+}
+
+function getMdsPartnerOption() {
+  return partnerOptionsCache.find(isMdsPartner) || null;
+}
+
+function clearMdsPartnerScopeIfNeeded() {
+  const wasMdsMode = document.body.dataset.dashboardMode === 'mds' || getActiveTab() === 'petit-comite-mds';
+  const selectedPartner = partnerOptionsCache.find((item) => String(item.broker_id) === String(currentPartnerBrokerId));
+  const selectedIsMds = selectedPartner ? isMdsPartner(selectedPartner) : false;
+  if (!wasMdsMode && !selectedIsMds) return;
+  currentPartnerBrokerId = '';
+  currentCompany = '';
+  const partnerSelect = document.getElementById('partner-select');
+  if (partnerSelect) partnerSelect.value = '';
+  if (partnerOptionsCache.length) renderPartnerOptions();
+}
+
+function renderPartnerOptions() {
+  const sel = document.getElementById('partner-select');
+  if (!sel) return;
+  const current = currentPartnerBrokerId;
+  const scopedOptions = isPetitMdsTab() ? partnerOptionsCache.filter(isMdsPartner) : partnerOptionsCache;
+  const options = [...scopedOptions].sort((a, b) =>
+    String(a.broker_name || '').localeCompare(String(b.broker_name || ''), 'pt-BR', { sensitivity: 'base' })
+  );
+  if (isPetitMdsTab() && !options.length) {
+    sel.innerHTML = '<option value="">(Parceiro MDS não encontrado)</option>';
+    sel.disabled = true;
+    return;
+  }
+  const allOption = isPetitMdsTab() ? '' : '<option value="">(Todos os parceiros)</option>';
+  sel.innerHTML = allOption + options.map((partner) => {
+    const id = String(partner.broker_id || '');
+    const name = partner.broker_name || 'Sem nome';
+    const secondary = partner.broker_name_secondary ? ` · ${partner.broker_name_secondary}` : '';
+    const inactive = partner.broker_active === false ? ' · inativo' : '';
+    const total = Number(partner.total_orgs) || 0;
+    const selected = id === current ? ' selected' : '';
+    return `<option value="${escapeAttr(id)}"${selected}>${escapeHtml(name)}${escapeHtml(secondary)} (${fmt(total)})${escapeHtml(inactive)}</option>`;
+  }).join('');
+  sel.disabled = false;
+}
+
+async function loadPartnerOptions() {
+  const sel = document.getElementById('partner-select');
+  if (!sel) return;
+  if (partnerOptionsCache.length) {
+    renderPartnerOptions();
+    return;
+  }
+  sel.innerHTML = '<option value="">⏳ Carregando parceiros...</option>';
+  sel.disabled = true;
+  const data = await safeGet('/api/data?scope=partners');
+  if (data && !data.error && Array.isArray(data.partners)) {
+    partnerOptionsCache = data.partners;
+    renderPartnerOptions();
+  } else {
+    sel.innerHTML = '<option value="">(Erro ao carregar parceiros)</option>';
+    sel.disabled = true;
+  }
+}
+
+async function ensurePetitMdsScope() {
+  if (!isPetitMdsTab()) return false;
+  await loadPartnerOptions();
+  const mdsPartner = getMdsPartnerOption();
+  if (!mdsPartner) {
+    renderPartnerOptions();
+    groupOptionsCache.petitMds = [];
+    applyGroupOptions(groupOptionsCache.petitMds, 'petitMds');
+    resetCompanySelect();
+    return false;
+  }
+  const nextPartnerId = String(mdsPartner.broker_id || '');
+  const changed = currentPartnerBrokerId !== nextPartnerId;
+  currentPartnerBrokerId = nextPartnerId;
+  renderPartnerOptions();
+  await loadPetitMdsGroupOptions();
+  await loadCompanyOptions();
+  updateFilterInfo();
+  return changed;
+}
+
+function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function escapeAttr(s){return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');}
+
+function updateFilterInfo() {
+  const parts = [];
+  const activeTab = getActiveTab();
+  if (activeTab === 'qualidade-operacional') {
+    const periodFilter = document.getElementById('filter-periodo');
+    const periodLabel = periodFilter && periodFilter.style.display !== 'none'
+      ? document.getElementById('periodo-label')?.textContent?.trim()
+      : '';
+    if (periodLabel) parts.push(periodLabel);
+    if (selectedQualityOperationalCollaborators.size) parts.push(`${selectedQualityOperationalCollaborators.size} colaborador(es)`);
+    if (selectedQualityOperationalSetor) parts.push(`Setor: ${selectedQualityOperationalSetor}`);
+    if (selectedQualityOperationalStatus) parts.push(`Status: ${selectedQualityOperationalStatus}`);
+    document.getElementById('filter-info').textContent = parts.length ? `Filtrando: ${parts.join(' · ')}` : '';
+    return;
+  }
+  if (isSinistroTab(activeTab)) {
+    const periodLabel = document.getElementById('periodo-label')?.textContent?.trim() || '(Todos os meses)';
+    document.getElementById('filter-info').textContent = `Filtrando: ${periodLabel}`;
+    renderAnaliseSinistro();
+    return;
+  }
+  if (currentGroups.length === 1) parts.push(currentGroups[0]);
+  else if (currentGroups.length > 1) parts.push(`${currentGroups.length} grupos econômicos`);
+  if (isPartnerFilteredTab(activeTab) && currentPartnerBrokerId) parts.push(`Parceiro: ${selectedPartnerLabel()}`);
+  if (currentCompany && activeTab !== 'sessoes') parts.push(currentCompany);
+  if (activeTab === 'coordenacao-cuidado' && currentCareBeneficiaryType) parts.push(`Vínculo: ${careBeneficiaryTypeLabel()}`);
+  if (currentType && activeTab !== 'sessoes' && activeTab !== 'coordenacao-cuidado' && !isPetitTab(activeTab) && !activeTab.startsWith('qualidade')) parts.push(currentType === 'TITULAR' ? 'Titular' : 'Dependente');
+  document.getElementById('filter-info').textContent = parts.length ? `Filtrando: ${parts.join(' · ')}` : '';
+}
+
+async function clearFilters() {
+  const activeTab = getActiveTab();
+  currentGroup = ''; currentGroups = []; currentType = ''; currentCompany = '';
+  currentPartnerBrokerId = '';
+  currentCareBeneficiaryType = '';
+  selectedSessionTypificationFinisher = '';
+  selectedQualityOperationalCollaborators = new Set();
+  selectedQualityOperationalSetor = '';
+  selectedQualityOperationalStatus = '';
+  updateQualityOperationalCollaboratorLabel();
+  updateGroupSelectLabel();
+  renderGroupOptions();
+  const partnerSelect = document.getElementById('partner-select');
+  if (partnerSelect) partnerSelect.value = '';
+  document.getElementById('type-select').value  = '';
+  syncCareBeneficiaryTypeControls();
+  const typificationFinisherSelect = document.getElementById('session-typification-finisher-select');
+  if (typificationFinisherSelect) typificationFinisherSelect.value = '';
+  document.getElementById('company-select').innerHTML = '<option value="">(Selecione um grupo primeiro)</option>';
+  document.getElementById('company-select').disabled = true;
+  document.getElementById('filter-info').textContent = '';
+  clearPeriodo(false);
+  if (isPetitMdsTab(activeTab)) {
+    await ensurePetitMdsScope();
+  } else if (activeTab !== 'sessoes' && !isSinistroTab(activeTab) && activeTab !== 'qualidade-operacional') {
+    loadCompanyOptions();
+  }
+  if (activeTab === 'sessoes') {
+    loadSessions();
+    return;
+  }
+  loadAll(false);
+  if (isPeriodFilteredTab()) loadPeriodFilteredTab();
+}
+
+function buildQS() {
+  if (isSinistroTab() || getActiveTab() === 'qualidade-operacional') return '';
+  const p = new URLSearchParams();
+  appendGroupParams(p);
+  const activeTab = getActiveTab();
+  if (currentCompany && activeTab !== 'sessoes') p.set('company', currentCompany);
+  if (currentType && activeTab !== 'sessoes' && activeTab !== 'coordenacao-cuidado' && !isPetitTab(activeTab) && !activeTab.startsWith('qualidade')) p.set('type', currentType);
+  const s = p.toString();
+  return s ? '?' + s : '';
+}
+
+function setStatus(type, msg) {
+  const el = document.getElementById('status');
+  el.className = 'status ' + type;
+  el.textContent = msg;
+  schedulePdfReadinessUpdate();
+}
+
+function getActiveTab() {
+  return document.querySelector('.tab.active')?.dataset.tab || 'demografica';
+}
+
+function getActiveTabLabel() {
+  return document.querySelector('.tab.active')?.textContent?.trim() || 'Dashboard';
+}
+
+function getAuthToken() {
+  return hasAuthenticatedSession ? 'cookie-session' : '';
+}
+
+function setAuthError(message) {
+  const error = document.getElementById('auth-error');
+  if (!error) return;
+  error.textContent = message || '';
+  error.style.display = message ? 'block' : 'none';
+}
+
+function showAuthScreen(message = '') {
+  const overlay = document.getElementById('auth-overlay');
+  if (overlay) overlay.style.display = 'grid';
+  document.body.classList.add('auth-locked');
+  setAuthError(message);
+  setTimeout(() => document.getElementById('auth-user')?.focus(), 0);
+}
+
+function hideAuthScreen() {
+  const overlay = document.getElementById('auth-overlay');
+  if (overlay) overlay.style.display = 'none';
+  document.body.classList.remove('auth-locked');
+  setAuthError('');
+}
+
+function authFetch(url, options = {}) {
+  return fetch(url, { ...options, credentials: 'same-origin' });
+}
+
+function handleAuthFailure(message = 'Usuário ou senha inválidos.') {
+  hasAuthenticatedSession = false;
+  delete document.body.dataset.dashboardMode;
+  showAuthScreen(message);
+}
+
+async function submitAuth(event) {
+  event.preventDefault();
+  const user = document.getElementById('auth-user')?.value?.trim() || '';
+  const password = document.getElementById('auth-password')?.value || '';
+  const submit = document.querySelector('.auth-submit');
+  if (!user || !password) {
+    setAuthError('Informe usuário e senha.');
+    return;
+  }
+  if (submit) {
+    submit.disabled = true;
+    submit.textContent = 'Validando...';
+  }
+  setAuthError('');
+  try {
+    const response = await fetch('/api/auth/login', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user, password }),
+    });
+    let body = null;
+    try { body = await response.json(); } catch(_) {}
+    if (!response.ok || !body?.ok) {
+      hasAuthenticatedSession = false;
+      delete document.body.dataset.dashboardMode;
+      showAuthScreen(body?.error || 'Usuário ou senha inválidos.');
+      return;
+    }
+    hasAuthenticatedSession = true;
+    if (body?.role === 'mds' && !isMdsRoute()) {
+      window.location.href = '/mds';
+      return;
+    }
+    await applyRouteMode(body?.role || '');
+    hideAuthScreen();
+    reload();
+  } catch (error) {
+    hasAuthenticatedSession = false;
+    delete document.body.dataset.dashboardMode;
+    showAuthScreen(error?.message || 'Não foi possível validar o acesso.');
+  } finally {
+    if (submit) {
+      submit.disabled = false;
+      submit.textContent = 'Entrar';
+    }
+  }
+}
+
+async function logoutDashboard() {
+  await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' }).catch(() => null);
+  hasAuthenticatedSession = false;
+  delete document.body.dataset.dashboardMode;
+  showAuthScreen('Sessão encerrada.');
+}
+
+function getSelectedOptionLabel(id, fallback) {
+  const el = document.getElementById(id);
+  if (!el || el.selectedIndex < 0) return fallback;
+  return el.options[el.selectedIndex]?.textContent?.trim() || fallback;
+}
+
+function collectPdfFilters() {
+  const activeTab = getActiveTab();
+  const filters = [
+    { label: 'Aba', value: getActiveTabLabel() },
+    { label: 'Grupo econômico', value: currentGroups.length ? currentGroups.join(' · ') : 'Todos os grupos' },
+    { label: 'Parceiro', value: currentPartnerBrokerId ? selectedPartnerLabel() : 'Todos os parceiros' },
+  ];
+  if (activeTab !== 'sessoes') {
+    filters.push({ label: 'Empresa', value: currentCompany || 'Todas as empresas' });
+  }
+  if (activeTab !== 'sessoes' && activeTab !== 'coordenacao-cuidado' && !isPetitTab(activeTab) && !activeTab.startsWith('qualidade')) {
+    filters.push({ label: 'Tipo beneficiário', value: currentType ? getSelectedOptionLabel('type-select', currentType) : 'Todos' });
+  }
+  const periodFilter = document.getElementById('filter-periodo');
+  if (periodFilter && periodFilter.style.display !== 'none') {
+    filters.push({ label: 'Período', value: document.getElementById('periodo-label')?.textContent?.trim() || 'Todos os meses' });
+  }
+  if (activeTab === 'sessoes') {
+    filters.push({ label: 'Q11 Humano/IA', value: getSelectedOptionLabel('session-typification-finisher-select', 'Humano + IA') });
+  }
+  return filters;
+}
+
+function loadScriptOnce(id, src, errorMessage) {
+  return new Promise((resolve, reject) => {
+    const existing = document.getElementById(id);
+    if (existing) {
+      if (existing.dataset.loaded === '1') resolve();
+      else {
+        existing.addEventListener('load', resolve, { once: true });
+        existing.addEventListener('error', reject, { once: true });
+      }
+      return;
+    }
+    const script = document.createElement('script');
+    script.id = id;
+    script.src = src;
+    script.onload = () => {
+      script.dataset.loaded = '1';
+      resolve();
+    };
+    script.onerror = () => reject(new Error(errorMessage));
+    document.head.appendChild(script);
+  });
+}
+
+async function ensurePdfLibraries() {
+  if (!window.html2canvas) {
+    await loadScriptOnce(
+      'html2canvas-script',
+      'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js',
+      'Não foi possível carregar a biblioteca de captura (html2canvas).'
+    );
+  }
+  if (!(window.jspdf?.jsPDF || window.jsPDF)) {
+    await loadScriptOnce(
+      'jspdf-script',
+      'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
+      'Não foi possível carregar a biblioteca de PDF (jsPDF).'
+    );
+  }
+  if (!window.html2canvas || !(window.jspdf?.jsPDF || window.jsPDF)) {
+    throw new Error('Bibliotecas de captura/PDF não disponíveis após carregamento.');
+  }
+}
+
+function copyCanvasAsImages(sourceRoot, cloneRoot) {
+  const sourceCanvases = sourceRoot.querySelectorAll('canvas');
+  const clonedCanvases = cloneRoot.querySelectorAll('canvas');
+  sourceCanvases.forEach((canvas, index) => {
+    const cloneCanvas = clonedCanvases[index];
+    if (!cloneCanvas) return;
+    const width = canvas.clientWidth || canvas.width || cloneCanvas.clientWidth || cloneCanvas.width;
+    const height = canvas.clientHeight || canvas.height || cloneCanvas.clientHeight || cloneCanvas.height;
+    if (!canvas.width || !canvas.height || !width || !height) {
+      cloneCanvas.replaceWith(createPdfChartPlaceholder('Gráfico indisponível para exportação.'));
+      return;
+    }
+    try {
+      const img = document.createElement('img');
+      img.src = canvas.toDataURL('image/png');
+      img.alt = cloneCanvas.getAttribute('aria-label') || 'Gráfico do dashboard';
+      img.style.width = `${width}px`;
+      img.style.height = `${height}px`;
+      img.style.maxWidth = '100%';
+      img.style.display = 'block';
+      cloneCanvas.replaceWith(img);
+    } catch (error) {
+      console.warn('[pdf] Não foi possível copiar canvas', error);
+      cloneCanvas.replaceWith(createPdfChartPlaceholder('Não foi possível copiar este gráfico.'));
+    }
+  });
+  sanitizePdfCanvases(cloneRoot);
+}
+
+function replacePdfRemoteAssets(root) {
+  root.querySelectorAll('.petit-hero-logo').forEach((logo) => {
+    logo.setAttribute('src', '/assets/logo_sanus.svg');
+  });
+}
+
+function normalizePdfExportStyles(root) {
+  root.querySelectorAll('.sessions-utilization-card').forEach((card) => {
+    card.style.borderColor = '#dbeafe';
+    card.style.background = '#ffffff';
+  });
+  root.querySelectorAll('.sessions-utilization-pct').forEach((pill) => {
+    pill.style.borderColor = '#dbeafe';
+    pill.style.background = '#ffffff';
+  });
+  root.querySelectorAll('.sessions-utilization-fill,.sessions-utilization-compare-fill').forEach((fill) => {
+    fill.style.background = '#3f55e3';
+  });
+  root.querySelectorAll('.sessions-utilization-compare-row.global .sessions-utilization-compare-fill').forEach((fill) => {
+    fill.style.background = '#94a3b8';
+  });
+}
+
+function mapPetitMdsId(id) {
+  const chartIds = {
+    petitCareLinesChart: 'petitMdsCareLinesChart',
+    petitSessionsEvolChart: 'petitMdsSessionsEvolChart',
+    petitSessionsTotalEvolChart: 'petitMdsSessionsTotalEvolChart',
+  };
+  if (chartIds[id]) return chartIds[id];
+  if (id.startsWith('skel-petit-')) return id.replace('skel-petit-', 'skel-petit-mds-');
+  if (id.startsWith('petit-')) return id.replace('petit-', 'petit-mds-');
+  return id;
+}
+
+function activePetitDomId(id) {
+  return getActiveTab() === 'petit-comite-mds' ? mapPetitMdsId(id) : id;
+}
+
+function petitElementById(id) {
+  return document.getElementById(petitRenderVariant === 'mds' ? mapPetitMdsId(id) : id);
+}
+
+function petitAppointmentTypesPrefix() {
+  return petitRenderVariant === 'mds' ? 'petit-mds-appointment-types' : 'petit-appointment-types';
+}
+
+function prefixPetitMdsIds(root) {
+  root.querySelectorAll('[id]').forEach((el) => {
+    el.id = mapPetitMdsId(el.id);
+  });
+  root.querySelectorAll('[for]').forEach((el) => {
+    el.setAttribute('for', mapPetitMdsId(el.getAttribute('for')));
+  });
+}
+
+function ensurePetitMdsContent() {
+  const target = document.getElementById('tab-petit-comite-mds');
+  const source = document.getElementById('tab-petit-comite');
+  if (!target || !source || petitMdsInitialized) return;
+  const clone = source.cloneNode(true);
+  clone.removeAttribute('id');
+  clone.classList.remove('active');
+  prefixPetitMdsIds(clone);
+  const eyebrow = clone.querySelector('.petit-eyebrow');
+  if (eyebrow) eyebrow.textContent = 'Resumo executivo · MDS';
+  clone.querySelector('.petit-hero-logo')?.remove();
+  const grids = clone.querySelectorAll('.petit-grid-2');
+  const utilizationGrid = grids[1];
+  if (utilizationGrid) {
+    utilizationGrid.innerHTML = `<div class="card-box" style="grid-column:1 / -1">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap">
+        <div>
+          <div class="section-title" style="margin-bottom:4px"><i class="fa-solid fa-users-viewfinder" style="margin-right:6px"></i>Utilização da base de beneficiários</div>
+          <div style="font-size:11px;color:#94a3b8">Mesma regra do Q16 da aba Sessões</div>
+        </div>
+        <div style="font-size:11px;color:#64748b;font-weight:700" id="petit-mds-base-utilization-context">Parceiro: MDS</div>
+      </div>
+      <div class="loading-box" id="petit-mds-base-utilization-loading"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando utilização...</div>
+      <div class="sessions-utilization-grid" id="petit-mds-base-utilization-content" style="display:none"></div>
+      <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="petit-mds-base-utilization-error"></div>
+    </div>`;
+  }
+  target.innerHTML = clone.innerHTML;
+  petitMdsInitialized = true;
+}
+
+function createPdfChartPlaceholder(message) {
+  const placeholder = document.createElement('div');
+  placeholder.className = 'pdf-chart-placeholder';
+  placeholder.textContent = message;
+  return placeholder;
+}
+
+function sanitizePdfCanvases(root) {
+  root.querySelectorAll('canvas').forEach((canvas) => {
+    canvas.replaceWith(createPdfChartPlaceholder('Gráfico omitido por segurança na exportação.'));
+  });
+}
+
+function isElementVisible(el) {
+  if (!el) return false;
+  const style = window.getComputedStyle(el);
+  return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
+}
+
+function isLoadingElementPending(el) {
+  if (!isElementVisible(el)) return false;
+  const text = (el.textContent || '').trim().toLowerCase();
+  if (!text) return true;
+  if (text.includes('carregando') || text.includes('aguarde')) return true;
+  if (el.querySelector('.fa-spin')) return true;
+  return false;
+}
+
+function isCanvasReady(canvas) {
+  if (!isElementVisible(canvas)) return false;
+  if (!canvas.width || !canvas.height) return false;
+  const chart = window.Chart && Chart.getChart ? Chart.getChart(canvas) : null;
+  if (chart) return Boolean(chart.ctx && chart.chartArea && chart.width > 0 && chart.height > 0);
+  const ctx = canvas.getContext && canvas.getContext('2d');
+  if (!ctx) return false;
+  try {
+    const sample = ctx.getImageData(0, 0, Math.min(canvas.width, 8), Math.min(canvas.height, 8)).data;
+    return sample.some((value) => value !== 0);
+  } catch {
+    return true;
+  }
+}
+
+function getPdfReadiness() {
+  if (!isPetitTab()) return { total: 1, ready: 0, percent: 0, pending: ['Abra uma aba Petit Comitê'] };
+  if (getActiveTab() === 'petit-comite-mds') ensurePetitMdsContent();
+  const petitTab = document.getElementById('tab-' + getActiveTab());
+  if (!petitTab) return { total: 1, ready: 0, percent: 0, pending: ['Petit Comitê'] };
+  const cards = Array.from(petitTab.querySelectorAll('.metric-card,.card-box,.chart-card,.quality-card,.quality-strategy-card'))
+    .filter((card, index, arr) => isElementVisible(card) && !arr.some((other, otherIndex) => otherIndex !== index && other.contains(card)));
+  const targets = cards.length ? cards : [petitTab];
+  let ready = 0;
+  const pending = [];
+  targets.forEach((target, index) => {
+    const label = target.dataset?.qtag || target.querySelector('.section-title,h2')?.textContent?.trim() || `Quadro ${index + 1}`;
+    const hasPendingLoading = Array.from(target.querySelectorAll('.loading-box,.skeleton')).some(isLoadingElementPending);
+    const canvases = Array.from(target.querySelectorAll('canvas')).filter((canvas) => isElementVisible(canvas));
+    const canvasesReady = canvases.every(isCanvasReady);
+    const isReady = !hasPendingLoading && canvasesReady;
+    if (isReady) ready += 1;
+    else pending.push(label);
+  });
+  const beneficiariesKpi = document.getElementById(activePetitDomId('petit-kpi-beneficiaries'));
+  const beneficiariesKpiPending = beneficiariesKpi && beneficiariesKpi.textContent?.trim() === '…';
+  const sessionsKpi = document.getElementById(activePetitDomId('petit-kpi-sessions'));
+  const sessionsKpiPending = sessionsKpi && sessionsKpi.textContent?.trim() === '…';
+  const humanInteractionKpi = document.getElementById(activePetitDomId('petit-kpi-human-sessions'));
+  const humanInteractionKpiPending = humanInteractionKpi && humanInteractionKpi.textContent?.trim() === '…';
+  const usersKpi = document.getElementById(activePetitDomId('petit-kpi-users'));
+  const usersKpiPending = usersKpi && usersKpi.textContent?.trim() === '…';
+  const appointmentsKpi = document.getElementById(activePetitDomId('petit-kpi-appointments'));
+  const appointmentsKpiPending = appointmentsKpi && appointmentsKpi.textContent?.trim() === '…';
+  if (beneficiariesKpiPending) pending.push('Beneficiários');
+  else ready += 1;
+  if (sessionsKpiPending) pending.push('Atendimentos');
+  else ready += 1;
+  if (humanInteractionKpiPending) pending.push('Interação humana');
+  else ready += 1;
+  if (usersKpiPending) pending.push('Usuários');
+  else ready += 1;
+  if (appointmentsKpiPending) pending.push('Agendamentos');
+  else ready += 1;
+  const total = Math.max(targets.length + 5, 1);
+  return { total, ready, percent: Math.round((ready / total) * 100), pending };
+}
+
+function updatePdfReadiness() {
+  if (isPdfGenerating) return;
+  const state = getPdfReadiness();
+  const isReady = state.ready >= state.total;
+  const btn = document.getElementById('pdf-download-btn');
+  const fill = document.getElementById('pdf-ready-fill');
+  const label = document.getElementById('pdf-ready-label');
+  const control = document.getElementById('pdf-ready-control');
+  if (fill) fill.style.width = `${state.percent}%`;
+  if (label) label.textContent = isReady ? '100% pronto' : `${state.percent}% pronto`;
+  if (btn) {
+    btn.disabled = !isReady;
+    btn.title = isReady ? 'Baixar PDF do Petit Comitê' : `Aguardando ${state.total - state.ready} de ${state.total} quadros`;
+  }
+  if (control) {
+    control.classList.toggle('is-ready', isReady);
+    control.classList.toggle('is-busy', !isReady);
+    control.title = isReady
+      ? 'Todos os quadros do Petit Comitê estão prontos para exportação.'
+      : `Pendentes: ${state.pending.slice(0, 4).join(' · ')}${state.pending.length > 4 ? '...' : ''}`;
+  }
+}
+
+function schedulePdfReadinessUpdate() {
+  clearTimeout(pdfReadinessTimer);
+  pdfReadinessTimer = setTimeout(updatePdfReadiness, 120);
+}
+
+function waitForPdfReadiness(timeoutMs = 1000) {
+  const started = Date.now();
+  return new Promise((resolve, reject) => {
+    const check = () => {
+      const state = getPdfReadiness();
+      if (state.ready >= state.total) return resolve(state);
+      if (Date.now() - started > timeoutMs) {
+        return reject(new Error(`Ainda há ${state.total - state.ready} quadro(s) pendente(s).`));
+      }
+      setTimeout(check, 120);
+    };
+    check();
+  });
+}
+
+function withTimeout(promise, timeoutMs, label) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} excedeu ${Math.round(timeoutMs / 1000)}s.`)), timeoutMs);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+function getPdfProtectedRanges(report, canvas, maxSliceHeight) {
+  const reportRect = report.getBoundingClientRect();
+  const scaleY = canvas.height / Math.max(report.scrollHeight, reportRect.height, 1);
+  return Array.from(report.querySelectorAll('.pdf-export-header,.pdf-filter-grid,.petit-kpi-grid,.card-box,.chart-card'))
+    .map((el) => {
+      const rect = el.getBoundingClientRect();
+      const top = Math.max(0, Math.floor((rect.top - reportRect.top - 10) * scaleY));
+      const bottom = Math.min(canvas.height, Math.ceil((rect.bottom - reportRect.top + 14) * scaleY));
+      return { top, bottom, height: bottom - top };
+    })
+    .filter((range) => range.height > 80 && range.height < maxSliceHeight * 0.96)
+    .sort((a, b) => a.top - b.top);
+}
+
+function choosePdfSliceHeight(currentY, maxSliceHeight, canvasHeight, protectedRanges) {
+  const desiredEnd = Math.min(currentY + maxSliceHeight, canvasHeight);
+  if (desiredEnd >= canvasHeight) return canvasHeight - currentY;
+
+  const crossing = protectedRanges.find((range) =>
+    range.top > currentY + 16 &&
+    range.top < desiredEnd &&
+    range.bottom > desiredEnd
+  );
+
+  if (crossing) {
+    const candidate = crossing.top - currentY;
+    const minUsefulSlice = Math.min(maxSliceHeight * 0.35, 520);
+    if (candidate >= minUsefulSlice) return candidate;
+  }
+
+  return desiredEnd - currentY;
+}
+
+async function exportRenderedReportAsPdf(report) {
+  const JsPdfCtor = window.jspdf?.jsPDF || window.jsPDF;
+  if (!window.html2canvas || !JsPdfCtor) {
+    throw new Error('Bibliotecas de captura/PDF não disponíveis.');
+  }
+  const captureOptions = {
+    scale: 2,
+    useCORS: true,
+    allowTaint: true,
+    backgroundColor: '#f7f8fa',
+    logging: false,
+    width: report.scrollWidth,
+    height: report.scrollHeight,
+    windowWidth: report.scrollWidth,
+    scrollX: 0,
+    scrollY: 0,
+  };
+  const canvas = await window.html2canvas(report, captureOptions);
+  const pdf = new JsPdfCtor({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+  const pageWidth = pdf.internal.pageSize.getWidth();
+  const pageHeight = pdf.internal.pageSize.getHeight();
+  const margin = 6;
+  const contentWidth = pageWidth - margin * 2;
+  const contentHeight = pageHeight - margin * 2;
+  const pageCanvasHeight = Math.floor((contentHeight * canvas.width) / contentWidth);
+  const pageCanvas = document.createElement('canvas');
+  const pageCtx = pageCanvas.getContext('2d');
+  pageCanvas.width = canvas.width;
+  const protectedRanges = getPdfProtectedRanges(report, canvas, pageCanvasHeight);
+
+  for (let y = 0, page = 0; y < canvas.height; page += 1) {
+    const sliceHeight = choosePdfSliceHeight(y, pageCanvasHeight, canvas.height, protectedRanges);
+    pageCanvas.height = sliceHeight;
+    pageCtx.clearRect(0, 0, pageCanvas.width, pageCanvas.height);
+    pageCtx.drawImage(canvas, 0, y, canvas.width, sliceHeight, 0, 0, canvas.width, sliceHeight);
+    const imgData = pageCanvas.toDataURL('image/jpeg', 0.96);
+    const imgHeight = (sliceHeight * contentWidth) / canvas.width;
+    if (page > 0) pdf.addPage();
+    pdf.addImage(imgData, 'JPEG', margin, margin, contentWidth, imgHeight, undefined, 'FAST');
+    y += sliceHeight;
+  }
+  pdf.save(pdfFileName());
+}
+
+function buildPdfReport() {
+  if (getActiveTab() === 'petit-comite-mds') ensurePetitMdsContent();
+  const activeTab = document.getElementById('tab-' + getActiveTab());
+  if (!activeTab || !isPetitTab()) throw new Error('Aba Petit Comitê não encontrada.');
+
+  const overlay = document.createElement('div');
+  overlay.className = 'pdf-export-overlay';
+  const report = document.createElement('div');
+  report.className = 'pdf-export-root';
+
+  const content = document.createElement('div');
+  content.className = 'pdf-export-content';
+  const activeClone = activeTab.cloneNode(true);
+  activeClone.classList.add('active');
+  replacePdfRemoteAssets(activeClone);
+  activeClone.querySelector('.petit-hero-logo')?.remove();
+  normalizePdfExportStyles(activeClone);
+  copyCanvasAsImages(activeTab, activeClone);
+  content.appendChild(activeClone);
+
+  report.appendChild(content);
+  sanitizePdfCanvases(report);
+  overlay.appendChild(report);
+  document.body.appendChild(overlay);
+  return { overlay, report };
+}
+
+function fileNameSlug(value, fallback='') {
+  return String(value || fallback)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '');
+}
+
+function pdfFileName() {
+  const tab = fileNameSlug(getActiveTabLabel(), 'dashboard') || 'dashboard';
+  const filters = [];
+  if (currentGroups.length === 1) filters.push(fileNameSlug(currentGroups[0]));
+  else if (currentGroups.length > 1) filters.push(`${currentGroups.length}-grupos`);
+  if (currentPartnerBrokerId) filters.push(fileNameSlug(selectedPartnerLabel()));
+  if (currentCompany) filters.push(fileNameSlug(currentCompany));
+  const months = [...selectedMonths].sort();
+  if (months.length === 1) filters.push(months[0]);
+  else if (months.length > 1) filters.push(`${months[0]}-a-${months[months.length - 1]}`);
+  const scope = filters.filter(Boolean).slice(0, 4).join('-');
+  const stamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
+  return `sanus-${tab}${scope ? '-' + scope : ''}-${stamp}.pdf`;
+}
+
+async function downloadDashboardPdf() {
+  const btn = document.getElementById('pdf-download-btn');
+  const original = btn ? btn.innerHTML : '';
+  let pdfDom = null;
+  try {
+    if (!isPetitTab()) {
+      throw new Error('O download em PDF está disponível somente nas abas Petit Comitê.');
+    }
+    closeGroupDropdown();
+    await waitForPdfReadiness(1200);
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i>Gerando...';
+    }
+    isPdfGenerating = true;
+    document.querySelectorAll('.pdf-export-overlay').forEach((node) => node.remove());
+    await withTimeout(ensurePdfLibraries(), 15000, 'Carregamento das bibliotecas de PDF');
+    pdfDom = buildPdfReport();
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    await withTimeout(exportRenderedReportAsPdf(pdfDom.report), 45000, 'Geração do PDF');
+  } catch (error) {
+    console.error('[pdf]', error);
+    alert(error?.message || 'Não foi possível gerar o PDF agora.');
+  } finally {
+    if (pdfDom?.overlay) pdfDom.overlay.remove();
+    document.querySelectorAll('.pdf-export-overlay').forEach((node) => node.remove());
+    isPdfGenerating = false;
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = original || '<i class="fa-solid fa-file-pdf"></i>Baixar PDF';
+    }
+    updatePdfReadiness();
+  }
+}
+
+function isPeriodFilteredTab(tab = getActiveTab()) {
+  const activeTab = tab;
+  return activeTab === 'agendamentos' || activeTab === 'coordenacao-cuidado' || activeTab === 'sessoes' || isPetitTab(activeTab) || activeTab.startsWith('qualidade') || isSinistroTab(activeTab);
+}
+
+function loadPeriodFilteredTab() {
+  const activeTab = getActiveTab();
+  if (activeTab === 'agendamentos') loadAppointments();
+  else if (activeTab === 'coordenacao-cuidado') renderCareCoordination();
+  else if (activeTab === 'sessoes') loadSessions();
+  else if (activeTab === 'petit-comite') renderPetitComite();
+  else if (activeTab === 'petit-comite-mds') renderPetitComiteMds();
+  else if (activeTab.startsWith('qualidade')) loadQuality();
+  else if (isSinistroTab(activeTab)) renderAnaliseSinistro();
+}
+
+function renderAnaliseSinistro() {
+  const context = document.getElementById('sinistro-period-context');
+  const months = [...selectedMonths].sort();
+  const periodLabel = sinistroPeriodLabel(months);
+  if (context) context.textContent = periodLabel;
+  const period = document.getElementById('sinistro-events-period');
+  if (period) period.textContent = periodLabel.toLowerCase();
+  const valuesPeriod = document.getElementById('sinistro-values-period');
+  if (valuesPeriod) valuesPeriod.textContent = periodLabel.toLowerCase();
+  loadSinistroEventsEvolution(months);
+  loadSinistroValuesEvolution(months);
+  loadSinistroQuarterlyEvolution();
+  loadSinistroCohortEvolution();
+}
+
+function sinistroPeriodLabel(months) {
+  const values = (months || []).filter(Boolean).sort();
+  if (!values.length) return 'Últimos 12 meses';
+  if (values.length === 1) return monthShortLabel(values[0]);
+  return `${values.length} meses · ${monthShortLabel(values[0])} a ${monthShortLabel(values[values.length - 1])}`;
+}
+
+const SANUS_INFLECTION_MONTH = '2025-10';
+
+function buildSanusInflectionPlugin(months) {
+  const list = (months || []).filter(Boolean);
+  return {
+    id: 'sanusInflection',
+    beforeDatasetsDraw(chart) {
+      if (!list.length) return;
+      const x = chart.scales.x;
+      const area = chart.chartArea;
+      if (!x || !area) return;
+      const boundaryIdx = list.findIndex((m) => m >= SANUS_INFLECTION_MONTH);
+      const hasBefore = boundaryIdx > 0;
+      const hasAfter = boundaryIdx !== -1 && boundaryIdx < list.length;
+      let bx = area.left;
+      if (hasBefore) {
+        const prev = x.getPixelForValue(boundaryIdx - 1);
+        const cur = x.getPixelForValue(boundaryIdx);
+        bx = (prev + cur) / 2;
+      } else if (boundaryIdx === -1) {
+        bx = area.right;
+      }
+      const ctx = chart.ctx;
+      ctx.save();
+      if (hasBefore) {
+        ctx.fillStyle = 'rgba(148,163,184,0.10)';
+        ctx.fillRect(area.left, area.top, bx - area.left, area.bottom - area.top);
+      }
+      if (hasAfter) {
+        const startX = hasBefore ? bx : area.left;
+        ctx.fillStyle = 'rgba(0,166,156,0.07)';
+        ctx.fillRect(startX, area.top, area.right - startX, area.bottom - area.top);
+      }
+      ctx.restore();
+    },
+    afterDatasetsDraw(chart) {
+      const boundaryIdx = list.findIndex((m) => m >= SANUS_INFLECTION_MONTH);
+      if (boundaryIdx <= 0) return;
+      const x = chart.scales.x;
+      const area = chart.chartArea;
+      const bx = (x.getPixelForValue(boundaryIdx - 1) + x.getPixelForValue(boundaryIdx)) / 2;
+      const ctx = chart.ctx;
+      ctx.save();
+      ctx.beginPath();
+      ctx.setLineDash([4, 4]);
+      ctx.moveTo(bx, area.top);
+      ctx.lineTo(bx, area.bottom);
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = '#00A69C';
+      ctx.stroke();
+      ctx.setLineDash([]);
+      const label = 'Sanus · out/25';
+      ctx.font = '700 10px Inter, sans-serif';
+      const padX = 6;
+      const tw = ctx.measureText(label).width;
+      const rw = tw + padX * 2;
+      const rh = 16;
+      const r = 8;
+      const lx = Math.min(bx + 6, area.right - rw);
+      const ly = area.top + 2;
+      ctx.fillStyle = '#00A69C';
+      ctx.beginPath();
+      ctx.moveTo(lx + r, ly);
+      ctx.arcTo(lx + rw, ly, lx + rw, ly + rh, r);
+      ctx.arcTo(lx + rw, ly + rh, lx, ly + rh, r);
+      ctx.arcTo(lx, ly + rh, lx, ly, r);
+      ctx.arcTo(lx, ly, lx + rw, ly, r);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(label, lx + padX, ly + rh / 2 + 0.5);
+      ctx.restore();
+    },
+  };
+}
+
+function median(values) {
+  const sorted = values.filter((v) => Number.isFinite(v)).sort((a, b) => a - b);
+  if (!sorted.length) return 0;
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+function quarterShortLabel(trimestre) {
+  const m = /^(\d{4})-T(\d)$/.exec(String(trimestre || ''));
+  return m ? `T${m[2]}/${m[1].slice(2)}` : String(trimestre || '');
+}
+
+function renderSinistroQuarters(quarters) {
+  const el = document.getElementById('ba-users-quarters');
+  if (!el) return;
+  const list = quarters || [];
+  if (!list.length) { el.innerHTML = ''; return; }
+  const med = median(list.map((q) => Number(q.total) || 0).filter((v) => v > 0));
+  const mature = list.filter((q) => {
+    const total = Number(q.total) || 0;
+    return total > 0 && (med === 0 || total >= 0.3 * med);
+  });
+  if (!mature.length) { el.innerHTML = ''; return; }
+  const chips = mature.map((q) => {
+    const after = q.trimestre >= '2025-T4' ? ' is-after' : '';
+    return `<span class="sinistro-ba-qchip${after}">${quarterShortLabel(q.trimestre)} · <b>${fmt(Number(q.usuarios_unicos) || 0)}</b></span>`;
+  }).join('');
+  el.innerHTML = `<span class="qcap">Únicos/trim</span>${chips}`;
+}
+
+function renderSinistroBeforeAfter(kind, series, getValue, fmtFn, colorize = true) {
+  const beforeEl = document.getElementById(`ba-${kind}-before`);
+  const afterEl = document.getElementById(`ba-${kind}-after`);
+  const deltaEl = document.getElementById(`ba-${kind}-delta`);
+  const footEl = document.getElementById(`ba-${kind}-foot`);
+
+  const all = (series || []).map((item) => ({ mes: item.mes, v: Number(getValue(item)) || 0 }));
+  const med = median(all.map((x) => x.v).filter((v) => v > 0));
+  const isMature = (v) => v > 0 && (med === 0 || v >= 0.3 * med);
+  const beforeMature = all.filter((x) => x.mes < SANUS_INFLECTION_MONTH && isMature(x.v));
+  const afterMature = all.filter((x) => x.mes >= SANUS_INFLECTION_MONTH && isMature(x.v));
+  const n = Math.min(beforeMature.length, afterMature.length);
+  const beforeWin = beforeMature.slice(-n);
+  const afterWin = afterMature.slice(0, n);
+  const avg = (arr) => arr.length ? arr.reduce((acc, x) => acc + x.v, 0) / arr.length : null;
+  const beforeAvg = n ? avg(beforeWin) : null;
+  const afterAvg = n ? avg(afterWin) : null;
+
+  if (beforeEl) beforeEl.textContent = beforeAvg == null ? '—' : fmtFn(beforeAvg);
+  if (afterEl) afterEl.textContent = afterAvg == null ? '—' : fmtFn(afterAvg);
+  if (deltaEl) {
+    if (beforeAvg == null || afterAvg == null || beforeAvg === 0) {
+      deltaEl.textContent = '—';
+      deltaEl.className = 'sinistro-ba-delta';
+    } else {
+      const pct = ((afterAvg - beforeAvg) / beforeAvg) * 100;
+      const arrow = pct > 0.05 ? '▲' : (pct < -0.05 ? '▼' : '–');
+      const tone = colorize ? (pct > 0.05 ? 'up' : (pct < -0.05 ? 'down' : '')) : '';
+      deltaEl.textContent = `${arrow} ${Math.abs(pct).toFixed(1).replace('.', ',')}%`;
+      deltaEl.className = `sinistro-ba-delta ${tone}`.trim();
+    }
+  }
+  if (footEl) {
+    if (!n) {
+      footEl.textContent = 'Sem meses maduros comparáveis antes e depois de out/25';
+    } else {
+      const range = (win) => win.length === 1
+        ? monthShortLabel(win[0].mes)
+        : `${monthShortLabel(win[0].mes)}–${monthShortLabel(win[win.length - 1].mes)}`;
+      footEl.textContent = `${range(beforeWin)} × ${range(afterWin)} · ${n}×${n} ${n > 1 ? 'meses maduros pareados' : 'mês maduro'}`;
+    }
+  }
+}
+
+async function loadSinistroEventsEvolution(months = [...selectedMonths].sort()) {
+  const requestId = ++sinistroRequestId;
+  const skel = document.getElementById('skel-sinistro-events');
+  const canvas = document.getElementById('sinistroEventsEvolutionChart');
+  const meta = document.getElementById('sinistro-events-meta');
+  const errorBox = document.getElementById('sinistro-events-error');
+  if (!canvas) return;
+  if (skel) {
+    skel.style.display = 'block';
+    skel.innerHTML = '';
+  }
+  canvas.style.display = 'none';
+  if (meta) meta.textContent = '—';
+  if (errorBox) {
+    errorBox.style.display = 'none';
+    errorBox.textContent = '';
+  }
+
+  const p = new URLSearchParams();
+  const selected = (months || []).filter(Boolean).sort();
+  if (selected.length) p.set('meses', selected.join(','));
+  p.set('scope', 'sinistros_evolution');
+  const data = await safeGet('/api/data?' + p.toString());
+  if (requestId !== sinistroRequestId) return;
+
+  if (!data || data.error) {
+    if (skel) skel.style.display = 'none';
+    if (errorBox) {
+      errorBox.style.display = 'block';
+      errorBox.textContent = data?.error ? String(data.error).slice(0, 220) : 'Erro ao carregar eventos de sinistro';
+    }
+    return;
+  }
+
+  const series = data.series || [];
+  const labels = series.map((item) => monthShortLabel(item.mes));
+  const values = series.map((item) => Number(item.total) || 0);
+  if (sinistroEventsEvolutionChart) sinistroEventsEvolutionChart.destroy();
+  if (skel) skel.style.display = 'none';
+  canvas.style.display = 'block';
+  sinistroEventsEvolutionChart = new Chart(canvas, {
+    type: 'line',
+    plugins: [buildSanusInflectionPlugin(series.map((item) => item.mes))],
+    data: {
+      labels,
+      datasets: [{
+        label: 'Eventos de sinistro',
+        data: values,
+        borderColor: '#1d4ed8',
+        backgroundColor: 'rgba(29,78,216,0.10)',
+        borderWidth: 2,
+        pointRadius: 3,
+        pointBackgroundColor: '#1d4ed8',
+        fill: true,
+        tension: 0.35,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#1e293b',
+          borderColor: '#334155',
+          borderWidth: 1,
+          titleColor: '#94a3b8',
+          bodyColor: '#f1f5f9',
+          callbacks: { label: c => `${fmt(c.parsed.y)} eventos de sinistro` },
+        },
+      },
+      scales: {
+        x: { ticks: { font: { size: 10 }, color: '#94a3b8', maxRotation: 45, autoSkip: true, maxTicksLimit: 14 }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } },
+        y: { beginAtZero: true, ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => fmt(v) }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } },
+      },
+    },
+  });
+  const total = values.reduce((acc, value) => acc + value, 0);
+  if (meta) meta.textContent = `${fmt(total)} eventos · coluna de data: ${data.date_column || 'data do evento'}`;
+  renderSinistroBeforeAfter('events', series, (item) => Number(item.total) || 0, (v) => fmt(Math.round(v)));
+  renderSinistroBeforeAfter('users', series, (item) => Number(item.usuarios_unicos) || 0, (v) => fmt(Math.round(v)), false);
+  renderSinistroQuarters(data.quarters);
+}
+
+async function loadSinistroQuarterlyEvolution() {
+  const requestId = ++sinistroQuarterlyRequestId;
+  const skel = document.getElementById('skel-sinistro-quarterly');
+  const canvas = document.getElementById('sinistroQuarterlyEvolutionChart');
+  const meta = document.getElementById('sinistro-quarterly-meta');
+  const errorBox = document.getElementById('sinistro-quarterly-error');
+  if (!canvas) return;
+  if (skel) {
+    skel.style.display = 'block';
+    skel.innerHTML = '';
+  }
+  canvas.style.display = 'none';
+  if (meta) meta.textContent = '—';
+  if (errorBox) {
+    errorBox.style.display = 'none';
+    errorBox.textContent = '';
+  }
+
+  const eventsParams = new URLSearchParams();
+  eventsParams.set('meses', SINISTRO_AS03_MONTHS.join(','));
+  eventsParams.set('scope', 'sinistros_evolution');
+  const valuesParams = new URLSearchParams();
+  valuesParams.set('meses', SINISTRO_AS03_MONTHS.join(','));
+  valuesParams.set('scope', 'sinistros_values_evolution');
+  const [data, valuesData] = await Promise.all([
+    safeGet('/api/data?' + eventsParams.toString()),
+    safeGet('/api/data?' + valuesParams.toString()),
+  ]);
+  if (requestId !== sinistroQuarterlyRequestId) return;
+
+  if (!data || data.error) {
+    if (skel) skel.style.display = 'none';
+    if (errorBox) {
+      errorBox.style.display = 'block';
+      errorBox.textContent = data?.error ? String(data.error).slice(0, 220) : 'Erro ao carregar evolução trimestral de sinistro';
+    }
+    return;
+  }
+
+  const targetQuarters = [
+    { id: '2025-T3', label: 'Jul-Set/25' },
+    { id: '2025-T4', label: 'Out-Dez/25' },
+    { id: '2026-T1', label: 'Jan-Mar/26' },
+  ];
+  const byQuarter = new Map((data.quarters || []).map((item) => [item.trimestre, item]));
+  const quarterIdFromMonth = (month) => {
+    const [year, rawMonth] = String(month || '').split('-');
+    const monthNumber = Number(rawMonth);
+    if (!year || !Number.isFinite(monthNumber)) return '';
+    return `${year}-T${Math.ceil(monthNumber / 3)}`;
+  };
+  const valueByQuarter = new Map();
+  (valuesData?.series || []).forEach((item) => {
+    const quarterId = quarterIdFromMonth(item.mes);
+    if (!quarterId) return;
+    valueByQuarter.set(quarterId, (valueByQuarter.get(quarterId) || 0) + (Number(item.gasto_total) || 0));
+  });
+  const quarterSeries = targetQuarters.map((q) => ({
+    ...q,
+    total: Number(byQuarter.get(q.id)?.total) || 0,
+    usuarios_unicos: Number(byQuarter.get(q.id)?.usuarios_unicos) || 0,
+    gasto_total: Number(valueByQuarter.get(q.id)) || 0,
+  }));
+  const labels = quarterSeries.map((item) => item.label);
+  const eventValues = quarterSeries.map((item) => item.total);
+  const userValues = quarterSeries.map((item) => item.usuarios_unicos);
+  const costValues = quarterSeries.map((item) => item.gasto_total);
+
+  if (sinistroQuarterlyEvolutionChart) sinistroQuarterlyEvolutionChart.destroy();
+  if (skel) skel.style.display = 'none';
+  canvas.style.display = 'block';
+  sinistroQuarterlyEvolutionChart = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Eventos no trimestre',
+          data: eventValues,
+          yAxisID: 'y',
+          backgroundColor: ['rgba(148,163,184,0.55)', 'rgba(0,166,156,0.55)', 'rgba(0,166,156,0.70)'],
+          borderColor: ['#94a3b8', '#00A69C', '#0f766e'],
+          borderWidth: 1,
+          borderRadius: 8,
+          maxBarThickness: 58,
+        },
+        {
+          type: 'line',
+          label: 'Usuários únicos',
+          data: userValues,
+          yAxisID: 'y1',
+          borderColor: '#1d4ed8',
+          backgroundColor: '#1d4ed8',
+          borderWidth: 2,
+          pointRadius: 4,
+          pointBackgroundColor: '#fff',
+          pointBorderColor: '#1d4ed8',
+          pointBorderWidth: 2,
+          tension: 0.3,
+        },
+        {
+          type: 'line',
+          label: 'Valor cobrado',
+          data: costValues,
+          yAxisID: 'y2',
+          borderColor: '#d97706',
+          backgroundColor: '#d97706',
+          borderWidth: 2,
+          borderDash: [5, 4],
+          pointRadius: 4,
+          pointBackgroundColor: '#fff',
+          pointBorderColor: '#d97706',
+          pointBorderWidth: 2,
+          tension: 0.3,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: true, position: 'bottom', labels: { font: { size: 11 }, color: '#64748b', usePointStyle: true, boxWidth: 8 } },
+        tooltip: {
+          backgroundColor: '#1e293b',
+          borderColor: '#334155',
+          borderWidth: 1,
+          titleColor: '#94a3b8',
+          bodyColor: '#f1f5f9',
+          callbacks: {
+            label: c => {
+              if (c.dataset.yAxisID === 'y1') return `${fmt(c.parsed.y)} usuários únicos`;
+              if (c.dataset.yAxisID === 'y2') return `${fmtCurrency(c.parsed.y)} cobrados`;
+              return `${fmt(c.parsed.y)} eventos de sinistro`;
+            },
+          },
+        },
+      },
+      scales: {
+        x: { ticks: { font: { size: 10 }, color: '#94a3b8' }, grid: { display: false }, border: { display: false } },
+        y: { beginAtZero: true, position: 'left', ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => fmt(v) }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false }, title: { display: true, text: 'Eventos', font: { size: 10 }, color: '#94a3b8' } },
+        y1: { beginAtZero: true, position: 'right', ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => fmt(v) }, grid: { drawOnChartArea: false }, border: { display: false }, title: { display: true, text: 'Usuários únicos', font: { size: 10 }, color: '#94a3b8' } },
+        y2: { beginAtZero: true, position: 'right', offset: true, ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => fmtCurrency(v) }, grid: { drawOnChartArea: false }, border: { display: false }, title: { display: true, text: 'Valor cobrado', font: { size: 10 }, color: '#94a3b8' } },
+      },
+    },
+  });
+  const eventDelta = eventValues[0] ? ((eventValues[2] - eventValues[0]) / eventValues[0]) * 100 : 0;
+  const usersDelta = userValues[0] ? ((userValues[2] - userValues[0]) / userValues[0]) * 100 : 0;
+  const costDelta = costValues[0] ? ((costValues[2] - costValues[0]) / costValues[0]) * 100 : 0;
+  if (meta) meta.textContent = `T3/25 → T1/26: eventos ${eventDelta >= 0 ? '+' : ''}${eventDelta.toFixed(1).replace('.', ',')}% · usuários únicos ${usersDelta >= 0 ? '+' : ''}${usersDelta.toFixed(1).replace('.', ',')}% · valores ${costDelta >= 0 ? '+' : ''}${costDelta.toFixed(1).replace('.', ',')}%`;
+}
+
+async function loadSinistroCohortEvolution() {
+  const requestId = ++sinistroCohortRequestId;
+  const skel = document.getElementById('skel-sinistro-cohort');
+  const canvas = document.getElementById('sinistroCohortEvolutionChart');
+  const meta = document.getElementById('sinistro-cohort-meta');
+  const errorBox = document.getElementById('sinistro-cohort-error');
+  if (!canvas) return;
+  if (skel) {
+    skel.style.display = 'block';
+    skel.innerHTML = '';
+  }
+  canvas.style.display = 'none';
+  if (meta) meta.textContent = '—';
+  if (errorBox) {
+    errorBox.style.display = 'none';
+    errorBox.textContent = '';
+  }
+
+  const p = new URLSearchParams();
+  p.set('scope', 'sinistros_cohort_quarterly');
+  const data = await safeGet('/api/data?' + p.toString());
+  if (requestId !== sinistroCohortRequestId) return;
+
+  if (!data || data.error) {
+    if (skel) skel.style.display = 'none';
+    if (errorBox) {
+      errorBox.style.display = 'block';
+      errorBox.textContent = data?.error ? String(data.error).slice(0, 220) : 'Erro ao carregar coorte comparável de sinistro';
+    }
+    return;
+  }
+
+  const labelMap = { '2025-T3': 'Jul-Set/25', '2025-T4': 'Out-Dez/25', '2026-T1': 'Jan-Mar/26' };
+  const series = data.series || [];
+  const labels = series.map((item) => labelMap[item.trimestre] || quarterShortLabel(item.trimestre));
+  const eventValues = series.map((item) => Number(item.total_eventos) || 0);
+  const costValues = series.map((item) => Number(item.gasto_total) || 0);
+  const userValues = series.map((item) => Number(item.usuarios_unicos) || 0);
+
+  if (sinistroCohortEvolutionChart) sinistroCohortEvolutionChart.destroy();
+  if (skel) skel.style.display = 'none';
+  canvas.style.display = 'block';
+  sinistroCohortEvolutionChart = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Eventos da coorte',
+          data: eventValues,
+          yAxisID: 'y',
+          backgroundColor: ['rgba(148,163,184,0.55)', 'rgba(0,166,156,0.55)', 'rgba(0,166,156,0.70)'],
+          borderColor: ['#94a3b8', '#00A69C', '#0f766e'],
+          borderWidth: 1,
+          borderRadius: 8,
+          maxBarThickness: 58,
+        },
+        {
+          type: 'line',
+          label: 'Valor cobrado da coorte',
+          data: costValues,
+          yAxisID: 'y1',
+          borderColor: '#d97706',
+          backgroundColor: '#d97706',
+          borderWidth: 2,
+          borderDash: [5, 4],
+          pointRadius: 4,
+          pointBackgroundColor: '#fff',
+          pointBorderColor: '#d97706',
+          pointBorderWidth: 2,
+          tension: 0.3,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: true, position: 'bottom', labels: { font: { size: 11 }, color: '#64748b', usePointStyle: true, boxWidth: 8 } },
+        tooltip: {
+          backgroundColor: '#1e293b',
+          borderColor: '#334155',
+          borderWidth: 1,
+          titleColor: '#94a3b8',
+          bodyColor: '#f1f5f9',
+          callbacks: {
+            label: c => c.dataset.yAxisID === 'y1'
+              ? `${fmtCurrency(c.parsed.y)} cobrados`
+              : `${fmt(c.parsed.y)} eventos de sinistro`,
+            afterBody: (items) => {
+              const idx = items?.[0]?.dataIndex ?? 0;
+              return `${fmt(userValues[idx] || 0)} usuários únicos da coorte no trimestre`;
+            },
+          },
+        },
+      },
+      scales: {
+        x: { ticks: { font: { size: 10 }, color: '#94a3b8' }, grid: { display: false }, border: { display: false } },
+        y: { beginAtZero: true, position: 'left', ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => fmt(v) }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false }, title: { display: true, text: 'Eventos da coorte', font: { size: 10 }, color: '#94a3b8' } },
+        y1: { beginAtZero: true, position: 'right', ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => fmtCurrency(v) }, grid: { drawOnChartArea: false }, border: { display: false }, title: { display: true, text: 'Valor cobrado', font: { size: 10 }, color: '#94a3b8' } },
+      },
+    },
+  });
+  const eventDelta = eventValues[0] ? ((eventValues[2] - eventValues[0]) / eventValues[0]) * 100 : 0;
+  const costDelta = costValues[0] ? ((costValues[2] - costValues[0]) / costValues[0]) * 100 : 0;
+  const cohortUsers = Math.max(...userValues, 0);
+  if (meta) meta.textContent = `Coorte comparável: até ${fmt(cohortUsers)} usuários · T3/25 → T1/26: eventos ${eventDelta >= 0 ? '+' : ''}${eventDelta.toFixed(1).replace('.', ',')}% · valores ${costDelta >= 0 ? '+' : ''}${costDelta.toFixed(1).replace('.', ',')}%`;
+}
+
+async function loadSinistroValuesEvolution(months = [...selectedMonths].sort()) {
+  const requestId = ++sinistroValuesRequestId;
+  const skel = document.getElementById('skel-sinistro-values');
+  const canvas = document.getElementById('sinistroValuesEvolutionChart');
+  const meta = document.getElementById('sinistro-values-meta');
+  const errorBox = document.getElementById('sinistro-values-error');
+  if (!canvas) return;
+  if (skel) {
+    skel.style.display = 'block';
+    skel.innerHTML = '';
+  }
+  canvas.style.display = 'none';
+  if (meta) meta.textContent = '—';
+  if (errorBox) {
+    errorBox.style.display = 'none';
+    errorBox.textContent = '';
+  }
+
+  const p = new URLSearchParams();
+  const selected = (months || []).filter(Boolean).sort();
+  if (selected.length) p.set('meses', selected.join(','));
+  p.set('scope', 'sinistros_values_evolution');
+  const data = await safeGet('/api/data?' + p.toString());
+  if (requestId !== sinistroValuesRequestId) return;
+
+  if (!data || data.error) {
+    if (skel) skel.style.display = 'none';
+    if (errorBox) {
+      errorBox.style.display = 'block';
+      errorBox.textContent = data?.error ? String(data.error).slice(0, 220) : 'Erro ao carregar valores de sinistro';
+    }
+    return;
+  }
+
+  const series = data.series || [];
+  const labels = series.map((item) => monthShortLabel(item.mes));
+  const values = series.map((item) => Number(item.gasto_total) || 0);
+  const hasEstimatedValues = series.some((item) => item.estimated);
+  if (sinistroValuesEvolutionChart) sinistroValuesEvolutionChart.destroy();
+  if (skel) skel.style.display = 'none';
+  canvas.style.display = 'block';
+  sinistroValuesEvolutionChart = new Chart(canvas, {
+    type: 'line',
+    plugins: [buildSanusInflectionPlugin(series.map((item) => item.mes))],
+    data: {
+      labels,
+      datasets: [{
+        label: 'Valores de sinistro',
+        data: values,
+        borderColor: '#0f766e',
+        backgroundColor: 'rgba(15,118,110,0.10)',
+        borderWidth: 2,
+        pointRadius: series.map((item) => item.estimated ? 4 : 3),
+        pointBackgroundColor: series.map((item) => item.estimated ? '#fff7ed' : '#0f766e'),
+        pointBorderColor: series.map((item) => item.estimated ? '#d97706' : '#0f766e'),
+        pointBorderWidth: series.map((item) => item.estimated ? 2 : 1),
+        fill: true,
+        tension: 0.35,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#1e293b',
+          borderColor: '#334155',
+          borderWidth: 1,
+          titleColor: '#94a3b8',
+          bodyColor: '#f1f5f9',
+          callbacks: {
+            label: c => {
+              const item = series[c.dataIndex] || {};
+              return `${fmtCurrency(c.parsed.y)} em sinistros cobrados${item.estimated ? ' (estimado)' : ''}`;
+            },
+          },
+        },
+      },
+      scales: {
+        x: { ticks: { font: { size: 10 }, color: '#94a3b8', maxRotation: 45, autoSkip: true, maxTicksLimit: 14 }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } },
+        y: { beginAtZero: true, ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => fmtCurrency(v) }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } },
+      },
+    },
+  });
+  const total = values.reduce((acc, value) => acc + value, 0);
+  if (meta) meta.textContent = `${fmtCurrency(total)} cobrados · competência: ${data.date_column || 'competencia_cobranca'} · valor: sinistro + coparticipação${hasEstimatedValues ? ' · set/25 estimado por média ponderada' : ''}`;
+  renderSinistroBeforeAfter('values', series, (item) => Number(item.gasto_total) || 0, fmtCurrency);
+}
+
+// --- Período dropdown ---
+function buildPeriodoOptions() {
+  const container = document.getElementById('periodo-options');
+  if (container.children.length > 0) return;
+  const now = new Date();
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const val = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    const mm  = String(d.getMonth()+1).padStart(2,'0');
+    const lbl = `${mN[mm]}/${d.getFullYear()}`;
+    const item = document.createElement('label');
+    item.style.cssText = 'display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:6px;cursor:pointer;font-size:12px;color:#334155';
+    item.onmouseover = () => item.style.background = '#f8fafc';
+    item.onmouseout  = () => item.style.background = '';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox'; cb.value = val;
+    cb.style.accentColor = '#6366f1';
+    cb.addEventListener('change', () => {
+      if (cb.checked) selectedMonths.add(val); else selectedMonths.delete(val);
+      updatePeriodoLabel(); loadPeriodFilteredTab();
+    });
+    item.appendChild(cb);
+    item.appendChild(document.createTextNode(lbl));
+    container.appendChild(item);
+  }
+}
+
+function togglePeriodoDropdown() {
+  const dd = document.getElementById('periodo-dropdown');
+  dd.style.display = dd.style.display === 'none' ? 'block' : 'none';
+}
+
+document.addEventListener('click', e => {
+  const btn = document.getElementById('periodo-btn');
+  const dd  = document.getElementById('periodo-dropdown');
+  if (dd && btn && !btn.contains(e.target) && !dd.contains(e.target))
+    dd.style.display = 'none';
+});
+
+function selectAllPeriodo() {
+  document.getElementById('cb-tudo').checked = false;
+  document.querySelectorAll('#periodo-options input[type=checkbox]').forEach(cb => {
+    cb.checked = true; selectedMonths.add(cb.value);
+  });
+  updatePeriodoLabel(); loadPeriodFilteredTab();
+}
+
+function clearPeriodo(reload=true) {
+  const cbTudo = document.getElementById('cb-tudo');
+  if (cbTudo) cbTudo.checked = false;
+  document.querySelectorAll('#periodo-options input[type=checkbox]').forEach(cb => { cb.checked = false; });
+  selectedMonths.clear(); updatePeriodoLabel();
+  if (reload && isPeriodFilteredTab()) loadPeriodFilteredTab();
+}
+
+function onTudoChange(el) {
+  if (el.checked) {
+    document.querySelectorAll('#periodo-options input[type=checkbox]').forEach(cb => { cb.checked = false; });
+    selectedMonths.clear();
+    document.getElementById('periodo-label').textContent = 'Tudo';
+    loadPeriodFilteredTab();
+  } else {
+    updatePeriodoLabel();
+    loadPeriodFilteredTab();
+  }
+}
+
+function updatePeriodoLabel() {
+  const lbl = document.getElementById('periodo-label');
+  if (!lbl) return;
+  if (selectedMonths.size === 0) { lbl.textContent = '(Todos os meses)'; return; }
+  if (selectedMonths.size === 1) {
+    const [val] = selectedMonths; const [y,mm] = val.split('-');
+    lbl.textContent = `${mN[mm]}/${y}`; return;
+  }
+  lbl.textContent = `${selectedMonths.size} meses selecionados`;
+}
+
+function buildAppointmentTypesPeriodoOptions() {
+  const container = document.getElementById('appointment-types-periodo-options');
+  if (!container || container.children.length > 0) return;
+  const now = new Date();
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const val = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    const mm = String(d.getMonth()+1).padStart(2,'0');
+    const lbl = `${mN[mm]}/${d.getFullYear()}`;
+    const item = document.createElement('label');
+    item.style.cssText = 'display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:6px;cursor:pointer;font-size:12px;color:#334155';
+    item.onmouseover = () => item.style.background = '#f8fafc';
+    item.onmouseout = () => item.style.background = '';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.value = val;
+    cb.style.accentColor = '#6366f1';
+    cb.addEventListener('change', () => {
+      document.getElementById('appointment-types-cb-tudo').checked = false;
+      if (cb.checked) selectedAppointmentTypeMonths.add(val);
+      else selectedAppointmentTypeMonths.delete(val);
+      updateAppointmentTypesPeriodoLabel();
+      loadSessionAppointmentTypes();
+    });
+    item.appendChild(cb);
+    item.appendChild(document.createTextNode(lbl));
+    container.appendChild(item);
+  }
+}
+
+function toggleAppointmentTypesPeriodoDropdown() {
+  buildAppointmentTypesPeriodoOptions();
+  const dd = document.getElementById('appointment-types-periodo-dropdown');
+  if (dd) dd.style.display = dd.style.display === 'none' ? 'block' : 'none';
+}
+
+document.addEventListener('click', e => {
+  const btn = document.getElementById('appointment-types-periodo-btn');
+  const dd = document.getElementById('appointment-types-periodo-dropdown');
+  if (dd && btn && !btn.contains(e.target) && !dd.contains(e.target)) dd.style.display = 'none';
+});
+
+function selectAllAppointmentTypesPeriodo() {
+  buildAppointmentTypesPeriodoOptions();
+  const cbTudo = document.getElementById('appointment-types-cb-tudo');
+  if (cbTudo) cbTudo.checked = false;
+  document.querySelectorAll('#appointment-types-periodo-options input[type=checkbox]').forEach(cb => {
+    cb.checked = true;
+    selectedAppointmentTypeMonths.add(cb.value);
+  });
+  updateAppointmentTypesPeriodoLabel();
+  loadSessionAppointmentTypes();
+}
+
+function clearAppointmentTypesPeriodo(reload=true) {
+  const cbTudo = document.getElementById('appointment-types-cb-tudo');
+  if (cbTudo) cbTudo.checked = false;
+  document.querySelectorAll('#appointment-types-periodo-options input[type=checkbox]').forEach(cb => { cb.checked = false; });
+  selectedAppointmentTypeMonths.clear();
+  updateAppointmentTypesPeriodoLabel();
+  if (reload) loadSessionAppointmentTypes();
+}
+
+function onAppointmentTypesTudoChange(el) {
+  if (el.checked) {
+    document.querySelectorAll('#appointment-types-periodo-options input[type=checkbox]').forEach(cb => { cb.checked = false; });
+    selectedAppointmentTypeMonths.clear();
+    document.getElementById('appointment-types-periodo-label').textContent = 'Tudo';
+    loadSessionAppointmentTypes();
+  } else {
+    updateAppointmentTypesPeriodoLabel();
+    loadSessionAppointmentTypes();
+  }
+}
+
+function updateAppointmentTypesPeriodoLabel() {
+  const lbl = document.getElementById('appointment-types-periodo-label');
+  if (!lbl) return;
+  if (selectedAppointmentTypeMonths.size === 0) { lbl.textContent = '(Todos os meses)'; return; }
+  if (selectedAppointmentTypeMonths.size === 1) {
+    const [val] = selectedAppointmentTypeMonths;
+    const [y, mm] = val.split('-');
+    lbl.textContent = `${mN[mm]}/${y}`;
+    return;
+  }
+  lbl.textContent = `${selectedAppointmentTypeMonths.size} meses selecionados`;
+}
+
+function currentMonthValue() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+}
+
+function buildSessionsDailyMonthOptions() {
+  const select = document.getElementById('sessions-daily-month-select');
+  if (!select) return;
+  const now = new Date();
+  const options = [];
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const val = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    const mm = String(d.getMonth()+1).padStart(2,'0');
+    options.push({ value: val, label: `${mN[mm]}/${d.getFullYear()}` });
+  }
+  if (!options.some((option) => option.value === selectedSessionsDailyMonth)) {
+    selectedSessionsDailyMonth = options[0]?.value || currentMonthValue();
+  }
+  select.innerHTML = options.map((option) => {
+    const selected = option.value === selectedSessionsDailyMonth ? ' selected' : '';
+    return `<option value="${option.value}"${selected}>${option.label}</option>`;
+  }).join('');
+}
+
+function onSessionsDailyMonthChange(value) {
+  selectedSessionsDailyMonth = value || currentMonthValue();
+  loadSessionsDailyEvolution();
+}
+
+function buildAppointmentsDailyMonthOptions() {
+  const select = document.getElementById('appointments-daily-month-select');
+  if (!select) return;
+  const now = new Date();
+  const options = [];
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const val = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    const mm = String(d.getMonth()+1).padStart(2,'0');
+    options.push({ value: val, label: `${mN[mm]}/${d.getFullYear()}` });
+  }
+  if (!options.some((option) => option.value === selectedAppointmentsDailyMonth)) {
+    selectedAppointmentsDailyMonth = options[0]?.value || currentMonthValue();
+  }
+  select.innerHTML = options.map((option) => {
+    const selected = option.value === selectedAppointmentsDailyMonth ? ' selected' : '';
+    return `<option value="${option.value}"${selected}>${option.label}</option>`;
+  }).join('');
+}
+
+function onAppointmentsDailyMonthChange(value) {
+  selectedAppointmentsDailyMonth = value || currentMonthValue();
+  loadAppointmentsDailyEvolution();
+}
+
+function loadSessionAppointmentTypes() {
+  if (getActiveTab() !== 'sessoes') return;
+  const months = selectedAppointmentTypeMonths.size
+    ? [...selectedAppointmentTypeMonths].sort()
+    : appointmentTypesBaseMonths;
+  return loadAppointmentTypes(months, 'appointment-types');
+}
+
+// --- Petit Comitê ---
+function petitPeriodLabel() {
+  const months = [...selectedMonths].sort();
+  if (months.length === 0) return 'Período: DD/MM/2026 a DD/MM/2026';
+  if (months.length === 1) {
+    const [y, mm] = months[0].split('-');
+    return `Período: ${mN[mm]}/${y}`;
+  }
+  const first = months[0].split('-');
+  const last = months[months.length - 1].split('-');
+  const firstLabel = mN[first[1]] ? `${mN[first[1]]}/${first[0]}` : months[0];
+  const lastLabel = mN[last[1]] ? `${mN[last[1]]}/${last[0]}` : months[months.length - 1];
+  return `Período: ${firstLabel} a ${lastLabel}`;
+}
+
+function petitSessionsFilterNote() {
+  const parts = [];
+  const months = [...selectedMonths].sort();
+  if (months.length) parts.push(months.length === 1 ? monthShortLabel(months[0]) : `${months.length} meses`);
+  if (currentGroups.length) parts.push(selectedGroupsText());
+  if (currentCompany) parts.push(currentCompany);
+  if (currentPartnerBrokerId) parts.push(`Parceiro: ${selectedPartnerLabel()}`);
+  return parts.length ? `volume de sessões · ${parts.join(' · ')}` : 'volume total de sessões';
+}
+
+function petitBeneficiariesFilterNote() {
+  const parts = [];
+  if (currentGroups.length) parts.push(selectedGroupsText());
+  if (currentCompany) parts.push(currentCompany);
+  if (currentPartnerBrokerId) parts.push(`Parceiro: ${selectedPartnerLabel()}`);
+  return parts.length ? `beneficiários ativos · ${parts.join(' · ')}` : 'total de beneficiários ativos';
+}
+
+function petitDemographicPct(value, total) {
+  const n = Number(value) || 0;
+  const base = Number(total) || 0;
+  return base > 0 ? ((n / base) * 100).toFixed(1).replace('.', ',') + ' %' : '—';
+}
+
+function setPetitBeneficiaryBreakdown(data) {
+  const titularValue = petitElementById('petit-kpi-beneficiaries-titular');
+  const titularPct = petitElementById('petit-kpi-beneficiaries-titular-pct');
+  const dependentValue = petitElementById('petit-kpi-beneficiaries-dependent');
+  const dependentPct = petitElementById('petit-kpi-beneficiaries-dependent-pct');
+  if (!data) {
+    if (titularValue) titularValue.textContent = '—';
+    if (titularPct) titularPct.textContent = '—';
+    if (dependentValue) dependentValue.textContent = '—';
+    if (dependentPct) dependentPct.textContent = '—';
+    return;
+  }
+  const titulares = Number(data?.titulares) || 0;
+  const dependentes = Number(data?.dependentes) || 0;
+  const total = Number(data?.total_vidas) || 0;
+  if (titularValue) titularValue.textContent = fmt(titulares);
+  if (titularPct) titularPct.textContent = petitDemographicPct(titulares, total);
+  if (dependentValue) dependentValue.textContent = fmt(dependentes);
+  if (dependentPct) dependentPct.textContent = petitDemographicPct(dependentes, total);
+}
+
+async function loadPetitBeneficiariesKpi(requestId) {
+  const value = petitElementById('petit-kpi-beneficiaries');
+  const note = petitElementById('petit-kpi-beneficiaries-note');
+  if (value) value.textContent = '…';
+  setPetitBeneficiaryBreakdown(null);
+  if (note) note.textContent = petitBeneficiariesFilterNote();
+
+  const data = await safeGet('/api/demographics' + buildQS());
+  if (requestId !== petitComiteRequestId) return;
+
+  if (data && !data.error) {
+    const total = Number(data.total_beneficiarios ?? data.total_vidas) || 0;
+    if (value) value.textContent = fmt(total);
+    setPetitBeneficiaryBreakdown(data);
+    if (note) note.textContent = petitBeneficiariesFilterNote();
+  } else {
+    if (value) value.textContent = 'Erro';
+    setPetitBeneficiaryBreakdown(null);
+    if (note) note.textContent = String(data?.error || 'Erro ao carregar beneficiários').slice(0, 140);
+  }
+  schedulePdfReadinessUpdate();
+}
+
+async function loadPetitSessionsKpi(requestId) {
+  const value = petitElementById('petit-kpi-sessions');
+  const note = petitElementById('petit-kpi-sessions-note');
+  if (value) value.textContent = '…';
+  if (note) note.textContent = petitSessionsFilterNote();
+
+  const meses = [...selectedMonths].sort();
+  const p = new URLSearchParams();
+  p.set('scope', 'total');
+  if (meses.length > 0) p.set('meses', meses.join(','));
+  appendGroupParams(p);
+  if (currentCompany) p.set('company', currentCompany);
+  const qs = p.toString() ? '?' + p.toString() : '';
+  const data = await safeGet('/api/sessions' + qs);
+  if (requestId !== petitComiteRequestId) return;
+
+  if (data && !data.error) {
+    const total = Number(data.total_sessions ?? data.economic_group_total) || 0;
+    if (value) value.textContent = fmt(total);
+    if (note) note.textContent = petitSessionsFilterNote();
+  } else {
+    if (value) value.textContent = 'Erro';
+    if (note) note.textContent = String(data?.economic_group_total_error || data?.error || 'Erro ao carregar sessões').slice(0, 140);
+  }
+  schedulePdfReadinessUpdate();
+}
+
+async function loadPetitHumanInteractionKpi(requestId) {
+  const humanValue = petitElementById('petit-kpi-human-sessions');
+  const iaValue = petitElementById('petit-kpi-ia-sessions');
+  const humanPct = petitElementById('petit-kpi-human-pct');
+  const iaPct = petitElementById('petit-kpi-ia-pct');
+  const humanBar = petitElementById('petit-kpi-human-bar');
+  const iaBar = petitElementById('petit-kpi-ia-bar');
+  const note = petitElementById('petit-kpi-human-note');
+  if (humanValue) humanValue.textContent = '…';
+  if (iaValue) iaValue.textContent = '…';
+  if (humanPct) humanPct.textContent = '—';
+  if (iaPct) iaPct.textContent = '—';
+  if (humanBar) humanBar.style.width = '0%';
+  if (iaBar) iaBar.style.width = '0%';
+  if (note) note.textContent = petitSessionsFilterNote().replace('volume de sessões', 'sessões por interação');
+
+  const meses = [...selectedMonths].sort();
+  const p = new URLSearchParams();
+  p.set('scope', 'human_interaction');
+  if (meses.length > 0) p.set('meses', meses.join(','));
+  appendGroupParams(p);
+  if (currentCompany) p.set('company', currentCompany);
+  const data = await safeGet('/api/sessions?' + p.toString());
+  if (requestId !== petitComiteRequestId) return;
+
+  if (data && !data.error) {
+    const byTipo = Object.fromEntries((data.message_agent_finishers || []).map((item) => [String(item.tipo || '').toUpperCase(), Number(item.total) || 0]));
+    const humano = byTipo.HUMANO || 0;
+    const ia = byTipo.IA || 0;
+    const total = humano + ia;
+    const pct = (value) => total > 0 ? `${((value / total) * 100).toFixed(1).replace('.', ',')}%` : '—';
+    const width = (value) => total > 0 ? `${((value / total) * 100).toFixed(1)}%` : '0%';
+    if (humanValue) humanValue.textContent = fmt(humano);
+    if (iaValue) iaValue.textContent = fmt(ia);
+    if (humanPct) humanPct.textContent = pct(humano);
+    if (iaPct) iaPct.textContent = pct(ia);
+    if (humanBar) humanBar.style.width = width(humano);
+    if (iaBar) iaBar.style.width = width(ia);
+    if (note) note.textContent = "fonte: sender_type='agent'";
+  } else {
+    if (humanValue) humanValue.textContent = 'Erro';
+    if (iaValue) iaValue.textContent = 'Erro';
+    if (note) note.textContent = String(data?.error || 'Erro ao carregar interação humana').slice(0, 140);
+  }
+  schedulePdfReadinessUpdate();
+}
+
+async function loadPetitUsersKpi(requestId) {
+  const value = petitElementById('petit-kpi-users');
+  const note = petitElementById('petit-kpi-users-note');
+  if (value) value.textContent = '…';
+  if (note) note.textContent = petitSessionsFilterNote().replace('volume de sessões', 'beneficiários únicos');
+
+  const meses = [...selectedMonths].sort();
+  const p = new URLSearchParams();
+  p.set('scope', 'unique_users');
+  if (meses.length > 0) p.set('meses', meses.join(','));
+  appendGroupParams(p);
+  if (currentCompany) p.set('company', currentCompany);
+  const qs = p.toString() ? '?' + p.toString() : '';
+  const data = await safeGet('/api/sessions' + qs);
+  if (requestId !== petitComiteRequestId) return;
+
+  if (data && !data.error) {
+    if (value) value.textContent = fmt(data.unique_users || 0);
+    if (note) note.textContent = petitSessionsFilterNote().replace('volume de sessões', 'beneficiários únicos');
+  } else {
+    if (value) value.textContent = 'Erro';
+    if (note) note.textContent = String(data?.error || 'Erro ao carregar beneficiários únicos').slice(0, 140);
+  }
+  schedulePdfReadinessUpdate();
+}
+
+async function loadPetitAppointmentsKpi(requestId) {
+  const value = petitElementById('petit-kpi-appointments');
+  const note = petitElementById('petit-kpi-appointments-note');
+  const filterNote = petitSessionsFilterNote().replace('volume de sessões', 'agendamentos');
+  if (value) value.textContent = '…';
+  if (note) note.textContent = filterNote;
+
+  const meses = [...selectedMonths].sort();
+  const p = new URLSearchParams();
+  if (meses.length > 0) p.set('meses', meses.join(','));
+  appendGroupParams(p);
+  if (currentCompany) p.set('company', currentCompany);
+  const qs = p.toString() ? '?' + p.toString() : '';
+  const data = await safeGet('/api/appointments' + qs);
+  if (requestId !== petitComiteRequestId) return;
+
+  if (data && !data.error) {
+    if (value) value.textContent = fmt(data.total || 0);
+    if (note) note.textContent = filterNote;
+  } else {
+    if (value) value.textContent = 'Erro';
+    if (note) note.textContent = String(data?.error || 'Erro ao carregar agendamentos').slice(0, 140);
+  }
+  schedulePdfReadinessUpdate();
+}
+
+function petitUsagePeriodLabel(months) {
+  const values = (months || []).filter(Boolean);
+  if (!values.length) return 'período indisponível';
+  if (values.length === 1) return monthShortLabel(values[0]);
+  return `${monthShortLabel(values[0])} a ${monthShortLabel(values[values.length - 1])}`;
+}
+
+async function loadPetitUsabilityKpis(requestId) {
+  const loading = petitElementById('petit-usability-loading');
+  const content = petitElementById('petit-usability-content');
+  const error = petitElementById('petit-usability-error');
+  if (loading) {
+    loading.style.display = 'block';
+    loading.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando utilização...';
+  }
+  if (content) {
+    content.style.display = 'none';
+    content.innerHTML = '';
+  }
+  if (error) {
+    error.style.display = 'none';
+    error.textContent = '';
+  }
+
+  const p = new URLSearchParams();
+  p.set('include_beneficiaries', '1');
+  p.set('only_beneficiaries', '1');
+  appendGroupParams(p);
+  if (currentCompany) p.set('company', currentCompany);
+
+  const selectedPeriodMonths = [...selectedMonths].sort();
+  const selectedPeriodParams = new URLSearchParams();
+  selectedPeriodParams.set('scope', 'unique_users');
+  if (selectedPeriodMonths.length > 0) selectedPeriodParams.set('meses', selectedPeriodMonths.join(','));
+  appendGroupParams(selectedPeriodParams);
+  if (currentCompany) selectedPeriodParams.set('company', currentCompany);
+
+  const [usageData, demographicsData, selectedPeriodData] = await Promise.all([
+    safeGet('/api/sessions-evolution?' + p.toString()),
+    safeGet('/api/demographics' + buildQS()),
+    selectedPeriodMonths.length ? safeGet('/api/sessions?' + selectedPeriodParams.toString()) : Promise.resolve(null),
+  ]);
+  if (requestId !== petitComiteRequestId) return;
+
+  const base = demographicsData && !demographicsData.error
+    ? Number(demographicsData.total_beneficiarios ?? demographicsData.total_vidas) || 0
+    : 0;
+  const selectedPeriodError = selectedPeriodMonths.length && (!selectedPeriodData || selectedPeriodData.error);
+  if (!usageData || usageData.error || selectedPeriodError || !base) {
+    if (loading) loading.style.display = 'none';
+    if (error) {
+      error.style.display = 'block';
+      error.textContent = !base
+        ? 'Base total de beneficiários indisponível para o filtro atual.'
+        : selectedPeriodError
+          ? String(selectedPeriodData?.error || 'Erro ao carregar utilização do período selecionado').slice(0, 160)
+        : String(usageData?.error || 'Erro ao carregar utilização').slice(0, 160);
+    }
+    schedulePdfReadinessUpdate();
+    return;
+  }
+
+  const utilization = usageData.utilization || {};
+  const periods = usageData.utilization_periods || {};
+  const selectedPeriodValue = selectedPeriodMonths.length
+    ? Number(selectedPeriodData?.unique_users) || 0
+    : Number(utilization.last_1_month) || 0;
+  const selectedPeriodLabel = selectedPeriodMonths.length
+    ? petitUsagePeriodLabel(selectedPeriodMonths)
+    : petitUsagePeriodLabel(periods.last_1_month);
+  const rows = [
+    { label: 'Utilização do mês vigente', value: selectedPeriodValue, period: selectedPeriodLabel },
+    { label: 'Utilização · 3 meses', value: Number(utilization.last_3_months) || 0, period: petitUsagePeriodLabel(periods.last_3_months) },
+    { label: 'Utilização · 6 meses', value: Number(utilization.last_6_months) || 0, period: petitUsagePeriodLabel(periods.last_6_months) },
+    { label: 'Utilização · 12 meses', value: Number(utilization.last_12_months) || 0, period: petitUsagePeriodLabel(periods.last_12_months) },
+  ];
+
+  if (content) {
+    content.innerHTML = rows.map((row) => {
+      const pct = base > 0 ? (row.value / base) * 100 : NaN;
+      return `<div class="petit-metric">
+        <span>${escapeHtml(row.label)}<small>${escapeHtml(row.period)} · ${fmt(row.value)} usuários únicos de ${fmt(base)} beneficiários</small></span>
+        <strong>${escapeHtml(fmtPct(pct))}</strong>
+      </div>`;
+    }).join('');
+    content.style.display = 'grid';
+  }
+  if (loading) loading.style.display = 'none';
+  schedulePdfReadinessUpdate();
+}
+
+async function loadPetitBaseUtilization(requestId) {
+  const loading = document.getElementById('petit-base-utilization-loading');
+  const content = document.getElementById('petit-base-utilization-content');
+  const errorBox = document.getElementById('petit-base-utilization-error');
+  const context = document.getElementById('petit-base-utilization-context');
+  if (loading) {
+    loading.style.display = 'block';
+    loading.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando utilização...';
+  }
+  if (content) {
+    content.style.display = 'none';
+    content.innerHTML = '';
+    content.classList.remove('is-comparison');
+  }
+  if (errorBox) {
+    errorBox.style.display = 'none';
+    errorBox.textContent = '';
+  }
+
+  const scopeParts = [];
+  if (currentGroups.length) scopeParts.push(selectedGroupsText());
+  if (currentCompany) scopeParts.push(currentCompany);
+  if (currentPartnerBrokerId) scopeParts.push(`Parceiro: ${selectedPartnerLabel()}`);
+  const scopeText = scopeParts.join(' · ') || 'global';
+  if (context) context.textContent = scopeText;
+
+  const p = new URLSearchParams();
+  p.set('include_beneficiaries', '1');
+  p.set('only_beneficiaries', '1');
+  appendGroupParams(p);
+  if (currentCompany) p.set('company', currentCompany);
+
+  const demographicsParams = new URLSearchParams();
+  appendGroupParams(demographicsParams);
+  if (currentCompany) demographicsParams.set('company', currentCompany);
+
+  const hasScopedComparison = Boolean(currentGroups.length || currentCompany || currentPartnerBrokerId);
+  const globalP = new URLSearchParams();
+  globalP.set('include_beneficiaries', '1');
+  globalP.set('only_beneficiaries', '1');
+
+  const [usageData, demographicsData, globalData, globalDemographicsData] = await Promise.all([
+    safeGet('/api/sessions-evolution?' + p.toString()),
+    safeGet('/api/demographics' + (demographicsParams.toString() ? '?' + demographicsParams.toString() : '')),
+    hasScopedComparison ? safeGet('/api/sessions-evolution?' + globalP.toString()) : Promise.resolve(null),
+    hasScopedComparison ? safeGet('/api/demographics') : Promise.resolve(null),
+  ]);
+  if (requestId !== petitComiteRequestId) return;
+
+  if (!usageData || usageData.error) {
+    if (loading) loading.style.display = 'none';
+    if (errorBox) {
+      errorBox.style.display = 'block';
+      errorBox.textContent = usageData?.error ? String(usageData.error).slice(0, 220) : 'Erro ao carregar utilização da base';
+    }
+    schedulePdfReadinessUpdate();
+    return;
+  }
+
+  renderUtilizationCards(usageData, demographicsData, hasScopedComparison ? {
+    data: globalData,
+    demographicsData: globalDemographicsData,
+  } : null, {
+    loading,
+    content,
+    errorBox,
+    context,
+    scoped: hasScopedComparison,
+    scopeText,
+  });
+  schedulePdfReadinessUpdate();
+}
+
+async function loadPetitMdsBaseUtilization(requestId) {
+  const loading = document.getElementById('petit-mds-base-utilization-loading');
+  const content = document.getElementById('petit-mds-base-utilization-content');
+  const errorBox = document.getElementById('petit-mds-base-utilization-error');
+  const context = document.getElementById('petit-mds-base-utilization-context');
+  if (loading) {
+    loading.style.display = 'block';
+    loading.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando utilização...';
+  }
+  if (content) {
+    content.style.display = 'none';
+    content.innerHTML = '';
+    content.classList.remove('is-comparison');
+  }
+  if (errorBox) {
+    errorBox.style.display = 'none';
+    errorBox.textContent = '';
+  }
+  if (context) context.textContent = selectedSessionScopeText() || 'Parceiro: MDS';
+
+  const p = new URLSearchParams();
+  p.set('include_beneficiaries', '1');
+  p.set('only_beneficiaries', '1');
+  appendGroupParams(p);
+  if (currentCompany) p.set('company', currentCompany);
+
+  const hasScopedComparison = Boolean(currentGroups.length || currentPartnerBrokerId);
+  const globalP = new URLSearchParams();
+  globalP.set('include_beneficiaries', '1');
+  globalP.set('only_beneficiaries', '1');
+
+  const [usageData, demographicsData, globalData, globalDemographicsData] = await Promise.all([
+    safeGet('/api/sessions-evolution?' + p.toString()),
+    safeGet('/api/demographics' + buildQS()),
+    hasScopedComparison ? safeGet('/api/sessions-evolution?' + globalP.toString()) : Promise.resolve(null),
+    hasScopedComparison ? safeGet('/api/demographics') : Promise.resolve(null),
+  ]);
+  if (requestId !== petitComiteRequestId) return;
+
+  if (!usageData || usageData.error) {
+    if (loading) loading.style.display = 'none';
+    if (errorBox) {
+      errorBox.style.display = 'block';
+      errorBox.textContent = usageData?.error ? String(usageData.error).slice(0, 220) : 'Erro ao carregar utilização da base';
+    }
+    schedulePdfReadinessUpdate();
+    return;
+  }
+
+  renderUtilizationCards(usageData, demographicsData, hasScopedComparison ? {
+    data: globalData,
+    demographicsData: globalDemographicsData,
+  } : null, {
+    loading,
+    content,
+    errorBox,
+    context,
+    scoped: hasScopedComparison,
+    scopeText: selectedSessionScopeText() || 'Parceiro: MDS',
+  });
+  schedulePdfReadinessUpdate();
+}
+
+function petitEvolutionFilterLabel() {
+  const parts = [];
+  if (currentGroups.length) parts.push(selectedGroupsText());
+  if (currentCompany) parts.push(currentCompany);
+  if (currentPartnerBrokerId) parts.push(`Parceiro: ${selectedPartnerLabel()}`);
+  return parts.join(' · ') || 'global';
+}
+
+function renderPetitComiteMds() {
+  ensurePetitMdsContent();
+  const previousVariant = petitRenderVariant;
+  petitRenderVariant = 'mds';
+  try {
+    renderPetitComite();
+  } finally {
+    petitRenderVariant = previousVariant;
+  }
+}
+
+async function renderCareCoordination() {
+  loadCareCoordinationKpis();
+  resetCareCoordinationDetail();
+  resetCareLinesEvolution();
+  resetCareComplementDetail('Clique em uma barra do CC05 para detalhar', true);
+  loadCareCoordinationActiveChronicDetail();
+  const context = document.getElementById('care-coordination-filter-context');
+  const canvas = document.getElementById('careCoordinationLinesChart');
+  const skel = document.getElementById('skel-care-coordination-lines');
+  const errorBox = document.getElementById('care-coordination-lines-error');
+  if (context) {
+    const parts = [];
+    const months = [...selectedMonths].sort();
+    if (months.length === 1) parts.push(monthShortLabel(months[0]));
+    else if (months.length > 1) parts.push(`${months.length} meses selecionados`);
+    if (currentGroups.length) parts.push(selectedGroupsText());
+    if (currentCompany) parts.push(currentCompany);
+    if (currentPartnerBrokerId) parts.push(`Parceiro: ${selectedPartnerLabel()}`);
+    if (currentCareBeneficiaryType) parts.push(`Vínculo: ${careBeneficiaryTypeLabel()}`);
+    context.textContent = parts.length ? `filtros globais: ${parts.join(' · ')}` : 'todos os filtros globais';
+  }
+  if (!canvas) return;
+  if (skel) {
+    skel.style.display = 'block';
+    skel.innerHTML = '';
+  }
+  canvas.style.display = 'none';
+  if (errorBox) {
+    errorBox.style.display = 'none';
+    errorBox.textContent = '';
+  }
+
+  const months = [...selectedMonths].sort();
+  const p = new URLSearchParams();
+  p.set('scope', 'care_lines');
+  p.set('active_only', '1');
+  p.set('include_active_mapped', '1');
+  if (months.length > 0) p.set('meses', months.join(','));
+  appendGroupParams(p);
+  appendCareBeneficiaryTypeParam(p);
+  if (currentCompany) p.set('company', currentCompany);
+  const data = await safeGet('/api/data?' + p.toString());
+
+  if (!data || data.error) {
+    if (skel) skel.style.display = 'none';
+    if (errorBox) {
+      errorBox.style.display = 'block';
+      errorBox.textContent = data?.error ? String(data.error).slice(0, 220) : 'Erro ao carregar linhas de cuidado';
+    }
+    return;
+  }
+
+  if (context) {
+    context.innerHTML = careContextHtml(context.textContent || 'todos os filtros globais', data.type_breakdown);
+  }
+
+  const rawItems = data.items || [];
+  const topItems = rawItems.slice(0, 5);
+  const otherTotal = rawItems.slice(5).reduce((acc, item) => acc + (Number(item.total_cpfs) || 0), 0);
+  loadCareLinesEvolution(topItems.map((item) => item.classificacoes).filter(Boolean), otherTotal > 0);
+  const items = otherTotal > 0
+    ? [...topItems, { classificacoes: 'Outros', total_cpfs: otherTotal }]
+    : topItems;
+  const labels = items.map((item) => item.classificacoes || 'Sem classificação');
+  const values = items.map((item) => Number(item.total_cpfs) || 0);
+  const total = Number(data.total) || values.reduce((acc, value) => acc + value, 0);
+  const uniqueActive = Number(data.active_mapped_total);
+  const footer = document.getElementById('care-coordination-lines-footer');
+  const totalSumEl = document.getElementById('care-coord-lines-total-sum');
+  const totalUniqueEl = document.getElementById('care-coord-lines-total-unique');
+  if (footer && totalSumEl && totalUniqueEl) {
+    totalSumEl.textContent = fmt(total);
+    totalUniqueEl.textContent = Number.isFinite(uniqueActive) ? fmt(uniqueActive) : '—';
+    footer.style.display = 'grid';
+  }
+  if (careCoordinationLinesChart) careCoordinationLinesChart.destroy();
+  if (skel) skel.style.display = 'none';
+  canvas.style.display = 'block';
+  const barValueLabelsPlugin = {
+    id: 'careBarValueLabels',
+    afterDatasetsDraw(chart) {
+      const { ctx, chartArea } = chart;
+      const meta = chart.getDatasetMeta(0);
+      const dataset = chart.data.datasets[0];
+      ctx.save();
+      ctx.textBaseline = 'middle';
+      ctx.font = '700 12px Inter, system-ui, sans-serif';
+      meta.data.forEach((bar, index) => {
+        const value = Number(dataset.data[index]) || 0;
+        if (!value) return;
+        const pct = total > 0 ? (value / total) * 100 : NaN;
+        const label = fmtPct(pct);
+        const props = bar.getProps(['x', 'y'], true);
+        const hasRoomInside = props.x - chartArea.left > 72;
+        ctx.textAlign = hasRoomInside ? 'right' : 'left';
+        ctx.fillStyle = hasRoomInside ? '#ffffff' : '#334155';
+        ctx.fillText(label, hasRoomInside ? props.x - 10 : props.x + 10, props.y);
+      });
+      ctx.restore();
+    },
+  };
+  careCoordinationLinesChart = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'CPF-categorias',
+        data: values,
+        backgroundColor: ['#3F55E3', '#2563eb', '#7c3aed', '#0891b2', '#be185d', '#0f766e', '#1d4ed8', '#f59e0b', '#db2777', '#64748b', '#334155', '#14b8a6'],
+        borderRadius: 10,
+        borderSkipped: false,
+        barThickness: 28,
+      }],
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      onClick: (_event, elements) => {
+        const element = elements && elements[0];
+        if (!element) return;
+        const item = items[element.index];
+        if (!item) return;
+        if (item.classificacoes === 'Outros') {
+          resetCareCoordinationDetail('Outros acumula classificações fora do Top 5. Clique em uma linha específica para detalhar.');
+          return;
+        }
+        loadCareCoordinationDetail(item.classificacoes);
+      },
+      onHover: (event, elements) => {
+        if (event?.native?.target) event.native.target.style.cursor = elements?.length ? 'pointer' : 'default';
+      },
+      plugins: {
+        legend: {
+          display: false,
+        },
+        tooltip: {
+          backgroundColor: '#1e293b',
+          borderColor: '#334155',
+          borderWidth: 1,
+          titleColor: '#cbd5e1',
+          bodyColor: '#f8fafc',
+          callbacks: {
+            label: c => {
+              const value = Number(c.parsed.x) || 0;
+              const pct = total > 0 ? (value / total) * 100 : NaN;
+              return `${fmt(value)} CPF-categorias · ${fmtPct(pct)}`;
+            },
+          },
+        },
+      },
+      scales: {
+        x: {
+          beginAtZero: true,
+          grace: '12%',
+          ticks: { color: '#94a3b8', font: { size: 10 }, callback: v => fmt(v) },
+          grid: { color: 'rgba(148,163,184,0.16)' },
+          border: { display: false },
+        },
+        y: {
+          ticks: {
+            color: '#475569',
+            font: { size: 11, weight: '700' },
+            callback: v => `${labels[v] || v} (${fmt(values[v] || 0)})`,
+          },
+          grid: { display: false },
+          border: { display: false },
+        },
+      },
+    },
+    plugins: [barValueLabelsPlugin],
+  });
+}
+
+function resetCareLinesEvolution(message = '') {
+  const skel = document.getElementById('skel-care-lines-evolution');
+  const canvas = document.getElementById('careLinesEvolutionChart');
+  const summary = document.getElementById('care-lines-evolution-summary');
+  const error = document.getElementById('care-lines-evolution-error');
+  if (careLinesEvolutionChart) {
+    careLinesEvolutionChart.destroy();
+    careLinesEvolutionChart = null;
+  }
+  if (skel) skel.style.display = message ? 'none' : 'block';
+  if (canvas) canvas.style.display = 'none';
+  if (summary) {
+    summary.style.display = 'none';
+    summary.innerHTML = '';
+  }
+  if (error) {
+    error.style.display = message ? 'block' : 'none';
+    error.textContent = message;
+  }
+}
+
+function normalizeCareCategoryName(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+}
+
+function careComplementElements(activeOnly = false) {
+  const prefix = activeOnly ? 'care-active-complement' : 'care-complement';
+  return {
+    title: document.getElementById(`${prefix}-title`),
+    context: document.getElementById(`${prefix}-context`),
+    loading: document.getElementById(`${prefix}-loading`),
+    empty: document.getElementById(`${prefix}-empty`),
+    chartWrap: document.getElementById(`${prefix}-chart-wrap`),
+    canvas: document.getElementById(activeOnly ? 'careActiveComplementChart' : 'careComplementChart'),
+    meta: document.getElementById(`${prefix}-meta`),
+    error: document.getElementById(`${prefix}-error`),
+  };
+}
+
+function resetCareComplementDetail(message = 'Clique em uma barra do CC03 para detalhar', activeOnly = false) {
+  const { title, context, loading, empty, chartWrap, meta, error } = careComplementElements(activeOnly);
+  const chart = activeOnly ? careActiveComplementChart : careComplementChart;
+  if (chart) {
+    chart.destroy();
+    if (activeOnly) careActiveComplementChart = null;
+    else careComplementChart = null;
+  }
+  if (title) title.textContent = activeOnly ? 'Detalhamento complementar ativo' : 'Detalhamento complementar';
+  if (context) context.textContent = activeOnly ? 'Clique em uma barra do CC05 para detalhar' : 'Clique em uma barra do CC03 para detalhar';
+  if (loading) loading.style.display = 'none';
+  if (chartWrap) chartWrap.style.display = 'none';
+  if (meta) {
+    meta.style.display = 'none';
+    meta.textContent = '—';
+  }
+  if (error) {
+    error.style.display = 'none';
+    error.textContent = '';
+  }
+  if (empty) {
+    empty.style.display = 'flex';
+    empty.textContent = message;
+  }
+}
+
+async function loadCareLinesEvolution(classNames, includeOthers) {
+  const skel = document.getElementById('skel-care-lines-evolution');
+  const canvas = document.getElementById('careLinesEvolutionChart');
+  const summary = document.getElementById('care-lines-evolution-summary');
+  const error = document.getElementById('care-lines-evolution-error');
+  if (!canvas) return;
+  if (!classNames.length) {
+    resetCareLinesEvolution('Sem classificações para montar a evolução.');
+    return;
+  }
+  resetCareLinesEvolution();
+
+  const p = new URLSearchParams();
+  p.set('scope', 'care_lines_evolution');
+  p.set('active_only', '1');
+  p.set('class_names', JSON.stringify(classNames));
+  if (includeOthers) p.set('include_others', '1');
+  appendGroupParams(p);
+  appendCareBeneficiaryTypeParam(p);
+  if (currentCompany) p.set('company', currentCompany);
+  const data = await safeGet('/api/data?' + p.toString());
+
+  if (!data || data.error) {
+    if (skel) skel.style.display = 'none';
+    if (error) {
+      error.style.display = 'block';
+      error.textContent = data?.error ? String(data.error).slice(0, 220) : 'Erro ao carregar evolução das classificações';
+    }
+    return;
+  }
+
+  const months = data.months || [];
+  const labels = months.map((month) => monthShortLabel(month));
+  const palette = ['#3F55E3', '#2563eb', '#7c3aed', '#0891b2', '#be185d', '#0f766e', '#64748b'];
+  const series = data.series || [];
+  const monthlyTotals = months.map((_, monthIndex) =>
+    series.reduce((acc, item) => acc + (Number(item.values?.[monthIndex]) || 0), 0)
+  );
+  const datasets = (data.series || []).map((item, index) => ({
+    type: 'bar',
+    label: item.classificacao || 'Sem classificação',
+    data: item.values || [],
+    backgroundColor: palette[index] || '#3F55E3',
+    borderColor: '#ffffff',
+    borderWidth: 1,
+    borderRadius: 6,
+    borderSkipped: false,
+    barPercentage: 0.82,
+    categoryPercentage: 0.72,
+  }));
+  datasets.push({
+    type: 'line',
+    label: 'Total acumulado',
+    data: monthlyTotals,
+    borderColor: '#0f172a',
+    backgroundColor: 'rgba(15,23,42,0.08)',
+    borderWidth: 2,
+    borderDash: [6, 4],
+    pointRadius: 4,
+    pointBackgroundColor: '#0f172a',
+    fill: false,
+    tension: 0.3,
+    yAxisID: 'yTotal',
+  });
+
+  if (summary) {
+    summary.innerHTML = months.map((month, index) => {
+      const total = monthlyTotals[index] || 0;
+      const previous = index > 0 ? monthlyTotals[index - 1] || 0 : null;
+      const delta = previous && previous > 0 ? ((total - previous) / previous) * 100 : null;
+      const top = series
+        .map((item) => ({ label: item.classificacao || 'Sem classificação', value: Number(item.values?.[index]) || 0 }))
+        .sort((a, b) => b.value - a.value)[0];
+      const deltaLabel = delta === null ? 'sem comparativo' : `${delta >= 0 ? '+' : ''}${fmtPct(delta)} vs mês anterior`;
+      return `<div class="petit-metric">
+        <span>${escapeHtml(monthShortLabel(month))}<small>${escapeHtml(top?.label || 'Sem dados')} · ${fmt(top?.value || 0)} CPF-categorias</small></span>
+        <strong>${fmt(total)}</strong>
+        <small style="grid-column:1 / -1;color:#94a3b8;font-weight:800">${escapeHtml(deltaLabel)}</small>
+      </div>`;
+    }).join('');
+    summary.style.display = 'grid';
+  }
+
+  if (careLinesEvolutionChart) careLinesEvolutionChart.destroy();
+  if (skel) skel.style.display = 'none';
+  canvas.style.display = 'block';
+  careLinesEvolutionChart = new Chart(canvas, {
+    type: 'bar',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: true, position: 'top', align: 'end', labels: { boxWidth: 10, boxHeight: 10, color: '#64748b', font: { size: 11 } } },
+        tooltip: {
+          backgroundColor: '#1e293b',
+          borderColor: '#334155',
+          borderWidth: 1,
+          titleColor: '#cbd5e1',
+          bodyColor: '#f8fafc',
+          callbacks: {
+            label: c => {
+              const value = Number(c.parsed.y) || 0;
+              if (c.dataset.type === 'line') return `Total acumulado: ${fmt(value)} CPF-categorias`;
+              const total = monthlyTotals[c.dataIndex] || 0;
+              const pct = total > 0 ? (value / total) * 100 : NaN;
+              return `${c.dataset.label}: ${fmt(value)} CPF-categorias · ${fmtPct(pct)} do acumulado`;
+            },
+          },
+        },
+      },
+      scales: {
+        x: { stacked: false, ticks: { color: '#64748b', font: { size: 11, weight: '600' } }, grid: { display: false }, border: { display: false } },
+        y: { stacked: false, beginAtZero: true, ticks: { color: '#94a3b8', font: { size: 10 }, callback: v => fmt(v) }, grid: { color: 'rgba(148,163,184,0.18)' }, border: { display: false } },
+        yTotal: { position: 'right', beginAtZero: true, ticks: { color: '#94a3b8', font: { size: 10 }, callback: v => fmt(v) }, grid: { drawOnChartArea: false }, border: { display: false } },
+      },
+    },
+  });
+
+}
+function resetCareCoordinationDetail(message = 'Selecione uma barra no CC01 para carregar as condições.') {
+  const context = document.getElementById('care-detail-context');
+  const loading = document.getElementById('care-detail-loading');
+  const empty = document.getElementById('care-detail-empty');
+  const content = document.getElementById('care-detail-content');
+  const list = document.getElementById('care-detail-list');
+  const meta = document.getElementById('care-detail-meta');
+  const examples = document.getElementById('care-detail-examples');
+  const error = document.getElementById('care-detail-error');
+  if (context) context.textContent = 'Selecione uma linha no CC01 para detalhar';
+  if (loading) loading.style.display = 'none';
+  if (content) content.style.display = 'none';
+  if (list) list.innerHTML = '';
+  if (meta) meta.textContent = '—';
+  if (examples) {
+    examples.style.display = 'none';
+    examples.innerHTML = '';
+  }
+  if (error) {
+    error.style.display = 'none';
+    error.textContent = '';
+  }
+  if (empty) {
+    empty.style.display = 'flex';
+    empty.textContent = message;
+  }
+}
+
+function careExampleIdsTooltip(item) {
+  const ids = Array.isArray(item?.example_ids) ? item.example_ids.filter(Boolean).slice(0, 5) : [];
+  return ids.length ? `\nIDs healthcoach_gold_live: ${ids.join(', ')}` : '';
+}
+
+let careExamplePopoverHideTimer = null;
+let careExampleRecordsByKey = new Map();
+
+function careExamplesAttr(item) {
+  const records = Array.isArray(item?.example_records) ? item.example_records.slice(0, 5) : [];
+  return records.length ? escapeAttr(JSON.stringify(records)) : '';
+}
+
+function careExamplesKey(item, fallbackClassification = '') {
+  const classification = item?.classificacao || fallbackClassification || '';
+  const category = item?.categoria_atendimento || 'Sem categoria';
+  return `${classification}||${category}`;
+}
+
+function formatCareExampleDate(value) {
+  if (!value) return '—';
+  const date = new Date(String(value) + 'T00:00:00');
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString('pt-BR');
+}
+
+function careExamplePopoverElement() {
+  let popover = document.getElementById('care-example-popover');
+  if (!popover) {
+    popover = document.createElement('div');
+    popover.id = 'care-example-popover';
+    popover.className = 'care-example-popover';
+    popover.addEventListener('mouseenter', () => {
+      if (careExamplePopoverHideTimer) clearTimeout(careExamplePopoverHideTimer);
+    });
+    popover.addEventListener('mouseleave', hideCareExamplePopover);
+    document.body.appendChild(popover);
+  }
+  return popover;
+}
+
+function positionCareExamplePopover(popover, anchor) {
+  const rect = anchor.getBoundingClientRect();
+  const width = Math.min(460, window.innerWidth - 32);
+  const left = Math.min(Math.max(16, rect.left), window.innerWidth - width - 16);
+  const top = Math.min(rect.bottom + 8, window.innerHeight - 276);
+  popover.style.left = `${left}px`;
+  popover.style.top = `${Math.max(16, top)}px`;
+}
+
+function showCareExamplePopover(anchor, records) {
+  const popover = careExamplePopoverElement();
+  if (careExamplePopoverHideTimer) clearTimeout(careExamplePopoverHideTimer);
+  popover.innerHTML = `<div class="care-example-popover-title">Exemplos da healthcoach_gold_live</div>
+    <table class="care-example-table">
+      <thead><tr><th>ID Healthcoach</th><th>Assunto</th><th>Abertura 1º registro</th></tr></thead>
+      <tbody>${records.map((record) => `<tr>
+        <td><code>${escapeHtml(record.id || '—')}</code></td>
+        <td>${escapeHtml(record.assunto || '—')}</td>
+        <td>${escapeHtml(formatCareExampleDate(record.data_abertura_primeiro_registro))}</td>
+      </tr>`).join('')}</tbody>
+    </table>`;
+  popover.style.display = 'block';
+  positionCareExamplePopover(popover, anchor);
+}
+
+function renderCareExampleTable(records) {
+  if (!records.length) {
+    return '<div style="font-size:12px;color:#94a3b8;padding:10px;text-align:center">Sem exemplos de ID para esta linha.</div>';
+  }
+  return `<table class="care-example-table">
+    <thead><tr><th>ID Healthcoach</th><th>Assunto</th><th>Abertura 1º registro</th></tr></thead>
+    <tbody>${records.map((record) => `<tr>
+      <td><code>${escapeHtml(record.id || '—')}</code></td>
+      <td>${escapeHtml(record.assunto || '—')}</td>
+      <td>${escapeHtml(formatCareExampleDate(record.data_abertura_primeiro_registro))}</td>
+    </tr>`).join('')}</tbody>
+  </table>`;
+}
+
+function renderCareExamplesPanel(label, classification, records) {
+  const panel = document.getElementById('care-detail-examples');
+  if (!panel) return;
+  panel.innerHTML = `<div class="care-example-panel">
+    <div class="care-example-panel-head">
+      <div class="care-example-panel-title">Exemplos da healthcoach_gold_live · ${escapeHtml(label)}${classification ? ` · ${escapeHtml(classification)}` : ''}</div>
+      <button class="care-example-panel-close" type="button" onclick="hideCareExamplesPanel()">Fechar</button>
+    </div>
+    ${renderCareExampleTable(records)}
+  </div>`;
+  panel.style.display = 'block';
+}
+
+function hideCareExamplesPanel() {
+  const panel = document.getElementById('care-detail-examples');
+  if (!panel) return;
+  panel.style.display = 'none';
+  panel.innerHTML = '';
+}
+
+function hideCareExamplePopover() {
+  const popover = document.getElementById('care-example-popover');
+  if (popover) popover.style.display = 'none';
+}
+
+function scheduleHideCareExamplePopover() {
+  if (careExamplePopoverHideTimer) clearTimeout(careExamplePopoverHideTimer);
+  careExamplePopoverHideTimer = setTimeout(hideCareExamplePopover, 140);
+}
+
+function careExampleRecordsFromRow(row) {
+  try {
+    const records = JSON.parse(row.getAttribute('data-care-examples') || '[]');
+    return Array.isArray(records) ? records : [];
+  } catch {
+    return [];
+  }
+}
+
+function wireCareExamplePopovers(root) {
+  root.querySelectorAll('[data-care-example-key]').forEach((row) => {
+    row.addEventListener('click', (event) => {
+      const key = row.getAttribute('data-care-example-key') || '';
+      const records = careExampleRecordsByKey.get(key) || careExampleRecordsFromRow(row);
+      const label = row.getAttribute('data-care-category') || 'Linha selecionada';
+      const classification = row.getAttribute('data-care-classification') || '';
+      event.preventDefault();
+      event.stopPropagation();
+      renderCareExamplesPanel(label, classification, records.slice(0, 5));
+    });
+  });
+}
+
+document.addEventListener('click', (event) => {
+  const popover = document.getElementById('care-example-popover');
+  if (!popover || popover.style.display === 'none') return;
+  const target = event.target;
+  if (popover.contains(target) || target?.closest?.('[data-care-examples]')) return;
+  hideCareExamplePopover();
+});
+
+function renderCareClassificationColumns(list, items, total, targets) {
+  const columns = [
+    { label: 'Crônico', color: '#3F55E3' },
+    { label: 'Situacional', color: '#0f766e' },
+  ];
+  const totalForPct = total || items.reduce((acc, item) => acc + (Number(item.total_cpfs) || 0), 0);
+  list.innerHTML = `<div class="care-condition-columns">
+    ${columns.map((column) => {
+      const columnItems = items
+        .filter((item) => String(item.classificacao || '').trim() === column.label)
+        .sort((a, b) => (Number(b.total_cpfs) || 0) - (Number(a.total_cpfs) || 0));
+      const columnTotal = columnItems.reduce((acc, item) => acc + (Number(item.total_cpfs) || 0), 0);
+      const columnPct = totalForPct > 0 ? (columnTotal / totalForPct) * 100 : NaN;
+      const columnMax = columnItems.reduce((acc, item) => Math.max(acc, Number(item.total_cpfs) || 0), 0) || 1;
+      const rowsHtml = columnItems.length ? columnItems.map((item) => {
+        const value = Number(item.total_cpfs) || 0;
+        const pct = columnTotal > 0 ? (value / columnTotal) * 100 : NaN;
+        const width = Math.max((value / columnMax) * 100, 2);
+        const label = item.categoria_atendimento || 'Sem categoria';
+        const rowTitle = `${label}${careExampleIdsTooltip(item)}`;
+        const titleAttr = targets.showExamplePopover ? '' : `title="${escapeAttr(rowTitle)}"`;
+        const exampleAttr = targets.showExamplePopover ? careExamplesAttr(item) : '';
+        const exampleKey = careExamplesKey(item, column.label);
+        return `<div class="petit-dist-row" ${titleAttr} data-care-category="${escapeAttr(label)}" data-care-classification="${escapeAttr(column.label)}" data-care-example-key="${escapeAttr(exampleKey)}" ${exampleAttr ? `data-care-examples="${exampleAttr}"` : ''} style="${(targets.onItemClick || targets.showExamplePopover) ? 'cursor:pointer' : ''}">
+          <div class="petit-dist-label">${escapeHtml(label)}</div>
+          <div class="petit-dist-track" ${titleAttr}><div class="petit-dist-bar" style="width:${width}%;background:${column.color}" ${titleAttr}><span class="petit-dist-value">${fmt(value)} <small>${fmtPct(pct)}</small></span></div></div>
+        </div>`;
+      }).join('') : `<div class="care-condition-column-empty">Nenhuma condição ${escapeHtml(column.label.toLowerCase())} ativa.</div>`;
+      return `<section class="care-condition-column">
+        <div class="care-condition-column-head">
+          <div class="care-condition-column-title">${escapeHtml(column.label)}</div>
+          <div class="care-condition-column-meta">${fmt(columnTotal)} CPFs<br>${fmtPct(columnPct)} do total</div>
+        </div>
+        <div class="care-condition-column-list">${rowsHtml}</div>
+      </section>`;
+    }).join('')}
+  </div>`;
+  if (items.length && targets.onItemClick) {
+    list.querySelectorAll('[data-care-category]').forEach((row) => {
+      row.addEventListener('click', () => targets.onItemClick({
+        category: row.getAttribute('data-care-category') || '',
+        classificacao: row.getAttribute('data-care-classification') || '',
+      }));
+    });
+  }
+  if (targets.showExamplePopover) wireCareExamplePopovers(list);
+}
+
+async function loadCareLineDetailInto(classificacao, targets) {
+  const context = document.getElementById(targets.context);
+  const loading = document.getElementById(targets.loading);
+  const empty = document.getElementById(targets.empty);
+  const content = document.getElementById(targets.content);
+  const list = document.getElementById(targets.list);
+  const meta = document.getElementById(targets.meta);
+  const error = document.getElementById(targets.error);
+  if (context) context.textContent = targets.contextText || `Condições em ${classificacao}`;
+  if (loading) loading.style.display = 'block';
+  if (empty) empty.style.display = 'none';
+  if (content) content.style.display = 'none';
+  if (error) {
+    error.style.display = 'none';
+    error.textContent = '';
+  }
+
+  const months = [...selectedMonths].sort();
+  const p = new URLSearchParams();
+  p.set('scope', 'care_line_detail');
+  p.set('classificacao', classificacao);
+  if (months.length > 0) p.set('meses', months.join(','));
+  if (targets.extraParams) {
+    Object.entries(targets.extraParams).forEach(([key, value]) => p.set(key, value));
+  }
+  appendGroupParams(p);
+  appendCareBeneficiaryTypeParam(p);
+  if (currentCompany) p.set('company', currentCompany);
+  const data = await safeGet('/api/data?' + p.toString());
+  if (loading) loading.style.display = 'none';
+
+  if (!data || data.error) {
+    if (error) {
+      error.style.display = 'block';
+      error.textContent = data?.error ? String(data.error).slice(0, 220) : 'Erro ao carregar detalhamento';
+    }
+    return;
+  }
+
+  if (context && targets.showTypeBreakdown) {
+    const baseContext = targets.contextText || `Condições em ${classificacao}`;
+    context.innerHTML = careContextHtml(baseContext, data.type_breakdown);
+  }
+
+  const items = data.items || [];
+  careExampleRecordsByKey = new Map();
+  items.forEach((item) => {
+    careExampleRecordsByKey.set(careExamplesKey(item), Array.isArray(item.example_records) ? item.example_records.slice(0, 5) : []);
+  });
+  const total = Number(data.total) || items.reduce((acc, item) => acc + (Number(item.total_cpfs) || 0), 0);
+  const max = items.reduce((acc, item) => Math.max(acc, Number(item.total_cpfs) || 0), 0) || 1;
+  if (!items.length && empty) {
+    empty.style.display = 'flex';
+    empty.textContent = targets.emptyText || 'Nenhuma condição encontrada para essa linha.';
+  }
+  if (list) {
+    if (targets.groupByClassification) {
+      renderCareClassificationColumns(list, items, total, targets);
+    } else {
+      list.innerHTML = items.length ? items.map((item, index) => {
+      const value = Number(item.total_cpfs) || 0;
+      const pct = total > 0 ? (value / total) * 100 : NaN;
+      const width = Math.max((value / max) * 100, 2);
+      const label = item.categoria_atendimento || 'Sem categoria';
+      const classification = item.classificacao || '';
+      const title = `${classification ? `${label} · ${classification}` : label}${careExampleIdsTooltip(item)}`;
+      const titleAttr = targets.showExamplePopover ? '' : `title="${escapeAttr(title)}"`;
+      const exampleAttr = targets.showExamplePopover ? careExamplesAttr(item) : '';
+      const exampleKey = careExamplesKey(item);
+      const color = ['#3F55E3', '#2563eb', '#7c3aed', '#0891b2', '#be185d', '#0f766e', '#1d4ed8', '#f59e0b', '#db2777', '#64748b'][index] || '#3F55E3';
+      return `<div class="petit-dist-row" ${titleAttr} data-care-category="${escapeAttr(label)}" data-care-classification="${escapeAttr(classification)}" data-care-example-key="${escapeAttr(exampleKey)}" ${exampleAttr ? `data-care-examples="${exampleAttr}"` : ''} style="${(targets.onItemClick || targets.showExamplePopover) ? 'cursor:pointer' : ''}">
+        <div class="petit-dist-label" style="display:flex;align-items:center;gap:6px;min-width:0"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(label)}</span>${classification && targets.showClassificationTag ? `<small style="font-size:10px;color:#64748b;font-weight:800;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:999px;padding:2px 6px;white-space:nowrap">${escapeHtml(classification)}</small>` : ''}</div>
+        <div class="petit-dist-track" ${titleAttr}><div class="petit-dist-bar" style="width:${width}%;background:${color}" ${titleAttr}><span class="petit-dist-value">${fmt(value)} <small>${fmtPct(pct)}</small></span></div></div>
+      </div>`;
+    }).join('') : '<div style="font-size:13px;color:#94a3b8;text-align:center;padding:20px 0">Nenhuma condição encontrada para essa linha.</div>';
+    if (items.length && targets.onItemClick) {
+      list.querySelectorAll('[data-care-category]').forEach((row) => {
+        row.addEventListener('click', () => targets.onItemClick({
+          category: row.getAttribute('data-care-category') || '',
+          classificacao: row.getAttribute('data-care-classification') || '',
+        }));
+      });
+    }
+    if (targets.showExamplePopover) wireCareExamplePopovers(list);
+    }
+  }
+  if (meta) meta.textContent = `${items.length} condições · total ${fmt(total)} CPFs únicos`;
+  if (content && items.length) content.style.display = 'block';
+}
+
+async function loadCareCoordinationDetail(classificacao) {
+  return loadCareLineDetailInto(classificacao, {
+    context: 'care-detail-context',
+    loading: 'care-detail-loading',
+    empty: 'care-detail-empty',
+    content: 'care-detail-content',
+    list: 'care-detail-list',
+    meta: 'care-detail-meta',
+    error: 'care-detail-error',
+    extraParams: { active_only: '1' },
+    showExamplePopover: true,
+  });
+}
+
+async function loadCareCoordinationActiveChronicDetail() {
+  return loadCareLineDetailInto('Crônico/Situacional', {
+    context: 'care-active-chronic-context',
+    loading: 'care-active-chronic-loading',
+    empty: 'care-active-chronic-empty',
+    content: 'care-active-chronic-content',
+    list: 'care-active-chronic-list',
+    meta: 'care-active-chronic-meta',
+    error: 'care-active-chronic-error',
+    contextText: 'Crônicos e situacionais separados · percentuais por coluna',
+    emptyText: 'Nenhuma condição ativa encontrada para o filtro atual.',
+    extraParams: { active_only: '1', class_names: JSON.stringify(['Crônico', 'Situacional']) },
+    groupByClassification: true,
+    showTypeBreakdown: true,
+    onItemClick: (item) => handleCareChronicCategoryClick(item, true),
+  });
+}
+
+function handleCareChronicCategoryClick(item, activeOnly = false) {
+  const category = typeof item === 'string' ? item : item?.category;
+  const classificacao = typeof item === 'string' ? 'Crônico' : (item?.classificacao || 'Crônico');
+  const normalized = normalizeCareCategoryName(category);
+  if (normalized === 'obesidade') {
+    loadCareObesityBmiDistribution(category, activeOnly, classificacao);
+    return;
+  }
+  if (normalized === 'doenca oncologica') {
+    loadCareOncologyRiskDistribution(category, activeOnly, classificacao);
+    return;
+  }
+  if (normalized === 'gestantes' || normalized === 'gestante') {
+    loadCareGestationalDistribution(category, activeOnly, classificacao);
+    return;
+  }
+  resetCareComplementDetail(`Sem detalhamento específico para ${category || 'essa condição'}.`, activeOnly);
+}
+
+async function loadCareObesityBmiDistribution(category, activeOnly = false, classificacao = 'Crônico') {
+  const { title, context, loading, empty, chartWrap, canvas, meta, error } = careComplementElements(activeOnly);
+  resetCareComplementDetail('', activeOnly);
+  if (title) title.textContent = 'IMC médio em obesidade';
+  if (context) context.textContent = activeOnly
+    ? 'Distribuição por IMC · somente último status diferente de fechado'
+    : 'Distribuição de CPFs por faixa de IMC';
+  if (empty) empty.style.display = 'none';
+  if (loading) loading.style.display = 'block';
+
+  const months = [...selectedMonths].sort();
+  const p = new URLSearchParams();
+  p.set('scope', 'care_bmi_distribution');
+  p.set('classificacao', classificacao || 'Crônico');
+  p.set('categoria', category || 'Obesidade');
+  if (activeOnly) p.set('active_only', '1');
+  if (months.length > 0) p.set('meses', months.join(','));
+  appendGroupParams(p);
+  appendCareBeneficiaryTypeParam(p);
+  if (currentCompany) p.set('company', currentCompany);
+
+  const data = await safeGet('/api/data?' + p.toString());
+  if (loading) loading.style.display = 'none';
+  if (!data || data.error) {
+    if (error) {
+      error.style.display = 'block';
+      error.textContent = data?.error ? String(data.error).slice(0, 220) : 'Erro ao carregar distribuição de IMC';
+    }
+    return;
+  }
+
+  const items = data.items || [];
+  if (!items.length) {
+    if (empty) {
+      empty.style.display = 'flex';
+      empty.textContent = 'Nenhum IMC encontrado para Obesidade no filtro atual.';
+    }
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+  if (chartWrap) chartWrap.style.display = 'block';
+  if (canvas) {
+    const existingChart = activeOnly ? careActiveComplementChart : careComplementChart;
+    if (existingChart) existingChart.destroy();
+    const labels = items.map((item) => item.faixa_imc || 'Sem faixa');
+    const values = items.map((item) => Number(item.total_cpfs) || 0);
+    const total = Number(data.total) || values.reduce((acc, value) => acc + value, 0);
+    const validTotal = Number(data.valid_bmi_total) || 0;
+    const missingTotal = Number(data.missing_bmi_total) || 0;
+    const nextChart = new Chart(canvas, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{
+          label: 'CPFs únicos',
+          data: values,
+          backgroundColor: ['#3F55E3', '#2563eb', '#7c3aed', '#be185d', '#94a3b8'],
+          borderRadius: 8,
+          borderSkipped: false,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: '#1e293b',
+            borderColor: '#334155',
+            borderWidth: 1,
+            titleColor: '#cbd5e1',
+            bodyColor: '#f8fafc',
+            callbacks: {
+              label: (c) => {
+                const value = Number(c.parsed.y) || 0;
+                const item = items[c.dataIndex] || {};
+                const pct = total > 0 ? (value / total) * 100 : NaN;
+                return `${fmt(value)} CPFs · ${fmtPct(pct)} · IMC médio ${item.imc_medio ?? '—'}`;
+              },
+            },
+          },
+        },
+        scales: {
+          x: { ticks: { color: '#64748b', font: { size: 11, weight: '600' } }, grid: { display: false }, border: { display: false } },
+          y: { beginAtZero: true, ticks: { color: '#94a3b8', font: { size: 10 }, callback: v => fmt(v) }, grid: { color: 'rgba(148,163,184,0.18)' }, border: { display: false } },
+        },
+      },
+    });
+    if (activeOnly) careActiveComplementChart = nextChart;
+    else careComplementChart = nextChart;
+    if (meta) {
+      const weighted = items.reduce((acc, item) => {
+        const count = Number(item.total_cpfs) || 0;
+        const avg = Number(item.imc_medio);
+        return item.imc_medio !== null && Number.isFinite(avg) ? acc + (avg * count) : acc;
+      }, 0);
+      const avg = validTotal > 0 ? weighted / validTotal : null;
+      meta.style.display = 'block';
+      meta.textContent = `${fmt(total)} CPFs no detalhe · ${fmt(validTotal)} com IMC válido · ${fmt(missingTotal)} sem IMC válido · IMC médio ${avg === null ? '—' : avg.toFixed(1)}`;
+    }
+  }
+}
+
+async function loadCareOncologyRiskDistribution(category, activeOnly = false, classificacao = 'Crônico') {
+  const { title, context, loading, empty, chartWrap, canvas, meta, error } = careComplementElements(activeOnly);
+  resetCareComplementDetail('', activeOnly);
+  if (title) title.textContent = 'Risco em doença oncológica';
+  if (context) context.textContent = activeOnly
+    ? 'Distribuição por prioridade · somente último status diferente de fechado'
+    : 'Distribuição por prioridade de atendimento';
+  if (empty) empty.style.display = 'none';
+  if (loading) loading.style.display = 'block';
+
+  const months = [...selectedMonths].sort();
+  const p = new URLSearchParams();
+  p.set('scope', 'care_risk_distribution');
+  p.set('classificacao', classificacao || 'Crônico');
+  p.set('categoria', category || 'Doença oncológica');
+  if (activeOnly) p.set('active_only', '1');
+  if (months.length > 0) p.set('meses', months.join(','));
+  appendGroupParams(p);
+  appendCareBeneficiaryTypeParam(p);
+  if (currentCompany) p.set('company', currentCompany);
+
+  const data = await safeGet('/api/data?' + p.toString());
+  if (loading) loading.style.display = 'none';
+  if (!data || data.error) {
+    if (error) {
+      error.style.display = 'block';
+      error.textContent = data?.error ? String(data.error).slice(0, 220) : 'Erro ao carregar distribuição de risco';
+    }
+    return;
+  }
+
+  const items = data.items || [];
+  if (!items.length) {
+    if (empty) {
+      empty.style.display = 'flex';
+      empty.textContent = 'Nenhuma prioridade encontrada para Doença oncológica no filtro atual.';
+    }
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+  if (chartWrap) chartWrap.style.display = 'block';
+  if (canvas) {
+    const existingChart = activeOnly ? careActiveComplementChart : careComplementChart;
+    if (existingChart) existingChart.destroy();
+    const labels = items.map((item) => item.risco || 'Sem risco');
+    const values = items.map((item) => Number(item.total_cpfs) || 0);
+    const total = Number(data.total) || values.reduce((acc, value) => acc + value, 0);
+    const riskTotal = Number(data.risk_total) || 0;
+    const missingTotal = Number(data.missing_risk_total) || 0;
+    const colorByRisk = {
+      'Risco baixo': '#16a34a',
+      'Risco moderado': '#f59e0b',
+      'Risco alto': '#dc2626',
+      'Sem risco informado': '#94a3b8',
+    };
+    const nextChart = new Chart(canvas, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{
+          label: 'CPFs únicos',
+          data: values,
+          backgroundColor: labels.map((label) => colorByRisk[label] || '#3F55E3'),
+          borderRadius: 8,
+          borderSkipped: false,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: '#1e293b',
+            borderColor: '#334155',
+            borderWidth: 1,
+            titleColor: '#cbd5e1',
+            bodyColor: '#f8fafc',
+            callbacks: {
+              label: (c) => {
+                const value = Number(c.parsed.y) || 0;
+                const pct = total > 0 ? (value / total) * 100 : NaN;
+                return `${fmt(value)} CPFs · ${fmtPct(pct)}`;
+              },
+            },
+          },
+        },
+        scales: {
+          x: { ticks: { color: '#64748b', font: { size: 11, weight: '600' } }, grid: { display: false }, border: { display: false } },
+          y: { beginAtZero: true, ticks: { color: '#94a3b8', font: { size: 10 }, callback: v => fmt(v) }, grid: { color: 'rgba(148,163,184,0.18)' }, border: { display: false } },
+        },
+      },
+    });
+    if (activeOnly) careActiveComplementChart = nextChart;
+    else careComplementChart = nextChart;
+    if (meta) {
+      meta.style.display = 'block';
+      meta.textContent = `${fmt(total)} CPFs no detalhe · ${fmt(riskTotal)} com risco informado · ${fmt(missingTotal)} sem risco informado`;
+    }
+  }
+}
+
+async function loadCareGestationalDistribution(category, activeOnly = false, classificacao = 'Situacional') {
+  const { title, context, loading, empty, chartWrap, canvas, meta, error } = careComplementElements(activeOnly);
+  resetCareComplementDetail('', activeOnly);
+  if (title) title.textContent = 'Semana gestacional em gestantes';
+  if (context) context.textContent = activeOnly
+    ? 'Por trimestre · semana ajustada para hoje · último status diferente de fechado'
+    : 'Distribuição por trimestre · semana ajustada para a data de referência';
+  if (empty) empty.style.display = 'none';
+  if (loading) loading.style.display = 'block';
+
+  const months = [...selectedMonths].sort();
+  const p = new URLSearchParams();
+  p.set('scope', 'care_gestational_distribution');
+  p.set('classificacao', classificacao || 'Situacional');
+  p.set('categoria', category || 'Gestantes');
+  if (activeOnly) p.set('active_only', '1');
+  if (months.length > 0) p.set('meses', months.join(','));
+  appendGroupParams(p);
+  appendCareBeneficiaryTypeParam(p);
+  if (currentCompany) p.set('company', currentCompany);
+
+  const data = await safeGet('/api/data?' + p.toString());
+  if (loading) loading.style.display = 'none';
+  if (!data || data.error) {
+    if (error) {
+      error.style.display = 'block';
+      error.textContent = data?.error ? String(data.error).slice(0, 220) : 'Erro ao carregar distribuição gestacional';
+    }
+    return;
+  }
+
+  const items = data.items || [];
+  if (!items.length) {
+    if (empty) {
+      empty.style.display = 'flex';
+      empty.textContent = 'Nenhuma gestante encontrada para o filtro atual.';
+    }
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+  if (chartWrap) chartWrap.style.display = 'block';
+  if (canvas) {
+    const existingChart = activeOnly ? careActiveComplementChart : careComplementChart;
+    if (existingChart) existingChart.destroy();
+    const labels = items.map((item) => item.faixa || 'Sem semana');
+    const values = items.map((item) => Number(item.total_cpfs) || 0);
+    const total = Number(data.total) || values.reduce((acc, value) => acc + value, 0);
+    const validTotal = Number(data.valid_total) || 0;
+    const missingTotal = Number(data.missing_total) || 0;
+    const colorByFaixa = {
+      '1º trimestre (1-13 sem)': '#22c55e',
+      '2º trimestre (14-27 sem)': '#3F55E3',
+      '3º trimestre (28-42 sem)': '#7c3aed',
+      'Puerpério': '#ec4899',
+      'Sem semana informada': '#94a3b8',
+    };
+    const nextChart = new Chart(canvas, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{
+          label: 'CPFs únicos',
+          data: values,
+          backgroundColor: labels.map((label) => colorByFaixa[label] || '#3F55E3'),
+          borderRadius: 8,
+          borderSkipped: false,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: '#1e293b',
+            borderColor: '#334155',
+            borderWidth: 1,
+            titleColor: '#cbd5e1',
+            bodyColor: '#f8fafc',
+            callbacks: {
+              label: (c) => {
+                const value = Number(c.parsed.y) || 0;
+                const item = items[c.dataIndex] || {};
+                const pct = total > 0 ? (value / total) * 100 : NaN;
+                const range = (item.semana_minima && item.semana_maxima)
+                  ? ` · ${fmt(item.semana_minima)}–${fmt(item.semana_maxima)} sem`
+                  : '';
+                const media = item.semana_media ? ` · média ${item.semana_media} sem` : '';
+                return `${fmt(value)} CPFs · ${fmtPct(pct)}${media}${range}`;
+              },
+            },
+          },
+        },
+        scales: {
+          x: { ticks: { color: '#64748b', font: { size: 11, weight: '600' } }, grid: { display: false }, border: { display: false } },
+          y: { beginAtZero: true, ticks: { color: '#94a3b8', font: { size: 10 }, callback: v => fmt(v) }, grid: { color: 'rgba(148,163,184,0.18)' }, border: { display: false } },
+        },
+      },
+    });
+    if (activeOnly) careActiveComplementChart = nextChart;
+    else careComplementChart = nextChart;
+    if (meta) {
+      const refDate = data.reference_date ? new Date(data.reference_date + 'T00:00:00') : new Date();
+      const refLabel = refDate.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+      meta.style.display = 'block';
+      meta.textContent = `${fmt(total)} CPFs no detalhe · ${fmt(validTotal)} com semana informada · ${fmt(missingTotal)} sem semana válida · ajustado para ${refLabel}`;
+    }
+  }
+}
+
+async function loadCareCoordinationKpis() {
+  const beneficiariesValue = document.getElementById('care-kpi-beneficiaries');
+  const beneficiariesNote = document.getElementById('care-kpi-beneficiaries-note');
+  const sessionsValue = document.getElementById('care-kpi-sessions');
+  const sessionsNote = document.getElementById('care-kpi-sessions-note');
+  const mappedStaticValue = document.getElementById('care-kpi-mapped-static');
+  const mappedStaticNote = document.getElementById('care-kpi-mapped-static-note');
+  const mappedValue = document.getElementById('care-kpi-mapped');
+  const mappedNote = document.getElementById('care-kpi-mapped-note');
+  const newBeneficiariesValue = document.getElementById('care-kpi-new-beneficiaries');
+  const newBeneficiariesNote = document.getElementById('care-kpi-new-beneficiaries-note');
+  const comorbiditiesValue = document.getElementById('care-kpi-comorbidities');
+  const comorbiditiesNote = document.getElementById('care-kpi-comorbidities-note');
+  if (beneficiariesValue) beneficiariesValue.textContent = '…';
+  if (sessionsValue) sessionsValue.textContent = '…';
+  if (mappedStaticValue) mappedStaticValue.textContent = '…';
+  if (mappedValue) mappedValue.textContent = '…';
+  if (newBeneficiariesValue) newBeneficiariesValue.textContent = '…';
+  if (comorbiditiesValue) comorbiditiesValue.textContent = '…';
+  if (beneficiariesNote) beneficiariesNote.textContent = petitBeneficiariesFilterNote();
+  if (sessionsNote) sessionsNote.textContent = petitSessionsFilterNote();
+  if (mappedStaticNote) mappedStaticNote.textContent = 'mapeados / ativos · sem filtro de data';
+  if (mappedNote) mappedNote.textContent = 'linhas de cuidado · filtros aplicados';
+  if (newBeneficiariesNote) newBeneficiariesNote.textContent = 'primeira aparição · filtros aplicados';
+  if (comorbiditiesNote) comorbiditiesNote.textContent = 'sem filtro de data · status aberto';
+
+  const meses = [...selectedMonths].sort();
+  const careKpiPeriodLabel = meses.length
+    ? (meses.length === 1 ? monthShortLabel(meses[0]) : `${meses.length} meses selecionados`)
+    : 'todo o histórico';
+  const sessionParams = new URLSearchParams();
+  sessionParams.set('scope', 'total');
+  if (meses.length > 0) sessionParams.set('meses', meses.join(','));
+  appendGroupParams(sessionParams);
+  if (currentCompany) sessionParams.set('company', currentCompany);
+  const careLineParams = new URLSearchParams();
+  careLineParams.set('scope', 'care_lines');
+  if (meses.length > 0) careLineParams.set('meses', meses.join(','));
+  appendGroupParams(careLineParams);
+  appendCareBeneficiaryTypeParam(careLineParams);
+  if (currentCompany) careLineParams.set('company', currentCompany);
+  const staticCareLineParams = new URLSearchParams();
+  staticCareLineParams.set('scope', 'care_lines');
+  staticCareLineParams.set('include_active_mapped', '1');
+  appendGroupParams(staticCareLineParams);
+  appendCareBeneficiaryTypeParam(staticCareLineParams);
+  if (currentCompany) staticCareLineParams.set('company', currentCompany);
+  const newBeneficiariesParams = new URLSearchParams();
+  newBeneficiariesParams.set('scope', 'care_new_beneficiaries');
+  if (meses.length > 0) newBeneficiariesParams.set('meses', meses.join(','));
+  appendGroupParams(newBeneficiariesParams);
+  appendCareBeneficiaryTypeParam(newBeneficiariesParams);
+  if (currentCompany) newBeneficiariesParams.set('company', currentCompany);
+  const comorbidityParams = new URLSearchParams();
+  comorbidityParams.set('scope', 'care_comorbidity_distribution');
+  appendGroupParams(comorbidityParams);
+  appendCareBeneficiaryTypeParam(comorbidityParams);
+  if (currentCompany) comorbidityParams.set('company', currentCompany);
+
+  const [demographicsData, sessionsData, staticCareLinesData, careLinesData, newBeneficiariesData, comorbidityData] = await Promise.all([
+    safeGet('/api/demographics' + buildQS()),
+    safeGet('/api/sessions?' + sessionParams.toString()),
+    safeGet('/api/data?' + staticCareLineParams.toString()),
+    safeGet('/api/data?' + careLineParams.toString()),
+    safeGet('/api/data?' + newBeneficiariesParams.toString()),
+    safeGet('/api/data?' + comorbidityParams.toString()),
+  ]);
+  const totalBeneficiaries = demographicsData && !demographicsData.error
+    ? Number(demographicsData.total_beneficiarios ?? demographicsData.total_vidas) || 0
+    : 0;
+
+  if (demographicsData && !demographicsData.error) {
+    if (beneficiariesValue) beneficiariesValue.textContent = fmt(totalBeneficiaries);
+    if (beneficiariesNote) beneficiariesNote.textContent = petitBeneficiariesFilterNote();
+  } else {
+    if (beneficiariesValue) beneficiariesValue.textContent = 'Erro';
+    if (beneficiariesNote) beneficiariesNote.textContent = String(demographicsData?.error || 'Erro ao carregar beneficiários').slice(0, 140);
+  }
+
+  if (sessionsData && !sessionsData.error) {
+    if (sessionsValue) sessionsValue.textContent = fmt(Number(sessionsData.total_sessions ?? sessionsData.economic_group_total) || 0);
+    if (sessionsNote) sessionsNote.textContent = petitSessionsFilterNote();
+  } else {
+    if (sessionsValue) sessionsValue.textContent = 'Erro';
+    if (sessionsNote) sessionsNote.textContent = String(sessionsData?.error || 'Erro ao carregar atendimentos').slice(0, 140);
+  }
+
+  if (staticCareLinesData && !staticCareLinesData.error && totalBeneficiaries > 0) {
+    const mapped = Number(staticCareLinesData.mapped_total) || 0;
+    const activeMappedRaw = staticCareLinesData.active_mapped_total;
+    const activeMapped = activeMappedRaw === null || activeMappedRaw === undefined ? null : Number(activeMappedRaw) || 0;
+    const pct = (mapped / totalBeneficiaries) * 100;
+    if (mappedStaticValue) mappedStaticValue.textContent = activeMapped === null ? fmt(mapped) : `${fmt(mapped)} / ${fmt(activeMapped)}`;
+    if (mappedStaticNote) mappedStaticNote.textContent = activeMapped === null ? `${fmtPct(pct)} da base · sem filtro de data` : `${fmtPct(pct)} da base · ativos excluem status fechado`;
+  } else if (staticCareLinesData && !staticCareLinesData.error) {
+    const mapped = Number(staticCareLinesData.mapped_total) || 0;
+    const activeMappedRaw = staticCareLinesData.active_mapped_total;
+    const activeMapped = activeMappedRaw === null || activeMappedRaw === undefined ? null : Number(activeMappedRaw) || 0;
+    if (mappedStaticValue) mappedStaticValue.textContent = activeMapped === null ? fmt(mapped) : `${fmt(mapped)} / ${fmt(activeMapped)}`;
+    if (mappedStaticNote) mappedStaticNote.textContent = activeMapped === null ? 'sem filtro de data' : 'ativos excluem status fechado';
+  } else {
+    if (mappedStaticValue) mappedStaticValue.textContent = 'Erro';
+    if (mappedStaticNote) mappedStaticNote.textContent = String(staticCareLinesData?.error || 'Erro ao carregar mapeamento').slice(0, 140);
+  }
+
+  if (careLinesData && !careLinesData.error && totalBeneficiaries > 0) {
+    const mapped = Number(careLinesData.mapped_total) || 0;
+    const pct = (mapped / totalBeneficiaries) * 100;
+    if (mappedValue) mappedValue.textContent = fmtPct(pct);
+    if (mappedNote) mappedNote.textContent = `${fmt(mapped)} de ${fmt(totalBeneficiaries)} beneficiários · ${careKpiPeriodLabel}`;
+  } else if (careLinesData && !careLinesData.error) {
+    if (mappedValue) mappedValue.textContent = '—';
+    if (mappedNote) mappedNote.textContent = `base de beneficiários indisponível · ${careKpiPeriodLabel}`;
+  } else {
+    if (mappedValue) mappedValue.textContent = 'Erro';
+    if (mappedNote) mappedNote.textContent = String(careLinesData?.error || 'Erro ao carregar mapeamento').slice(0, 140);
+  }
+
+  if (newBeneficiariesData && !newBeneficiariesData.error) {
+    const totalNew = Number(newBeneficiariesData.total_new_beneficiaries) || 0;
+    if (newBeneficiariesValue) newBeneficiariesValue.textContent = fmt(totalNew);
+    if (newBeneficiariesNote) {
+      newBeneficiariesNote.textContent = `primeira aparição · ${careKpiPeriodLabel}`;
+    }
+  } else {
+    if (newBeneficiariesValue) newBeneficiariesValue.textContent = 'Erro';
+    if (newBeneficiariesNote) newBeneficiariesNote.textContent = String(newBeneficiariesData?.error || 'Erro ao carregar novos beneficiários').slice(0, 140);
+  }
+
+  if (comorbidityData && !comorbidityData.error) {
+    const one = Number(comorbidityData.one_comorbidity) || 0;
+    const two = Number(comorbidityData.two_comorbidities) || 0;
+    const threePlus = Number(comorbidityData.three_or_more_comorbidities) || 0;
+    const investigation = Number(comorbidityData.investigation_total) || 0;
+    const healthy = Number(comorbidityData.healthy_total) || 0;
+    const other = Number(comorbidityData.other_total) || 0;
+    const conditionTotal = Number(comorbidityData.condition_total) || one + two + threePlus;
+    const total = Number(comorbidityData.total) || conditionTotal + investigation + healthy + other;
+    if (comorbiditiesValue) {
+      comorbiditiesValue.innerHTML = `<div class="petit-kpi-split care-comorbidity-split">
+        <span><small>1 condição</small><strong>${fmt(one)}</strong></span>
+        <span><small>2 condições</small><strong>${fmt(two)}</strong></span>
+        <span><small>3+ condições</small><strong>${fmt(threePlus)}</strong></span>
+        <span><small>Investigação</small><strong>${fmt(investigation)}</strong></span>
+        <span><small>Saudáveis</small><strong>${fmt(healthy)}</strong></span>
+        <span><small>Outros</small><strong>${fmt(other)}</strong></span>
+      </div>`;
+    }
+    if (comorbiditiesNote) comorbiditiesNote.textContent = `${fmt(total)} CPFs ativos · ${fmt(conditionTotal)} com condição · fecha com Mapeados Ativos`;
+  } else {
+    if (comorbiditiesValue) comorbiditiesValue.textContent = 'Erro';
+    if (comorbiditiesNote) comorbiditiesNote.textContent = String(comorbidityData?.error || 'Erro ao carregar comorbidades').slice(0, 140);
+  }
+}
+
+function renderPetitSessionsTotalEvolutionChart(labels, totalValues, uniqueBeneficiaryValues, hasUniqueBeneficiaryData, elements = {}) {
+  const skel = elements.skel || document.getElementById(activePetitDomId('skel-petit-s-total-evol'));
+  const cv = elements.canvas || document.getElementById(activePetitDomId('petitSessionsTotalEvolChart'));
+  if (skel) skel.style.display = 'none';
+  if (cv) cv.style.display = 'block';
+  if (petitSessionsTotalEvolChart) petitSessionsTotalEvolChart.destroy();
+  if (!cv) return;
+  const datasets = [{
+    label: 'Total de sessões',
+    data: totalValues,
+    borderColor: '#3F55E3',
+    backgroundColor: 'rgba(63,85,227,0.10)',
+    borderWidth: 2,
+    pointRadius: 3,
+    pointBackgroundColor: '#3F55E3',
+    fill: true,
+    tension: 0.35,
+  }];
+  if (hasUniqueBeneficiaryData) {
+    datasets.push({
+      label: 'Beneficiários únicos · média sessões/benef.',
+      data: uniqueBeneficiaryValues,
+      borderColor: '#7c3aed',
+      backgroundColor: 'rgba(124,58,237,0.08)',
+      borderWidth: 2,
+      borderDash: [6, 5],
+      pointRadius: 3,
+      pointBackgroundColor: '#7c3aed',
+      fill: false,
+      tension: 0.35,
+    });
+  }
+  petitSessionsTotalEvolChart = new Chart(cv, {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: true, position: 'top', align: 'end', labels: { boxWidth: 10, boxHeight: 10, color: '#64748b', font: { size: 11 } } },
+        tooltip: {
+          backgroundColor: '#1e293b', borderColor: '#334155', borderWidth: 1,
+          titleColor: '#94a3b8', bodyColor: '#f1f5f9',
+          callbacks: {
+            label: c => {
+              if (String(c.dataset.label || '').startsWith('Beneficiários únicos')) {
+                const sessions = Number(totalValues[c.dataIndex]) || 0;
+                const beneficiaries = Number(c.parsed.y) || 0;
+                const avg = beneficiaries > 0 ? sessions / beneficiaries : null;
+                const avgLabel = avg === null ? '—' : avg.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 2 });
+                return `Beneficiários únicos: ${fmt(beneficiaries)} · média ${avgLabel} sessões/benef.`;
+              }
+              return `${c.dataset.label}: ${fmt(c.parsed.y)} sessões`;
+            },
+          },
+        },
+      },
+      scales: {
+        x: { ticks: { font: { size: 10 }, color: '#94a3b8', maxRotation: 45, autoSkip: true, maxTicksLimit: 14 }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } },
+        y: { beginAtZero: true, ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => fmt(v) }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } },
+      },
+    },
+  });
+}
+
+async function loadPetitSessionEvolutionCharts(requestId) {
+  const skel = petitElementById('skel-petit-s-evol');
+  const cv = petitElementById('petitSessionsEvolChart');
+  const modeLabel = petitElementById('petit-s-evol-mode');
+  const errorBox = petitElementById('petit-s-evol-error');
+  const totalSkel = petitElementById('skel-petit-s-total-evol');
+  const totalCv = petitElementById('petitSessionsTotalEvolChart');
+  const totalModeLabel = petitElementById('petit-s-total-evol-mode');
+  const totalErrorBox = petitElementById('petit-s-total-evol-error');
+  if (skel) skel.style.display = 'block';
+  if (cv) cv.style.display = 'none';
+  if (errorBox) { errorBox.style.display = 'none'; errorBox.textContent = ''; }
+  if (totalSkel) totalSkel.style.display = 'block';
+  if (totalCv) totalCv.style.display = 'none';
+  if (totalErrorBox) { totalErrorBox.style.display = 'none'; totalErrorBox.textContent = ''; }
+  if (modeLabel) modeLabel.textContent = petitEvolutionFilterLabel();
+  if (totalModeLabel) totalModeLabel.textContent = petitEvolutionFilterLabel();
+
+  const p = new URLSearchParams();
+  p.set('include_beneficiaries', '1');
+  appendGroupParams(p);
+  if (currentCompany) p.set('company', currentCompany);
+  const data = await safeGet('/api/sessions-evolution?' + p.toString());
+  if (requestId !== petitComiteRequestId) return;
+
+  if (!data || data.error) {
+    const message = data?.error ? String(data.error).slice(0, 220) : 'Erro ao carregar evolução';
+    if (errorBox) {
+      errorBox.style.display = 'block';
+      errorBox.textContent = message;
+    }
+    if (totalErrorBox) {
+      totalErrorBox.style.display = 'block';
+      totalErrorBox.textContent = message;
+    }
+    if (skel) skel.style.display = 'none';
+    if (totalSkel) totalSkel.style.display = 'none';
+    schedulePdfReadinessUpdate();
+    return;
+  }
+
+  const series = data.series || [];
+  const labels = series.map((it) => {
+    const [y, mm] = String(it.mes).split('-');
+    return mN[mm] ? `${mN[mm]}/${y.slice(2)}` : it.mes;
+  });
+  const humanoValues = series.map((it) => Number(it.humano) || 0);
+  const iaValues = series.map((it) => Number(it.ia) || 0);
+  const totalValues = series.map((it) => Number(it.total) || ((Number(it.humano) || 0) + (Number(it.ia) || 0)));
+  const uniqueBeneficiaryValues = series.map((it) => Number(it.unique_beneficiaries ?? it.unique_cpfs) || 0);
+
+  if (skel) skel.style.display = 'none';
+  if (cv) cv.style.display = 'block';
+  if (petitSessionsEvolChart) petitSessionsEvolChart.destroy();
+  if (cv) {
+    petitSessionsEvolChart = new Chart(cv, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: 'Total',
+            data: totalValues,
+            borderColor: '#3F55E3',
+            backgroundColor: 'rgba(63,85,227,0.08)',
+            borderWidth: 2,
+            pointRadius: 3,
+            pointBackgroundColor: '#3F55E3',
+            fill: false,
+            tension: 0.35,
+          },
+          {
+            label: 'Humano',
+            data: humanoValues,
+            borderColor: '#2563eb',
+            backgroundColor: 'rgba(37,99,235,0.08)',
+            borderWidth: 2,
+            pointRadius: 3,
+            pointBackgroundColor: '#2563eb',
+            fill: false,
+            tension: 0.35,
+          },
+          {
+            label: 'IA',
+            data: iaValues,
+            borderColor: '#14b8a6',
+            backgroundColor: 'rgba(20,184,166,0.08)',
+            borderWidth: 2,
+            pointRadius: 3,
+            pointBackgroundColor: '#14b8a6',
+            fill: false,
+            tension: 0.35,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: true, position: 'top', align: 'end', labels: { boxWidth: 10, boxHeight: 10, color: '#64748b', font: { size: 11 } } },
+          tooltip: {
+            backgroundColor: '#1e293b', borderColor: '#334155', borderWidth: 1,
+            titleColor: '#94a3b8', bodyColor: '#f1f5f9',
+            callbacks: { label: c => sessionsPointTooltipLabel(c, totalValues) },
+          },
+        },
+        scales: {
+          x: {
+            ticks: { font: { size: 10 }, color: '#94a3b8', maxRotation: 45, autoSkip: true, maxTicksLimit: 14 },
+            grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false },
+          },
+          y: {
+            beginAtZero: true,
+            ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => fmt(v) },
+            grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false },
+          },
+        },
+      },
+    });
+  }
+  renderPetitSessionsTotalEvolutionChart(labels, totalValues, uniqueBeneficiaryValues, Boolean(data.beneficiaries_included), {
+    skel: totalSkel,
+    canvas: totalCv,
+  });
+  schedulePdfReadinessUpdate();
+}
+
+async function renderPetitComite() {
+  const requestId = ++petitComiteRequestId;
+  const period = petitElementById('petit-period');
+  if (period) period.textContent = petitPeriodLabel();
+  loadPetitBeneficiariesKpi(requestId);
+  loadPetitSessionsKpi(requestId);
+  loadPetitHumanInteractionKpi(requestId);
+  loadPetitUsersKpi(requestId);
+  loadPetitAppointmentsKpi(requestId);
+  if (petitRenderVariant === 'mds') loadPetitMdsBaseUtilization(requestId);
+  else loadPetitBaseUtilization(requestId);
+  loadPetitSessionEvolutionCharts(requestId);
+  loadAppointmentTypes([...selectedMonths].sort(), petitAppointmentTypesPrefix());
+  loadPetitTopExams([...selectedMonths].sort());
+  loadPetitTopConsultations([...selectedMonths].sort());
+  if (petitRenderVariant === 'mds') return;
+}
+
+// --- Agendamentos ---
+function recentMonthValues(count) {
+  const now = new Date();
+  const months = [];
+  for (let i = count - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`);
+  }
+  return months;
+}
+
+function monthShortLabel(month) {
+  const [y, mm] = String(month).split('-');
+  return mN[mm] ? `${mN[mm]}/${String(y).slice(2)}` : month;
+}
+
+function appointmentTypeColor(type) {
+  const colors = {
+    'Consultas': '#2563eb',
+    'Exames': '#0f766e',
+    'Exames - DASA': '#7c3aed',
+    'Conexa PA': '#dc2626',
+    'Conexa Eletiva': '#ea580c',
+    'Odontologia': '#0891b2',
+    'Terapias': '#be185d',
+    'Outros': '#64748b',
+  };
+  return colors[type] || '#475569';
+}
+
+async function loadAppointmentTypesTrend() {
+  const skel = document.getElementById('skel-appointment-types-trend');
+  const cv = document.getElementById('appointmentTypesTrendChart');
+  const meta = document.getElementById('appointment-types-trend-meta');
+  const period = document.getElementById('appointment-types-trend-period');
+  if (!cv) return;
+  if (skel) {
+    skel.style.display = 'block';
+    skel.innerHTML = '';
+  }
+  cv.style.display = 'none';
+  if (meta) meta.textContent = 'Carregando composição mensal...';
+
+  const months = recentMonthValues(4);
+  const p = new URLSearchParams();
+  p.set('meses', months.join(','));
+  p.set('group_by', 'month');
+  p.set('dedupe', 'distinct_cpf');
+  appendGroupParams(p);
+  if (currentCompany) p.set('company', currentCompany);
+
+  const data = await safeGet('/api/appointment-types?' + p.toString());
+  if (!data || data.error) {
+    if (skel) {
+      skel.style.display = 'block';
+      skel.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>Erro ao carregar evolução por tipo';
+    }
+    if (meta) meta.textContent = '';
+    return;
+  }
+
+  const items = data.items || [];
+  const totalsByType = {};
+  const valuesByKey = {};
+  items.forEach((item) => {
+    const mes = String(item.mes || '');
+    const tipo = String(item.tipo || 'Outros');
+    const total = Number(item.total) || 0;
+    totalsByType[tipo] = (totalsByType[tipo] || 0) + total;
+    valuesByKey[`${mes}|${tipo}`] = total;
+  });
+  const types = Object.keys(totalsByType).sort((a, b) => totalsByType[b] - totalsByType[a]);
+  const datasets = types.map((type) => ({
+    label: type,
+    data: months.map((month) => valuesByKey[`${month}|${type}`] || 0),
+    backgroundColor: appointmentTypeColor(type),
+    borderColor: '#ffffff',
+    borderWidth: 1,
+    borderRadius: 5,
+    borderSkipped: false,
+    barPercentage: 0.82,
+    categoryPercentage: 0.78,
+  }));
+  const total = Object.values(totalsByType).reduce((acc, value) => acc + value, 0);
+  if (period) period.textContent = `${monthShortLabel(months[0])} a ${monthShortLabel(months[months.length - 1])}`;
+  if (meta) meta.textContent = `${fmt(total)} CPFs distintos · ${types.length || 0} tipos · mesma regra de Tipos de consulta`;
+
+  if (appointmentTypesTrendChart) appointmentTypesTrendChart.destroy();
+  if (skel) skel.style.display = 'none';
+  cv.style.display = 'block';
+  appointmentTypesTrendChart = new Chart(cv, {
+    type: 'bar',
+    data: {
+      labels: months.map(monthShortLabel),
+      datasets,
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          display: true,
+          position: 'top',
+          align: 'end',
+          labels: { boxWidth: 10, boxHeight: 10, color: '#475569', font: { size: 11 } },
+        },
+        tooltip: {
+          backgroundColor: '#1e293b',
+          borderColor: '#334155',
+          borderWidth: 1,
+          titleColor: '#cbd5e1',
+          bodyColor: '#f8fafc',
+          callbacks: {
+            label: c => `${c.dataset.label}: ${fmt(c.parsed.y)} CPFs distintos`,
+            footer: (items) => {
+              const totalMes = items.reduce((acc, item) => acc + (Number(item.parsed.y) || 0), 0);
+              return `Total do mês: ${fmt(totalMes)} CPFs distintos`;
+            },
+          },
+        },
+      },
+      scales: {
+        x: {
+          ticks: { color: '#64748b', font: { size: 11, weight: '600' } },
+          grid: { display: false },
+          border: { display: false },
+        },
+        y: {
+          beginAtZero: true,
+          ticks: { color: '#94a3b8', font: { size: 10 }, callback: v => fmt(v) },
+          grid: { color: 'rgba(148,163,184,0.18)' },
+          border: { display: false },
+        },
+      },
+    },
+  });
+}
+
+async function loadAppointments() {
+  document.getElementById('bullet-agend').textContent = '…';
+  const meses = [...selectedMonths].sort();
+  const p = new URLSearchParams();
+  if (meses.length > 0)  p.set('meses', meses.join(','));
+  p.set('dedupe', 'distinct_cpf');
+  appendGroupParams(p);
+  if (currentCompany)    p.set('company', currentCompany);
+  const qs = p.toString() ? '?' + p.toString() : '';
+
+  const appt = await safeGet('/api/appointments' + qs);
+  loadAppointmentTypes(meses, 'agendamento-appointment-types');
+  loadAppointmentTypesTrend();
+  loadAppointmentsDailyEvolution();
+  loadAppointmentsStatusEvolution();
+
+  if (appt && !appt.error) {
+    document.getElementById('bullet-agend').textContent = fmt(appt.total);
+    let label = 'CPFs distintos por tipo · últimos 12 meses';
+    if (meses.length === 1) { const [y,mm] = meses[0].split('-'); label = `CPFs distintos por tipo · ${mN[mm]}/${y}`; }
+    else if (meses.length > 1) label = `CPFs distintos por tipo · ${meses.length} meses selecionados`;
+    document.getElementById('bullet-agend-periodo').textContent = label;
+  } else {
+    document.getElementById('bullet-agend').textContent = 'Erro';
+  }
+}
+
+async function loadAppointmentsDailyEvolution() {
+  buildAppointmentsDailyMonthOptions();
+  const skel = document.getElementById('skel-agend-daily');
+  const cv = document.getElementById('appointmentsDailyChart');
+  const errorBox = document.getElementById('agend-daily-error');
+  const modeLabel = document.getElementById('agend-daily-mode');
+  const meta = document.getElementById('agend-daily-meta');
+  if (skel) skel.style.display = 'block';
+  if (cv) cv.style.display = 'none';
+  if (errorBox) { errorBox.style.display = 'none'; errorBox.textContent = ''; }
+  if (meta) meta.textContent = 'Carregando...';
+
+  const p = new URLSearchParams();
+  p.set('granularity', 'day');
+  p.set('mes', selectedAppointmentsDailyMonth || currentMonthValue());
+  appendGroupParams(p);
+  if (currentCompany) p.set('company', currentCompany);
+  const data = await safeGet('/api/appointments-evolution?' + p.toString());
+  if (!data || data.error) {
+    if (errorBox) {
+      errorBox.style.display = 'block';
+      errorBox.textContent = data && data.error ? String(data.error).slice(0, 220) : 'Erro ao carregar volume diário';
+    }
+    if (meta) meta.textContent = '';
+    if (skel) skel.style.display = 'none';
+    return;
+  }
+
+  const month = data.month || selectedAppointmentsDailyMonth;
+  const [year, mm] = String(month).split('-');
+  if (modeLabel) {
+    const parts = [mN[mm] ? `${mN[mm]}/${year}` : month];
+    if (currentGroups.length) parts.push(`grupo: ${selectedGroupsText()}`);
+    if (currentCompany) parts.push(currentCompany);
+    modeLabel.textContent = parts.join(' · ');
+  }
+
+  const weekdayFmt = new Intl.DateTimeFormat('pt-BR', { weekday: 'short', timeZone: 'UTC' });
+  const series = data.series || [];
+  const labels = series.map((it) => {
+    const day = String(it.dia || '');
+    const date = new Date(`${day}T00:00:00Z`);
+    const weekday = Number.isNaN(date.getTime())
+      ? ''
+      : weekdayFmt.format(date).replace('.', '').replace(/^./, c => c.toUpperCase());
+    return [day.slice(8, 10), weekday];
+  });
+  const physicalValues = series.map((it) => Number(it.Agendamentos) || 0);
+  const conexaValues = series.map((it) => Number(it.Conexa) || 0);
+  const physicalTotal = physicalValues.reduce((acc, value) => acc + value, 0);
+  const conexaTotal = conexaValues.reduce((acc, value) => acc + value, 0);
+  const total = physicalTotal + conexaTotal;
+  const physicalAvg = series.length ? Math.round(physicalTotal / series.length) : 0;
+  const conexaAvg = series.length ? Math.round(conexaTotal / series.length) : 0;
+  const peakValue = physicalValues.reduce((max, value) => Math.max(max, value), 0);
+  const peakIndex = physicalValues.findIndex((value) => value === peakValue);
+  const peakDay = peakIndex >= 0 ? String(series[peakIndex]?.dia || '') : '';
+  const conexaPeakValue = conexaValues.reduce((max, value) => Math.max(max, value), 0);
+  const conexaPeakIndex = conexaValues.findIndex((value) => value === conexaPeakValue);
+  const conexaPeakDay = conexaPeakIndex >= 0 ? String(series[conexaPeakIndex]?.dia || '') : '';
+  const movingAvg = physicalValues.map((_, index) => {
+    const start = Math.max(0, index - 6);
+    const values = physicalValues.slice(start, index + 1);
+    return Math.round(values.reduce((acc, value) => acc + value, 0) / values.length);
+  });
+  const setText = (id, value) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = value;
+  };
+  setText('agend-daily-physical-total', fmt(physicalTotal));
+  setText('agend-daily-physical-avg', fmt(physicalAvg));
+  setText('agend-daily-physical-peak', fmt(peakValue));
+  setText('agend-daily-physical-peak-day', peakDay ? peakDay.split('-').reverse().join('/') : '—');
+  setText('agend-daily-conexa-total', fmt(conexaTotal));
+  setText('agend-daily-conexa-share', total > 0 ? `${((conexaTotal / total) * 100).toFixed(1).replace('.', ',')}% do total` : '—');
+  setText('agend-daily-conexa-avg', fmt(conexaAvg));
+  setText('agend-daily-conexa-peak', fmt(conexaPeakValue));
+  setText('agend-daily-conexa-peak-day', conexaPeakDay ? conexaPeakDay.split('-').reverse().join('/') : '—');
+  const datasets = [
+    {
+      type: 'bar',
+      label: 'Físicos',
+      data: physicalValues,
+      backgroundColor: 'rgba(99,102,241,0.78)',
+      borderColor: '#6366f1',
+      borderWidth: 1,
+      borderRadius: 5,
+      borderSkipped: false,
+      order: 2,
+    },
+    {
+      type: 'line',
+      label: 'Conexa',
+      data: conexaValues,
+      borderColor: '#14b8a6',
+      backgroundColor: '#14b8a6',
+      borderWidth: 2,
+      pointRadius: 2.5,
+      pointHoverRadius: 4,
+      tension: 0.32,
+      fill: false,
+      yAxisID: 'yConexa',
+      order: 1,
+    },
+    {
+      type: 'line',
+      label: 'Média móvel física (7d)',
+      data: movingAvg,
+      borderColor: '#0f172a',
+      backgroundColor: '#0f172a',
+      borderWidth: 2,
+      borderDash: [5, 4],
+      pointRadius: 0,
+      pointHoverRadius: 3,
+      tension: 0.35,
+      fill: false,
+      order: 1,
+    },
+  ];
+  if (meta) meta.textContent = `${fmt(physicalTotal)} físicos · ${fmt(conexaTotal)} Conexa · físicos desconsideram consultas online`;
+
+  if (appointmentsDailyChart) appointmentsDailyChart.destroy();
+  if (skel) skel.style.display = 'none';
+  if (cv) {
+    cv.style.display = 'block';
+    appointmentsDailyChart = new Chart(cv, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets,
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: {
+            display: true,
+            position: 'top',
+            align: 'end',
+            labels: { boxWidth: 10, boxHeight: 10, color: '#475569', font: { size: 11 }, usePointStyle: true },
+          },
+          tooltip: {
+            backgroundColor: '#1e293b', borderColor: '#334155', borderWidth: 1,
+            titleColor: '#94a3b8', bodyColor: '#f1f5f9',
+            callbacks: {
+              title: items => {
+                const idx = items[0]?.dataIndex ?? 0;
+                const raw = series[idx]?.dia;
+                if (!raw) return '';
+                const date = new Date(`${raw}T00:00:00Z`);
+                const weekday = Number.isNaN(date.getTime()) ? '' : weekdayFmt.format(date);
+                return `${raw.split('-').reverse().join('/')} · ${weekday}`;
+              },
+              label: c => `${c.dataset.label}: ${fmt(c.parsed.y)} agendamentos`,
+              footer: (items) => {
+                const idx = items[0]?.dataIndex ?? 0;
+                const physical = Number(series[idx]?.Agendamentos) || 0;
+                const conexa = Number(series[idx]?.Conexa) || 0;
+                return `Físicos: ${fmt(physical)} · Conexa: ${fmt(conexa)}`;
+              },
+            },
+          },
+        },
+        scales: {
+          x: {
+            ticks: { font: { size: 10 }, color: '#94a3b8', maxRotation: 0, autoSkip: true, maxTicksLimit: 16 },
+            grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false },
+          },
+          y: {
+            beginAtZero: true,
+            ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => fmt(v) },
+            grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false },
+          },
+          yConexa: {
+            position: 'right',
+            beginAtZero: true,
+            ticks: { font: { size: 10 }, color: '#0f766e', callback: v => fmt(v) },
+            grid: { drawOnChartArea: false },
+            border: { display: false },
+          },
+        },
+      },
+    });
+  }
+}
+
+function appointmentStatusColor(status) {
+  const colors = {
+    'Liberado para agendamento': '#3b82f6',
+    'Em andamento': '#f59e0b',
+    'Aguardando confirmação do beneficiário': '#8b5cf6',
+    'Fechado': '#16a34a',
+    'Reiniciada busca': '#ef4444',
+    'Em espera de rede': '#64748b',
+  };
+  return colors[status] || '#475569';
+}
+
+async function loadAppointmentsStatusEvolution() {
+  const skel = document.getElementById('skel-agend-status');
+  const cv = document.getElementById('appointmentsStatusChart');
+  const errorBox = document.getElementById('agend-status-error');
+  const meta = document.getElementById('agend-status-meta');
+  const totalEl = document.getElementById('agend-status-total');
+  if (skel) {
+    skel.style.display = 'block';
+    skel.innerHTML = '';
+  }
+  if (cv) cv.style.display = 'none';
+  if (errorBox) { errorBox.style.display = 'none'; errorBox.textContent = ''; }
+  if (meta) meta.textContent = 'Carregando status...';
+  if (totalEl) totalEl.textContent = '—';
+
+  const months = selectedMonths.size ? [...selectedMonths].sort() : recentMonthValues(12);
+  const p = new URLSearchParams();
+  p.set('granularity', 'status_month');
+  p.set('meses', months.join(','));
+  appendGroupParams(p);
+  if (currentCompany) p.set('company', currentCompany);
+
+  const data = await safeGet('/api/appointments-evolution?' + p.toString());
+  if (!data || data.error) {
+    if (errorBox) {
+      errorBox.style.display = 'block';
+      const missing = data?.missing ? ' Verifique colunas de ID, status e data do status.' : '';
+      errorBox.textContent = String(data?.error || 'Erro ao carregar status de agendamentos').slice(0, 220) + missing;
+    }
+    if (meta) meta.textContent = '';
+    if (skel) skel.style.display = 'none';
+    return;
+  }
+
+  const statuses = data.statuses || [];
+  const series = data.series || [];
+  const chartMonths = data.months || months;
+  const total = series.reduce((acc, item) => acc + (Number(item.total) || 0), 0);
+  if (total === 0 && Array.isArray(data.unmapped_statuses) && data.unmapped_statuses.length) {
+    if (errorBox) {
+      const examples = data.unmapped_statuses
+        .slice(0, 6)
+        .map((item) => `${item.status} (${fmt(Number(item.total) || 0)})`)
+        .join(' · ');
+      errorBox.style.display = 'block';
+      errorBox.textContent = `Nenhum status mapeado para o A05. Status encontrados: ${examples}`;
+    }
+    if (meta) {
+      const columns = data.columns_used || {};
+      meta.textContent = `Colunas usadas · ID: ${columns.record || '—'} · Status: ${Array.isArray(columns.status) ? columns.status.join(', ') : (columns.status || '—')} · Data: ${columns.status_date || '—'}`;
+    }
+    if (skel) skel.style.display = 'none';
+    return;
+  }
+  const datasets = statuses.map((status) => ({
+    label: status,
+    data: series.map((item) => Number(item[status]) || 0),
+    backgroundColor: appointmentStatusColor(status),
+    borderColor: '#ffffff',
+    borderWidth: 1,
+    borderRadius: 5,
+    borderSkipped: false,
+    stack: 'status',
+    barPercentage: 0.78,
+    categoryPercentage: 0.72,
+  }));
+
+  if (totalEl) totalEl.textContent = `${fmt(total)} cards`;
+  if (meta) {
+    const columns = data.columns_used || {};
+    const statusDate = columns.status_date ? `status: ${columns.status_date}` : 'último status';
+    meta.textContent = `${chartMonths.length} meses · ${fmt(total)} cards · ${statusDate}`;
+  }
+
+  if (appointmentsStatusChart) appointmentsStatusChart.destroy();
+  if (skel) skel.style.display = 'none';
+  if (cv) {
+    cv.style.display = 'block';
+    appointmentsStatusChart = new Chart(cv, {
+      type: 'bar',
+      data: {
+        labels: chartMonths.map(monthShortLabel),
+        datasets,
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: {
+            display: true,
+            position: 'top',
+            align: 'end',
+            labels: { boxWidth: 10, boxHeight: 10, color: '#475569', font: { size: 10 }, usePointStyle: true },
+          },
+          tooltip: {
+            backgroundColor: '#1e293b',
+            borderColor: '#334155',
+            borderWidth: 1,
+            titleColor: '#cbd5e1',
+            bodyColor: '#f8fafc',
+            callbacks: {
+              label: c => `${c.dataset.label}: ${fmt(c.parsed.y)} cards`,
+              footer: (items) => {
+                const totalMes = items.reduce((acc, item) => acc + (Number(item.parsed.y) || 0), 0);
+                return `Total do mês: ${fmt(totalMes)} cards`;
+              },
+            },
+          },
+        },
+        scales: {
+          x: {
+            stacked: true,
+            ticks: { color: '#64748b', font: { size: 11, weight: '600' } },
+            grid: { display: false },
+            border: { display: false },
+          },
+          y: {
+            stacked: true,
+            beginAtZero: true,
+            ticks: { color: '#94a3b8', font: { size: 10 }, callback: v => fmt(v) },
+            grid: { color: 'rgba(148,163,184,0.18)' },
+            border: { display: false },
+          },
+        },
+      },
+    });
+  }
+}
+
+// --- Sessões ---
+function renderSessionMessageAgentFinishers(items, opts) {
+  const loading = document.getElementById('session-message-finishers-loading');
+  const content = document.getElementById('session-message-finishers-content');
+  const note = document.getElementById('s-msg-fin-note');
+  opts = opts || {};
+  if (opts.error) {
+    if (loading) {
+      loading.style.display = 'block';
+      loading.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>Erro ao carregar interações por mensagem: ' + String(opts.error).slice(0, 200);
+    }
+    if (content) content.style.display = 'none';
+    return;
+  }
+  const byTipo = Object.fromEntries((items || []).map(it => [String(it.tipo || '').toUpperCase(), Number(it.total) || 0]));
+  const humano = byTipo.HUMANO || 0;
+  const ia = byTipo.IA || 0;
+  const total = humano + ia;
+  const pct = n => total > 0 ? ((n / total) * 100).toFixed(1).replace('.', ',') + '%' : '—';
+  const width = n => total > 0 ? ((n / total) * 100).toFixed(1) + '%' : '0%';
+  const s = (id, value) => { const el = document.getElementById(id); if (el) el.textContent = value; };
+
+  s('s-msg-fin-humano', fmt(humano));
+  s('s-msg-fin-ia', fmt(ia));
+  s('s-msg-fin-total', fmt(total));
+  s('s-msg-fin-humano-pct', pct(humano));
+  s('s-msg-fin-ia-pct', pct(ia));
+
+  const barHumano = document.getElementById('bar-msg-fin-humano');
+  const barIa = document.getElementById('bar-msg-fin-ia');
+  if (barHumano) barHumano.style.width = width(humano);
+  if (barIa) barIa.style.width = width(ia);
+  if (note) {
+    const messages = [];
+    if (selectedSessionScopeText()) messages.push(`recorte: ${selectedSessionScopeText()}`);
+    messages.push("fonte: botmaker_message.sender_type='agent'");
+    note.style.display = messages.length ? 'block' : 'none';
+    note.textContent = messages.join(' · ');
+  }
+  if (loading) loading.style.display = 'none';
+  if (content) content.style.display = 'block';
+}
+
+function filterSessionCompanies() {
+  const input = document.getElementById('session-company-search');
+  const q = input ? input.value.toLowerCase() : '';
+  renderSessionCompaniesTable(sessionCompaniesData.filter((c) => String(c.empresa || '').toLowerCase().includes(q)));
+}
+
+function renderSessionCompaniesTable(data) {
+  const tbody = document.getElementById('session-companies-tbody');
+  if (!tbody) return;
+  const rows = data || [];
+  const grand = sessionCompaniesData.reduce((acc, c) => acc + (Number(c.total) || 0), 0);
+  const max = sessionCompaniesData[0]?.total > 0 ? Number(sessionCompaniesData[0].total) : 0;
+  tbody.innerHTML = rows.length ? rows.slice(0, 100).map((c, i) => {
+    const total = Number(c.total) || 0;
+    const bw = max > 0 ? Math.max(Math.round((total / max) * 100), 2) : 0;
+    const pct = grand > 0 ? ((total / grand) * 100).toFixed(1).replace('.', ',') : '0,0';
+    return `<tr onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
+      <td style="padding:6px 8px;color:#cbd5e1;font-size:10px">${i + 1}</td>
+      <td style="padding:6px 8px;color:#334155;font-weight:500">${escapeHtml(c.empresa || 'Sem empresa')}</td>
+      <td style="padding:6px 8px;text-align:right;font-weight:700;color:#1e293b">${fmt(total)}</td>
+      <td style="padding:6px 8px"><div style="background:#f1f5f9;border-radius:3px;height:5px;overflow:hidden"><div style="height:100%;width:${bw}%;background:linear-gradient(90deg,#14b8a6,#0f766e);border-radius:3px"></div></div><div style="font-size:10px;color:#94a3b8;text-align:right">${pct}%</div></td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="4" style="padding:16px 8px;text-align:center;color:#94a3b8">Nenhuma empresa encontrada para o filtro atual.</td></tr>';
+  const footer = document.getElementById('session-companies-footer');
+  if (footer) footer.textContent = `${Math.min(rows.length, 100)} de ${rows.length} · ${fmt(grand)} sessões`;
+}
+
+function renderSessionCompanies(items, opts) {
+  const loading = document.getElementById('session-companies-loading');
+  const wrap = document.getElementById('session-companies-wrap');
+  const note = document.getElementById('session-companies-note');
+  const title = document.getElementById('session-companies-title');
+  const nameHeader = document.getElementById('session-companies-name-header');
+  opts = opts || {};
+  const isCompanyMode = opts.mode === 'company';
+  if (title) title.innerHTML = `<i class="fa-solid fa-building" style="margin-right:6px"></i>${isCompanyMode ? 'Sessões por empresa' : 'Sessões por grupo econômico'}`;
+  if (nameHeader) nameHeader.textContent = isCompanyMode ? 'Empresa' : 'Grupo econômico';
+  if (opts.error) {
+    sessionCompaniesData = [];
+    if (loading) {
+      loading.style.display = 'block';
+      loading.innerHTML = `<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>Erro ao carregar ${isCompanyMode ? 'sessões por empresa' : 'sessões por grupo econômico'}: ` + String(opts.error).slice(0, 200);
+    }
+    if (wrap) wrap.style.display = 'none';
+    return;
+  }
+  sessionCompaniesData = (items || []).filter((item) => Number(item.total) > 0);
+  filterSessionCompanies();
+  if (note) {
+    const messages = [];
+    if (isCompanyMode && selectedSessionScopeText()) messages.push(`recorte: ${selectedSessionScopeText()}`);
+    if (opts.source) messages.push(opts.source);
+    note.style.display = messages.length ? 'block' : 'none';
+    note.textContent = messages.join(' · ');
+  }
+  if (loading) loading.style.display = 'none';
+  if (wrap) wrap.style.display = 'block';
+}
+
+function renderSessionsTopGroupsEvolution(data) {
+  const skel = document.getElementById('skel-s-top-groups');
+  const cv = document.getElementById('sessionsTopGroupsChart');
+  const title = document.getElementById('s-top-groups-title');
+  const source = document.getElementById('s-top-groups-source');
+  const mode = document.getElementById('s-top-groups-mode');
+  const errorBox = document.getElementById('s-top-groups-error');
+  if (!cv) return;
+
+  if (sessionsTopGroupsChart) {
+    sessionsTopGroupsChart.destroy();
+    sessionsTopGroupsChart = null;
+  }
+
+  if (errorBox) {
+    errorBox.style.display = 'none';
+    errorBox.textContent = '';
+  }
+
+  if (!data || data.error) {
+    if (skel) {
+      skel.style.display = 'block';
+      skel.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>Erro ao carregar evolução por grupo econômico';
+    }
+    if (errorBox && data?.error) {
+      errorBox.style.display = 'block';
+      errorBox.textContent = String(data.error).slice(0, 220);
+    }
+    cv.style.display = 'none';
+    return;
+  }
+
+  const months = Array.isArray(data.months) ? data.months : [];
+  const series = Array.isArray(data.series) ? data.series : [];
+  const isCompanyEvolution = data.dimension === 'company';
+  const groupsFromApi = Array.isArray(data.groups) ? data.groups.filter(Boolean) : [];
+  const groups = groupsFromApi.length ? groupsFromApi.slice(0, 5) : [...new Set(series.map((item) => item.grupo).filter(Boolean))].slice(0, 5);
+  const labels = months.map(monthShortLabel);
+  const colors = ['#0f766e', '#2563eb', '#7c3aed', '#f97316', '#db2777'];
+  const datasets = groups.map((group, index) => ({
+    label: group,
+    data: months.map((month) => {
+      const found = series.find((item) => item.mes === month && item.grupo === group);
+      return found ? Number(found.total) || 0 : 0;
+    }),
+    borderColor: colors[index % colors.length],
+    backgroundColor: colors[index % colors.length] + '22',
+    borderWidth: 2,
+    pointRadius: 3,
+    pointHoverRadius: 5,
+    tension: 0.32,
+    fill: false,
+  }));
+
+  if (mode) {
+    const parts = [];
+    if (title) title.textContent = isCompanyEvolution ? 'Evolução de sessões · top 5 empresas' : 'Evolução de sessões · top 5 grupos econômicos';
+    if (source) source.textContent = '';
+    parts.push(selectedMonths.size ? `${selectedMonths.size} meses selecionados` : 'últimos 12 meses');
+    parts.push('top 5 pelo mês mais recente');
+    parts.push('sem nulos');
+    if (selectedSessionScopeText()) parts.push(isCompanyEvolution ? `empresas do recorte: ${selectedSessionScopeText()}` : `recorte: ${selectedSessionScopeText()}`);
+    if (currentCompany) parts.push(`empresa: ${currentCompany}`);
+    mode.textContent = parts.join(' · ');
+  }
+
+  if (!datasets.length) {
+    if (skel) {
+      skel.style.display = 'block';
+      skel.innerHTML = isCompanyEvolution ? 'Sem sessões por empresa para o filtro atual.' : 'Sem sessões por grupo econômico para o filtro atual.';
+    }
+    cv.style.display = 'none';
+    return;
+  }
+
+  if (skel) skel.style.display = 'none';
+  cv.style.display = 'block';
+  sessionsTopGroupsChart = new Chart(cv, {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'bottom', labels: { boxWidth: 10, usePointStyle: true, font: { size: 10 }, color: '#64748b' } },
+        tooltip: {
+          backgroundColor: '#1e293b',
+          borderColor: '#334155',
+          borderWidth: 1,
+          titleColor: '#cbd5e1',
+          bodyColor: '#f8fafc',
+          callbacks: { label: c => `${c.dataset.label}: ${fmt(c.parsed.y)} sessões` },
+        },
+      },
+      scales: {
+        x: { ticks: { font: { size: 10 }, color: '#94a3b8' }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } },
+        y: { beginAtZero: true, ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => fmt(v) }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } },
+      },
+    },
+  });
+}
+
+function onSessionTypificationFinisherChange(value) {
+  selectedSessionTypificationFinisher = value || '';
+  selectedTypification = null;
+  loadSessions();
+}
+
+function resetTypificationGroupsCard(reason) {
+  const hadSelection = Boolean(selectedTypification);
+  selectedTypification = null;
+  const empty = document.getElementById('typification-groups-empty');
+  const loading = document.getElementById('typification-groups-loading');
+  const content = document.getElementById('typification-groups-content');
+  const context = document.getElementById('typification-groups-context');
+  const list = document.getElementById('typification-groups-list');
+  const meta = document.getElementById('typification-groups-meta');
+  const note = document.getElementById('typification-groups-note');
+  if (loading) loading.style.display = 'none';
+  if (content) content.style.display = 'none';
+  if (list) list.innerHTML = '';
+  if (meta) meta.textContent = '—';
+  if (note) { note.style.display = 'none'; note.textContent = ''; }
+  if (context) context.textContent = '—';
+  if (empty) {
+    empty.style.display = 'flex';
+    if (reason === 'reload' && hadSelection) {
+      empty.innerHTML = '<i class="fa-solid fa-arrows-rotate"></i><div>Os filtros mudaram. Selecione novamente um tipo de encerramento ao lado.</div>';
+    } else {
+      empty.innerHTML = '<i class="fa-solid fa-hand-pointer"></i><div>Selecione um tipo de encerramento ao lado para ver o volume por grupo econômico.</div>';
+    }
+  }
+}
+
+function onSessionTypificationClick(rawTipo) {
+  const tipo = String(rawTipo || '').trim();
+  if (!tipo) return;
+  if (selectedTypification === tipo) {
+    resetTypificationGroupsCard();
+    refreshTypificationActiveState();
+    return;
+  }
+  selectedTypification = tipo;
+  refreshTypificationActiveState();
+  loadTypificationGroupsBreakdown(tipo);
+}
+
+function refreshTypificationActiveState() {
+  document.querySelectorAll('#session-typifications-list .session-typification-row').forEach((row) => {
+    row.classList.toggle('is-active', row.dataset.tipo === selectedTypification);
+  });
+}
+
+async function loadTypificationGroupsBreakdown(tipo) {
+  const requestId = ++typificationGroupsRequestId;
+  const empty = document.getElementById('typification-groups-empty');
+  const loading = document.getElementById('typification-groups-loading');
+  const content = document.getElementById('typification-groups-content');
+  const context = document.getElementById('typification-groups-context');
+  const list = document.getElementById('typification-groups-list');
+  const meta = document.getElementById('typification-groups-meta');
+  const note = document.getElementById('typification-groups-note');
+  if (empty) empty.style.display = 'none';
+  if (content) content.style.display = 'none';
+  if (loading) loading.style.display = 'block';
+  if (context) context.textContent = tipo;
+
+  const meses = [...selectedMonths].sort();
+  const p = new URLSearchParams();
+  p.set('scope', 'typification_groups');
+  p.set('typification_value', tipo);
+  if (meses.length > 0) p.set('meses', meses.join(','));
+  appendGroupParams(p);
+  if (selectedSessionTypificationFinisher) p.set('typification_finisher', selectedSessionTypificationFinisher);
+
+  const data = await safeGet('/api/sessions?' + p.toString());
+  if (requestId !== typificationGroupsRequestId) return;
+  if (selectedTypification !== tipo) return;
+
+  if (loading) loading.style.display = 'none';
+
+  if (!data || data.error) {
+    if (empty) {
+      empty.style.display = 'flex';
+      empty.innerHTML = `<i class="fa-solid fa-triangle-exclamation" style="color:#f87171"></i><div>Erro ao carregar grupos: ${escapeHtml(String((data && data.error) || 'falha de rede').slice(0, 200))}</div>`;
+    }
+    return;
+  }
+
+  const groups = Array.isArray(data.groups) ? data.groups : [];
+  const total = Number(data.total) || groups.reduce((acc, g) => acc + (Number(g.total) || 0), 0);
+  if (!groups.length) {
+    if (empty) {
+      empty.style.display = 'flex';
+      empty.innerHTML = `<i class="fa-solid fa-circle-info"></i><div>Nenhum grupo encontrado para <strong>${escapeHtml(tipo)}</strong> com os filtros atuais.</div>`;
+    }
+    return;
+  }
+
+  if (content) content.style.display = 'flex';
+  const max = Number(groups[0].total) || 1;
+  if (list) {
+    list.innerHTML = groups.map((g) => {
+      const value = Number(g.total) || 0;
+      const width = Math.max((value / max) * 100, 2);
+      const pct = total > 0 ? ((value / total) * 100).toFixed(1).replace('.', ',') : '0,0';
+      const label = escapeHtml(g.grupo || 'Sem grupo');
+      return `<div class="session-typification-row variant-indigo" title="${label}">
+        <div class="session-typification-label">${label}</div>
+        <div class="session-typification-track"><div class="session-typification-bar" style="width:${width}%"></div></div>
+        <div class="session-typification-value">${fmt(value)} <span style="color:#94a3b8;font-weight:700">(${pct}%)</span></div>
+      </div>`;
+    }).join('');
+  }
+  if (meta) meta.textContent = `${groups.length} grupos · total ${fmt(total)} sessões`;
+  if (note) {
+    const messages = [];
+    if (selectedSessionScopeText()) messages.push(`recortado por: ${selectedSessionScopeText()}`);
+    if (selectedSessionTypificationFinisher === 'humano') messages.push('finalizadas por Humano');
+    else if (selectedSessionTypificationFinisher === 'ia') messages.push('finalizadas por IA');
+    note.style.display = messages.length ? 'block' : 'none';
+    note.textContent = messages.join(' · ');
+  }
+}
+
+function renderSessionTypifications(items, opts) {
+  const loading = document.getElementById('session-typifications-loading');
+  const content = document.getElementById('session-typifications-content');
+  const list = document.getElementById('session-typifications-list');
+  const meta = document.getElementById('session-typifications-meta');
+  const note = document.getElementById('session-typifications-note');
+  opts = opts || {};
+  if (opts.error) {
+    if (loading) {
+      loading.style.display = 'block';
+      loading.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>Erro ao carregar encerramentos: ' + String(opts.error).slice(0, 200);
+    }
+    if (content) content.style.display = 'none';
+    return;
+  }
+
+  const rows = (items || []).filter((item) => Number(item.total) > 0);
+  const total = rows.reduce((acc, item) => acc + (Number(item.total) || 0), 0);
+  const max = rows[0] ? Number(rows[0].total) || 1 : 1;
+  if (list) {
+    list.innerHTML = rows.length ? rows.map((item) => {
+      const value = Number(item.total) || 0;
+      const width = Math.max((value / max) * 100, 2);
+      const pct = total > 0 ? ((value / total) * 100).toFixed(1).replace('.', ',') : '0,0';
+      const rawTipo = item.tipo || 'Sem tipificação';
+      const label = escapeHtml(rawTipo);
+      const tipoAttr = escapeAttr(rawTipo);
+      const isActive = selectedTypification === rawTipo;
+      const activeClass = isActive ? ' is-active' : '';
+      return `<div class="session-typification-row is-interactive${activeClass}" role="button" tabindex="0" data-tipo="${tipoAttr}" onclick="onSessionTypificationClick(this.dataset.tipo)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();onSessionTypificationClick(this.dataset.tipo);}" title="${label} — clique para detalhar por grupo">
+        <div class="session-typification-label">${label}</div>
+        <div class="session-typification-track"><div class="session-typification-bar" style="width:${width}%"></div></div>
+        <div class="session-typification-value">${fmt(value)} <span style="color:#94a3b8;font-weight:700">(${pct}%)</span></div>
+      </div>`;
+    }).join('') : '<div style="font-size:13px;color:#94a3b8;text-align:center;padding:14px 0">Nenhum encerramento tipificado encontrado para o filtro atual.</div>';
+  }
+  if (meta) meta.textContent = `${rows.length} tipos · total ${fmt(total)} sessões tipificadas`;
+  if (note) {
+    const messages = [];
+    if (selectedSessionScopeText()) messages.push('Filtro aplicado como no Q14');
+    if (selectedSessionTypificationFinisher === 'humano') messages.push('finalizadas por Humano');
+    else if (selectedSessionTypificationFinisher === 'ia') messages.push('finalizadas por IA');
+    note.style.display = messages.length ? 'block' : 'none';
+    note.textContent = messages.join(' · ');
+  }
+  if (loading) loading.style.display = 'none';
+  if (content) content.style.display = 'flex';
+}
+
+function renderSessionsUtilization(data, demographicsData, comparison) {
+  return renderUtilizationCards(data, demographicsData, comparison, {
+    loading: document.getElementById('sessions-utilization-loading'),
+    content: document.getElementById('sessions-utilization-content'),
+    errorBox: document.getElementById('sessions-utilization-error'),
+    context: document.getElementById('sessions-utilization-context'),
+    scoped: Boolean(currentGroups.length || currentPartnerBrokerId),
+    scopeText: selectedSessionScopeText(),
+  });
+}
+
+function renderUtilizationCards(data, demographicsData, comparison, elements = {}) {
+  const { loading, content, errorBox, context } = elements;
+  if (!content) return;
+  const base = demographicsData && !demographicsData.error
+    ? Number(demographicsData.total_beneficiarios ?? demographicsData.total_vidas) || 0
+    : 0;
+  const utilization = data?.utilization || {};
+  const periods = data?.utilization_periods || {};
+  const comparisonData = comparison?.data && !comparison.data.error ? comparison.data : null;
+  const comparisonBase = comparison?.demographicsData && !comparison.demographicsData.error
+    ? Number(comparison.demographicsData.total_beneficiarios ?? comparison.demographicsData.total_vidas) || 0
+    : 0;
+  const hasScopedComparison = Boolean(elements.scoped);
+  const scopeText = elements.scopeText || selectedSessionScopeText();
+  const hasComparison = Boolean(hasScopedComparison && comparisonData && comparisonBase > 0);
+  const pct = (value, baseValue) => baseValue > 0 ? ((value / baseValue) * 100) : null;
+  const pctLabel = (ratio) => ratio === null ? '—' : fmtPct(ratio);
+  const width = (ratio) => `${Math.max(0, Math.min(100, ratio || 0))}%`;
+  const valueFor = (source, key) => Number(source?.utilization?.[key]) || 0;
+  const periodLabel = (months) => {
+    const values = (months || []).filter(Boolean);
+    if (!values.length) return 'período indisponível';
+    if (values.length === 1) return monthShortLabel(values[0]);
+    return `de ${monthShortLabel(values[0])} a ${monthShortLabel(values[values.length - 1])}`;
+  };
+  const deltaLabel = (selectedRatio, globalRatio) => {
+    if (selectedRatio === null || globalRatio === null) return 'sem comparativo';
+    const delta = selectedRatio - globalRatio;
+    const sign = delta > 0 ? '+' : '';
+    return `${sign}${delta.toFixed(1).replace('.', ',')} p.p. vs global`;
+  };
+  const deltaClass = (selectedRatio, globalRatio) => {
+    if (selectedRatio === null || globalRatio === null) return '';
+    if (selectedRatio - globalRatio > 0.05) return 'positive';
+    if (selectedRatio - globalRatio < -0.05) return 'negative';
+    return '';
+  };
+  if (context) context.textContent = hasComparison ? `${scopeText} x global` : (hasScopedComparison ? scopeText : 'global');
+  if (errorBox) {
+    const hasError = !base || !data?.utilization;
+    const comparisonError = hasScopedComparison && !hasComparison && !hasError;
+    errorBox.style.display = hasError || comparisonError ? 'block' : 'none';
+    errorBox.textContent = !base
+      ? 'Base total de beneficiários indisponível para o filtro atual.'
+      : (!data?.utilization
+        ? 'Usuários únicos indisponíveis para o schema atual.'
+        : (comparisonError ? 'Comparativo global indisponível no momento.' : ''));
+  }
+  const cards = [
+    {
+      key: 'last_1_month',
+      label: 'Utilização · último mês cheio',
+      period: periods.last_1_month,
+      accent: '#2563eb',
+      tint: '#eff6ff',
+    },
+    {
+      key: 'last_3_months',
+      label: 'Utilização · 3 meses',
+      period: periods.last_3_months,
+      accent: '#0f766e',
+      tint: '#f0fdfa',
+    },
+    {
+      key: 'last_6_months',
+      label: 'Utilização · 6 meses',
+      period: periods.last_6_months,
+      accent: '#7c3aed',
+      tint: '#f5f3ff',
+    },
+    {
+      key: 'last_12_months',
+      label: 'Utilização · 12 meses',
+      period: periods.last_12_months,
+      accent: '#b45309',
+      tint: '#fffbeb',
+    },
+  ];
+  content.classList.toggle('is-comparison', hasComparison);
+  content.innerHTML = cards.map((card) => {
+    const selectedValue = valueFor(data, card.key);
+    const selectedRatio = pct(selectedValue, base);
+    const globalValue = hasComparison ? valueFor(comparisonData, card.key) : 0;
+    const globalRatio = hasComparison ? pct(globalValue, comparisonBase) : null;
+  const selectedLabel = hasScopedComparison ? 'Recorte' : 'Global';
+    const comparisonHtml = hasComparison ? `<div class="sessions-utilization-compare">
+      <div class="sessions-utilization-compare-row">
+        <div class="sessions-utilization-compare-label">${escapeHtml(selectedLabel)}</div>
+        <div class="sessions-utilization-compare-track"><div class="sessions-utilization-compare-fill" style="width:${width(selectedRatio)}"></div></div>
+        <div class="sessions-utilization-compare-value">${fmt(selectedValue)} · ${escapeHtml(pctLabel(selectedRatio))}</div>
+      </div>
+      <div class="sessions-utilization-compare-row global">
+        <div class="sessions-utilization-compare-label">Global</div>
+        <div class="sessions-utilization-compare-track"><div class="sessions-utilization-compare-fill" style="width:${width(globalRatio)}"></div></div>
+        <div class="sessions-utilization-compare-value">${fmt(globalValue)} · ${escapeHtml(pctLabel(globalRatio))}</div>
+      </div>
+      <div class="sessions-utilization-delta ${deltaClass(selectedRatio, globalRatio)}">${escapeHtml(deltaLabel(selectedRatio, globalRatio))}</div>
+    </div>` : '';
+    const meta = `${periodLabel(card.period)} · base ${hasScopedComparison ? 'do recorte' : 'global'}: ${fmt(base)} beneficiários`;
+    return `<div class="sessions-utilization-card" style="--accent:${escapeAttr(card.accent)};--tint:${escapeAttr(card.tint)}">
+    <div class="sessions-utilization-label">${escapeHtml(card.label)}</div>
+    <div class="sessions-utilization-value"><span>${fmt(selectedValue)}</span><span class="sessions-utilization-pct">${escapeHtml(pctLabel(selectedRatio))}</span></div>
+    <div class="sessions-utilization-meta">${escapeHtml(meta)}</div>
+    <div class="sessions-utilization-track"><div class="sessions-utilization-fill" style="width:${width(selectedRatio)}"></div></div>
+    ${comparisonHtml}
+  </div>`;
+  }).join('');
+  if (loading) loading.style.display = 'none';
+  content.style.display = 'grid';
+}
+
+function renderSessionsTotalEvolutionChart(labels, totalValues, uniqueBeneficiaryValues, hasUniqueBeneficiaryData) {
+  const totalSkel = document.getElementById('skel-s-total-evol');
+  const totalCv = document.getElementById('sessionsTotalEvolChart');
+  if (totalSkel) totalSkel.style.display = 'none';
+  if (totalCv) totalCv.style.display = 'block';
+  if (sessionsTotalEvolChart) sessionsTotalEvolChart.destroy();
+  if (!totalCv) return;
+  const datasets = [{
+    label: 'Total de sessões',
+    data: totalValues,
+    borderColor: '#0f766e',
+    backgroundColor: 'rgba(15,118,110,0.08)',
+    borderWidth: 2,
+    pointRadius: 3,
+    pointBackgroundColor: '#0f766e',
+    fill: true,
+    tension: 0.35,
+  }];
+  if (hasUniqueBeneficiaryData) {
+    datasets.push({
+      label: 'Beneficiários únicos · média sessões/benef.',
+      data: uniqueBeneficiaryValues,
+      borderColor: '#7c3aed',
+      backgroundColor: 'rgba(124,58,237,0.08)',
+      borderWidth: 2,
+      borderDash: [6, 5],
+      pointRadius: 3,
+      pointBackgroundColor: '#7c3aed',
+      fill: false,
+      tension: 0.35,
+    });
+  }
+  sessionsTotalEvolChart = new Chart(totalCv, {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: true, position: 'top', align: 'end', labels: { boxWidth: 10, boxHeight: 10, color: '#64748b', font: { size: 11 } } },
+        tooltip: {
+          backgroundColor: '#1e293b', borderColor: '#334155', borderWidth: 1,
+          titleColor: '#94a3b8', bodyColor: '#f1f5f9',
+          callbacks: {
+            label: c => {
+              if (String(c.dataset.label || '').startsWith('Beneficiários únicos')) {
+                const sessions = Number(totalValues[c.dataIndex]) || 0;
+                const beneficiaries = Number(c.parsed.y) || 0;
+                const avg = beneficiaries > 0 ? sessions / beneficiaries : null;
+                const avgLabel = avg === null ? '—' : avg.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 2 });
+                return `Beneficiários únicos: ${fmt(beneficiaries)} · média ${avgLabel} sessões/benef.`;
+              }
+              return `${c.dataset.label}: ${fmt(c.parsed.y)} sessões`;
+            },
+          },
+        },
+      },
+      scales: {
+        x: { ticks: { font: { size: 10 }, color: '#94a3b8', maxRotation: 45, autoSkip: true, maxTicksLimit: 14 }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } },
+        y: { beginAtZero: true, ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => fmt(v) }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } },
+      },
+    },
+  });
+}
+
+async function loadSessionsBeneficiaryUtilization(baseParams, demographicsData, labels, totalValues, requestId) {
+  const p = new URLSearchParams(baseParams);
+  p.set('include_beneficiaries', '1');
+  p.set('only_beneficiaries', '1');
+  const globalP = new URLSearchParams();
+  globalP.set('include_beneficiaries', '1');
+  globalP.set('only_beneficiaries', '1');
+  const hasScopedComparison = Boolean(currentGroups.length || currentPartnerBrokerId);
+  const [data, globalData, globalDemographicsData] = await Promise.all([
+    safeGet('/api/sessions-evolution?' + p.toString()),
+    hasScopedComparison ? safeGet('/api/sessions-evolution?' + globalP.toString()) : Promise.resolve(null),
+    hasScopedComparison ? safeGet('/api/demographics') : Promise.resolve(null),
+  ]);
+  if (requestId !== sessionsEvolutionRequestId) return;
+  if (!data || data.error) {
+    const errorBox = document.getElementById('sessions-utilization-error');
+    const loading = document.getElementById('sessions-utilization-loading');
+    if (loading) loading.style.display = 'none';
+    if (errorBox) {
+      errorBox.style.display = 'block';
+      errorBox.textContent = data?.error ? String(data.error).slice(0, 220) : 'Erro ao carregar utilização da base';
+    }
+    return;
+  }
+  const series = data.series || [];
+  const uniqueBeneficiaryValues = series.map((it) => Number(it.unique_beneficiaries ?? it.unique_cpfs) || 0);
+  renderSessionsTotalEvolutionChart(labels, totalValues, uniqueBeneficiaryValues, Boolean(data.beneficiaries_included));
+  renderSessionsUtilization(data, demographicsData, hasScopedComparison ? {
+    data: globalData,
+    demographicsData: globalDemographicsData,
+  } : null);
+}
+
+async function loadSessions() {
+  const requestId = ++sessionsRequestId;
+  resetTypificationGroupsCard('reload');
+  buildAppointmentTypesPeriodoOptions();
+  buildSessionsDailyMonthOptions();
+  const economicGroupBullet = document.getElementById('bullet-sessoes-eg');
+  const economicGroupPeriodoLabel = document.getElementById('bullet-sessoes-eg-periodo');
+  const messageFinishersLoading = document.getElementById('session-message-finishers-loading');
+  const messageFinishersContent = document.getElementById('session-message-finishers-content');
+  const sessionCompaniesLoading = document.getElementById('session-companies-loading');
+  const sessionCompaniesWrap = document.getElementById('session-companies-wrap');
+  const typificationsLoading = document.getElementById('session-typifications-loading');
+  const typificationsContent = document.getElementById('session-typifications-content');
+  const topGroupsSkel = document.getElementById('skel-s-top-groups');
+  const topGroupsCanvas = document.getElementById('sessionsTopGroupsChart');
+  const topGroupsError = document.getElementById('s-top-groups-error');
+  if (economicGroupBullet) economicGroupBullet.textContent = '…';
+  if (messageFinishersLoading) {
+    messageFinishersLoading.style.display = 'block';
+    messageFinishersLoading.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...';
+  }
+  if (messageFinishersContent) messageFinishersContent.style.display = 'none';
+  if (sessionCompaniesLoading) {
+    sessionCompaniesLoading.style.display = 'block';
+    sessionCompaniesLoading.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...';
+  }
+  if (sessionCompaniesWrap) sessionCompaniesWrap.style.display = 'none';
+  if (typificationsLoading) {
+    typificationsLoading.style.display = 'block';
+    typificationsLoading.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...';
+  }
+  if (typificationsContent) typificationsContent.style.display = 'none';
+  if (topGroupsSkel) {
+    topGroupsSkel.style.display = 'block';
+    topGroupsSkel.innerHTML = '';
+  }
+  if (topGroupsCanvas) topGroupsCanvas.style.display = 'none';
+  if (topGroupsError) {
+    topGroupsError.style.display = 'none';
+    topGroupsError.textContent = '';
+  }
+  const meses = [...selectedMonths].sort();
+  const p = new URLSearchParams();
+  if (meses.length > 0)  p.set('meses', meses.join(','));
+  appendGroupParams(p);
+  if (selectedSessionTypificationFinisher) p.set('typification_finisher', selectedSessionTypificationFinisher);
+  const qs = p.toString() ? '?' + p.toString() : '';
+
+  loadSessionsEvolution();
+  loadSessionsJanMay2026Evolution();
+  loadSessionsQ3c();
+  loadSessionsDailyEvolution();
+
+  const sessions = await safeGet('/api/sessions' + qs);
+  if (requestId !== sessionsRequestId) return;
+  if (sessions && !sessions.error) {
+    if (economicGroupBullet) economicGroupBullet.textContent = sessions.economic_group_total_error ? 'Erro' : fmt(sessions.economic_group_total || 0);
+    if (economicGroupPeriodoLabel) {
+      economicGroupPeriodoLabel.style.display = 'none';
+      economicGroupPeriodoLabel.textContent = '';
+      economicGroupPeriodoLabel.title = '';
+    }
+    renderSessionMessageAgentFinishers(sessions.message_agent_finishers || [], {
+      error: sessions.message_agent_finishers_error,
+    });
+    renderSessionCompanies(sessions.company_sessions || [], {
+      error: sessions.company_sessions_error,
+      mode: sessions.company_sessions_mode,
+      source: sessions.company_sessions_source,
+    });
+    renderSessionTypifications(sessions.typifications || [], {
+      error: sessions.typifications_error,
+    });
+    renderSessionsTopGroupsEvolution(sessions.top_groups_evolution);
+  } else {
+    if (economicGroupBullet) economicGroupBullet.textContent = 'Erro';
+    const msg = sessions && sessions.error ? sessions.error : 'Erro ao carregar sessões';
+    if (economicGroupPeriodoLabel) {
+      economicGroupPeriodoLabel.style.display = 'block';
+      economicGroupPeriodoLabel.textContent = String(msg).slice(0, 220);
+      economicGroupPeriodoLabel.title = String(msg);
+    }
+    if (messageFinishersLoading) messageFinishersLoading.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>Erro ao carregar interações por mensagem';
+    if (sessionCompaniesLoading) sessionCompaniesLoading.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>Erro ao carregar sessões por empresa';
+    if (typificationsLoading) typificationsLoading.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>Erro ao carregar encerramentos';
+    if (topGroupsSkel) topGroupsSkel.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>Erro ao carregar evolução por grupo econômico';
+  }
+}
+
+function setSessionsAttendanceLoading() {
+  const skel = document.getElementById('skel-s-attendance');
+  const cv = document.getElementById('sessionsAttendanceChart');
+  const errorBox = document.getElementById('s-attendance-error');
+  const volumeLoading = document.getElementById('appointments-volume-loading');
+  const volumeContent = document.getElementById('appointments-volume-content');
+  const volumeError = document.getElementById('appointments-volume-error');
+  const typesLoading = document.getElementById('appointment-types-loading');
+  const typesContent = document.getElementById('appointment-types-content');
+  if (skel) skel.style.display = 'block';
+  if (cv) cv.style.display = 'none';
+  if (errorBox) { errorBox.style.display = 'none'; errorBox.textContent = ''; }
+  if (volumeLoading) {
+    volumeLoading.style.display = 'block';
+    volumeLoading.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...';
+  }
+  if (volumeContent) volumeContent.style.display = 'none';
+  if (volumeError) { volumeError.style.display = 'none'; volumeError.textContent = ''; }
+  if (typesLoading) {
+    typesLoading.style.display = 'block';
+    typesLoading.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...';
+  }
+  if (typesContent) typesContent.style.display = 'none';
+}
+
+function showSessionsAttendanceError(data) {
+  const skel = document.getElementById('skel-s-attendance');
+  const errorBox = document.getElementById('s-attendance-error');
+  const volumeLoading = document.getElementById('appointments-volume-loading');
+  const volumeContent = document.getElementById('appointments-volume-content');
+  const volumeError = document.getElementById('appointments-volume-error');
+  const typesLoading = document.getElementById('appointment-types-loading');
+  const typesContent = document.getElementById('appointment-types-content');
+  if (errorBox) {
+    errorBox.style.display = 'block';
+    errorBox.textContent = (data && data.error) ? String(data.error).slice(0, 220) : 'Erro ao carregar sessões x agendamentos';
+  }
+  if (skel) skel.style.display = 'none';
+  if (volumeLoading) volumeLoading.style.display = 'none';
+  if (volumeContent) volumeContent.style.display = 'none';
+  if (volumeError) {
+    volumeError.style.display = 'block';
+    volumeError.textContent = (data && data.error) ? String(data.error).slice(0, 220) : 'Erro ao carregar volumes de agendamentos';
+  }
+  if (typesLoading) {
+    typesLoading.style.display = 'block';
+    typesLoading.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>' +
+      ((data && data.error) ? String(data.error).slice(0, 220) : 'Erro ao carregar tipos de consulta');
+  }
+  if (typesContent) typesContent.style.display = 'none';
+}
+
+function renderAppointmentsVolumeList(labels, values) {
+  const loading = document.getElementById('appointments-volume-loading');
+  const content = document.getElementById('appointments-volume-content');
+  const tbody = document.getElementById('appointments-volume-tbody');
+  const meta = document.getElementById('appointments-volume-meta');
+  const total = values.reduce((acc, value) => acc + (Number(value) || 0), 0);
+  if (tbody) {
+    const rowsHtml = labels.map((label, idx) => `<tr style="border-bottom:1px solid #f1f5f9">
+        <td style="padding:9px 10px;color:#334155;font-weight:500">${escapeHtml(label)}</td>
+        <td style="padding:9px 10px;text-align:right;font-weight:700;color:#6366f1">${fmt(values[idx] || 0)}</td>
+      </tr>`).join('');
+    const totalHtml = `<tr style="border-top:2px solid #e2e8f0;background:#f8fafc">
+        <td style="padding:10px;color:#334155;font-weight:700">Total exibido</td>
+        <td style="padding:10px;text-align:right;font-weight:800;color:#6366f1">${fmt(total)}</td>
+      </tr>`;
+    tbody.innerHTML = labels.length ? rowsHtml + totalHtml : '<tr><td colspan="2" style="padding:14px 10px;text-align:center;color:#94a3b8">Nenhum agendamento encontrado.</td></tr>';
+  }
+  if (meta) meta.textContent = `${labels.length} meses · total ${fmt(total)} agendamentos`;
+  if (loading) loading.style.display = 'none';
+  if (content) content.style.display = 'flex';
+}
+
+async function loadAppointmentTypes(monthValues, idPrefix='appointment-types') {
+  const loading = document.getElementById(`${idPrefix}-loading`);
+  const content = document.getElementById(`${idPrefix}-content`);
+  const tbody = document.getElementById(`${idPrefix}-tbody`);
+  const meta = document.getElementById(`${idPrefix}-meta`);
+  if (loading) {
+    loading.style.display = 'block';
+    loading.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...';
+  }
+  if (content) content.style.display = 'none';
+  const p = new URLSearchParams();
+  if (monthValues && monthValues.length > 0) p.set('meses', monthValues.join(','));
+  appendGroupParams(p);
+  if (currentCompany && getActiveTab() !== 'sessoes') p.set('company', currentCompany);
+  if (idPrefix === 'agendamento-appointment-types' || idPrefix === 'appointment-types') p.set('dedupe', 'distinct_cpf');
+
+  const data = await safeGet('/api/appointment-types' + (p.toString() ? '?' + p.toString() : ''));
+  if (!data || data.error) {
+    if (loading) {
+      loading.style.display = 'block';
+      loading.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>' +
+        (data && data.error ? String(data.error).slice(0, 220) : 'Erro ao carregar tipos de consulta');
+    }
+    if (content) content.style.display = 'none';
+    return;
+  }
+
+  const items = data.items || [];
+  if (tbody) {
+    tbody.innerHTML = items.length ? items.map((it) => {
+      const pct = Number(it.percentual) || 0;
+      return `<tr style="border-bottom:1px solid #f1f5f9">
+        <td style="padding:10px;color:#334155;font-weight:600">${escapeHtml(it.tipo || 'Outros')}</td>
+        <td style="padding:10px;text-align:right;font-weight:700;color:#0f766e">${fmt(Number(it.total) || 0)}</td>
+        <td style="padding:10px;text-align:right;color:#64748b">${pct.toFixed(1).replace('.', ',')}%</td>
+      </tr>`;
+    }).join('') : '<tr><td colspan="3" style="padding:14px 10px;text-align:center;color:#94a3b8">Nenhum tipo encontrado.</td></tr>';
+  }
+  if (meta) {
+    const usesDistinctCpf = data.filters?.dedupe === 'distinct_cpf';
+    const totalLabel = usesDistinctCpf ? 'CPFs distintos' : 'solicitações';
+    meta.textContent = `${items.length} tipos · total ${fmt(data.total || 0)} ${totalLabel}`;
+  }
+  if (loading) loading.style.display = 'none';
+  if (content) content.style.display = 'block';
+}
+
+async function loadPetitTopExams(monthValues) {
+  const loading = petitElementById('petit-top-exams-loading');
+  const content = petitElementById('petit-top-exams-content');
+  const list = petitElementById('petit-top-exams-list');
+  const meta = petitElementById('petit-top-exams-meta');
+  if (loading) {
+    loading.style.display = 'block';
+    loading.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...';
+  }
+  if (content) content.style.display = 'none';
+
+  const p = new URLSearchParams();
+  p.set('scope', 'top_exams');
+  if (monthValues && monthValues.length > 0) p.set('meses', monthValues.join(','));
+  appendGroupParams(p);
+  if (currentCompany) p.set('company', currentCompany);
+  const data = await safeGet('/api/appointment-types?' + p.toString());
+  if (!data || data.error) {
+    if (loading) {
+      loading.style.display = 'block';
+      loading.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>' +
+        (data && data.error ? String(data.error).slice(0, 220) : 'Erro ao carregar exames');
+    }
+    if (content) content.style.display = 'none';
+    return;
+  }
+
+  const items = data.items || [];
+  const max = items.reduce((acc, item) => Math.max(acc, Number(item.total) || 0), 0) || 1;
+  if (list) {
+    list.innerHTML = items.length ? items.map((item, index) => {
+      const value = Number(item.total) || 0;
+      const pct = Number(item.percentual) || 0;
+      const width = Math.max((value / max) * 100, 2);
+      const color = ['#3F55E3', '#2563eb', '#7c3aed', '#0891b2', '#be185d', '#0f766e', '#1d4ed8', '#f59e0b', '#db2777', '#64748b'][index] || '#3F55E3';
+      const rawLabel = item.exame || item.tipo || 'Exame sem descrição';
+      const label = escapeHtml(rawLabel);
+      return `<div class="petit-dist-row" title="${escapeAttr(rawLabel)}">
+        <div class="petit-dist-label">${label}</div>
+        <div class="petit-dist-track"><div class="petit-dist-bar" style="width:${width}%;background:${color}"><span class="petit-dist-value">${fmt(value)} <small>${pct.toFixed(1).replace('.', ',')}%</small></span></div></div>
+      </div>`;
+    }).join('') : '<div style="font-size:13px;color:#94a3b8;text-align:center;padding:14px 0">Nenhum exame encontrado para o filtro atual.</div>';
+  }
+  if (meta) meta.textContent = `${items.length} itens · total de ${fmt(data.total || 0)} solicitações de exames`;
+  if (loading) loading.style.display = 'none';
+  if (content) content.style.display = 'flex';
+}
+
+async function loadPetitTopConsultations(monthValues) {
+  const loading = petitElementById('petit-top-consultations-loading');
+  const content = petitElementById('petit-top-consultations-content');
+  const list = petitElementById('petit-top-consultations-list');
+  const meta = petitElementById('petit-top-consultations-meta');
+  if (loading) {
+    loading.style.display = 'block';
+    loading.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...';
+  }
+  if (content) content.style.display = 'none';
+
+  const p = new URLSearchParams();
+  p.set('scope', 'top_consultations');
+  if (monthValues && monthValues.length > 0) p.set('meses', monthValues.join(','));
+  appendGroupParams(p);
+  if (currentCompany) p.set('company', currentCompany);
+  const data = await safeGet('/api/appointment-types?' + p.toString());
+  if (!data || data.error) {
+    if (loading) {
+      loading.style.display = 'block';
+      loading.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>' +
+        (data && data.error ? String(data.error).slice(0, 220) : 'Erro ao carregar especialidades');
+    }
+    if (content) content.style.display = 'none';
+    return;
+  }
+
+  const items = data.items || [];
+  const max = items.reduce((acc, item) => Math.max(acc, Number(item.total) || 0), 0) || 1;
+  if (list) {
+    list.innerHTML = items.length ? items.map((item, index) => {
+      const value = Number(item.total) || 0;
+      const pct = Number(item.percentual) || 0;
+      const width = Math.max((value / max) * 100, 2);
+      const color = ['#3F55E3', '#2563eb', '#7c3aed', '#0891b2', '#be185d', '#0f766e', '#1d4ed8', '#f59e0b', '#db2777', '#64748b'][index] || '#3F55E3';
+      const rawLabel = item.especialidade || item.tipo || 'Especialidade sem descrição';
+      const label = escapeHtml(rawLabel);
+      return `<div class="petit-dist-row" title="${escapeAttr(rawLabel)}">
+        <div class="petit-dist-label">${label}</div>
+        <div class="petit-dist-track"><div class="petit-dist-bar" style="width:${width}%;background:${color}"><span class="petit-dist-value">${fmt(value)} <small>${pct.toFixed(1).replace('.', ',')}%</small></span></div></div>
+      </div>`;
+    }).join('') : '<div style="font-size:13px;color:#94a3b8;text-align:center;padding:14px 0">Nenhuma consulta encontrada para o filtro atual.</div>';
+  }
+  if (meta) meta.textContent = `${items.length} itens · total de ${fmt(data.total || 0)} solicitações de consulta`;
+  if (loading) loading.style.display = 'none';
+  if (content) content.style.display = 'flex';
+}
+
+async function renderSessionsAttendanceChart(labels, monthValues, sessionValues, data, demographicsData) {
+  const skel = document.getElementById('skel-s-attendance');
+  const cv = document.getElementById('sessionsAttendanceChart');
+  const modeLabel = document.getElementById('s-attendance-mode');
+  if (!cv) return;
+  if (modeLabel) {
+    if (data.mode === 'cpf_join' || data.mode === 'variables_json_filter' || data.mode === 'organization_join' || data.mode === 'partner_broker' || data.mode === 'economic_group_name') {
+      const filterParts = [];
+      if (data.filters && data.filters.group_name) filterParts.push(`grupo: ${data.filters.group_name}`);
+      if (data.filters && data.filters.partner_broker_id && selectedPartnerLabel()) filterParts.push(`parceiro: ${selectedPartnerLabel()}`);
+      modeLabel.textContent = filterParts.join(' · ') || 'filtrado';
+    } else {
+      modeLabel.textContent = 'global';
+    }
+  }
+  const p = new URLSearchParams();
+  if (monthValues && monthValues.length > 0) p.set('meses', monthValues.join(','));
+  appendGroupParams(p);
+  const appointmentsData = await safeGet('/api/appointments-evolution' + (p.toString() ? '?' + p.toString() : ''));
+  if (!appointmentsData || appointmentsData.error) {
+    showSessionsAttendanceError(appointmentsData);
+    return;
+  }
+  const resolvedDemographicsData = demographicsData || await safeGet('/api/demographics' + buildQS());
+
+  const appointmentsSeries = appointmentsData.series || [];
+  const appointmentsByMonth = Object.fromEntries(appointmentsSeries.map((it) => [it.mes, Number(it.total) || 0]));
+  const appointmentValues = monthValues.map((mes) => appointmentsByMonth[mes] || 0);
+  const ratioValues = sessionValues.map((sessions, idx) => {
+    const appointments = Number(appointmentValues[idx]) || 0;
+    return appointments > 0 ? Number(((Number(sessions) || 0) / appointments).toFixed(2)) : null;
+  });
+  const totalSessions = sessionValues.reduce((acc, value) => acc + (Number(value) || 0), 0);
+  const totalAppointments = appointmentValues.reduce((acc, value) => acc + (Number(value) || 0), 0);
+  const averageRatio = totalAppointments > 0 ? totalSessions / totalAppointments : null;
+  const totalBeneficiaries = resolvedDemographicsData && !resolvedDemographicsData.error
+    ? Number(resolvedDemographicsData.total_beneficiarios ?? resolvedDemographicsData.total_vidas) || 0
+    : 0;
+  const beneficiaryRatioValues = sessionValues.map((sessions) => (
+    totalBeneficiaries > 0 ? Number((((Number(sessions) || 0) / totalBeneficiaries) * 100).toFixed(2)) : null
+  ));
+  const averageBeneficiaryRatio = totalBeneficiaries > 0 ? (totalSessions / totalBeneficiaries) * 100 : null;
+  const appointmentMonths = (appointmentsData.months && appointmentsData.months.length) ? appointmentsData.months : monthValues;
+  const appointmentLabels = appointmentMonths.map((mes) => {
+    const [y, mm] = String(mes).split('-');
+    return mN[mm] ? `${mN[mm]}/${y.slice(2)}` : mes;
+  });
+  const appointmentVolumeValues = appointmentMonths.map((mes) => appointmentsByMonth[mes] || 0);
+  renderAppointmentsVolumeList(appointmentLabels, appointmentVolumeValues);
+
+  if (sessionsAttendanceChart) sessionsAttendanceChart.destroy();
+  if (skel) skel.style.display = 'none';
+  if (modeLabel && (averageRatio !== null || averageBeneficiaryRatio !== null)) {
+    const ratioLabel = averageRatio !== null
+      ? ` · média ${averageRatio.toFixed(1).replace('.', ',')} sessões/agendamento`
+      : '';
+    const beneficiaryLabel = averageBeneficiaryRatio !== null
+      ? ` · ${averageBeneficiaryRatio.toFixed(1).replace('.', ',')} sessões/100 beneficiários`
+      : '';
+    modeLabel.textContent = `${modeLabel.textContent}${ratioLabel}${beneficiaryLabel}`;
+  }
+  cv.style.display = 'block';
+  if (cv) sessionsAttendanceChart = new Chart(cv, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Sessões',
+          data: sessionValues,
+          borderColor: '#0f766e',
+          backgroundColor: 'rgba(15,118,110,0.08)',
+          borderWidth: 2,
+          pointRadius: 3,
+          pointBackgroundColor: '#0f766e',
+          fill: false,
+          tension: 0.35,
+          yAxisID: 'y',
+        },
+        {
+          label: 'Agendamentos',
+          data: appointmentValues,
+          borderColor: '#6366f1',
+          backgroundColor: 'rgba(99,102,241,0.08)',
+          borderWidth: 2,
+          pointRadius: 3,
+          pointBackgroundColor: '#6366f1',
+          fill: false,
+          tension: 0.35,
+          yAxisID: 'y',
+        },
+        {
+          label: 'Sessões por agendamento',
+          data: ratioValues,
+          borderColor: '#f59e0b',
+          backgroundColor: 'rgba(245,158,11,0.08)',
+          borderWidth: 2,
+          borderDash: [6, 5],
+          pointRadius: 2,
+          pointBackgroundColor: '#f59e0b',
+          fill: false,
+          tension: 0.35,
+          yAxisID: 'ratio',
+        },
+        {
+          label: 'Sessões por 100 beneficiários',
+          data: beneficiaryRatioValues,
+          borderColor: '#8b5cf6',
+          backgroundColor: 'rgba(139,92,246,0.08)',
+          borderWidth: 2,
+          borderDash: [2, 4],
+          pointRadius: 2,
+          pointBackgroundColor: '#8b5cf6',
+          fill: false,
+          tension: 0.35,
+          yAxisID: 'ratio',
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: true, position: 'top', align: 'end', labels: { boxWidth: 10, boxHeight: 10, color: '#64748b', font: { size: 11 } } },
+        tooltip: {
+          backgroundColor: '#1e293b', borderColor: '#334155', borderWidth: 1,
+          titleColor: '#94a3b8', bodyColor: '#f1f5f9',
+          callbacks: {
+            label: c => {
+              if (c.dataset.label === 'Sessões por 100 beneficiários') {
+                return `${c.dataset.label}: ${Number(c.parsed.y).toFixed(1).replace('.', ',')}`;
+              }
+              if (c.dataset.yAxisID === 'ratio') {
+                return `${c.dataset.label}: ${Number(c.parsed.y).toFixed(1).replace('.', ',')} sessões/agendamento`;
+              }
+              return `${c.dataset.label}: ${fmt(c.parsed.y)}`;
+            },
+          },
+        },
+      },
+      scales: {
+        x: {
+          ticks: { font: { size: 10 }, color: '#94a3b8', maxRotation: 45, autoSkip: true, maxTicksLimit: 14 },
+          grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false },
+        },
+        y: {
+          beginAtZero: true,
+          ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => fmt(v) },
+          grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false },
+        },
+        ratio: {
+          position: 'right',
+          beginAtZero: true,
+          ticks: { font: { size: 10 }, color: '#f59e0b', callback: v => Number(v).toFixed(1).replace('.', ',') },
+          grid: { drawOnChartArea: false },
+          border: { display: false },
+        },
+      },
+    },
+  });
+}
+
+async function loadSessionsDailyEvolution() {
+  buildSessionsDailyMonthOptions();
+  const skel = document.getElementById('skel-s-daily');
+  const cv = document.getElementById('sessionsDailyChart');
+  const errorBox = document.getElementById('s-daily-error');
+  const modeLabel = document.getElementById('s-daily-mode');
+  if (skel) skel.style.display = 'block';
+  if (cv) cv.style.display = 'none';
+  if (errorBox) { errorBox.style.display = 'none'; errorBox.textContent = ''; }
+
+  const p = new URLSearchParams();
+  p.set('granularity', 'day');
+  p.set('mes', selectedSessionsDailyMonth || currentMonthValue());
+  appendGroupParams(p);
+  const data = await safeGet('/api/sessions-evolution?' + p.toString());
+  if (!data || data.error) {
+    if (errorBox) {
+      errorBox.style.display = 'block';
+      errorBox.textContent = data && data.error ? String(data.error).slice(0, 220) : 'Erro ao carregar evolução diária';
+    }
+    if (skel) skel.style.display = 'none';
+    return;
+  }
+
+  const month = data.month || selectedSessionsDailyMonth;
+  const [year, mm] = String(month).split('-');
+  if (modeLabel) {
+    const parts = [mN[mm] ? `${mN[mm]}/${year}` : month];
+    if (data.mode === 'variables_json_filter' || data.mode === 'organization_join') {
+      if (data.filters && data.filters.group_name) parts.push(`grupo: ${data.filters.group_name}`);
+    }
+    modeLabel.textContent = parts.join(' · ');
+  }
+
+  const weekdayFmt = new Intl.DateTimeFormat('pt-BR', { weekday: 'short', timeZone: 'UTC' });
+  const series = data.series || [];
+  const labels = series.map((it) => {
+    const day = String(it.dia || '');
+    const date = new Date(`${day}T00:00:00Z`);
+    const weekday = Number.isNaN(date.getTime())
+      ? ''
+      : weekdayFmt.format(date).replace('.', '').replace(/^./, c => c.toUpperCase());
+    return [day.slice(8, 10), weekday];
+  });
+  const totalValues = series.map((it) => Number(it.total) || 0);
+  if (sessionsDailyChart) sessionsDailyChart.destroy();
+  if (skel) skel.style.display = 'none';
+  if (cv) {
+    cv.style.display = 'block';
+    sessionsDailyChart = new Chart(cv, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          label: 'Sessões',
+          data: totalValues,
+          borderColor: '#0f766e',
+          backgroundColor: 'rgba(15,118,110,0.08)',
+          borderWidth: 2,
+          pointRadius: 3,
+          pointBackgroundColor: '#0f766e',
+          fill: true,
+          tension: 0.35,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: '#1e293b', borderColor: '#334155', borderWidth: 1,
+            titleColor: '#94a3b8', bodyColor: '#f1f5f9',
+            callbacks: {
+              title: items => {
+                const idx = items[0]?.dataIndex ?? 0;
+                const raw = series[idx]?.dia;
+                if (!raw) return '';
+                const date = new Date(`${raw}T00:00:00Z`);
+                const weekday = Number.isNaN(date.getTime()) ? '' : weekdayFmt.format(date);
+                return `${raw.split('-').reverse().join('/')} · ${weekday}`;
+              },
+              label: c => `${fmt(c.parsed.y)} sessões`,
+            },
+          },
+        },
+        scales: {
+          x: {
+            ticks: { font: { size: 10 }, color: '#94a3b8', maxRotation: 0, autoSkip: true, maxTicksLimit: 16 },
+            grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false },
+          },
+          y: {
+            beginAtZero: true,
+            ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => fmt(v) },
+            grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false },
+          },
+        },
+      },
+    });
+  }
+}
+
+function renderSessionsFinalizationsEvolutionChart(cv, chartInstance, labels, totalValues, humanoValues, iaValues, options = {}) {
+  if (chartInstance) chartInstance.destroy();
+  if (!cv) return null;
+  const highlightIa = Boolean(options.highlightIa);
+  const pointLabelPlugin = {
+    id: 'sessionsIaPointLabels',
+    afterDatasetsDraw(chart) {
+      const pointLabels = options.iaPointLabels || [];
+      const pointTones = options.iaPointTones || [];
+      if (!pointLabels.length) return;
+      const iaDatasetIndex = chart.data.datasets.findIndex((dataset) => dataset.label === 'IA');
+      if (iaDatasetIndex < 0) return;
+      const meta = chart.getDatasetMeta(iaDatasetIndex);
+      const { ctx, chartArea } = chart;
+      ctx.save();
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font = '700 11px Inter, system-ui, sans-serif';
+      meta.data.forEach((point, index) => {
+        const label = pointLabels[index];
+        if (!label) return;
+        const tone = pointTones[index] || 'neutral';
+        const colors = tone === 'negative'
+          ? { bg: '#fef2f2', border: '#fecaca', text: '#dc2626' }
+          : (tone === 'positive'
+            ? { bg: '#ecfdf5', border: '#99f6e4', text: '#0f766e' }
+            : { bg: '#f8fafc', border: '#cbd5e1', text: '#64748b' });
+        const x = point.x;
+        const y = Math.max(chartArea.top + 12, point.y - 18);
+        const width = ctx.measureText(label).width + 14;
+        const height = 20;
+        const left = Math.max(chartArea.left + 2, Math.min(x - width / 2, chartArea.right - width - 2));
+        const top = y - height / 2;
+        ctx.fillStyle = colors.bg;
+        ctx.strokeStyle = colors.border;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(left + 10, top);
+        ctx.lineTo(left + width - 10, top);
+        ctx.quadraticCurveTo(left + width, top, left + width, top + 10);
+        ctx.lineTo(left + width, top + height - 10);
+        ctx.quadraticCurveTo(left + width, top + height, left + width - 10, top + height);
+        ctx.lineTo(left + 10, top + height);
+        ctx.quadraticCurveTo(left, top + height, left, top + height - 10);
+        ctx.lineTo(left, top + 10);
+        ctx.quadraticCurveTo(left, top, left + 10, top);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = colors.text;
+        ctx.fillText(label, left + width / 2, top + height / 2 + 0.5);
+      });
+      ctx.restore();
+    },
+  };
+  return new Chart(cv, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Total',
+          data: totalValues,
+          borderColor: highlightIa ? 'rgba(15,118,110,0.45)' : '#0f766e',
+          backgroundColor: 'rgba(15,118,110,0.08)',
+          borderWidth: highlightIa ? 1.5 : 2,
+          pointRadius: highlightIa ? 2 : 3,
+          pointBackgroundColor: highlightIa ? 'rgba(15,118,110,0.65)' : '#0f766e',
+          fill: false,
+          tension: 0.35,
+        },
+        {
+          label: 'Humano',
+          data: humanoValues,
+          borderColor: highlightIa ? 'rgba(99,102,241,0.42)' : '#6366f1',
+          backgroundColor: 'rgba(99,102,241,0.08)',
+          borderWidth: highlightIa ? 1.5 : 2,
+          pointRadius: highlightIa ? 2 : 3,
+          pointBackgroundColor: highlightIa ? 'rgba(99,102,241,0.62)' : '#6366f1',
+          fill: false,
+          tension: 0.35,
+        },
+        {
+          label: 'IA',
+          data: iaValues,
+          borderColor: '#14b8a6',
+          backgroundColor: highlightIa ? 'rgba(20,184,166,0.12)' : 'rgba(20,184,166,0.08)',
+          borderWidth: highlightIa ? 3 : 2,
+          pointRadius: highlightIa ? 4 : 3,
+          pointHoverRadius: highlightIa ? 6 : 4,
+          pointBackgroundColor: '#14b8a6',
+          fill: false,
+          tension: 0.35,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      layout: { padding: { top: options.iaPointLabels ? 18 : 0 } },
+      plugins: {
+        legend: { display: true, position: 'top', align: 'end', labels: { boxWidth: 10, boxHeight: 10, color: '#64748b', font: { size: 11 } } },
+        tooltip: {
+          backgroundColor: '#1e293b', borderColor: '#334155', borderWidth: 1,
+          titleColor: '#94a3b8', bodyColor: '#f1f5f9',
+          callbacks: { label: c => sessionsPointTooltipLabel(c, totalValues) },
+        },
+      },
+      scales: {
+        x: {
+          ticks: { font: { size: 10 }, color: '#94a3b8', maxRotation: 45, autoSkip: true, maxTicksLimit: 14 },
+          grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false },
+        },
+        y: {
+          beginAtZero: true,
+          ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => fmt(v) },
+          grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false },
+        },
+      },
+    },
+    plugins: options.iaPointLabels ? [pointLabelPlugin] : [],
+  });
+}
+
+function sessionsQ3PresentationSeries(series) {
+  return (series || []).map((item) => ({
+    ...item,
+    ia: item.mes === '2025-09' ? 0 : Number(item.ia) || 0,
+  }));
+}
+
+function sessionsIaSharePct(row) {
+  const ia = Number(row.ia) || 0;
+  const total = Number(row.total) || ((Number(row.humano) || 0) + ia);
+  return total > 0 ? (ia / total) * 100 : 0;
+}
+
+function sessionsIaEvolutionLabels(series) {
+  return (series || []).map((row) => `${sessionsIaSharePct(row).toFixed(1).replace('.', ',')}%`);
+}
+
+function sessionsIaEvolutionTones(series) {
+  const rows = series || [];
+  return rows.map((row, index) => {
+    if (index === 0) return 'neutral';
+    const pct = sessionsIaSharePct(row);
+    const previousPct = sessionsIaSharePct(rows[index - 1]);
+    if (pct === previousPct) return 'neutral';
+    return pct > previousPct ? 'positive' : 'negative';
+  });
+}
+
+function fmtCompactMil(value) {
+  const n = Number(value) || 0;
+  return `${(n / 1000).toLocaleString('pt-BR', { maximumFractionDigits: n >= 100000 ? 0 : 1 })} mil`;
+}
+
+function fmtPctNumber(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? `${n.toFixed(1).replace('.', ',')}%` : '—';
+}
+
+async function loadSessionsEvolution() {
+  const requestId = ++sessionsEvolutionRequestId;
+  const skel = document.getElementById('skel-s-evol');
+  const cv = document.getElementById('sessionsEvolChart');
+  const modeLabel = document.getElementById('s-evol-mode');
+  const errorBox = document.getElementById('s-evol-error');
+  const totalSkel = document.getElementById('skel-s-total-evol');
+  const totalCv = document.getElementById('sessionsTotalEvolChart');
+  const totalModeLabel = document.getElementById('s-total-evol-mode');
+  const totalErrorBox = document.getElementById('s-total-evol-error');
+  const utilizationLoading = document.getElementById('sessions-utilization-loading');
+  const utilizationContent = document.getElementById('sessions-utilization-content');
+  const utilizationError = document.getElementById('sessions-utilization-error');
+  if (skel) skel.style.display = 'block';
+  if (cv) cv.style.display = 'none';
+  if (errorBox) { errorBox.style.display = 'none'; errorBox.textContent = ''; }
+  if (totalSkel) totalSkel.style.display = 'block';
+  if (totalCv) totalCv.style.display = 'none';
+  if (totalErrorBox) { totalErrorBox.style.display = 'none'; totalErrorBox.textContent = ''; }
+  if (utilizationLoading) {
+    utilizationLoading.style.display = 'block';
+    utilizationLoading.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando utilização...';
+  }
+  if (utilizationContent) utilizationContent.style.display = 'none';
+  if (utilizationError) { utilizationError.style.display = 'none'; utilizationError.textContent = ''; }
+  setSessionsAttendanceLoading();
+
+  const p = new URLSearchParams();
+  appendGroupParams(p);
+  const qs = p.toString() ? '?' + p.toString() : '';
+
+  const [data, demographicsData] = await Promise.all([
+    safeGet('/api/sessions-evolution' + qs),
+    safeGet('/api/demographics' + buildQS()),
+  ]);
+  if (!data || data.error) {
+    if (errorBox) {
+      errorBox.style.display = 'block';
+      errorBox.textContent = (data && data.error) ? String(data.error).slice(0, 220) : 'Erro ao carregar evolução';
+    }
+    if (totalErrorBox) {
+      totalErrorBox.style.display = 'block';
+      totalErrorBox.textContent = (data && data.error) ? String(data.error).slice(0, 220) : 'Erro ao carregar total de sessões';
+    }
+    showSessionsAttendanceError(data);
+    if (skel) skel.style.display = 'none';
+    if (totalSkel) totalSkel.style.display = 'none';
+    if (utilizationLoading) utilizationLoading.style.display = 'none';
+    if (utilizationError) {
+      utilizationError.style.display = 'block';
+      utilizationError.textContent = (data && data.error) ? String(data.error).slice(0, 220) : 'Erro ao carregar utilização da base';
+    }
+    return;
+  }
+
+  if (data && !data.error && modeLabel) {
+    if (data.mode === 'cpf_join' || data.mode === 'variables_json_filter' || data.mode === 'organization_join') {
+      const filterParts = [];
+      if (data.filters && data.filters.group_name) filterParts.push(`grupo: ${data.filters.group_name}`);
+      if (data.filters && data.filters.type)       filterParts.push(`tipo: ${data.filters.type}`);
+      modeLabel.textContent = filterParts.join(' · ') || 'filtrado';
+    } else {
+      modeLabel.textContent = 'global';
+    }
+  }
+  if (totalModeLabel) {
+    if (data.mode === 'cpf_join' || data.mode === 'variables_json_filter' || data.mode === 'organization_join') {
+      const filterParts = [];
+      if (data.filters && data.filters.group_name) filterParts.push(`grupo: ${data.filters.group_name}`);
+      totalModeLabel.textContent = filterParts.join(' · ') || 'filtrado';
+    } else {
+      totalModeLabel.textContent = 'global';
+    }
+  }
+
+  const series = (data && !data.error ? data.series : []) || [];
+  const labels = series.map((it) => {
+    const [y, mm] = String(it.mes).split('-');
+    return mN[mm] ? `${mN[mm]}/${y.slice(2)}` : it.mes;
+  });
+  const humanoValues = series.map((it) => Number(it.humano) || 0);
+  const iaValues = series.map((it) => Number(it.ia) || 0);
+  const totalValues = series.map((it) => Number(it.total) || ((Number(it.humano) || 0) + (Number(it.ia) || 0)));
+  const uniqueBeneficiaryValues = series.map((it) => Number(it.unique_beneficiaries ?? it.unique_cpfs) || 0);
+
+  if (skel) skel.style.display = 'none';
+  if (cv && data && !data.error) cv.style.display = 'block';
+
+  if (cv && data && !data.error) {
+    sessionsEvolChart = renderSessionsFinalizationsEvolutionChart(cv, sessionsEvolChart, labels, totalValues, humanoValues, iaValues);
+  }
+  renderSessionsTotalEvolutionChart(labels, totalValues, uniqueBeneficiaryValues, Boolean(data.beneficiaries_included));
+
+  appointmentTypesBaseMonths = series.map((it) => it.mes);
+  loadSessionsBeneficiaryUtilization(p, demographicsData, labels, totalValues, requestId);
+  await Promise.all([
+    renderSessionsAttendanceChart(labels, appointmentTypesBaseMonths, totalValues, data, demographicsData),
+    loadSessionAppointmentTypes(),
+  ]);
+}
+
+async function loadSessionsJanMay2026Evolution() {
+  const requestId = ++sessionsJanMay2026EvolutionRequestId;
+  const skel = document.getElementById('skel-s-evol-jan-may-2026');
+  const cv = document.getElementById('sessionsJanMay2026EvolChart');
+  const modeLabel = document.getElementById('s-evol-jan-may-2026-mode');
+  const errorBox = document.getElementById('s-evol-jan-may-2026-error');
+  if (!cv) return;
+  if (skel) {
+    skel.style.display = 'block';
+    skel.innerHTML = '';
+  }
+  cv.style.display = 'none';
+  if (errorBox) {
+    errorBox.style.display = 'none';
+    errorBox.textContent = '';
+  }
+
+  const p = new URLSearchParams();
+  p.set('meses', SESSIONS_Q3_PRESENTATION_MONTHS.join(','));
+  appendGroupParams(p);
+
+  const data = await safeGet('/api/sessions-evolution?' + p.toString());
+  if (requestId !== sessionsJanMay2026EvolutionRequestId) return;
+
+  if (!data || data.error) {
+    if (skel) skel.style.display = 'none';
+    if (errorBox) {
+      errorBox.style.display = 'block';
+      errorBox.textContent = data && data.error ? String(data.error).slice(0, 220) : 'Erro ao carregar evolução Set/25-Mai/26';
+    }
+    return;
+  }
+
+  const series = sessionsQ3PresentationSeries(data.series || []);
+  const labels = series.map((it) => monthShortLabel(it.mes));
+  const humanoValues = series.map((it) => Number(it.humano) || 0);
+  const iaValues = series.map((it) => Number(it.ia) || 0);
+  const totalValues = series.map((it) => Number(it.total) || ((Number(it.humano) || 0) + (Number(it.ia) || 0)));
+  if (modeLabel) {
+    const scope = selectedSessionScopeText();
+    modeLabel.textContent = scope || 'global';
+  }
+  if (skel) skel.style.display = 'none';
+  cv.style.display = 'block';
+  sessionsJanMay2026EvolChart = renderSessionsFinalizationsEvolutionChart(cv, sessionsJanMay2026EvolChart, labels, totalValues, humanoValues, iaValues, {
+    highlightIa: true,
+    iaPointLabels: sessionsIaEvolutionLabels(series),
+    iaPointTones: sessionsIaEvolutionTones(series),
+  });
+}
+
+async function loadSessionsQ3c() {
+  const requestId = ++sessionsQ3cRequestId;
+  const skel = document.getElementById('skel-s-q3c');
+  const cv = document.getElementById('sessionsQ3cChart');
+  const errorBox = document.getElementById('s-q3c-error');
+  const modeLabel = document.getElementById('s-q3c-mode');
+  if (!cv) return;
+  if (skel) {
+    skel.style.display = 'block';
+    skel.innerHTML = '';
+  }
+  cv.style.display = 'none';
+  if (errorBox) {
+    errorBox.style.display = 'none';
+    errorBox.textContent = '';
+  }
+
+  const p = new URLSearchParams();
+  p.set('meses', SESSIONS_Q3C_MONTHS.join(','));
+  p.set('include_beneficiaries', '1');
+  appendGroupParams(p);
+  const data = await safeGet('/api/sessions-evolution?' + p.toString());
+  if (requestId !== sessionsQ3cRequestId) return;
+
+  if (!data || data.error) {
+    if (skel) skel.style.display = 'none';
+    if (errorBox) {
+      errorBox.style.display = 'block';
+      errorBox.textContent = data?.error ? String(data.error).slice(0, 220) : 'Erro ao carregar Q3c';
+    }
+    return;
+  }
+
+  const byMonth = new Map((data.series || []).map((item) => [item.mes, item]));
+  const series = SESSIONS_Q3C_MONTHS.map((month) => {
+    const row = byMonth.get(month) || {};
+    const humano = Number(row.humano) || 0;
+    const ia = Number(row.ia) || 0;
+    const total = Number(row.total) || humano + ia;
+    const unique = Number(row.unique_beneficiaries ?? row.unique_cpfs) || 0;
+    return { mes: month, humano, ia, total, unique };
+  });
+  const labels = series.map((item) => monthShortLabel(item.mes).split('/')[0]);
+  const totalSessions = series.reduce((acc, item) => acc + item.total, 0);
+  const totalUnique = series.reduce((acc, item) => acc + item.unique, 0);
+  const avgSessions = totalSessions / Math.max(series.length, 1);
+  const avgUnique = totalUnique / Math.max(series.length, 1);
+  const iaPcts = series.map((item) => item.total > 0 ? (item.ia / item.total) * 100 : 0);
+  const humanPcts = series.map((item) => item.total > 0 ? (item.humano / item.total) * 100 : 0);
+  const iaAvg = iaPcts.length ? iaPcts.reduce((acc, value) => acc + value, 0) / iaPcts.length : 0;
+  const sessionsMil = series.map((item) => item.total / 1000);
+  const usersMil = series.map((item) => item.unique / 1000);
+  const iaAvgLine = series.map(() => iaAvg);
+
+  const setText = (id, value) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = value;
+  };
+  setText('s-q3c-total-sessions', fmtCompactMil(totalSessions));
+  setText('s-q3c-total-sessions-note', `Média mensal: ${fmtCompactMil(avgSessions)}`);
+  setText('s-q3c-unique-users', fmtCompactMil(totalUnique));
+  setText('s-q3c-unique-users-note', `Média mensal: ${fmtCompactMil(avgUnique)}`);
+  setText('s-q3c-ia-avg', fmtPctNumber(iaAvg));
+  if (modeLabel) modeLabel.textContent = selectedSessionScopeText() || 'global';
+
+  if (sessionsQ3cChart) sessionsQ3cChart.destroy();
+  if (skel) skel.style.display = 'none';
+  cv.style.display = 'block';
+  sessionsQ3cChart = new Chart(cv, {
+    data: {
+      labels,
+      datasets: [
+        {
+          type: 'bar',
+          label: 'Sessões (mil)',
+          data: sessionsMil,
+          yAxisID: 'y',
+          backgroundColor: 'rgba(37,99,235,0.72)',
+          borderColor: '#2563eb',
+          borderWidth: 1,
+          borderRadius: 7,
+          maxBarThickness: 42,
+        },
+        {
+          type: 'bar',
+          label: 'Usuários únicos (mil)',
+          data: usersMil,
+          yAxisID: 'y',
+          backgroundColor: 'rgba(15,118,110,0.78)',
+          borderColor: '#0f766e',
+          borderWidth: 1,
+          borderRadius: 7,
+          maxBarThickness: 42,
+        },
+        {
+          type: 'line',
+          label: 'Somente IA respondeu (%)',
+          data: iaPcts,
+          yAxisID: 'y1',
+          borderColor: '#d97706',
+          backgroundColor: 'rgba(217,119,6,0.14)',
+          borderWidth: 2,
+          pointRadius: 4,
+          pointBackgroundColor: '#d97706',
+          tension: 0.35,
+          fill: true,
+        },
+        {
+          type: 'line',
+          label: 'Atendimento humano (%)',
+          data: humanPcts,
+          yAxisID: 'y1',
+          borderColor: '#d1d5db',
+          backgroundColor: '#d1d5db',
+          borderWidth: 1.5,
+          borderDash: [5, 4],
+          pointRadius: 3,
+          pointBackgroundColor: '#d1d5db',
+          tension: 0.35,
+        },
+        {
+          type: 'line',
+          label: `Média IA (${fmtPctNumber(iaAvg)})`,
+          data: iaAvgLine,
+          yAxisID: 'y1',
+          borderColor: 'rgba(180,83,9,0.72)',
+          backgroundColor: 'rgba(180,83,9,0.72)',
+          borderWidth: 1.5,
+          borderDash: [6, 5],
+          pointRadius: 0,
+          tension: 0,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          display: true,
+          position: 'top',
+          labels: { color: '#d1d5db', font: { size: 10 }, boxWidth: 10, usePointStyle: true },
+        },
+        tooltip: {
+          backgroundColor: '#111827',
+          borderColor: '#374151',
+          borderWidth: 1,
+          titleColor: '#e5e7eb',
+          bodyColor: '#f9fafb',
+          callbacks: {
+            label: c => c.dataset.yAxisID === 'y1'
+              ? `${c.dataset.label}: ${fmtPctNumber(c.parsed.y)}`
+              : `${c.dataset.label}: ${c.parsed.y.toFixed(1).replace('.', ',')} mil`,
+          },
+        },
+      },
+      scales: {
+        x: { ticks: { color: '#9ca3af', font: { size: 10 } }, grid: { display: false }, border: { display: false } },
+        y: {
+          beginAtZero: true,
+          title: { display: true, text: 'Sessões / Usuários (mil)', color: '#9ca3af', font: { size: 10 } },
+          ticks: { color: '#9ca3af', font: { size: 10 }, callback: v => `${v}k` },
+          grid: { color: 'rgba(255,255,255,0.08)' },
+          border: { display: false },
+        },
+        y1: {
+          beginAtZero: true,
+          max: 100,
+          position: 'right',
+          title: { display: true, text: 'Cobertura (%)', color: '#9ca3af', font: { size: 10 } },
+          ticks: { color: '#9ca3af', font: { size: 10 }, callback: v => `${v}%` },
+          grid: { drawOnChartArea: false },
+          border: { display: false },
+        },
+      },
+    },
+  });
+}
+
+// --- Evolução ---
+function renderEvol() {
+  if (!usersData.length) return;
+  const m = {};
+  usersData.forEach(([d,v]) => { const k = d.slice(0,7); m[k] = (m[k]||0)+v; });
+  const all = Object.entries(m).sort((a,b) => a[0]>b[0]?1:-1);
+  let acc = 0; const accM = {};
+  all.forEach(([k,v]) => { acc+=v; accM[k]=acc; });
+  const now = new Date(), cut = new Date(now.getFullYear(), now.getMonth()-11, 1);
+  const cutStr = cut.toISOString().slice(0,7);
+  const entries = all.filter(([k]) => k >= cutStr);
+  const labels = entries.map(([k]) => { const [y,mm]=k.split('-'); return `${mN[mm]}/${y.slice(2)}`; });
+  const values = entries.map(([k]) => accM[k]);
+  document.getElementById('skel-e').style.display = 'none';
+  const cv = document.getElementById('evolChart'); cv.style.display = 'block';
+  if (eChart) eChart.destroy();
+  eChart = new Chart(cv, {
+    type:'line',
+    data:{labels,datasets:[{data:values,borderColor:'#00A69C',backgroundColor:'rgba(0,166,156,0.08)',borderWidth:2,pointRadius:3,pointBackgroundColor:'#00A69C',fill:true,tension:0.35}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{backgroundColor:'#1e293b',borderColor:'#334155',borderWidth:1,titleColor:'#94a3b8',bodyColor:'#f1f5f9',callbacks:{label:c=>`${fmt(c.parsed.y)} vidas`}}},scales:{x:{ticks:{font:{size:10},color:'#94a3b8',maxRotation:45,autoSkip:true,maxTicksLimit:14},grid:{color:'rgba(0,0,0,0.04)'},border:{display:false}},y:{beginAtZero:false,ticks:{font:{size:10},color:'#94a3b8',callback:v=>fmt(v)},grid:{color:'rgba(0,0,0,0.04)'},border:{display:false}}}}
+  });
+}
+
+// --- Demografia ---
+function renderDemographics(d) {
+  document.getElementById('demo-loading').style.display = 'none';
+  document.getElementById('demo-content').style.display = 'block';
+  const total = Number(d.total_vidas)||0;
+  const totalBeneficiarios = Number(d.total_beneficiarios ?? d.total_vidas)||0;
+  const pct = n => total>0 ? ((n/total)*100).toFixed(1).replace('.',',')+' %' : '—';
+  const s = (id,v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
+  s('bullet-vidas', fmt(totalBeneficiarios));
+  s('d-total',fmt(totalBeneficiarios)); s('d-idade',d.idade_media||'—'); s('d-menores-18',fmt(Number(d.menores_18)||0)); s('d-49',fmt(Number(d.mais_49)||0));
+  s('d-mulheres-19-38',fmt(Number(d.mulheres_19_38)||0));
+  s('d-dep',fmt(Number(d.dependentes)||0)); s('d-tit',fmt(Number(d.titulares)||0));
+  s('d-dep-pct',pct(Number(d.dependentes)||0)); s('d-tit-pct',pct(Number(d.titulares)||0));
+  s('bullet-tit',fmt(Number(d.titulares)||0)); s('bullet-dep',fmt(Number(d.dependentes)||0));
+  const fem=Number(d.feminino)||0, masc=Number(d.masculino)||0, ni=Number(d.nao_informado)||0;
+  const gt=fem+masc+ni||1;
+  const pg = n => ((n/gt)*100).toFixed(1).replace('.',',')+' %';
+  s('d-fem',fmt(fem)); s('d-masc',fmt(masc)); s('d-ni',fmt(ni));
+  s('d-fem-pct',pg(fem)); s('d-masc-pct',pg(masc)); s('d-ni-pct',pg(ni));
+  const bf=document.getElementById('bar-fem'), bm=document.getElementById('bar-masc'), bn=document.getElementById('bar-ni');
+  if(bf) bf.style.width=((fem/gt)*100).toFixed(1)+'%';
+  if(bm) bm.style.width=((masc/gt)*100).toFixed(1)+'%';
+  if(bn) bn.style.width=((ni/gt)*100).toFixed(1)+'%';
+  const tit=Number(d.titulares)||0, dep=Number(d.dependentes)||0;
+  s('d-ratio', tit>0?(dep/tit).toFixed(2).replace('.',','):'—');
+}
+
+// --- Empresas (quadro Beneficiários por Empresa) ---
+function filterCompanies() {
+  const q = document.getElementById('company-search').value.toLowerCase();
+  renderCompaniesTable(companiesData.filter(c => c.empresa.toLowerCase().includes(q)));
+}
+function renderCompaniesTable(data) {
+  const grand = companiesData.reduce((a,c)=>a+c.total,0);
+  document.getElementById('companies-tbody').innerHTML = data.slice(0,100).map((c,i) => {
+    const bw = companiesData[0]?.total>0 ? Math.round(c.total/companiesData[0].total*100) : 0;
+    const pct = grand>0 ? ((c.total/grand)*100).toFixed(1) : '0';
+    return `<tr onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
+      <td style="padding:6px 8px;color:#cbd5e1;font-size:10px">${i+1}</td>
+      <td style="padding:6px 8px;color:#334155;font-weight:500">${escapeHtml(c.empresa)}</td>
+      <td style="padding:6px 8px;text-align:right;font-weight:700;color:#1e293b">${fmt(c.total)}</td>
+      <td style="padding:6px 8px"><div style="background:#f1f5f9;border-radius:3px;height:5px;overflow:hidden"><div style="height:100%;width:${bw}%;background:linear-gradient(90deg,#00A69C,#2E7D9A);border-radius:3px"></div></div><div style="font-size:10px;color:#94a3b8;text-align:right">${pct}%</div></td>
+    </tr>`;
+  }).join('');
+  const f = document.getElementById('companies-footer');
+  if(f) f.textContent = `${Math.min(data.length,100)} de ${data.length} · ${fmt(grand)} total`;
+}
+
+// --- Faixa etária ---
+function renderAgeGroups(data) {
+  document.getElementById('agegroup-loading').style.display = 'none';
+  document.getElementById('agegroup-wrap').style.display = 'block';
+  const cv = document.getElementById('agegroupChart');
+  if (agegroupChart) agegroupChart.destroy();
+  agegroupChart = new Chart(cv, {
+    type:'bar',
+    data:{labels:data.map(d=>d.faixa),datasets:[
+      {label:'Feminino', data:data.map(d=>d.feminino), backgroundColor:'rgba(232,121,160,0.85)',borderRadius:3},
+      {label:'Masculino',data:data.map(d=>d.masculino),backgroundColor:'rgba(59,130,246,0.85)', borderRadius:3},
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',plugins:{legend:{display:false},tooltip:{backgroundColor:'#1e293b',borderColor:'#334155',borderWidth:1,titleColor:'#94a3b8',bodyColor:'#f1f5f9',callbacks:{label:c=>`${c.dataset.label}: ${fmt(c.parsed.x)}`}}},scales:{x:{ticks:{font:{size:10},color:'#94a3b8',callback:v=>fmt(v)},grid:{color:'rgba(0,0,0,0.04)'},border:{display:false}},y:{ticks:{font:{size:11},color:'#64748b'},grid:{display:false},border:{display:false}}}}
+  });
+}
+
+// --- Cargas ---
+async function safeGet(url) {
+  try {
+    const r = await authFetch(url);
+    let body = null;
+    try { body = await r.json(); } catch(_) {}
+    if (r.status === 401) {
+      handleAuthFailure(body?.error || 'Usuário ou senha inválidos.');
+      return { error: body?.error || 'Não autorizado' };
+    }
+    if (!r.ok) {
+      const msg = body && body.error ? body.error : `HTTP ${r.status}`;
+      console.error(`[safeGet] ${url} -> ${msg}`);
+      return { error: msg };
+    }
+    return body;
+  } catch(e) {
+    console.error(`[safeGet] ${url} -> ${e.message}`);
+    return { error: e.message };
+  }
+}
+
+function setText(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = value;
+}
+
+function fmtPct(value, fallback='—') {
+  const n = Number(value);
+  return Number.isFinite(n) ? `${n.toFixed(1).replace('.', ',')}%` : fallback;
+}
+
+function sessionsPointTooltipLabel(context, totalValues) {
+  const label = String(context.dataset.label || '');
+  const value = Number(context.parsed?.y) || 0;
+  const total = Number(totalValues?.[context.dataIndex]) || 0;
+  const pct = total > 0 ? (value / total) * 100 : NaN;
+  return `${label}: ${fmt(value)} sessões · ${fmtPct(pct)}`;
+}
+
+function qualityScoreClass(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 'warn';
+  if (n >= 80) return 'good';
+  if (n >= 60) return 'warn';
+  return 'bad';
+}
+
+function qualityPeriodLabel() {
+  const meses = [...selectedMonths].sort();
+  if (!meses.length) return 'últimos 30 dias';
+  if (meses.length === 1) {
+    const [y, mm] = meses[0].split('-');
+    return `${mN[mm]}/${y}`;
+  }
+  return `${meses.length} meses selecionados`;
+}
+
+function formatQualityDate(value) {
+  if (!value) return '—';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value).slice(0, 16);
+  return d.toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
+}
+
+function qualityCollaboratorDisplayName(value) {
+  const withoutDomain = String(value || '')
+    .replace(/@sanus\.tech$/i, '')
+    .replace(/[_-]+/g, '.')
+    .trim();
+  const parts = withoutDomain.split('.').filter(Boolean);
+  if (!parts.length) return String(value || 'Não informado');
+  return parts.map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase()).join(' ');
+}
+
+function qualityCollaboratorKey(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase()
+    .replace(/@sanus\.tech$/i, '');
+}
+
+function qualityCollaboratorMetaForName(name) {
+  const key = qualityCollaboratorKey(name);
+  const collaborators = qualityData?.strategic?.collaborators || [];
+  return collaborators.find((item) => {
+    const keys = [item.name, item.display_name, ...(item.aliases || [])].map(qualityCollaboratorKey).filter(Boolean);
+    if (keys.includes(key)) return true;
+    return keys.some((candidate) => candidate && !candidate.includes('.') && key.startsWith(`${candidate}.`));
+  }) || {
+    name,
+    display_name: qualityCollaboratorDisplayName(name),
+    setor: 'Não mapeado',
+    status: 'Não mapeado',
+    aliases: [name],
+  };
+}
+
+function qualityInitials(name) {
+  return qualityCollaboratorDisplayName(name).split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join('').toUpperCase() || 'NA';
+}
+
+function escapeJs(s) {
+  return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;').replace(/\n/g, ' ');
+}
+
+function onQualitySubcriteriaSortChange(value) {
+  selectedQualitySubcriteriaSort = value === 'best' ? 'best' : 'worst';
+  renderQualityStrategic();
+}
+
+function onQualitySubcriteriaCriterionChange(value) {
+  selectedQualitySubcriteriaCriterion = value || '';
+  renderQualityStrategic();
+}
+
+function onQualityCriteriaSortChange(value) {
+  selectedQualityCriteriaSort = value === 'best' ? 'best' : 'worst';
+  renderQualityStrategic();
+}
+
+function onQualityCollaboratorSortChange(value) {
+  const allowed = ['name', 'setor', 'status', 'score', 'attendance'];
+  const nextSort = allowed.includes(value) ? value : 'score';
+  if (selectedQualityCollaboratorSort === nextSort) {
+    selectedQualityCollaboratorSortDir = selectedQualityCollaboratorSortDir === 'desc' ? 'asc' : 'desc';
+  } else {
+    selectedQualityCollaboratorSort = nextSort;
+    selectedQualityCollaboratorSortDir = ['name', 'setor', 'status'].includes(nextSort) ? 'asc' : 'desc';
+  }
+  renderQualityStrategic();
+}
+
+function selectedQualityOperationalCollaboratorsLabel() {
+  if (!selectedQualityOperationalCollaborators.size) return '(Todos os colaboradores)';
+  if (selectedQualityOperationalCollaborators.size === 1) {
+    const collaborator = (qualityData?.strategic?.collaborators || []).find((item) => selectedQualityOperationalCollaborators.has(item.name));
+    return collaborator?.display_name || qualityCollaboratorDisplayName([...selectedQualityOperationalCollaborators][0]);
+  }
+  return `${selectedQualityOperationalCollaborators.size} colaboradores`;
+}
+
+function updateQualityOperationalCollaboratorLabel() {
+  const label = document.getElementById('quality-operational-collaborator-label');
+  if (!label) return;
+  label.textContent = selectedQualityOperationalCollaboratorsLabel();
+  label.title = [...selectedQualityOperationalCollaborators].join(' · ');
+}
+
+function toggleQualityOperationalCollaboratorDropdown() {
+  const wrap = document.getElementById('quality-operational-collaborator-select');
+  if (!wrap) return;
+  wrap.classList.toggle('open');
+  if (wrap.classList.contains('open')) {
+    const search = document.getElementById('quality-operational-collaborator-search');
+    if (search) setTimeout(() => search.focus(), 0);
+  }
+}
+
+function closeQualityOperationalCollaboratorDropdown() {
+  const wrap = document.getElementById('quality-operational-collaborator-select');
+  if (wrap) wrap.classList.remove('open');
+}
+
+function applyQualityOperationalFilters() {
+  updateQualityOperationalCollaboratorLabel();
+  updateFilterInfo();
+  renderQualityStrategic();
+  renderQualityOperational();
+}
+
+function onQualityOperationalCollaboratorCheckboxChange(value, checked) {
+  if (checked) selectedQualityOperationalCollaborators.add(value);
+  else selectedQualityOperationalCollaborators.delete(value);
+  applyQualityOperationalFilters();
+}
+
+function selectAllQualityOperationalCollaborators() {
+  const collaborators = qualityData?.strategic?.collaborators || [];
+  selectedQualityOperationalCollaborators = new Set(collaborators.map((item) => item.name).filter(Boolean));
+  applyQualityOperationalFilters();
+}
+
+function clearQualityOperationalCollaborators() {
+  selectedQualityOperationalCollaborators = new Set();
+  applyQualityOperationalFilters();
+}
+
+function onQualityOperationalSetorFilterChange(value) {
+  selectedQualityOperationalSetor = value || '';
+  applyQualityOperationalFilters();
+}
+
+function onQualityOperationalStatusFilterChange(value) {
+  selectedQualityOperationalStatus = value || '';
+  applyQualityOperationalFilters();
+}
+
+function renderQualityOperationalCollaboratorOptions() {
+  const list = document.getElementById('quality-operational-collaborator-options');
+  if (!list) return;
+  const collaborators = qualityData?.strategic?.collaborators || [];
+  const search = String(document.getElementById('quality-operational-collaborator-search')?.value || '').trim().toLowerCase();
+  const filtered = collaborators
+    .slice()
+    .sort((a, b) => String(a.display_name || qualityCollaboratorDisplayName(a.name)).localeCompare(String(b.display_name || qualityCollaboratorDisplayName(b.name)), 'pt-BR', { sensitivity: 'base' }))
+    .filter((item) => {
+      const haystack = [item.display_name, item.name, item.setor, item.status, ...(item.aliases || [])].join(' ').toLowerCase();
+      return !search || haystack.includes(search);
+    });
+  list.innerHTML = filtered.length ? filtered.map((item) => {
+    const checked = selectedQualityOperationalCollaborators.has(item.name) ? ' checked' : '';
+    const label = item.display_name || qualityCollaboratorDisplayName(item.name);
+    return `<label class="multi-select-option" title="${escapeAttr(item.name || '')}">
+      <input type="checkbox" value="${escapeAttr(item.name)}"${checked} onchange="onQualityOperationalCollaboratorCheckboxChange(this.value,this.checked)" />
+      <span>${escapeHtml(label)}</span>
+    </label>`;
+  }).join('') : '<div style="font-size:12px;color:#94a3b8;padding:10px;text-align:center">Nenhum colaborador encontrado.</div>';
+  updateQualityOperationalCollaboratorLabel();
+}
+
+function renderQualityOperationalFilterOptions(collaborators) {
+  const setorSelect = document.getElementById('quality-operational-setor-filter');
+  const statusSelect = document.getElementById('quality-operational-status-filter');
+  const validNames = new Set((collaborators || []).map((item) => item.name).filter(Boolean));
+  selectedQualityOperationalCollaborators = new Set([...selectedQualityOperationalCollaborators].filter((name) => validNames.has(name)));
+  renderQualityOperationalCollaboratorOptions();
+  if (setorSelect) {
+    const setores = [...new Set((collaborators || []).map((item) => String(item.setor || 'Não mapeado')).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, 'pt-BR', { sensitivity: 'base' }));
+    if (selectedQualityOperationalSetor && !setores.includes(selectedQualityOperationalSetor)) selectedQualityOperationalSetor = '';
+    setorSelect.innerHTML = '<option value="">Todos</option>' + setores.map((setor) => {
+      const selected = setor === selectedQualityOperationalSetor ? ' selected' : '';
+      return `<option value="${escapeAttr(setor)}"${selected}>${escapeHtml(setor)}</option>`;
+    }).join('');
+  }
+  if (statusSelect) {
+    const statuses = [...new Set((collaborators || []).map((item) => String(item.status || 'Não mapeado')).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, 'pt-BR', { sensitivity: 'base' }));
+    if (selectedQualityOperationalStatus && !statuses.includes(selectedQualityOperationalStatus)) selectedQualityOperationalStatus = '';
+    statusSelect.innerHTML = '<option value="">Todos</option>' + statuses.map((status) => {
+      const selected = status === selectedQualityOperationalStatus ? ' selected' : '';
+      return `<option value="${escapeAttr(status)}"${selected}>${escapeHtml(status)}</option>`;
+    }).join('');
+  }
+}
+
+function filterQualityOperationalCollaborators(collaborators) {
+  return (collaborators || []).filter((item) => {
+    if (selectedQualityOperationalCollaborators.size && !selectedQualityOperationalCollaborators.has(item.name)) return false;
+    if (selectedQualityOperationalSetor && String(item.setor || 'Não mapeado') !== selectedQualityOperationalSetor) return false;
+    if (selectedQualityOperationalStatus && String(item.status || 'Não mapeado') !== selectedQualityOperationalStatus) return false;
+    return true;
+  });
+}
+
+function renderQualityOperationalScoreCard(collaborators) {
+  const items = collaborators || [];
+  const totalAttendances = items.reduce((acc, item) => acc + (Number(item.total) || 0), 0);
+  const weightedScoreSum = items.reduce((acc, item) => {
+    const total = Number(item.total) || 0;
+    const score = Number(item.score_pct);
+    return Number.isFinite(score) ? acc + (score * total) : acc;
+  }, 0);
+  const score = totalAttendances > 0 ? weightedScoreSum / totalAttendances : NaN;
+  const scoreEl = document.getElementById('quality-operational-score');
+  const noteEl = document.getElementById('quality-operational-score-note');
+  const collabsEl = document.getElementById('quality-operational-score-collabs');
+  const attendancesEl = document.getElementById('quality-operational-score-attendances');
+  if (scoreEl) {
+    scoreEl.textContent = Number.isFinite(score) ? fmtPct(score) : '—';
+    scoreEl.style.color = Number.isFinite(score)
+      ? (score >= 80 ? '#0f8a6f' : (score >= 60 ? '#d97706' : '#c53030'))
+      : '#0b3b47';
+  }
+  if (noteEl) {
+    const hasFilters = selectedQualityOperationalCollaborators.size || selectedQualityOperationalSetor || selectedQualityOperationalStatus;
+    noteEl.textContent = hasFilters ? 'Score ponderado dos filtros selecionados' : 'Score ponderado por atendimentos avaliados';
+  }
+  if (collabsEl) collabsEl.textContent = fmt(items.length);
+  if (attendancesEl) attendancesEl.textContent = fmt(totalAttendances);
+}
+
+function filterQualityOperationalEvaluatedCriteria(items) {
+  return (items || []).filter((item) => {
+    const meta = qualityCollaboratorMetaForName(item.collaborator);
+    if (selectedQualityOperationalCollaborators.size && !selectedQualityOperationalCollaborators.has(meta.name)) return false;
+    if (selectedQualityOperationalSetor && String(meta.setor || 'Não mapeado') !== selectedQualityOperationalSetor) return false;
+    if (selectedQualityOperationalStatus && String(meta.status || 'Não mapeado') !== selectedQualityOperationalStatus) return false;
+    return true;
+  });
+}
+
+function renderQualityOperationalCriteriaBullets(items) {
+  const el = document.getElementById('quality-operational-criteria-bullets');
+  if (!el) return;
+  const evaluatedCriteria = aggregateQualityEvaluatedCriteria(items || [])
+    .sort((a, b) => {
+      const idSort = String(a.criterio_id).localeCompare(String(b.criterio_id), 'pt-BR', { numeric: true });
+      return idSort || String(a.sub_criterio).localeCompare(String(b.sub_criterio), 'pt-BR', { sensitivity: 'base' });
+    });
+  el.innerHTML = qualityCriteriaBulletsHtml(evaluatedCriteria);
+}
+
+function onQualityVolumeEvolutionModeChange(value) {
+  selectedQualityVolumeEvolutionMode = ['quality', 'sessions'].includes(value) ? value : 'both';
+  renderQualityVolumeEvolutionChart(qualityData?.strategic?.volume_evolution);
+}
+
+function buildQualityDailyMonthOptions() {
+  const select = document.getElementById('quality-daily-month-select');
+  if (!select) return;
+  const now = new Date();
+  const options = [];
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    options.push({ value, label: `${mN[mm]}/${d.getFullYear()}` });
+  }
+  if (!options.some((option) => option.value === selectedQualityDailyMonth)) {
+    selectedQualityDailyMonth = options[0]?.value || currentMonthValue();
+  }
+  select.innerHTML = options.map((option) => {
+    const selected = option.value === selectedQualityDailyMonth ? ' selected' : '';
+    return `<option value="${option.value}"${selected}>${option.label}</option>`;
+  }).join('');
+}
+
+function onQualityDailyMonthChange(value) {
+  selectedQualityDailyMonth = /^\d{4}-\d{2}$/.test(String(value || '')) ? value : currentMonthValue();
+  loadQualityDailyVolumeEvolution();
+}
+
+function isMissingQualityCollaborator(name) {
+  return String(name || '') === 'Sem close_by preenchido';
+}
+
+function onQualityFactualCriterionChange(value) {
+  selectedQualityFactualCriterion = value || '';
+  loadQualityFactualInsight();
+}
+
+function onQualityFactualResolvedChange(value) {
+  selectedQualityFactualResolved = ['sim', 'nao'].includes(value) ? value : '';
+  loadQualityFactualInsight();
+}
+
+function qualityCriterionGroupId(value) {
+  const raw = String(value || '').trim().replace(',', '.');
+  const match = raw.match(/^(\d+)/);
+  return match ? match[1] : (raw || 'Sem critério');
+}
+
+const qualityCriterionDefinitions = {
+  '1': {
+    title: 'Critério 1 — Humanização e Vínculo com o Beneficiário',
+    description: 'Engloba validação emocional, escuta ativa, personalização, acolhimento e respeito à autonomia.',
+  },
+  '2': {
+    title: 'Critério 2 — Efetividade e Resolução',
+    description: 'Engloba clareza na orientação, resolução de problemas e uso correto do canal.',
+  },
+  '3': {
+    title: 'Critério 3 — Comunicação Profissional',
+    description: 'Engloba etiqueta na abertura, clareza/estrutura das mensagens e correção gramatical.',
+  },
+  '4': {
+    title: 'Critério 4 — Proatividade e Gestão do Cuidado',
+    description: 'Engloba antecipação clínica, gestão de expectativas, continuidade do cuidado, investigação proativa e verificação final.',
+  },
+  '5': {
+    title: 'Critério 5 — Segurança Clínica',
+    description: 'Engloba especificidade em orientações críticas e ação em situações de crise.',
+  },
+};
+
+function aggregateQualityCriteria(items) {
+  const grouped = new Map();
+  (items || []).filter((item) => item.total > 0).forEach((item) => {
+    const rawId = qualityCriterionGroupId(item.criterion_id);
+    const definition = qualityCriterionDefinitions[rawId];
+    const key = rawId.replace(/\s+/g, ' ').toLowerCase();
+    const current = grouped.get(key) || {
+      criterion_id: rawId,
+      criterion_name: definition ? definition.title : `Critério ${rawId}`,
+      criterion_description: definition ? definition.description : '',
+      total: 0,
+      applicable: 0,
+      scoreSum: 0,
+      score_2: 0,
+      score_1: 0,
+      score_0: 0,
+      total_atendimentos: 0,
+    };
+    current.total += Number(item.total) || 0;
+    current.applicable += Number(item.applicable) || 0;
+    current.scoreSum += Number(item.scoreSum) || 0;
+    current.score_2 += Number(item.score_2) || 0;
+    current.score_1 += Number(item.score_1) || 0;
+    current.score_0 += Number(item.score_0) || 0;
+    current.total_atendimentos += Number(item.total_atendimentos || item.total) || 0;
+    grouped.set(key, current);
+  });
+
+  return [...grouped.values()].map((item) => {
+    const applicable = item.applicable || item.total;
+    const scorePct = applicable > 0 ? (item.scoreSum / (applicable * 2)) * 100 : 0;
+    return {
+      ...item,
+      score_pct: Number(scorePct.toFixed(1)),
+      pct_2: item.total > 0 ? Number(((item.score_2 / item.total) * 100).toFixed(1)) : 0,
+      pct_1: item.total > 0 ? Number(((item.score_1 / item.total) * 100).toFixed(1)) : 0,
+      pct_0: item.total > 0 ? Number(((item.score_0 / item.total) * 100).toFixed(1)) : 0,
+    };
+  });
+}
+
+function aggregateQualitySubcriteria(items) {
+  const grouped = new Map();
+  (items || []).filter((item) => item.total > 0).forEach((item) => {
+    const name = String(item.criterion_name || 'Sem subcritério').trim() || 'Sem subcritério';
+    const rawId = String(item.criterion_id || '').trim();
+    const criterionGroupId = qualityCriterionGroupId(rawId);
+    if (selectedQualitySubcriteriaCriterion && criterionGroupId !== selectedQualitySubcriteriaCriterion) return;
+    const normalizedId = rawId.replace(/\s+/g, ' ').toLowerCase();
+    const normalizedName = name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+    const groupKey = normalizedId || normalizedName;
+    const current = grouped.get(groupKey) || {
+      criterion_id: new Set(),
+      criterion_group_id: criterionGroupId,
+      criterion_names: new Map(),
+      criterion_name: name,
+      total: 0,
+      applicable: 0,
+      scoreSum: 0,
+      score_2: 0,
+      score_1: 0,
+      score_0: 0,
+      total_atendimentos: 0,
+    };
+    const total = Number(item.total) || 0;
+    if (rawId) current.criterion_id.add(rawId);
+    current.criterion_names.set(name, (current.criterion_names.get(name) || 0) + total);
+    current.total += total;
+    current.applicable += Number(item.applicable) || 0;
+    current.scoreSum += Number(item.scoreSum) || 0;
+    current.score_2 += Number(item.score_2) || 0;
+    current.score_1 += Number(item.score_1) || 0;
+    current.score_0 += Number(item.score_0) || 0;
+    current.total_atendimentos += Number(item.total_atendimentos || item.total) || 0;
+    grouped.set(groupKey, current);
+  });
+
+  return [...grouped.values()].map((item) => {
+    const applicable = item.applicable || item.total;
+    const scorePct = applicable > 0 ? (item.scoreSum / (applicable * 2)) * 100 : 0;
+    const bestName = [...item.criterion_names.entries()]
+      .sort((a, b) => b[1] - a[1] || b[0].length - a[0].length)[0]?.[0] || item.criterion_name;
+    return {
+      ...item,
+      criterion_group_id: item.criterion_group_id,
+      criterion_id: [...item.criterion_id].filter(Boolean).sort((a, b) => a.localeCompare(b, 'pt-BR', { numeric: true })).join(', '),
+      criterion_name: bestName,
+      score_pct: Number(scorePct.toFixed(1)),
+      pct_2: item.total > 0 ? Number(((item.score_2 / item.total) * 100).toFixed(1)) : 0,
+      pct_1: item.total > 0 ? Number(((item.score_1 / item.total) * 100).toFixed(1)) : 0,
+      pct_0: item.total > 0 ? Number(((item.score_0 / item.total) * 100).toFixed(1)) : 0,
+    };
+  });
+}
+
+function aggregateQualityEvaluatedCriteria(items) {
+  const grouped = new Map();
+  (items || []).forEach((item) => {
+    const rawId = String(item.criterio_id || '').trim();
+    const name = String(item.sub_criterio || 'Sem subcritério').trim() || 'Sem subcritério';
+    const normalizedId = rawId.replace(/\s+/g, ' ').toLowerCase();
+    const normalizedName = name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+    const groupKey = normalizedId || normalizedName;
+    const current = grouped.get(groupKey) || {
+      criterio_id: new Set(),
+      sub_criterio: name,
+      sub_criterios: new Map(),
+      total_atendimentos: 0,
+      total_avaliacoes: 0,
+      scoreWeight: 0,
+      pontuacaoSum: 0,
+      percentualCriterioSum: 0,
+      percentualAtendimentoSum: 0,
+      criterio_max_score: Number(item.criterio_max_score) || 2,
+    };
+    const attendances = Number(item.total_atendimentos) || 0;
+    const evaluations = Number(item.total_avaliacoes) || 0;
+    const weight = attendances || evaluations;
+    if (rawId) current.criterio_id.add(rawId);
+    current.sub_criterios.set(name, (current.sub_criterios.get(name) || 0) + (weight || 1));
+    current.total_atendimentos += attendances;
+    current.total_avaliacoes += evaluations;
+    current.criterio_max_score = Number(item.criterio_max_score) || current.criterio_max_score;
+    if (weight > 0) {
+      const avg = Number(item.pontuacao_media);
+      const criterionPct = Number(item.percentual_criterio);
+      const attendancePct = Number(item.percentual_atendimento);
+      if (Number.isFinite(avg)) current.pontuacaoSum += avg * weight;
+      if (Number.isFinite(criterionPct)) current.percentualCriterioSum += criterionPct * weight;
+      if (Number.isFinite(attendancePct)) current.percentualAtendimentoSum += attendancePct * weight;
+      current.scoreWeight += weight;
+    }
+    grouped.set(groupKey, current);
+  });
+
+  return [...grouped.values()].map((item) => {
+    const bestName = [...item.sub_criterios.entries()]
+      .sort((a, b) => b[1] - a[1] || b[0].length - a[0].length)[0]?.[0] || item.sub_criterio;
+    return {
+      criterio_id: [...item.criterio_id].filter(Boolean).sort((a, b) => a.localeCompare(b, 'pt-BR', { numeric: true })).join(', ') || 'Critério',
+      sub_criterio: bestName,
+      total_atendimentos: item.total_atendimentos,
+      total_avaliacoes: item.total_avaliacoes,
+      pontuacao_media: item.scoreWeight > 0 ? item.pontuacaoSum / item.scoreWeight : 0,
+      percentual_criterio: item.scoreWeight > 0 ? item.percentualCriterioSum / item.scoreWeight : 0,
+      percentual_atendimento: item.scoreWeight > 0 ? item.percentualAtendimentoSum / item.scoreWeight : 0,
+      criterio_max_score: item.criterio_max_score,
+    };
+  });
+}
+
+function qualityCriteriaBulletsHtml(items) {
+  return items.length ? items.map((item) => {
+    const avg = Number(item.pontuacao_media);
+    const maxScore = Number(item.criterio_max_score) || 2;
+    const criterionPct = Number(item.percentual_criterio);
+    const attendancePct = Number(item.percentual_atendimento);
+    const avgLabel = Number.isFinite(avg)
+      ? avg.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 2 })
+      : '—';
+    const criterionPctLabel = Number.isFinite(criterionPct) ? fmtPct(criterionPct * 100) : '—';
+    const attendancePctLabel = Number.isFinite(attendancePct) ? ` · atend. ${fmtPct(attendancePct * 100)}` : '';
+    return `<div class="quality-criteria-bullet">
+      <div class="quality-criteria-bullet-head">
+        <span class="quality-criteria-bullet-id">${escapeHtml(item.criterio_id)}</span>
+        <span class="quality-criteria-bullet-score">média ${avgLabel}/${maxScore}</span>
+      </div>
+      <div class="quality-criteria-bullet-title" title="${escapeAttr(item.sub_criterio)}">${escapeHtml(item.sub_criterio)}</div>
+      <div class="quality-criteria-bullet-value">${criterionPctLabel}</div>
+      <div class="quality-criteria-bullet-meta">${fmt(Number(item.total_atendimentos) || 0)} atendimentos · ${fmt(Number(item.total_avaliacoes) || 0)} avaliações${attendancePctLabel}</div>
+    </div>`;
+  }).join('') : '<div class="loading-box" style="grid-column:1/-1">Nenhum critério aplicável encontrado no recorte.</div>';
+}
+
+function syncQualityDistributionHeights() {
+  const criteriaCard = document.getElementById('quality-criteria-card');
+  const criteriaList = document.getElementById('quality-criteria-only-dist');
+  const subcriteriaCard = document.getElementById('quality-subcriteria-card');
+  const subcriteriaList = document.getElementById('quality-criteria-dist');
+  if (!criteriaCard || !criteriaList || !subcriteriaCard || !subcriteriaList) return;
+
+  criteriaCard.style.height = '';
+  subcriteriaCard.style.height = '';
+  subcriteriaList.style.maxHeight = '';
+  if (window.innerWidth <= 1100) return;
+
+  requestAnimationFrame(() => {
+    const criteriaHeader = criteriaCard.firstElementChild;
+    const criteriaStyle = window.getComputedStyle(criteriaCard);
+    const criteriaHeaderStyle = criteriaHeader ? window.getComputedStyle(criteriaHeader) : null;
+    const criteriaPadding = (parseFloat(criteriaStyle.paddingTop) || 0) + (parseFloat(criteriaStyle.paddingBottom) || 0);
+    const criteriaHeaderSpace = criteriaHeader ? criteriaHeader.offsetHeight + (parseFloat(criteriaHeaderStyle.marginBottom) || 0) : 0;
+    const targetHeight = Math.ceil(criteriaPadding + criteriaHeaderSpace + criteriaList.scrollHeight);
+    if (!targetHeight) return;
+    const header = subcriteriaCard.firstElementChild;
+    const legend = subcriteriaCard.querySelector('.quality-distribution-legend');
+    const cardStyle = window.getComputedStyle(subcriteriaCard);
+    const headerStyle = header ? window.getComputedStyle(header) : null;
+    const legendStyle = legend ? window.getComputedStyle(legend) : null;
+    const verticalPadding = (parseFloat(cardStyle.paddingTop) || 0) + (parseFloat(cardStyle.paddingBottom) || 0);
+    const headerSpace = header ? header.offsetHeight + (parseFloat(headerStyle.marginBottom) || 0) : 0;
+    const legendSpace = legend ? legend.offsetHeight + (parseFloat(legendStyle.marginTop) || 0) : 0;
+    criteriaCard.style.height = `${targetHeight}px`;
+    subcriteriaCard.style.height = `${targetHeight}px`;
+    subcriteriaList.style.maxHeight = `${Math.max(120, targetHeight - verticalPadding - headerSpace - legendSpace)}px`;
+  });
+}
+
+window.addEventListener('resize', syncQualityDistributionHeights);
+
+function qualityMonthLabel(value) {
+  const [year, month] = String(value || '').split('-');
+  return month && year ? `${mN[month]}/${year.slice(2)}` : String(value || '');
+}
+
+function qualityDayLabel(value) {
+  const [, , day] = String(value || '').split('-');
+  return day ? day : String(value || '');
+}
+
+function qualityEvolutionTooltipLabel(context) {
+  const value = Number(context.parsed.y) || 0;
+  return context.dataset.yAxisID === 'y1'
+    ? `${context.dataset.label}: ${fmt(value)} análises`
+    : `${context.dataset.label}: ${fmtPct(value)}`;
+}
+
+function renderQualityVolumeEvolutionChart(evolution) {
+  const canvas = document.getElementById('qualityVolumeEvolutionChart');
+  const empty = document.getElementById('quality-volume-evolution-empty');
+  const modeSelect = document.getElementById('quality-volume-evolution-mode');
+  const qualityTotalEl = document.getElementById('quality-volume-total');
+  const sessionsTotalEl = document.getElementById('quality-sessions-volume-total');
+  const items = (evolution?.monthly || []).filter((item) => item.month);
+  if (modeSelect) modeSelect.value = selectedQualityVolumeEvolutionMode;
+  const getEvaluatedSessions = (item) => Number(item.total_evaluated_sessions ?? item.total_quality_rows) || 0;
+  const totalQualityRows = items.reduce((acc, item) => acc + getEvaluatedSessions(item), 0);
+  const totalSessions = items.reduce((acc, item) => acc + (Number(item.total_sessions) || 0), 0);
+  if (qualityTotalEl) qualityTotalEl.textContent = fmt(totalQualityRows);
+  if (sessionsTotalEl) sessionsTotalEl.textContent = fmt(totalSessions);
+  if (qualityVolumeEvolutionChart) qualityVolumeEvolutionChart.destroy();
+  if (!canvas) return;
+
+  if (!items.length) {
+    canvas.style.display = 'none';
+    if (empty) {
+      empty.style.display = 'block';
+      empty.textContent = 'Sem dados de volume disponíveis.';
+    }
+    return;
+  }
+
+  if (empty) empty.style.display = 'none';
+  canvas.style.display = 'block';
+  const showQuality = selectedQualityVolumeEvolutionMode !== 'sessions';
+  const showSessions = selectedQualityVolumeEvolutionMode !== 'quality';
+  const datasets = [];
+  if (showQuality) {
+    datasets.push({
+      type: 'line',
+      label: 'Sessões avaliadas',
+      data: items.map(getEvaluatedSessions),
+      yAxisID: 'y',
+      borderColor: '#0f766e',
+      backgroundColor: 'rgba(15,118,110,0.08)',
+      borderWidth: 2,
+      pointRadius: 3,
+      pointBackgroundColor: '#0f766e',
+      tension: 0.28,
+      fill: false,
+    });
+  }
+  if (showSessions) {
+    datasets.push({
+      type: 'line',
+      label: 'Sessões',
+      data: items.map((item) => Number(item.total_sessions) || 0),
+      yAxisID: 'y',
+      borderColor: '#6366f1',
+      backgroundColor: 'rgba(99,102,241,0.08)',
+      borderWidth: 2,
+      borderDash: showQuality ? [6, 5] : [],
+      pointRadius: 3,
+      pointBackgroundColor: '#6366f1',
+      tension: 0.28,
+      fill: false,
+    });
+  }
+
+  qualityVolumeEvolutionChart = new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels: items.map((item) => qualityMonthLabel(item.month)),
+      datasets,
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'bottom', labels: { boxWidth: 10, usePointStyle: true, font: { size: 10 }, color: '#64748b' } },
+        tooltip: {
+          backgroundColor: '#1e293b',
+          borderColor: '#334155',
+          borderWidth: 1,
+          titleColor: '#cbd5e1',
+          bodyColor: '#f8fafc',
+          callbacks: { label: c => `${c.dataset.label}: ${fmt(Number(c.parsed.y) || 0)}` },
+        },
+      },
+      scales: {
+        x: { ticks: { font: { size: 10 }, color: '#94a3b8' }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } },
+        y: { beginAtZero: true, ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => fmt(v) }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } },
+        y1: { display: false },
+      },
+    },
+  });
+}
+
+function renderQualityDailyVolumeEvolutionChart(evolution) {
+  buildQualityDailyMonthOptions();
+  const canvas = document.getElementById('qualityDailyVolumeEvolutionChart');
+  const empty = document.getElementById('quality-daily-volume-evolution-empty');
+  const period = document.getElementById('quality-daily-volume-period');
+  const qualityTotalEl = document.getElementById('quality-daily-volume-total');
+  const sessionsTotalEl = document.getElementById('quality-daily-sessions-volume-total');
+  const items = (evolution?.daily || []).filter((item) => item.day);
+  const month = evolution?.month || selectedQualityDailyMonth;
+  const [year, mm] = String(month || '').split('-');
+  if (period) period.textContent = mN[mm] ? `${mN[mm]}/${year}` : (month || 'mês selecionado');
+  const getEvaluatedSessions = (item) => Number(item.total_evaluated_sessions ?? item.total_quality_rows) || 0;
+  const totalQualityRows = items.reduce((acc, item) => acc + getEvaluatedSessions(item), 0);
+  const totalSessions = items.reduce((acc, item) => acc + (Number(item.total_sessions) || 0), 0);
+  if (qualityTotalEl) qualityTotalEl.textContent = fmt(totalQualityRows);
+  if (sessionsTotalEl) sessionsTotalEl.textContent = fmt(totalSessions);
+  if (qualityDailyVolumeEvolutionChart) qualityDailyVolumeEvolutionChart.destroy();
+  if (!canvas) return;
+
+  if (!items.length) {
+    canvas.style.display = 'none';
+    if (empty) {
+      empty.style.display = 'block';
+      empty.textContent = 'Sem dados diários disponíveis.';
+    }
+    return;
+  }
+
+  if (empty) empty.style.display = 'none';
+  canvas.style.display = 'block';
+  qualityDailyVolumeEvolutionChart = new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels: items.map((item) => qualityDayLabel(item.day)),
+      datasets: [
+        {
+          type: 'line',
+          label: 'Sessões avaliadas',
+          data: items.map(getEvaluatedSessions),
+          yAxisID: 'y',
+          borderColor: '#0f766e',
+          backgroundColor: 'rgba(15,118,110,0.08)',
+          borderWidth: 2,
+          pointRadius: 2.5,
+          pointBackgroundColor: '#0f766e',
+          tension: 0.28,
+          fill: false,
+        },
+        {
+          type: 'line',
+          label: 'Sessões',
+          data: items.map((item) => Number(item.total_sessions) || 0),
+          yAxisID: 'y',
+          borderColor: '#6366f1',
+          backgroundColor: 'rgba(99,102,241,0.08)',
+          borderWidth: 2,
+          borderDash: [6, 5],
+          pointRadius: 2.5,
+          pointBackgroundColor: '#6366f1',
+          tension: 0.28,
+          fill: false,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'bottom', labels: { boxWidth: 10, usePointStyle: true, font: { size: 10 }, color: '#64748b' } },
+        tooltip: {
+          backgroundColor: '#1e293b',
+          borderColor: '#334155',
+          borderWidth: 1,
+          titleColor: '#cbd5e1',
+          bodyColor: '#f8fafc',
+          callbacks: {
+            title: (items) => {
+              const index = items?.[0]?.dataIndex ?? 0;
+              const day = evolution?.daily?.[index]?.day;
+              return day ? day.split('-').reverse().join('/') : '';
+            },
+            label: c => `${c.dataset.label}: ${fmt(Number(c.parsed.y) || 0)}`,
+          },
+        },
+      },
+      scales: {
+        x: { ticks: { font: { size: 10 }, color: '#94a3b8', maxRotation: 0, autoSkip: true, maxTicksLimit: 16 }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } },
+        y: { beginAtZero: true, ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => fmt(v) }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } },
+      },
+    },
+  });
+}
+
+function renderQualityEvolutionCharts(evolution) {
+  const monthly = (evolution?.monthly || []).filter((item) => item.month);
+  const byCriterion = (evolution?.by_criterion || []).filter((item) => item.month);
+  const globalCanvas = document.getElementById('qualityEvolutionChart');
+  const criteriaCanvas = document.getElementById('qualityCriteriaEvolutionChart');
+  const globalEmpty = document.getElementById('quality-evolution-empty');
+  const criteriaEmpty = document.getElementById('quality-criteria-evolution-empty');
+  const labels = monthly.length
+    ? monthly.map((item) => item.month)
+    : [...new Set(byCriterion.map((item) => item.month))].sort();
+  const volumeByMonth = new Map(labels.map((month) => {
+    const monthlyItem = monthly.find((item) => item.month === month);
+    const volume = monthlyItem
+      ? Number(monthlyItem.total_avaliacoes) || 0
+      : byCriterion
+        .filter((item) => item.month === month)
+        .reduce((acc, item) => acc + (Number(item.total_avaliacoes) || 0), 0);
+    return [month, volume];
+  }));
+
+  if (qualityEvolutionChart) qualityEvolutionChart.destroy();
+  if (qualityCriteriaEvolutionChart) qualityCriteriaEvolutionChart.destroy();
+
+  if (!globalCanvas || !criteriaCanvas) return;
+
+  if (!monthly.length) {
+    globalCanvas.style.display = 'none';
+    if (globalEmpty) globalEmpty.style.display = 'block';
+  } else {
+    if (globalEmpty) globalEmpty.style.display = 'none';
+    globalCanvas.style.display = 'block';
+    qualityEvolutionChart = new Chart(globalCanvas, {
+      type: 'line',
+      data: {
+        labels: labels.map(qualityMonthLabel),
+        datasets: [
+          {
+            label: 'Qualidade',
+            data: labels.map((month) => {
+              const item = monthly.find((row) => row.month === month);
+              return item ? Number(item.score_pct) || 0 : 0;
+            }),
+            yAxisID: 'y',
+            borderColor: '#0f766e',
+            backgroundColor: 'rgba(15,118,110,0.08)',
+            borderWidth: 2,
+            pointRadius: 3,
+            pointBackgroundColor: '#0f766e',
+            fill: true,
+            tension: 0.35,
+          },
+          {
+            label: 'Volume de análises',
+            data: labels.map((month) => volumeByMonth.get(month) || 0),
+            yAxisID: 'y1',
+            borderColor: '#64748b',
+            backgroundColor: '#64748b',
+            borderWidth: 2,
+            borderDash: [6, 5],
+            pointRadius: 2,
+            pointBackgroundColor: '#64748b',
+            fill: false,
+            tension: 0.25,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { position: 'bottom', labels: { boxWidth: 10, usePointStyle: true, font: { size: 10 }, color: '#64748b' } },
+          tooltip: { backgroundColor: '#1e293b', borderColor: '#334155', borderWidth: 1, titleColor: '#cbd5e1', bodyColor: '#f8fafc', callbacks: { label: qualityEvolutionTooltipLabel } },
+        },
+        scales: {
+          x: { ticks: { font: { size: 10 }, color: '#94a3b8' }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } },
+          y: { min: 0, max: 100, ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => `${v}%` }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } },
+          y1: { position: 'right', beginAtZero: true, ticks: { font: { size: 10 }, color: '#64748b', callback: v => fmt(v) }, grid: { drawOnChartArea: false }, border: { display: false } },
+        },
+      },
+    });
+  }
+
+  if (!byCriterion.length || !labels.length) {
+    criteriaCanvas.style.display = 'none';
+    if (criteriaEmpty) criteriaEmpty.style.display = 'block';
+    return;
+  }
+
+  if (criteriaEmpty) criteriaEmpty.style.display = 'none';
+  criteriaCanvas.style.display = 'block';
+  const colors = ['#0f766e', '#2563eb', '#7c3aed', '#d97706', '#c53030', '#64748b'];
+  const criterionIds = [...new Set(byCriterion.map((item) => qualityCriterionGroupId(item.criterion_id)))].sort((a, b) => a.localeCompare(b, 'pt-BR', { numeric: true }));
+  const datasets = criterionIds.map((criterionId, index) => {
+    const definition = qualityCriterionDefinitions[criterionId];
+    return {
+      label: definition ? definition.title.replace(/^Critério \d+ —\s*/, `C${criterionId} · `) : `Critério ${criterionId}`,
+      data: labels.map((month) => {
+        const item = byCriterion.find((row) => row.month === month && qualityCriterionGroupId(row.criterion_id) === criterionId);
+        return item ? Number(item.score_pct) || 0 : 0;
+      }),
+      yAxisID: 'y',
+      borderColor: colors[index % colors.length],
+      backgroundColor: colors[index % colors.length],
+      borderWidth: 2,
+      pointRadius: 2.5,
+      tension: 0.3,
+      fill: false,
+    };
+  });
+
+  qualityCriteriaEvolutionChart = new Chart(criteriaCanvas, {
+    type: 'line',
+    data: {
+      labels: labels.map(qualityMonthLabel),
+      datasets: datasets.concat([{
+        label: 'Volume de análises',
+        data: labels.map((month) => volumeByMonth.get(month) || 0),
+        yAxisID: 'y1',
+        borderColor: '#64748b',
+        backgroundColor: '#64748b',
+        borderWidth: 2,
+        borderDash: [6, 5],
+        pointRadius: 2,
+        pointBackgroundColor: '#64748b',
+        tension: 0.25,
+        fill: false,
+      }]),
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'bottom', labels: { boxWidth: 10, usePointStyle: true, font: { size: 10 }, color: '#64748b' } },
+        tooltip: { backgroundColor: '#1e293b', borderColor: '#334155', borderWidth: 1, titleColor: '#cbd5e1', bodyColor: '#f8fafc', callbacks: { label: qualityEvolutionTooltipLabel } },
+      },
+      scales: {
+        x: { ticks: { font: { size: 10 }, color: '#94a3b8' }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } },
+        y: { min: 0, max: 100, ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => `${v}%` }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } },
+        y1: { position: 'right', beginAtZero: true, ticks: { font: { size: 10 }, color: '#64748b', callback: v => fmt(v) }, grid: { drawOnChartArea: false }, border: { display: false } },
+      },
+    },
+  });
+}
+
+async function loadQualityFactualInsight() {
+  const select = document.getElementById('quality-factual-criterion');
+  const resolvedSelect = document.getElementById('quality-factual-resolved');
+  const content = document.getElementById('quality-factual-content');
+  const period = document.getElementById('quality-factual-period');
+  if (select) select.value = selectedQualityFactualCriterion;
+  if (resolvedSelect) resolvedSelect.value = selectedQualityFactualResolved;
+  if (period) period.textContent = qualityPeriodLabel();
+  if (!content) return;
+
+  if (!selectedQualityFactualCriterion) {
+    content.innerHTML = '<div class="loading-box" style="padding:18px">Selecione um critério para gerar o insight do período.</div>';
+    return;
+  }
+
+  content.innerHTML = '<div class="loading-box" style="padding:18px"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Gerando insight...</div>';
+  const meses = [...selectedMonths].sort();
+  const p = new URLSearchParams();
+  p.set('criterio', selectedQualityFactualCriterion);
+  if (meses.length > 0) p.set('meses', meses.join(','));
+  if (selectedQualityFactualResolved) p.set('resolved', selectedQualityFactualResolved);
+  const data = await safeGet('/api/quality-criterion-insights?' + p.toString());
+
+  if (!data || data.error) {
+    content.innerHTML = `<div class="loading-box" style="padding:18px;color:#b45309">${escapeHtml(data?.error || 'Erro ao gerar insight.')}</div>`;
+    return;
+  }
+
+  const themesHtml = (data.temas || []).map((item) =>
+    `<span class="quality-factual-theme">${escapeHtml(item.label)} · ${fmt(Number(item.total) || 0)}</span>`
+  ).join('');
+  const examplesHtml = (data.exemplos || []).map((item) =>
+    `<div class="quality-factual-example"><strong>${fmt(Number(item.total) || 0)}x</strong> ${escapeHtml(item.texto)}</div>`
+  ).join('');
+  const suggestionsHtml = (data.sugestoes_melhoria || []).map((item) =>
+    `<div class="quality-factual-suggestion">
+      <div class="quality-factual-suggestion-title">${escapeHtml(item.title || 'Sugestão de melhoria')}</div>
+      <div class="quality-factual-suggestion-action">${escapeHtml(item.action || '')}</div>
+      <div class="quality-factual-suggestion-evidence">${escapeHtml(item.evidence || '')}</div>
+    </div>`
+  ).join('');
+
+  content.innerHTML = `
+    <div class="quality-factual-summary">${escapeHtml(data.resumo || 'Sem resumo disponível.')}</div>
+    ${themesHtml ? `<div class="quality-factual-themes">${themesHtml}</div>` : ''}
+    ${suggestionsHtml ? `<div class="quality-factual-suggestions">${suggestionsHtml}</div>` : ''}
+    <div class="quality-factual-examples">${examplesHtml || '<div class="quality-factual-example">Nenhuma justificativa factual encontrada no período.</div>'}</div>
+  `;
+}
+
+async function loadQualityCollaboratorCriteria(name) {
+  selectedQualityCollaboratorName = name || '';
+  renderQualityStrategic();
+  const content = document.getElementById('quality-collab-detail');
+  if (!content || !selectedQualityCollaboratorName) return;
+
+  content.innerHTML = '<div class="loading-box" style="padding:18px"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando notas do colaborador...</div>';
+  const meses = [...selectedMonths].sort();
+  const p = new URLSearchParams();
+  if (isMissingQualityCollaborator(selectedQualityCollaboratorName)) {
+    p.set('missing_close_by', '1');
+  } else {
+    p.set('collaborator', selectedQualityCollaboratorName);
+  }
+  p.set('mode', 'collaborator_criteria');
+  if (meses.length > 0) p.set('meses', meses.join(','));
+  const data = await safeGet('/api/quality?' + p.toString());
+  if (!data || data.error) {
+    content.innerHTML = `<div class="loading-box" style="padding:18px;color:#b45309">${escapeHtml(data?.error || 'Erro ao carregar notas por critério.')}</div>`;
+    return;
+  }
+
+  const items = [...(data.items || [])].sort((a, b) => String(a.criterion_id).localeCompare(String(b.criterion_id), 'pt-BR', { numeric: true }));
+  const totalAttendances = items.reduce((acc, item) => acc + (Number(item.total_atendimentos) || 0), 0);
+  const totalEvaluations = items.reduce((acc, item) => acc + (Number(item.total_avaliacoes) || 0), 0);
+  const weightedScore = totalEvaluations > 0
+    ? items.reduce((acc, item) => acc + ((Number(item.score_pct) || 0) * (Number(item.total_avaliacoes) || 0)), 0) / totalEvaluations
+    : 0;
+  const status = String(data.status || 'Não mapeado');
+  const statusClass = status.toLowerCase() === 'ativo' ? 'active' : (status.toLowerCase() === 'inativo' ? 'inactive' : 'unknown');
+  const rowsHtml = items.map((item) => {
+    const criterionId = qualityCriterionGroupId(item.criterion_id);
+    const definition = qualityCriterionDefinitions[criterionId];
+    const score = Number(item.score_pct) || 0;
+    const cls = qualityScoreClass(score);
+    const avg = Number(item.pontuacao_media);
+    return `<div class="quality-collab-detail-row">
+      <div>
+        <div class="quality-collab-detail-name">${escapeHtml(definition ? definition.title : `Critério ${criterionId}`)}</div>
+        <div class="quality-collab-detail-meta">${fmt(Number(item.total_atendimentos) || 0)} atend. · ${fmt(Number(item.total_avaliacoes) || 0)} avaliações · média ${Number.isFinite(avg) ? avg.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 2 }) : '—'}/2</div>
+      </div>
+      <div class="quality-bar"><div class="quality-bar-fill ${cls}" style="width:${Math.max(0, Math.min(100, score))}%"></div></div>
+      <div class="quality-score ${cls}" style="font-size:12px;text-align:right">${fmtPct(score)}</div>
+    </div>`;
+  }).join('');
+
+  content.innerHTML = `
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px;flex-wrap:wrap">
+      <div>
+        <div style="font-size:13px;font-weight:800;color:#0f172a">${escapeHtml(data.display_name || qualityCollaboratorDisplayName(data.collaborator || selectedQualityCollaboratorName))}</div>
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:6px">
+          <span class="quality-sector-pill">${escapeHtml(data.setor || 'Não mapeado')}</span>
+          <span class="quality-status-pill ${statusClass}">${escapeHtml(status)}</span>
+        </div>
+        <div style="font-size:11px;color:#94a3b8;margin-top:6px">${qualityPeriodLabel()} · ${fmt(totalAttendances)} atend. · ${fmt(totalEvaluations)} avaliações</div>
+      </div>
+      <div class="quality-score ${qualityScoreClass(weightedScore)}" style="font-size:18px">${fmtPct(weightedScore)}</div>
+    </div>
+    <div class="quality-collab-detail-list">${rowsHtml || '<div class="loading-box" style="padding:18px">Nenhuma nota aplicável encontrada para este colaborador no período.</div>'}</div>
+  `;
+}
+
+async function loadQuality() {
+  setStatus('loading', '⏳ Carregando qualidade...');
+  const operationalLoading = document.getElementById('quality-operational-loading');
+  const operationalItems = document.getElementById('quality-items');
+  if (operationalLoading) {
+    operationalLoading.style.display = 'block';
+    operationalLoading.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando atendimentos...';
+  }
+  if (operationalItems) operationalItems.style.display = 'none';
+
+  const meses = [...selectedMonths].sort();
+  const p = new URLSearchParams();
+  if (meses.length > 0) p.set('meses', meses.join(','));
+  p.set('quality_daily_month', selectedQualityDailyMonth || currentMonthValue());
+  if (getActiveTab() !== 'qualidade-operacional') {
+    appendGroupParams(p);
+    if (currentCompany) p.set('company', currentCompany);
+  }
+  const data = await safeGet('/api/quality' + (p.toString() ? '?' + p.toString() : ''));
+
+  if (!data || data.error) {
+    const msg = data && data.error ? String(data.error).slice(0, 220) : 'Erro ao carregar qualidade';
+    if (operationalLoading) operationalLoading.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>' + msg;
+    setStatus('error', '✗ Erro qualidade');
+    return;
+  }
+
+  qualityData = data;
+  selectedQualityKey = null;
+  selectedQualityCollaboratorName = '';
+  renderQualityStrategic();
+  renderQualityOperational();
+  loadQualityFactualInsight();
+  setStatus('ok', '✓ Dados ao vivo');
+  document.getElementById('last-upd').textContent = 'Atualizado: ' + new Date().toLocaleTimeString('pt-BR');
+}
+
+async function loadQualityDailyVolumeEvolution() {
+  if (getActiveTab() !== 'qualidade-estrategica') return;
+  buildQualityDailyMonthOptions();
+  const requestId = ++qualityDailyVolumeRequestId;
+  const empty = document.getElementById('quality-daily-volume-evolution-empty');
+  const canvas = document.getElementById('qualityDailyVolumeEvolutionChart');
+  if (empty) {
+    empty.style.display = 'block';
+    empty.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando volume diário...';
+  }
+  if (canvas) canvas.style.display = 'none';
+
+  const p = new URLSearchParams();
+  p.set('mode', 'quality_daily_volume');
+  p.set('quality_daily_month', selectedQualityDailyMonth || currentMonthValue());
+  appendGroupParams(p);
+  if (currentCompany) p.set('company', currentCompany);
+  const data = await safeGet('/api/quality?' + p.toString());
+  if (requestId !== qualityDailyVolumeRequestId) return;
+
+  if (!data || data.error) {
+    if (empty) {
+      empty.style.display = 'block';
+      empty.innerHTML = String(data?.error || 'Erro ao carregar volume diário').slice(0, 180);
+    }
+    return;
+  }
+
+  if (!qualityData) qualityData = { strategic: {} };
+  if (!qualityData.strategic) qualityData.strategic = {};
+  qualityData.strategic.daily_volume_evolution = data.daily_volume_evolution || {};
+  renderQualityDailyVolumeEvolutionChart(qualityData.strategic.daily_volume_evolution);
+}
+
+function renderQualityStrategic() {
+  const strategic = qualityData?.strategic || {};
+  const kpis = strategic.kpis || {};
+  const score = Number(kpis.overall_score);
+  const scoreLabel = Number.isFinite(score) ? fmtPct(score) : '—';
+  const criteriaGroups = aggregateQualityCriteria(strategic.criteria || []);
+  const weakCriterion = [...criteriaGroups]
+    .filter((item) => Number.isFinite(Number(item.score_pct)))
+    .sort((a, b) => (Number(a.score_pct) || 0) - (Number(b.score_pct) || 0))[0] || null;
+  const period = qualityPeriodLabel();
+
+  setText('quality-head-score', scoreLabel);
+  setText('quality-head-period', `Pipeline de avaliação · ${period}`);
+  setText('q-kpi-score', scoreLabel);
+  setText('q-kpi-total', fmt(Number(kpis.evaluated) || 0));
+  setText('q-kpi-resolved', fmtPct(kpis.resolved_pct));
+  const applicableCriteria = Number(kpis.applicable_criteria) || 0;
+  const availableCriteria = Number(kpis.available_criteria) || 0;
+  setText('q-kpi-na', `${fmt(applicableCriteria)} / ${fmt(availableCriteria)}`);
+  setText('q-kpi-applicable-note', `aplicáveis / disponíveis · ${availableCriteria ? fmtPct((applicableCriteria / availableCriteria) * 100) : '—'}`);
+  setText('q-kpi-weak', weakCriterion ? `${weakCriterion.criterion_name} (${fmtPct(weakCriterion.score_pct)})` : '—');
+  setText('q-kpi-weak-note', weakCriterion
+    ? `${weakCriterion.criterion_description || 'Menor aproveitamento entre os critérios avaliados.'} ${fmt(Number(weakCriterion.total_atendimentos) || 0)} atend. avaliados.`
+    : 'menor score por critério');
+  setText('q-kpi-latest', `último registro: ${formatQualityDate(kpis.latest_at)}`);
+  setText('quality-criteria-bullets-period', `${period} · is_applicable = true`);
+  buildQualityDailyMonthOptions();
+  renderQualityVolumeEvolutionChart(strategic.volume_evolution || {});
+  renderQualityDailyVolumeEvolutionChart(strategic.daily_volume_evolution || {});
+  renderQualityEvolutionCharts(strategic.evolution || {});
+
+  const criteriaBulletsEl = document.getElementById('quality-criteria-bullets');
+  const evaluatedCriteria = aggregateQualityEvaluatedCriteria(strategic.evaluated_criteria || [])
+    .sort((a, b) => {
+      const idSort = String(a.criterio_id).localeCompare(String(b.criterio_id), 'pt-BR', { numeric: true });
+      return idSort || String(a.sub_criterio).localeCompare(String(b.sub_criterio), 'pt-BR', { sensitivity: 'base' });
+    });
+  if (criteriaBulletsEl) {
+    criteriaBulletsEl.innerHTML = qualityCriteriaBulletsHtml(evaluatedCriteria);
+  }
+
+  const criteriaSortSelect = document.getElementById('quality-criteria-sort');
+  if (criteriaSortSelect) criteriaSortSelect.value = selectedQualityCriteriaSort;
+  const criteriaOnly = [...criteriaGroups]
+    .sort((a, b) => {
+      const scoreSort = selectedQualityCriteriaSort === 'best'
+        ? (Number(b.score_pct) || 0) - (Number(a.score_pct) || 0)
+        : (Number(a.score_pct) || 0) - (Number(b.score_pct) || 0);
+      return scoreSort || String(a.criterion_id).localeCompare(String(b.criterion_id), 'pt-BR', { numeric: true });
+    });
+  const criteriaOnlyEl = document.getElementById('quality-criteria-only-dist');
+  if (criteriaOnlyEl) {
+    criteriaOnlyEl.innerHTML = criteriaOnly.length ? criteriaOnly.map((item) => {
+      const pct = Number(item.score_pct) || 0;
+      const cls = qualityScoreClass(pct);
+      const attendances = Number(item.total_atendimentos) || 0;
+      const title = item.criterion_description ? `${item.criterion_name}: ${item.criterion_description}` : item.criterion_name;
+      return `<div class="quality-dist-row quality-subcriteria-row">
+        <div class="quality-dist-label quality-subcriteria-label" title="${escapeAttr(title)}">${escapeHtml(item.criterion_name)}</div>
+        <div class="quality-dist-track">
+          <div class="quality-dist-seg s2" style="width:${item.pct_2 || 0}%"></div>
+          <div class="quality-dist-seg s1" style="width:${item.pct_1 || 0}%"></div>
+          <div class="quality-dist-seg s0" style="width:${item.pct_0 || 0}%"></div>
+        </div>
+        <div class="quality-subcriteria-value">
+          <div class="quality-score ${cls}" style="font-size:12px;text-align:right">${fmtPct(pct)}</div>
+          <div class="quality-subcriteria-count">${fmt(attendances)} atend.</div>
+        </div>
+      </div>`;
+    }).join('') : '<div class="loading-box">Nenhum critério encontrado.</div>';
+  }
+
+  const subcriteriaCriterionSelect = document.getElementById('quality-subcriteria-criterion');
+  if (subcriteriaCriterionSelect) {
+    const availableCriterionIds = new Set(criteriaGroups.map((item) => String(item.criterion_id)));
+    if (selectedQualitySubcriteriaCriterion && !availableCriterionIds.has(selectedQualitySubcriteriaCriterion)) {
+      selectedQualitySubcriteriaCriterion = '';
+    }
+    const options = ['<option value="">Todos os critérios</option>'].concat(
+      criteriaGroups
+        .slice()
+        .sort((a, b) => String(a.criterion_id).localeCompare(String(b.criterion_id), 'pt-BR', { numeric: true }))
+        .map((item) => `<option value="${escapeAttr(item.criterion_id)}"${selectedQualitySubcriteriaCriterion === String(item.criterion_id) ? ' selected' : ''}>${escapeHtml(item.criterion_name)}</option>`)
+    );
+    subcriteriaCriterionSelect.innerHTML = options.join('');
+  }
+
+  const sortSelect = document.getElementById('quality-subcriteria-sort');
+  if (sortSelect) sortSelect.value = selectedQualitySubcriteriaSort;
+  const criteria = aggregateQualitySubcriteria(strategic.criteria || [])
+    .sort((a, b) => {
+      const scoreSort = selectedQualitySubcriteriaSort === 'best'
+        ? (Number(b.score_pct) || 0) - (Number(a.score_pct) || 0)
+        : (Number(a.score_pct) || 0) - (Number(b.score_pct) || 0);
+      return scoreSort || String(a.criterion_name).localeCompare(String(b.criterion_name), 'pt-BR', { sensitivity: 'base' });
+    });
+  const distEl = document.getElementById('quality-criteria-dist');
+  if (distEl) {
+    distEl.innerHTML = criteria.length ? criteria.map((item) => {
+      const pct = Number(item.score_pct) || 0;
+      const cls = qualityScoreClass(pct);
+      const label = item.criterion_id ? `${item.criterion_id} ${item.criterion_name}` : item.criterion_name;
+      const attendances = Number(item.total_atendimentos) || 0;
+      return `<div class="quality-dist-row quality-subcriteria-row">
+        <div class="quality-dist-label quality-subcriteria-label" title="${escapeAttr(label)}">${escapeHtml(label)}</div>
+        <div class="quality-dist-track">
+          <div class="quality-dist-seg s2" style="width:${item.pct_2 || 0}%"></div>
+          <div class="quality-dist-seg s1" style="width:${item.pct_1 || 0}%"></div>
+          <div class="quality-dist-seg s0" style="width:${item.pct_0 || 0}%"></div>
+        </div>
+        <div class="quality-subcriteria-value">
+          <div class="quality-score ${cls}" style="font-size:12px;text-align:right">${fmtPct(pct)}</div>
+          <div class="quality-subcriteria-count">${fmt(attendances)} atend.</div>
+        </div>
+      </div>`;
+    }).join('') : '<div class="loading-box">Nenhum subcritério encontrado.</div>';
+  }
+  syncQualityDistributionHeights();
+
+  const collaborators = strategic.collaborators || [];
+  renderQualityOperationalFilterOptions(collaborators);
+  const sortArrow = (key) => selectedQualityCollaboratorSort === key ? (selectedQualityCollaboratorSortDir === 'desc' ? '↓' : '↑') : '';
+  ['name', 'setor', 'status', 'score', 'attendance'].forEach((key) => {
+    setText(`quality-collab-${key}-sort`, sortArrow(key));
+    setText(`quality-operational-collab-${key}-sort`, sortArrow(key));
+  });
+  const renderCollaboratorRankingRows = (collabTbody, items = collaborators) => {
+    if (!collabTbody) return;
+    if (items.length) {
+      const direction = selectedQualityCollaboratorSortDir === 'asc' ? 1 : -1;
+      const sortValue = (item, key) => {
+        if (key === 'attendance') return Number(item.total) || 0;
+        if (key === 'score') return Number(item.score_pct) || 0;
+        if (key === 'setor') return String(item.setor || 'Não mapeado');
+        if (key === 'status') return String(item.status || 'Não mapeado');
+        return item.display_name || qualityCollaboratorDisplayName(item.name);
+      };
+      const sortedCollaborators = [...items].sort((a, b) => {
+        const primaryA = sortValue(a, selectedQualityCollaboratorSort);
+        const primaryB = sortValue(b, selectedQualityCollaboratorSort);
+        const primarySort = typeof primaryA === 'number' && typeof primaryB === 'number'
+          ? (primaryA - primaryB) * direction
+          : String(primaryA).localeCompare(String(primaryB), 'pt-BR', { sensitivity: 'base' }) * direction;
+        if (primarySort) return primarySort;
+        const scoreSort = ((Number(a.score_pct) || 0) - (Number(b.score_pct) || 0)) * -1;
+        return scoreSort || String(a.display_name || qualityCollaboratorDisplayName(a.name)).localeCompare(String(b.display_name || qualityCollaboratorDisplayName(b.name)), 'pt-BR', { sensitivity: 'base' });
+      });
+      const collaboratorRows = sortedCollaborators.map((item) => {
+      const scoreValue = Number(item.score_pct);
+      const cls = qualityScoreClass(scoreValue);
+      const isActive = selectedQualityCollaboratorName === item.name;
+      const status = String(item.status || 'Não mapeado');
+      const statusClass = status.toLowerCase() === 'ativo' ? 'active' : (status.toLowerCase() === 'inativo' ? 'inactive' : 'unknown');
+      const displayName = item.display_name || qualityCollaboratorDisplayName(item.name);
+      return `<tr class="quality-collab-row${isActive ? ' active' : ''}">
+        <td><button class="quality-collab-button" type="button" onclick="loadQualityCollaboratorCriteria('${escapeJs(item.name)}')" title="${escapeAttr(item.name || '')}"><div style="display:flex;align-items:center;gap:8px"><span style="width:28px;height:28px;border-radius:50%;background:#e6fffb;color:#0f766e;display:grid;place-items:center;font-size:11px;font-weight:800">${escapeHtml(qualityInitials(item.name))}</span>${escapeHtml(displayName)}</div></button></td>
+        <td><span class="quality-sector-pill">${escapeHtml(item.setor || 'Não mapeado')}</span></td>
+        <td><span class="quality-status-pill ${statusClass}">${escapeHtml(status)}</span></td>
+        <td style="text-align:right"><span class="quality-score ${cls}">${fmtPct(scoreValue)}</span></td>
+        <td style="text-align:right;font-weight:700">${fmt(Number(item.total) || 0)}</td>
+      </tr>`;
+      }).join('');
+      const totalAttendances = items.reduce((acc, item) => acc + (Number(item.total) || 0), 0);
+      const weightedScoreSum = items.reduce((acc, item) => {
+        const total = Number(item.total) || 0;
+        const scoreValue = Number(item.score_pct);
+        return Number.isFinite(scoreValue) ? acc + (scoreValue * total) : acc;
+      }, 0);
+      const totalScore = totalAttendances > 0 ? weightedScoreSum / totalAttendances : 0;
+      const totalCls = qualityScoreClass(totalScore);
+      collabTbody.innerHTML = `${collaboratorRows}
+        <tr class="quality-total-row">
+          <td colspan="3" style="font-weight:800;color:#0f172a">Total da lista</td>
+          <td style="text-align:right"><span class="quality-score ${totalCls}">${fmtPct(totalScore)}</span></td>
+          <td style="text-align:right;font-weight:800;color:#0f172a">${fmt(totalAttendances)}</td>
+        </tr>`;
+    } else {
+      collabTbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#94a3b8;padding:16px">Ranking indisponível no schema atual.</td></tr>';
+    }
+  };
+  const operationalCollaborators = filterQualityOperationalCollaborators(collaborators);
+  const operationalCriteriaSource = strategic.evaluated_criteria_by_collaborator || [];
+  const operationalCriteria = operationalCriteriaSource.length
+    ? filterQualityOperationalEvaluatedCriteria(operationalCriteriaSource)
+    : (selectedQualityOperationalCollaborators.size || selectedQualityOperationalSetor || selectedQualityOperationalStatus ? [] : (strategic.evaluated_criteria || []));
+  renderQualityOperationalScoreCard(operationalCollaborators);
+  renderQualityOperationalCriteriaBullets(operationalCriteria);
+  renderCollaboratorRankingRows(document.getElementById('quality-collab-tbody'));
+  renderCollaboratorRankingRows(document.getElementById('quality-operational-collab-tbody'), operationalCollaborators);
+  if (!selectedQualityCollaboratorName) {
+    const detailEl = document.getElementById('quality-collab-detail');
+    if (detailEl) detailEl.innerHTML = '<div class="loading-box" style="padding:18px">Nenhum colaborador selecionado.</div>';
+  }
+
+  const careEl = document.getElementById('quality-care-lines');
+  const careLines = strategic.care_lines || [];
+  if (careEl) {
+    careEl.innerHTML = careLines.length ? careLines.map((item) => {
+      const pct = Number(item.score_pct) || 0;
+      const cls = qualityScoreClass(pct);
+      return `<div class="quality-dist-row">
+        <div class="quality-dist-label">${escapeHtml(item.name)}</div>
+        <div class="quality-bar"><div class="quality-bar-fill ${cls}" style="width:${Math.max(0, Math.min(100, pct))}%"></div></div>
+        <div class="quality-score ${cls}" style="font-size:12px;text-align:right">${fmtPct(pct)}</div>
+      </div>`;
+    }).join('') : '<div class="loading-box">Linha de cuidado indisponível no schema atual.</div>';
+  }
+
+  const insights = strategic.insights || [];
+  setText('quality-insight-title', insights[0]?.title || 'Sem insight disponível');
+  setText('quality-insight-desc', insights[0]?.description || 'Os dados do recorte atual não retornaram critérios suficientes.');
+  setText('quality-alert-title', insights[1]?.title || 'Sem alerta crítico');
+  setText('quality-alert-desc', insights[1]?.description || 'Não há sinal de segurança destacado no recorte atual.');
+
+}
+
+function renderQualityOperational() {
+  const itemsEl = document.getElementById('quality-items');
+  const loading = document.getElementById('quality-operational-loading');
+  const items = qualityData?.operational?.items || [];
+  const scopedItems = items.filter((item) => {
+    const meta = qualityCollaboratorMetaForName(item.collaborator_name);
+    if (selectedQualityOperationalCollaborators.size && !selectedQualityOperationalCollaborators.has(meta.name)) return false;
+    if (selectedQualityOperationalSetor && String(meta.setor || 'Não mapeado') !== selectedQualityOperationalSetor) return false;
+    if (selectedQualityOperationalStatus && String(meta.status || 'Não mapeado') !== selectedQualityOperationalStatus) return false;
+    return true;
+  });
+  const query = (document.getElementById('quality-search')?.value || '').trim().toLowerCase();
+  const filtered = query ? scopedItems.filter((item) => {
+    const meta = qualityCollaboratorMetaForName(item.collaborator_name);
+    const haystack = [item.patient_name, item.collaborator_name, meta.display_name, meta.setor, meta.status, item.care_line, item.subject, item.summary_text].join(' ').toLowerCase();
+    return haystack.includes(query);
+  }) : scopedItems;
+
+  setText('quality-operational-count', `${fmt(filtered.length)} de ${fmt(scopedItems.length)} atendimentos`);
+  setText('quality-operational-period', `summary + criteria silver · ${qualityPeriodLabel()}`);
+
+  if (!selectedQualityKey || !filtered.some((item) => item.key === selectedQualityKey)) {
+    selectedQualityKey = filtered[0]?.key || null;
+  }
+
+  if (itemsEl) {
+    itemsEl.innerHTML = filtered.length ? filtered.map((item) => {
+      const score = Number(item.score_pct);
+      const cls = qualityScoreClass(score);
+      const scoreText = Number.isFinite(score) ? Math.round(score) : '—';
+      const status = item.resolved >= 0.5 ? 'Resolvido' : (item.status || 'Pendente');
+      const collaboratorMeta = qualityCollaboratorMetaForName(item.collaborator_name);
+      const collaboratorLabel = collaboratorMeta.display_name || qualityCollaboratorDisplayName(item.collaborator_name);
+      const active = item.key === selectedQualityKey ? ' active' : '';
+      return `<div class="quality-item${active}" onclick="selectQualityItem('${escapeJs(item.key)}')">
+        <div class="quality-score-circle ${cls}">${scoreText}</div>
+        <div style="min-width:0">
+          <div class="quality-item-title">${escapeHtml(item.patient_name)} · ${escapeHtml(collaboratorLabel)}</div>
+          <div class="quality-item-meta">${escapeHtml(item.subject || item.summary_text || 'Sem resumo')} · ${formatQualityDate(item.created_at)}</div>
+        </div>
+        <span class="quality-pill">${escapeHtml(item.care_line || 'sem linha')}</span>
+        <span style="font-size:11px;color:#94a3b8;white-space:nowrap">${escapeHtml(status)}</span>
+      </div>`;
+    }).join('') : '<div class="loading-box">Nenhum atendimento encontrado no recorte.</div>';
+    itemsEl.style.display = 'flex';
+  }
+
+  if (loading) loading.style.display = 'none';
+  renderQualityDetail();
+}
+
+function selectQualityItem(key) {
+  selectedQualityKey = key;
+  renderQualityOperational();
+}
+
+function renderQualityDetail() {
+  const detail = document.getElementById('quality-detail');
+  const items = qualityData?.operational?.items || [];
+  const item = items.find((entry) => entry.key === selectedQualityKey);
+  if (!detail) return;
+  if (!item) {
+    detail.innerHTML = '<div style="text-align:center;padding:28px 12px;color:#94a3b8;font-size:13px">Selecione um atendimento para ver os critérios.</div>';
+    return;
+  }
+  const score = Number(item.score_pct);
+  const cls = qualityScoreClass(score);
+  const criteria = item.criteria || [];
+  const criteriaHtml = criteria.length ? criteria.map((criterion) => {
+    const scoreValue = criterion.score;
+    const heatClass = scoreValue === 2 ? 's2' : scoreValue === 1 ? 's1' : scoreValue === 0 ? 's0' : '';
+    const scoreLabel = scoreValue === null || scoreValue === undefined ? 'N/A' : scoreValue;
+    return `<div class="quality-detail-row">
+      <div class="quality-criterion-id">${escapeHtml(criterion.criterion_id)}</div>
+      <div>
+        <div class="quality-criterion-name">${escapeHtml(criterion.criterion_name)}</div>
+        <div class="quality-criterion-text">${escapeHtml(criterion.justification || 'Sem justificativa registrada.')}</div>
+        ${criterion.evidence ? `<div class="quality-criterion-text" style="font-style:italic;margin-top:3px">"${escapeHtml(criterion.evidence)}"</div>` : ''}
+      </div>
+      <div class="quality-heat ${heatClass}">${escapeHtml(scoreLabel)}</div>
+    </div>`;
+  }).join('') : '<div style="text-align:center;padding:18px 8px;color:#94a3b8;font-size:13px">Sem critérios vinculados a este atendimento.</div>';
+
+  detail.innerHTML = `<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px">
+      <div>
+        <div style="font-size:17px;font-weight:800;color:#0f172a;letter-spacing:-.2px">${escapeHtml(item.patient_name)}</div>
+        <div style="font-size:12px;color:#64748b;margin-top:3px">${escapeHtml(item.collaborator_name)} · ${formatQualityDate(item.created_at)}</div>
+      </div>
+      <div style="text-align:right">
+        <div class="quality-score ${cls}" style="font-size:28px;font-weight:800;line-height:1">${fmtPct(score)}</div>
+        <div style="font-size:11px;color:#94a3b8;margin-top:3px">${fmt(criteria.length)} critérios</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
+      <span class="quality-pill">${escapeHtml(item.care_line || 'sem linha')}</span>
+      ${item.subject ? `<span class="quality-pill" style="background:#f1f5f9;color:#64748b">${escapeHtml(item.subject)}</span>` : ''}
+    </div>
+    ${item.summary_text ? `<div style="font-size:12px;color:#475569;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;margin-bottom:14px">${escapeHtml(item.summary_text)}</div>` : ''}
+    <div style="font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">Avaliação por subcritério</div>
+    <div>${criteriaHtml}</div>`;
+}
+
+async function loadDemographics() {
+  document.getElementById('demo-loading').style.display = 'block';
+  document.getElementById('demo-content').style.display = 'none';
+  const d = await safeGet('/api/demographics'+buildQS());
+  if(d&&!d.error) renderDemographics(d);
+  else document.getElementById('demo-loading').innerHTML='<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>Erro ao carregar demografia';
+}
+
+async function loadCompanies() {
+  document.getElementById('companies-loading').style.display='block';
+  document.getElementById('companies-wrap').style.display='none';
+  const d = await safeGet('/api/companies'+buildQS());
+  if(d&&!d.error&&d.companies){
+    companiesData=d.companies;
+    document.getElementById('companies-loading').style.display='none';
+    document.getElementById('companies-wrap').style.display='block';
+    renderCompaniesTable(companiesData);
+  } else document.getElementById('companies-loading').innerHTML='<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>Erro ao carregar empresas';
+}
+
+async function loadAgeGroups() {
+  document.getElementById('agegroup-loading').style.display='block';
+  document.getElementById('agegroup-wrap').style.display='none';
+  const d = await safeGet('/api/agegroups'+buildQS());
+  if(d&&!d.error&&d.agegroups) renderAgeGroups(d.agegroups);
+  else document.getElementById('agegroup-loading').innerHTML='<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>Erro ao carregar faixas etárias';
+}
+
+function applyGroupOptions(items, source) {
+  if (!Array.isArray(items)) return;
+  const previous = [...currentGroups];
+  const ordered = [...items].sort((a, b) =>
+    String(a.economic_group || '').localeCompare(String(b.economic_group || ''), 'pt-BR', { sensitivity: 'base' })
+  );
+  groupOptionsCache[source] = ordered;
+  activeGroupSource = source;
+  const validNames = new Set(ordered.map((g) => g.economic_group).filter(Boolean));
+  currentGroups = previous.filter((group) => validNames.has(group));
+  syncCurrentGroup();
+  renderGroupOptions();
+  updateGroupSelectLabel();
+  if (currentGroups.length !== previous.length) {
+    updateFilterInfo();
+  }
+}
+
+function renderGroupOptions() {
+  const list = document.getElementById('group-select-options');
+  if (!list) return;
+  const options = groupOptionsCache[activeGroupSource] || [];
+  const search = String(document.getElementById('group-select-search')?.value || '').trim().toLowerCase();
+  const filtered = options.filter((g) => {
+    const name = String(g.economic_group || '');
+    return name && (!search || name.toLowerCase().includes(search));
+  });
+  list.innerHTML = filtered.length ? filtered.map((g) => {
+    const name = String(g.economic_group);
+    const checked = currentGroups.includes(name) ? 'checked' : '';
+    return `<label class="multi-select-option" title="${escapeAttr(name)}">
+      <input type="checkbox" value="${escapeAttr(name)}" ${checked} onchange="onGroupCheckboxChange(this.value,this.checked)" />
+      <span>${escapeHtml(name)}</span>
+    </label>`;
+  }).join('') : '<div style="font-size:12px;color:#94a3b8;padding:10px;text-align:center">Nenhum grupo encontrado.</div>';
+}
+
+async function loadPetitMdsGroupOptions() {
+  if (!currentPartnerBrokerId) return;
+  groupOptionsCache.petitMds = [];
+  const p = new URLSearchParams();
+  p.set('partner_broker_id', currentPartnerBrokerId);
+  const data = await safeGet('/api/data?' + p.toString());
+  if (data && !data.error && Array.isArray(data.groups)) {
+    groupOptionsCache.petitMds = data.groups.map((g) => ({ economic_group: g.economic_group }));
+  }
+  applyGroupOptions(groupOptionsCache.petitMds, 'petitMds');
+}
+
+function ensureGroupOptionsForActiveTab() {
+  if (isPetitMdsTab()) {
+    if (groupOptionsCache.petitMds) applyGroupOptions(groupOptionsCache.petitMds, 'petitMds');
+    return;
+  }
+  if (activeGroupSource !== 'orgs' && groupOptionsCache.orgs) {
+    applyGroupOptions(groupOptionsCache.orgs, 'orgs');
+  }
+}
+
+async function loadAll(fetchOrgs=true) {
+  if (!getAuthToken()) {
+    showAuthScreen();
+    return;
+  }
+  setStatus('loading','⏳ Carregando...');
+  document.getElementById('skel-e').style.display='block';
+  document.getElementById('evolChart').style.display='none';
+  try {
+    const res = await authFetch('/api/data'+buildQS());
+    if (res.status === 401) {
+      handleAuthFailure();
+      throw new Error('Não autorizado');
+    }
+    if(!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
+    if(json.error) throw new Error(json.error);
+    if (json.auth_role === 'mds' && !isMdsRoute()) {
+      window.location.href = '/mds';
+      return;
+    }
+    await applyRouteMode(json.auth_role || '');
+    hideAuthScreen();
+    usersData = json.users||[];
+    if(fetchOrgs && Array.isArray(json.groups)){
+      const groupSource = isPetitMdsTab() ? 'petitMds' : 'orgs';
+      groupOptionsCache[groupSource] = json.groups.map((g) => ({ economic_group: g.economic_group }));
+      applyGroupOptions(groupOptionsCache[groupSource], groupSource);
+    }
+    const bv=document.getElementById('bullet-vidas');
+    if(bv) bv.textContent='…';
+    renderEvol();
+    setStatus('ok','✓ Dados ao vivo');
+    document.getElementById('last-upd').textContent='Atualizado: '+new Date().toLocaleTimeString('pt-BR');
+    loadDemographics();
+    loadCompanies();
+    loadAgeGroups();
+  } catch(err) {
+    setStatus('error','✗ Erro: '+err.message);
+  }
+}
+
+function reload() { loadAll(true); }
+async function initializeDashboard() {
+  updateFilterVisibility();
+  if (isMdsRoute()) document.body.dataset.dashboardMode = 'mds';
+  try {
+    const response = await fetch('/api/data?scope=auth', { credentials: 'same-origin' });
+    const auth = response.ok ? await response.json() : null;
+    hasAuthenticatedSession = Boolean(auth?.ok);
+    if (hasAuthenticatedSession) {
+      await applyRouteMode(auth?.role || '');
+      hideAuthScreen();
+    }
+  } catch (_) {
+    hasAuthenticatedSession = false;
+  }
+  schedulePdfReadinessUpdate();
+  loadAll(true);
+}
+if (window.Chart && Chart.register) {
+  Chart.register({
+    id: 'pdfReadinessWatcher',
+    afterRender: () => schedulePdfReadinessUpdate(),
+  });
+}
+setInterval(() => schedulePdfReadinessUpdate(), 1200);
+window.SanusDashboard = {
+  activateTab,
+  reload,
+  toggleGroupDropdown,
+  renderGroupOptions,
+  selectAllGroupSelection,
+  clearGroupSelection,
+  closeGroupDropdown,
+  togglePeriodoDropdown,
+  selectAllPeriodo,
+  clearPeriodo,
+  onTudoChange,
+  toggleQualityOperationalCollaboratorDropdown,
+  renderQualityOperationalCollaboratorOptions,
+  selectAllQualityOperationalCollaborators,
+  clearQualityOperationalCollaborators,
+  closeQualityOperationalCollaboratorDropdown,
+  onQualityOperationalSetorFilterChange,
+  onQualityOperationalStatusFilterChange,
+  clearFilters,
+  downloadDashboardPdf,
+};
+initializeDashboard();
