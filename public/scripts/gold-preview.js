@@ -211,6 +211,21 @@
       }).join('');
     }
 
+    const topUti = d.top_utilizantes || {};
+    const topCard = document.getElementById('pg-top-uti-card');
+    const topBody = document.getElementById('pg-top-uti-tbody');
+    if (topCard && topBody && Array.isArray(topUti.lista) && topUti.lista.length) {
+      const header = '<tr style="color:#64748b;text-align:left"><th style="padding:4px 6px 4px 0">#</th><th>Código benef.</th><th>Faixa etária</th><th>Vínculo</th><th>Lotação</th><th style="text-align:right">Itens</th><th style="text-align:right">Intern.</th><th style="text-align:right">Custo 12m</th><th style="text-align:right">Share</th></tr>';
+      topBody.innerHTML = header + topUti.lista.map((u, i) =>
+        `<tr style="border-top:1px solid #f1f5f9"><td style="padding:5px 6px 5px 0;color:#94a3b8">${i + 1}</td>` +
+        `<td style="font-family:monospace">${u.codigo_usuario}${u.id_corrompido ? ' <span title="ID corrompido na origem (notação científica) — pode agregar mais de uma pessoa; levar à CNU" style="color:#b45309">⚠</span>' : ''}</td>` +
+        `<td>${u.faixa_etaria}</td><td>${u.parentesco}</td><td>${String(u.lotacao).slice(0, 26)}</td>` +
+        `<td style="text-align:right">${fmtInt(u.itens)}</td><td style="text-align:right">${fmtInt(u.internacoes)}</td>` +
+        `<td style="text-align:right;font-weight:700">${fmtMi(u.custo)}</td><td style="text-align:right">${fmtPct(u.share)}</td></tr>`
+      ).join('');
+      topCard.style.display = 'block';
+    }
+
     const cart = d.carteira || {};
     const cartEl = document.getElementById('pg-carteira');
     if (cartEl && Array.isArray(cart.empresas) && cart.empresas.length) {
