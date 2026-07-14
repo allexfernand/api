@@ -73,7 +73,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     }
 
     // ---- Fase 2: KPIs, blocos e impacto (dependem da janela 12m)
-    const [kpiRows, total24Rows, lotacaoRows, prestadorRows, concRows, intAgrupRows, intStatsRows, smTemaRows, impactoMesRows, triRows, carteiraRows] = await Promise.all([
+    const [kpiRows, total24Rows, lotacaoRows, prestadorRows, concRows, intAgrupRows, intStatsRows, smTemaRows, impactoMesRows, triRows, carteiraRows, topUtiRows] = await Promise.all([
       q(`SELECT round(sum(sinistro), 2), count(DISTINCT codigo_usuario),
                 round(sum(CASE WHEN flag_reembolso THEN sinistro END), 2)
          FROM ${GOLD} WHERE ${BASE_FILTER} AND ano_mes_atendimento IN (${janela12Sql})`),
@@ -141,6 +141,18 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
                 count(DISTINCT codigo_usuario) AS benef
          FROM ${GOLD} WHERE ${BASE_FILTER} AND ${JANELA_2024}
          GROUP BY 1, 2 ORDER BY sin DESC`),
+      // Dado sensível (LGPD): beneficiários individuais. Exposição autorizada por Marco (lead)
+      // em 2026-07-14; sem atributos clínicos individuais; endpoint já recusa credencial MDS.
+      q(`SELECT codigo_usuario,
+                codigo_usuario NOT RLIKE '^[0-9]+$' AS id_corrompido,
+                faixa_etaria_usuario, parentesco_usuario,
+                COALESCE(NULLIF(trim(nome_lotacao), ''), 'Sem lotação') AS lotacao,
+                round(sum(sinistro), 2) AS custo,
+                count(*) AS itens,
+                count(DISTINCT CASE WHEN flag_internacao THEN numero_conta_medica END) AS internacoes,
+                round(100 * sum(sinistro) / sum(sum(sinistro)) OVER (), 2) AS share_pct
+         FROM ${GOLD} WHERE ${BASE_FILTER} AND ano_mes_atendimento IN (${janela12Sql})
+         GROUP BY 1, 2, 3, 4, 5 ORDER BY custo DESC LIMIT 10`),
     ]);
 
     const kpi = kpiRows[0] || [];
@@ -226,6 +238,21 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         pre: janelaMedia(IMPACTO_PRE),
         pos: janelaMedia(IMPACTO_POS),
         trimestres_utilizantes: triRows.map((r) => ({ trimestre: String(getCell(r[0])), utilizantes: toInt(r[2]) })),
+      },
+      top_utilizantes: {
+        janela: janela12,
+        aviso: "dado sensível — uso interno; exposição autorizada (Marco, 2026-07-14); sem atributos clínicos",
+        lista: topUtiRows.map((r) => ({
+          codigo_usuario: String(getCell(r[0])),
+          id_corrompido: String(getCell(r[1])) === "true",
+          faixa_etaria: String(getCell(r[2]) || "—"),
+          parentesco: String(getCell(r[3]) || "—"),
+          lotacao: String(getCell(r[4]) || "—"),
+          custo: toNum(r[5]),
+          itens: toInt(r[6]),
+          internacoes: toInt(r[7]),
+          share: toNum(r[8]),
+        })),
       },
       carteira: (() => {
         const totalSin = carteiraRows.reduce((s, r) => s + toNum(r[2]), 0);

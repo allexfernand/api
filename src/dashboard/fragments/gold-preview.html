@@ -54,7 +54,7 @@
           <div style="flex:1;min-width:120px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:12px"><div style="font-size:11px;color:#64748b" id="pg-conc-top1-label">Top 1% (272 pessoas)</div><div style="font-size:22px;font-weight:800;color:#1d4ed8" id="pg-conc-top1">36,4%</div><div style="font-size:11px;color:#94a3b8" id="pg-conc-janela">do custo total</div></div>
           <div style="flex:1;min-width:120px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:12px"><div style="font-size:11px;color:#64748b">Top 5%</div><div style="font-size:22px;font-weight:800;color:#1d4ed8" id="pg-conc-top5">56,8%</div><div style="font-size:11px;color:#94a3b8">do custo total</div></div>
         </div>
-        <div style="font-size:11px;color:#64748b;margin-top:10px">Argumento de gestão de casos: grupo pequeno e endereçável concentra o custo. Nunca exibir lista de pessoas.</div>
+        <div style="font-size:11px;color:#64748b;margin-top:10px">Argumento de gestão de casos: grupo pequeno e endereçável concentra o custo. Lista individual: só no B4+ abaixo (uso interno autorizado 14/jul; antes era vetado).</div>
       </div>
       <div class="card-box" style="padding:18px 22px">
         <div style="font-size:13px;font-weight:600;color:#334155;margin-bottom:10px"><i class="fa-solid fa-hospital" style="margin-right:6px;color:#1d4ed8"></i>B4 · Top prestadores (rede pulverizada)</div>
@@ -83,6 +83,15 @@
           <div style="display:flex;justify-content:space-between"><span>Duração mediana / p90</span><b id="pg-int-duracao">1 dia / 4 dias</b></div>
         </div>
       </div>
+    </div>
+
+    <div class="card-box" style="padding:18px 22px;margin-top:14px;display:none" id="pg-top-uti-card">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:4px">
+        <div style="font-size:13px;font-weight:600;color:#334155"><i class="fa-solid fa-user-shield" style="margin-right:6px;color:#b45309"></i>B4+ · Top 10 beneficiários por uso (12m fechados)</div>
+        <span style="font-size:10px;font-weight:800;color:#b45309;background:#fffbeb;border:1px solid #fcd34d;border-radius:999px;padding:3px 10px">DADO SENSÍVEL · USO INTERNO</span>
+      </div>
+      <div style="font-size:11px;color:#94a3b8;margin-bottom:10px">Identificação pelo código da carteirinha (a base não tem nome/CPF do beneficiário) · sem dados clínicos individuais · tabela só aparece com dados ao vivo · ⚠ = ID corrompido na origem</div>
+      <table style="width:100%;font-size:12px;border-collapse:collapse"><tbody id="pg-top-uti-tbody"></tbody></table>
     </div>
 
     <div class="card-box" style="padding:18px 22px;margin-top:14px">
