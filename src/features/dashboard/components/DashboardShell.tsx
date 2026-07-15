@@ -26,8 +26,15 @@ const tabs = [
   ["qualidade-operacional", "Qualidade · Operacional"],
 ] as const;
 
+const defaultLogo = { src: "/assets/logo_sanus.svg", alt: "Sanus", width: 112, height: 32 };
+const sanusUserLogo = { src: "/assets/logo_inter.png", alt: "Inter", width: 112, height: 32 };
+
 function legacy(name: string, ...args: unknown[]) {
   return window.SanusDashboard?.[name]?.(...args);
+}
+
+function normalizeDashboardUser(user: string) {
+  return user.trim().toLowerCase();
 }
 
 function LoginOverlay({ authenticated }: { authenticated: boolean }) {
@@ -93,7 +100,9 @@ function LoginOverlay({ authenticated }: { authenticated: boolean }) {
   );
 }
 
-function Header() {
+function Header({ dashboardUser }: { dashboardUser: string }) {
+  const logo = dashboardUser === "sanus" ? sanusUserLogo : defaultLogo;
+
   async function logout() {
     await apiRequest<{ ok: boolean }>("/api/auth/logout", { method: "POST" }).catch(() => null);
     window.location.href = "/";
@@ -102,7 +111,7 @@ function Header() {
   return (
     <header className="header">
       <div>
-        <Image src="/assets/logo_sanus.svg" alt="Sanus" width={112} height={32} priority />
+        <Image src={logo.src} alt={logo.alt} width={logo.width} height={logo.height} priority />
       </div>
       <div className="header-right">
         <span className="status loading" id="status">
@@ -120,10 +129,20 @@ function Header() {
   );
 }
 
-function Navigation({ activeTab, onChange }: { activeTab: string; onChange: (tab: string) => void }) {
+function Navigation({
+  activeTab,
+  hidePetitMds,
+  onChange,
+}: {
+  activeTab: string;
+  hidePetitMds: boolean;
+  onChange: (tab: string) => void;
+}) {
+  const visibleTabs = hidePetitMds ? tabs.filter(([id]) => id !== "petit-comite-mds") : tabs;
+
   return (
     <nav className="tabs" aria-label="Áreas do dashboard">
-      {tabs.map(([id, label]) => (
+      {visibleTabs.map(([id, label]) => (
         <button
           type="button"
           className={`tab ${activeTab === id ? "active" : ""}`}
@@ -318,11 +337,19 @@ function Filters() {
 export function DashboardShell() {
   const [authenticated, setAuthenticated] = useState(false);
   const [activeTab, setActiveTab] = useState("demografica");
+  const [dashboardUser, setDashboardUser] = useState("");
+  const hidePetitMds = dashboardUser === "sanus";
 
   useEffect(() => {
     apiRequest("/api/data?scope=auth", { schema: authResponseSchema })
-      .then(() => setAuthenticated(true))
-      .catch(() => setAuthenticated(false));
+      .then((auth) => {
+        setDashboardUser(normalizeDashboardUser(auth.user));
+        setAuthenticated(true);
+      })
+      .catch(() => {
+        setDashboardUser("");
+        setAuthenticated(false);
+      });
     const onTabChange = (event: Event) => setActiveTab((event as CustomEvent<string>).detail);
     document.addEventListener("sanus:tabchange", onTabChange);
     return () => document.removeEventListener("sanus:tabchange", onTabChange);
@@ -332,16 +359,23 @@ export function DashboardShell() {
     document.body.classList.toggle("auth-locked", !authenticated);
   }, [authenticated]);
 
+  useEffect(() => {
+    if (dashboardUser) document.body.dataset.dashboardUser = dashboardUser;
+    else delete document.body.dataset.dashboardUser;
+    if (dashboardUser === "sanus" && activeTab === "petit-comite-mds") activate("demografica");
+  }, [activeTab, dashboardUser]);
+
   function activate(tab: string) {
-    setActiveTab(tab);
-    legacy("activateTab", tab);
+    const nextTab = hidePetitMds && tab === "petit-comite-mds" ? "demografica" : tab;
+    setActiveTab(nextTab);
+    legacy("activateTab", nextTab);
   }
 
   return (
     <>
       <LoginOverlay authenticated={authenticated} />
-      <Header />
-      <Navigation activeTab={activeTab} onChange={activate} />
+      <Header dashboardUser={dashboardUser} />
+      <Navigation activeTab={activeTab} hidePetitMds={hidePetitMds} onChange={activate} />
       <Filters />
     </>
   );

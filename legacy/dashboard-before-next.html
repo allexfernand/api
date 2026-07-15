@@ -612,6 +612,8 @@ body[data-dashboard-mode="mds"] .tab[data-tab="coordenacao-cuidado"],
 body[data-dashboard-mode="mds"] .tab[data-tab="analise-sinistro"],
 body[data-dashboard-mode="mds"] .tab[data-tab="preview-gold"],
 body[data-dashboard-mode="mds"] .tab[data-tab="qualidade-operacional"]{display:none!important}
+body[data-dashboard-user="sanus"] .tab[data-tab="petit-comite-mds"],
+body[data-dashboard-user="sanus"] #tab-petit-comite-mds{display:none!important}
 body[data-dashboard-mode="mds"] #tab-petit-comite,
 body[data-dashboard-mode="mds"] #tab-coordenacao-cuidado,
 body[data-dashboard-mode="mds"] #tab-analise-sinistro,
@@ -674,7 +676,7 @@ body.auth-locked > :not(.auth-overlay){filter:blur(2px);pointer-events:none;user
 </div>
 
 <div class="header">
-  <div><img src="/assets/logo_sanus.svg" alt="Sanus" style="height:32px;width:auto"/></div>
+  <div><img id="dashboard-logo" src="/assets/logo_sanus.svg" alt="Sanus" style="height:32px;width:auto"/></div>
   <div class="header-right">
     <span class="status loading" id="status">⏳ Carregando...</span>
     <button class="refresh-btn" onclick="reload()">↻ Atualizar</button>
@@ -2250,11 +2252,14 @@ const SESSIONS_Q3_PRESENTATION_MONTHS = ['2025-09', '2025-10', '2025-11', '2025-
 const SESSIONS_Q3C_MONTHS = ['2026-01', '2026-02', '2026-03', '2026-04', '2026-05'];
 const SINISTRO_AS03_MONTHS = ['2025-07', '2025-08', '2025-09', '2025-10', '2025-11', '2025-12', '2026-01', '2026-02', '2026-03'];
 const AUTH_STORAGE_KEY = 'sanus-dashboard-basic-auth';
+const DEFAULT_LOGO = { src: '/assets/logo_sanus.svg', alt: 'Sanus' };
+const SANUS_USER_LOGO = { src: '/assets/logo_inter.png', alt: 'Inter' };
 
 let usersData = [], companiesData = [], sessionCompaniesData = [], eChart, agegroupChart, appointmentTypesTrendChart, appointmentsDailyChart, appointmentsStatusChart, careCoordinationLinesChart, careLinesEvolutionChart, careComplementChart, careActiveComplementChart, petitCareLinesChart, petitSessionsEvolChart, petitSessionsTotalEvolChart, sessionsEvolChart, sessionsJanMay2026EvolChart, sessionsQ3cChart, sessionsTotalEvolChart, sessionsAttendanceChart, sessionsDailyChart, sessionsTopGroupsChart, sinistroEventsEvolutionChart, sinistroValuesEvolutionChart, sinistroQuarterlyEvolutionChart, sinistroCohortEvolutionChart, qualityVolumeEvolutionChart, qualityDailyVolumeEvolutionChart, qualityEvolutionChart, qualityCriteriaEvolutionChart;
 let currentGroup = '', currentType = '', currentCompany = '';
 let currentGroups = [];
 let currentPartnerBrokerId = '';
+let currentDashboardUser = '';
 let currentCareBeneficiaryType = '';
 let partnerOptionsCache = [];
 let groupOptionsCache = { orgs: null, sessions: null, petitMds: null };
@@ -2305,7 +2310,33 @@ function isMdsRestrictedTab(tabName) {
   return ['petit-comite', 'coordenacao-cuidado', 'analise-sinistro', 'qualidade-operacional'].includes(tabName);
 }
 
+function normalizeDashboardUser(user) {
+  return String(user || '').trim().toLowerCase();
+}
+
+function isSanusDashboardUser() {
+  return normalizeDashboardUser(currentDashboardUser) === 'sanus';
+}
+
+function applyDashboardUser(user = '') {
+  currentDashboardUser = normalizeDashboardUser(user);
+  const logo = currentDashboardUser === 'sanus' ? SANUS_USER_LOGO : DEFAULT_LOGO;
+  const headerLogo = document.getElementById('dashboard-logo');
+  if (headerLogo) {
+    headerLogo.src = logo.src;
+    headerLogo.alt = logo.alt;
+  }
+  if (currentDashboardUser) document.body.dataset.dashboardUser = currentDashboardUser;
+  else delete document.body.dataset.dashboardUser;
+  if (currentDashboardUser === 'sanus' && getActiveTab() === 'petit-comite-mds') {
+    activateTab('demografica');
+  }
+}
+
 async function activateTab(tabName) {
+  if (tabName === 'petit-comite-mds' && isSanusDashboardUser()) {
+    tabName = 'demografica';
+  }
   if (document.body.dataset.dashboardMode === 'mds' && isMdsRestrictedTab(tabName)) {
     tabName = 'petit-comite-mds';
   }
@@ -2854,6 +2885,7 @@ function authFetch(url, options = {}) {
 function handleAuthFailure(message = 'Usuário ou senha inválidos.') {
   localStorage.removeItem(AUTH_STORAGE_KEY);
   delete document.body.dataset.dashboardMode;
+  applyDashboardUser('');
   showAuthScreen(message);
 }
 
@@ -2887,12 +2919,14 @@ async function submitAuth(event) {
       window.location.href = '/mds';
       return;
     }
+    applyDashboardUser(body?.user || user);
     await applyRouteMode(body?.role || '');
     hideAuthScreen();
     reload();
   } catch (error) {
     localStorage.removeItem(AUTH_STORAGE_KEY);
     delete document.body.dataset.dashboardMode;
+    applyDashboardUser('');
     showAuthScreen(error?.message || 'Não foi possível validar o acesso.');
   } finally {
     if (submit) {
@@ -2905,6 +2939,7 @@ async function submitAuth(event) {
 function logoutDashboard() {
   localStorage.removeItem(AUTH_STORAGE_KEY);
   delete document.body.dataset.dashboardMode;
+  applyDashboardUser('');
   showAuthScreen('Sessão encerrada.');
 }
 
@@ -9895,6 +9930,7 @@ async function loadAll(fetchOrgs=true) {
       window.location.href = '/mds';
       return;
     }
+    applyDashboardUser(json.auth_user || '');
     await applyRouteMode(json.auth_role || '');
     hideAuthScreen();
     usersData = json.users||[];

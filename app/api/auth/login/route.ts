@@ -10,7 +10,7 @@ export async function POST(request: Request) {
   const auth = validateDashboardCredentials(parsed.data.user, parsed.data.password);
   if (!auth) return NextResponse.json({ error: "Usuário ou senha inválidos." }, { status: 401 });
   return NextResponse.json(
-    { ok: true, role: auth.role },
+    { ok: true, role: auth.role, user: auth.user },
     {
       headers: {
         "Set-Cookie": sessionCookie(createSessionToken(auth.user, auth.role)),
