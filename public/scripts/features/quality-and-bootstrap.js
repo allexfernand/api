@@ -1437,6 +1437,7 @@ async function loadAll(fetchOrgs=true) {
       window.location.href = '/mds';
       return;
     }
+    applyDashboardUser(json.auth_user || '');
     await applyRouteMode(json.auth_role || '');
     hideAuthScreen();
     usersData = json.users||[];
@@ -1467,11 +1468,15 @@ async function initializeDashboard() {
     const auth = response.ok ? await response.json() : null;
     hasAuthenticatedSession = Boolean(auth?.ok);
     if (hasAuthenticatedSession) {
+      applyDashboardUser(auth?.user || '');
       await applyRouteMode(auth?.role || '');
       hideAuthScreen();
+    } else {
+      applyDashboardUser('');
     }
   } catch (_) {
     hasAuthenticatedSession = false;
+    applyDashboardUser('');
   }
   schedulePdfReadinessUpdate();
   loadAll(true);

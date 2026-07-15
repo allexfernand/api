@@ -406,7 +406,10 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   const partnerBrokerId = scopedPartnerBrokerId(req, req.query.partner_broker_id || null);
   const scope = String(req.query.scope || '').toLowerCase();
   const dashboardAuth = getDashboardAuth(req);
-  if (scope === 'auth') return res.status(200).json({ ok: true, role: dashboardAuth?.role || 'full', user: dashboardAuth?.user || '' });
+  if (scope === 'auth') {
+    res.setHeader("Cache-Control", "no-store, max-age=0");
+    return res.status(200).json({ ok: true, role: dashboardAuth?.role || 'full', user: dashboardAuth?.user || '' });
+  }
   const groupFilter = buildFilters(groupNames, typeFilter, partnerBrokerId);
 
   try {

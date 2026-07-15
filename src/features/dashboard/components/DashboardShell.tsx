@@ -351,8 +351,14 @@ export function DashboardShell() {
         setAuthenticated(false);
       });
     const onTabChange = (event: Event) => setActiveTab((event as CustomEvent<string>).detail);
+    const onUserChange = (event: Event) =>
+      setDashboardUser(normalizeDashboardUser((event as CustomEvent<string>).detail || ""));
     document.addEventListener("sanus:tabchange", onTabChange);
-    return () => document.removeEventListener("sanus:tabchange", onTabChange);
+    document.addEventListener("sanus:userchange", onUserChange);
+    return () => {
+      document.removeEventListener("sanus:tabchange", onTabChange);
+      document.removeEventListener("sanus:userchange", onUserChange);
+    };
   }, []);
 
   useEffect(() => {
