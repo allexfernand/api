@@ -9,9 +9,14 @@ function parseScopes(value: string | undefined) {
 }
 
 export function companyScopesForAuth(auth: AuthIdentity) {
-  const configured = auth.role === "mds"
-    ? parseScopes(process.env.DASHBOARD_MDS_COMPANY_SCOPES)
-    : parseScopes(process.env.DASHBOARD_AUTH_COMPANY_SCOPES);
+  const raw = auth.role === "mds"
+    ? process.env.DASHBOARD_MDS_COMPANY_SCOPES
+    : process.env.DASHBOARD_AUTH_COMPANY_SCOPES;
+  // O papel full representa o administrador interno já autenticado. Quando a
+  // variável ainda não existe (deploy legado), mantém o acesso administrativo;
+  // uma variável explicitamente vazia continua negando tudo.
+  if (auth.role === "full" && raw === undefined) return ["*"];
+  const configured = parseScopes(raw);
   if (configured.includes("*")) return ["*"];
   return configured.filter((scope) => COMPANY_KEY.test(scope));
 }

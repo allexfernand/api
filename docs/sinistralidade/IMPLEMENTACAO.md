@@ -16,7 +16,9 @@ Modo: shadow; a Gold v1 permanece ativa.
 - Snapshot mensal de elegibilidade iniciado em 2026-07-16, sem retroação artificial.
 - Marts mensal, Top 10 mensal, Top 10 bimestral, saúde mental, pacote de PS,
   fatura × coordenação, família antes/depois e comparativo janeiro–junho.
-- Nova aba “Sinistralidade Multiempresa” no dashboard.
+- Nova aba destacada “Sinistralidade 360” no dashboard, com visão executiva,
+  tendência de 12 meses, comparação bimestral, rankings, família antes/depois,
+  saúde mental, matriz fatura × coordenação, itens de PS e gate anual.
 - Gate HTTP `409` para métricas de mês não fechado quando `include_partial` não é autorizado.
 
 ## Validação registrada
@@ -60,7 +62,9 @@ Os resultados estão registrados em
 
 Defina `DASHBOARD_AUTH_COMPANY_SCOPES` e `DASHBOARD_MDS_COMPANY_SCOPES` como listas de
 `company_key` separadas por vírgula. `*` é permitido somente para administradores internos.
-Sem configuração, o papel não enxerga nenhuma empresa.
+O papel `full` mantém acesso administrativo a todas as empresas em deploys legados
+quando a variável não existe. Uma variável explicitamente vazia bloqueia o papel.
+O papel `mds` continua sem acesso por padrão.
 
 O comparativo janeiro–junho deve continuar oculto/bloqueado enquanto os dois anos não
 tiverem seis meses fechados. Não alterar esse comportamento por inferência de volume.
