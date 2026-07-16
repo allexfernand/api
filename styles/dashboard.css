@@ -93,6 +93,7 @@ body {
   gap: 2px;
 }
 .tabs::-webkit-scrollbar{display:none}
+.dashboard-tab-slot{display:flex;flex:0 0 auto}
 
 .tab {
   appearance: none;
@@ -114,10 +115,19 @@ body {
   user-select: none;
 }
 .tab.featured{color:#0f766e;font-weight:800;display:inline-flex;align-items:center;gap:7px}
-.tab-badge{font-size:8px;line-height:1;padding:4px 5px;border-radius:999px;background:#ccfbf1;color:#0f766e;letter-spacing:.5px;border:1px solid #99f6e4}
-.tab.featured.active .tab-badge{background:#0f766e;color:#fff;border-color:#0f766e}
 .tab:hover{color:var(--brand)}
 .tab.active{color:var(--brand);border-bottom-color:var(--brand);font-weight:600}
+
+.claims-tab-group{display:flex;align-items:stretch;flex:0 0 auto;position:relative}
+.claims-tab-trigger{position:relative;z-index:1}
+.claims-tab-chevron{font-size:9px;transition:transform var(--t) var(--ease)}
+.claims-subtabs{display:flex;align-items:stretch;max-width:0;opacity:0;overflow:hidden;pointer-events:none;transition:max-width .28s var(--ease),opacity .18s ease;background:#f0fdfa;border-bottom:1px solid #ccfbf1}
+.claims-tab-group:hover .claims-subtabs,.claims-tab-group:focus-within .claims-subtabs,.claims-tab-group.open .claims-subtabs{max-width:390px;opacity:1;pointer-events:auto}
+.claims-tab-group:hover .claims-tab-chevron,.claims-tab-group:focus-within .claims-tab-chevron,.claims-tab-group.open .claims-tab-chevron{transform:rotate(180deg)}
+.tab.claims-subtab{padding:9px 14px 8px;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:2px;border-left:1px solid #ccfbf1;color:#0f766e}
+.tab.claims-subtab span{font-size:12px;font-weight:800}
+.tab.claims-subtab small{font-size:9px;font-weight:500;color:#64748b;line-height:1.1}
+.tab.claims-subtab:hover,.tab.claims-subtab.active{background:#ccfbf1;color:#115e59}
 
 .filterbar {
   background: var(--surface);
@@ -678,6 +688,10 @@ body.pg-help-open{overflow:hidden}
   .header-right .refresh-btn,.header-right .auth-logout{padding-left:9px;padding-right:9px}
   .tabs{overflow-x:auto}
   .tab{white-space:nowrap}
+  .claims-tab-group:hover .claims-subtabs{max-width:0;opacity:0;pointer-events:none}
+  .claims-tab-group:focus-within .claims-subtabs,.claims-tab-group.open .claims-subtabs{max-width:330px;opacity:1;pointer-events:auto}
+  .tab.claims-subtab{padding-left:11px;padding-right:11px}
+  .tab.claims-subtab small{display:none}
   .chart-wrap{height:260px}
   .care-kpi-wide{grid-column:auto}
   .petit-kpi-grid{grid-template-columns:1fr}

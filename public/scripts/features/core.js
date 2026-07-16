@@ -66,7 +66,7 @@ document.addEventListener('click', event => {
 });
 
 function isMdsRestrictedTab(tabName) {
-  return ['petit-comite', 'coordenacao-cuidado', 'analise-sinistro', 'sinistralidade-v2', 'qualidade-operacional'].includes(tabName);
+  return ['petit-comite', 'coordenacao-cuidado', 'analise-sinistro', 'sinistralidade-v2', 'preview-gold', 'qualidade-operacional'].includes(tabName);
 }
 
 function normalizeDashboardUser(user) {
@@ -100,6 +100,13 @@ async function activateTab(tabName) {
   document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
   document.querySelectorAll('.tab-content').forEach(x => x.classList.remove('active'));
   tab.classList.add('active');
+  if (['sinistralidade-v2', 'preview-gold'].includes(tabName)) {
+    const claimsTrigger = document.querySelector('.claims-tab-trigger');
+    if (claimsTrigger) {
+      claimsTrigger.classList.add('active');
+      claimsTrigger.dataset.tab = tabName;
+    }
+  }
   content.classList.add('active');
   const activeTab = tabName;
   document.body.dataset.activeTab = activeTab;
@@ -150,7 +157,7 @@ function updateFilterVisibility() {
   const activeTab = getActiveTab();
   const isSinistro = isSinistroTab(activeTab);
   const isQualityOperational = activeTab === 'qualidade-operacional';
-  if (filterbar) filterbar.style.display = activeTab === 'sinistralidade-v2' ? 'none' : 'flex';
+  if (filterbar) filterbar.style.display = ['sinistralidade-v2', 'preview-gold'].includes(activeTab) ? 'none' : 'flex';
   document.body.dataset.activeTab = activeTab;
   if (activeTab === 'sessoes') {
     currentCompany = '';
@@ -247,7 +254,7 @@ function isPetitMdsTab(tab = getActiveTab()) {
 }
 
 function isSinistroTab(tab = getActiveTab()) {
-  return tab === 'analise-sinistro' || tab === 'sinistralidade-v2';
+  return tab === 'analise-sinistro' || tab === 'sinistralidade-v2' || tab === 'preview-gold';
 }
 
 function selectedGroupsLabel() {
