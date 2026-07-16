@@ -150,19 +150,22 @@ export function SinistralidadeV2Tab() {
   return (
     <section id="tab-sinistralidade-v2" className={`tab-content ${styles.root}`}>
       <header className={styles.hero}>
-        <div className={styles.heroCopy}>
-          <div className={styles.eyebrow}><span /> Inteligência assistencial multiempresa</div>
-          <h1>Sinistralidade <strong>360</strong></h1>
-          <p>Uma leitura executiva de custo, frequência, severidade e coordenação — do consolidado ao episódio.</p>
+        <div className={styles.heroIdentity}>
+          <div className={styles.heroIcon} aria-hidden="true"><i className="fa-solid fa-chart-line" /></div>
+          <div className={styles.heroCopy}>
+            <div className={styles.eyebrow}>Inteligência assistencial multiempresa</div>
+            <h1>Sinistralidade 360</h1>
+            <p>Uma leitura executiva de custo, frequência, severidade e coordenação — do consolidado ao episódio.</p>
+          </div>
         </div>
         <div className={styles.controls}>
           <label>Empresa
-            <select value={companyKey} onChange={(event) => setCompanyKey(event.target.value)}>
+            <select className="filter-select" value={companyKey} onChange={(event) => setCompanyKey(event.target.value)}>
               {companies.map((company) => <option key={company.company_key} value={company.company_key}>{company.name}</option>)}
             </select>
           </label>
           <label>Competência observada
-            <select value={month} onChange={(event) => setMonth(event.target.value)}>
+            <select className="filter-select" value={month} onChange={(event) => setMonth(event.target.value)}>
               {months.map((item) => <option key={item.month} value={item.month}>{monthLabel(item.month)}</option>)}
             </select>
           </label>
