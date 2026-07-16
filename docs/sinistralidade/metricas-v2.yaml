@@ -1,0 +1,60 @@
+version: 1.0.0-draft
+domain: sinistralidade
+metrics:
+  custo_assistencial_bruto:
+    label: Custo assistencial bruto
+    expression: SUM(sinistro)
+    grain: company_key,period
+    owner: data
+  coparticipacao:
+    label: Coparticipação
+    expression: SUM(valor_coparticipacao)
+    status: pending_business_validation
+  custo_liquido_aproximado:
+    label: Custo líquido aproximado
+    expression: SUM(sinistro - COALESCE(valor_coparticipacao, 0))
+    approximation: true
+  linhas_cobranca:
+    label: Linhas de cobrança
+    expression: COUNT(*)
+  quantidade_servicos:
+    label: Quantidade de serviços
+    expression: SUM(qtd_servico)
+  utilizantes:
+    label: Utilizantes
+    expression: COUNT(DISTINCT person_key)
+  vidas_elegiveis:
+    label: Vidas elegíveis
+    expression: COUNT(DISTINCT person_key) FILTER eligibility
+    source: fact_elegibilidade_mensal_gold_v2
+  beneficiarios_mes:
+    label: Beneficiários-mês
+    expression: SUM(member_month_weight)
+    source: fact_elegibilidade_mensal_gold_v2
+  custo_por_utilizante:
+    label: Custo por utilizante
+    expression: custo_assistencial_bruto / utilizantes
+  custo_por_vida_elegivel:
+    label: Custo por vida elegível
+    expression: custo_assistencial_bruto / beneficiarios_mes
+  taxa_utilizacao:
+    label: Taxa de utilização
+    expression: utilizantes / vidas_elegiveis
+dimensions:
+  - company_key
+  - operator_key
+  - month_key
+  - person_key
+  - family_key
+  - episode_key
+  - tipo_evento
+  - procedimento
+  - faixa_etaria
+  - sexo
+  - plano
+  - lotacao
+publication_rules:
+  requires_closed_period: true
+  expose_coverage: true
+  expose_contract_version: true
+  individual_rankings_internal_only: true

@@ -1,0 +1,168 @@
+.root {
+  display: none;
+  color: #172033;
+}
+
+.root:global(.active) {
+  display: block;
+}
+
+.hero,
+.card {
+  background: #fff;
+  border: 1px solid #dfe7f1;
+  border-radius: 16px;
+  box-shadow: 0 10px 30px rgb(15 23 42 / 5%);
+}
+
+.hero {
+  padding: 24px;
+  margin-bottom: 16px;
+  background: linear-gradient(135deg, #eff6ff, #fff 55%, #ecfdf5);
+}
+
+.hero h1 {
+  margin: 0;
+  font-size: 26px;
+}
+
+.hero p {
+  margin: 8px 0 0;
+  color: #64748b;
+}
+
+.controls {
+  display: grid;
+  grid-template-columns: minmax(240px, 2fr) minmax(160px, 1fr) auto;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.controls label {
+  display: grid;
+  gap: 6px;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.controls select,
+.controls button {
+  min-height: 42px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background: #fff;
+  padding: 0 12px;
+}
+
+.controls button {
+  align-self: end;
+  border-color: #2563eb;
+  background: #2563eb;
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.status {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.badge {
+  border-radius: 999px;
+  background: #fff7ed;
+  color: #9a3412;
+  border: 1px solid #fed7aa;
+  padding: 5px 9px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.card {
+  padding: 18px;
+}
+
+.metricLabel {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.metricValue {
+  margin-top: 8px;
+  font-size: 24px;
+  font-weight: 800;
+}
+
+.sections {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.card h2 {
+  margin: 0 0 12px;
+  font-size: 16px;
+}
+
+.tableWrap {
+  overflow: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.table th,
+.table td {
+  padding: 8px 6px;
+  border-bottom: 1px solid #edf2f7;
+  text-align: left;
+}
+
+.table th:last-child,
+.table td:last-child {
+  text-align: right;
+}
+
+.message {
+  padding: 28px;
+  text-align: center;
+  color: #64748b;
+}
+
+.error {
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: #fef2f2;
+  color: #991b1b;
+  margin-top: 12px;
+}
+
+@media (max-width: 900px) {
+  .grid,
+  .sections {
+    grid-template-columns: 1fr 1fr;
+  }
+  .controls {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 600px) {
+  .grid,
+  .sections {
+    grid-template-columns: 1fr;
+  }
+}

@@ -22,6 +22,7 @@ const tabs = [
   ["petit-comite-mds", "Petit Comitê MDS"],
   ["analise-sinistro", "Análise Sinistro"],
   ["preview-gold", "PREVIEW-gold"],
+  ["sinistralidade-v2", "Sinistralidade Multiempresa"],
   ["qualidade-estrategica", "Qualidade · Estratégica"],
   ["qualidade-operacional", "Qualidade · Operacional"],
 ] as const;
