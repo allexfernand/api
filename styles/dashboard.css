@@ -718,6 +718,8 @@ body[data-dashboard-mode="mds"] .tab[data-tab="coordenacao-cuidado"],
 body[data-dashboard-mode="mds"] .tab[data-tab="analise-sinistro"],
 body[data-dashboard-mode="mds"] .tab[data-tab="preview-gold"],
 body[data-dashboard-mode="mds"] .tab[data-tab="qualidade-operacional"]{display:none!important}
+body[data-dashboard-user="sanus"] .tab[data-tab="petit-comite-mds"],
+body[data-dashboard-user="sanus"] #tab-petit-comite-mds{display:none!important}
 body[data-dashboard-mode="mds"] #tab-petit-comite,
 body[data-dashboard-mode="mds"] #tab-coordenacao-cuidado,
 body[data-dashboard-mode="mds"] #tab-analise-sinistro,

@@ -9,6 +9,7 @@ export const loginRequestSchema = z.object({
 export const authResponseSchema = z.object({
   ok: z.literal(true),
   role: dashboardRoleSchema,
+  user: z.string().optional().default(""),
 });
 
 export type LoginRequest = z.infer<typeof loginRequestSchema>;

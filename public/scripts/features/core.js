@@ -10,6 +10,7 @@ const SESSIONS_Q3C_MONTHS = ['2026-01', '2026-02', '2026-03', '2026-04', '2026-0
 const SINISTRO_AS03_MONTHS = ['2025-07', '2025-08', '2025-09', '2025-10', '2025-11', '2025-12', '2026-01', '2026-02', '2026-03'];
 window.__SANUS_DASHBOARD_BUILD__ = '20260714-tabs';
 let hasAuthenticatedSession = false;
+let currentDashboardUser = '';
 
 let usersData = [], companiesData = [], sessionCompaniesData = [], eChart, agegroupChart, appointmentTypesTrendChart, appointmentsDailyChart, appointmentsStatusChart, careCoordinationLinesChart, careLinesEvolutionChart, careComplementChart, careActiveComplementChart, petitCareLinesChart, petitSessionsEvolChart, petitSessionsTotalEvolChart, sessionsEvolChart, sessionsJanMay2026EvolChart, sessionsQ3cChart, sessionsTotalEvolChart, sessionsAttendanceChart, sessionsDailyChart, sessionsTopGroupsChart, sinistroEventsEvolutionChart, sinistroValuesEvolutionChart, sinistroQuarterlyEvolutionChart, sinistroCohortEvolutionChart, qualityVolumeEvolutionChart, qualityDailyVolumeEvolutionChart, qualityEvolutionChart, qualityCriteriaEvolutionChart;
 let currentGroup = '', currentType = '', currentCompany = '';
@@ -68,7 +69,28 @@ function isMdsRestrictedTab(tabName) {
   return ['petit-comite', 'coordenacao-cuidado', 'analise-sinistro', 'sinistralidade-v2', 'qualidade-operacional'].includes(tabName);
 }
 
+function normalizeDashboardUser(user) {
+  return String(user || '').trim().toLowerCase();
+}
+
+function isSanusDashboardUser() {
+  return currentDashboardUser === 'sanus';
+}
+
+function applyDashboardUser(user = '') {
+  currentDashboardUser = normalizeDashboardUser(user);
+  if (currentDashboardUser) document.body.dataset.dashboardUser = currentDashboardUser;
+  else delete document.body.dataset.dashboardUser;
+  document.dispatchEvent(new CustomEvent('sanus:userchange', { detail: currentDashboardUser }));
+  if (currentDashboardUser === 'sanus' && getActiveTab() === 'petit-comite-mds') {
+    activateTab('demografica');
+  }
+}
+
 async function activateTab(tabName) {
+  if (tabName === 'petit-comite-mds' && isSanusDashboardUser()) {
+    tabName = 'demografica';
+  }
   if (document.body.dataset.dashboardMode === 'mds' && isMdsRestrictedTab(tabName)) {
     tabName = 'petit-comite-mds';
   }
@@ -612,6 +634,7 @@ function authFetch(url, options = {}) {
 function handleAuthFailure(message = 'Usuário ou senha inválidos.') {
   hasAuthenticatedSession = false;
   delete document.body.dataset.dashboardMode;
+  applyDashboardUser('');
   showAuthScreen(message);
 }
 
@@ -641,10 +664,12 @@ async function submitAuth(event) {
     if (!response.ok || !body?.ok) {
       hasAuthenticatedSession = false;
       delete document.body.dataset.dashboardMode;
+      applyDashboardUser('');
       showAuthScreen(body?.error || 'Usuário ou senha inválidos.');
       return;
     }
     hasAuthenticatedSession = true;
+    applyDashboardUser(body?.user || user);
     if (body?.role === 'mds' && !isMdsRoute()) {
       window.location.href = '/mds';
       return;
@@ -655,6 +680,7 @@ async function submitAuth(event) {
   } catch (error) {
     hasAuthenticatedSession = false;
     delete document.body.dataset.dashboardMode;
+    applyDashboardUser('');
     showAuthScreen(error?.message || 'Não foi possível validar o acesso.');
   } finally {
     if (submit) {
@@ -668,6 +694,7 @@ async function logoutDashboard() {
   await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' }).catch(() => null);
   hasAuthenticatedSession = false;
   delete document.body.dataset.dashboardMode;
+  applyDashboardUser('');
   showAuthScreen('Sessão encerrada.');
 }
 
