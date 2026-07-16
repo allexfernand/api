@@ -113,6 +113,9 @@ body {
   flex: 0 0 auto;
   user-select: none;
 }
+.tab.featured{color:#0f766e;font-weight:800;display:inline-flex;align-items:center;gap:7px}
+.tab-badge{font-size:8px;line-height:1;padding:4px 5px;border-radius:999px;background:#ccfbf1;color:#0f766e;letter-spacing:.5px;border:1px solid #99f6e4}
+.tab.featured.active .tab-badge{background:#0f766e;color:#fff;border-color:#0f766e}
 .tab:hover{color:var(--brand)}
 .tab.active{color:var(--brand);border-bottom-color:var(--brand);font-weight:600}
 
@@ -670,6 +673,9 @@ body.pg-help-open{overflow:hidden}
 }
 @media (max-width:640px){
   .header,.tabs,.filterbar{padding-left:16px;padding-right:16px}
+  .header-right{gap:6px}
+  .header-right .last-upd{display:none}
+  .header-right .refresh-btn,.header-right .auth-logout{padding-left:9px;padding-right:9px}
   .tabs{overflow-x:auto}
   .tab{white-space:nowrap}
   .chart-wrap{height:260px}

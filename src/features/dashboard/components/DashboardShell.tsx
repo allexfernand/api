@@ -15,6 +15,7 @@ declare global {
 
 const tabs = [
   ["demografica", "Análise Demográfica"],
+  ["sinistralidade-v2", "Sinistralidade 360"],
   ["agendamentos", "Agendamentos"],
   ["coordenacao-cuidado", "Coordenação de Cuidado"],
   ["sessoes", "Sessões"],
@@ -22,7 +23,6 @@ const tabs = [
   ["petit-comite-mds", "Petit Comitê MDS"],
   ["analise-sinistro", "Análise Sinistro"],
   ["preview-gold", "PREVIEW-gold"],
-  ["sinistralidade-v2", "Sinistralidade Multiempresa"],
   ["qualidade-estrategica", "Qualidade · Estratégica"],
   ["qualidade-operacional", "Qualidade · Operacional"],
 ] as const;
@@ -146,12 +146,13 @@ function Navigation({
       {visibleTabs.map(([id, label]) => (
         <button
           type="button"
-          className={`tab ${activeTab === id ? "active" : ""}`}
+          className={`tab ${id === "sinistralidade-v2" ? "featured" : ""} ${activeTab === id ? "active" : ""}`}
           data-tab={id}
           key={id}
           onClick={() => onChange(id)}
         >
           {label}
+          {id === "sinistralidade-v2" ? <span className="tab-badge">NOVO</span> : null}
         </button>
       ))}
     </nav>

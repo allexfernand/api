@@ -138,6 +138,7 @@ async function applyRouteMode(role = '') {
 }
 
 function updateFilterVisibility() {
+  const filterbar = document.querySelector('.filterbar');
   const groupGroup = document.getElementById('filter-group-group');
   const typeGroup = document.getElementById('filter-type-group');
   const companyGroup = document.getElementById('filter-company-group');
@@ -149,6 +150,7 @@ function updateFilterVisibility() {
   const activeTab = getActiveTab();
   const isSinistro = isSinistroTab(activeTab);
   const isQualityOperational = activeTab === 'qualidade-operacional';
+  if (filterbar) filterbar.style.display = activeTab === 'sinistralidade-v2' ? 'none' : 'flex';
   document.body.dataset.activeTab = activeTab;
   if (activeTab === 'sessoes') {
     currentCompany = '';

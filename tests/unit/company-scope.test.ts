@@ -10,6 +10,12 @@ afterEach(() => {
 });
 
 describe("company scope", () => {
+  it("keeps the authenticated full role usable in legacy deployments", () => {
+    const auth = { user: "internal", role: "full" as const };
+    expect(companyScopesForAuth(auth)).toEqual(["*"]);
+    expect(canAccessCompany(auth, A)).toBe(true);
+  });
+
   it("allows every valid company only for wildcard scope", () => {
     process.env.DASHBOARD_AUTH_COMPANY_SCOPES = "*";
     const auth = { user: "internal", role: "full" as const };
@@ -31,6 +37,13 @@ describe("company scope", () => {
     const auth = { user: "mds", role: "mds" as const };
     expect(canAccessCompany(auth, A)).toBe(false);
     expect(companyScopeSql(auth)).toContain("1 = 0");
+  });
+
+  it("allows an explicit empty scope to deny the full role", () => {
+    process.env.DASHBOARD_AUTH_COMPANY_SCOPES = "";
+    const auth = { user: "internal", role: "full" as const };
+    expect(companyScopesForAuth(auth)).toEqual([]);
+    expect(canAccessCompany(auth, A)).toBe(false);
   });
 
   it("rejects malformed company keys", () => {
