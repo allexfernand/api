@@ -1,6 +1,6 @@
 <!-- Tab: PREVIEW-gold (mock sobre gold_sinistro_evento — DAT-176/177) -->
   <div class="tab-content" id="tab-preview-gold">
-    <div class="card-box" style="display:flex;align-items:center;justify-content:space-between;gap:20px;padding:22px 28px;flex-wrap:wrap">
+    <div class="card-box pg-hero" style="display:flex;align-items:center;justify-content:space-between;gap:20px;padding:22px 28px;flex-wrap:wrap">
       <div style="display:flex;align-items:center;gap:18px;min-width:260px">
         <div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#b45309,#1d4ed8);display:flex;align-items:center;justify-content:center">
           <i class="fa-solid fa-flask" style="font-size:20px;color:#fff"></i>
@@ -17,30 +17,64 @@
       </div>
     </div>
 
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin:14px 0">
-      <div class="card-box" style="padding:16px 20px" title="O QUE É: SUM(sinistro) do último mês com faturamento completo (regra: mês M fecha quando M+2 começa — lag de cobrança ~2 meses). POR QUE EXISTE: é o único mês recente comparável com o histórico. SINAL: comparar com a média 12m (~R$ 9,8M); acima disso por 2+ meses = pressão de custo. NÃO É sinistralidade (não temos prêmio na base)."><div style="font-size:11px;color:#64748b" id="pg-kpi-fechado-label">Sinistro · último mês fechado (mar/26)</div><div style="font-size:24px;font-weight:800;color:#0f172a" id="pg-kpi-fechado">R$ 10,67M</div><div style="font-size:11px;color:#94a3b8">mês fecha em M+2 (lag ~2 meses)</div></div>
-      <div class="card-box" style="padding:16px 20px" title="O QUE É: SUM(sinistro) ÷ COUNT(DISTINCT codigo_usuario) nos 12 meses fechados. POR QUE EXISTE: normaliza o custo pelo nº de pessoas que USARAM. NÃO é per capita — quem não usou não está na base; per capita real virá do join com beneficiaries (H4). SINAL: alta = severidade/mix piorando; queda = mix mais leve."><div style="font-size:11px;color:#64748b" id="pg-kpi-custo-label">Custo por utilizante · 2025</div><div style="font-size:24px;font-weight:800;color:#0f172a" id="pg-kpi-custo">R$ 4.543</div><div style="font-size:11px;color:#94a3b8" id="pg-kpi-custo-sub">25.239 utilizantes · não é per capita (falta vidas)</div></div>
-      <div class="card-box" style="padding:16px 20px" title="O QUE É: COUNT(DISTINCT codigo_usuario) no último mês fechado. POR QUE EXISTE: mede FREQUÊNCIA (quantas pessoas usaram), separando volume de severidade — se o custo sobe com utilizantes estáveis, o problema é severidade, não frequência. ARMADILHA: nunca somar utilizantes de meses (mesma pessoa conta 2x)."><div style="font-size:11px;color:#64748b" id="pg-kpi-utilizantes-label">Utilizantes no mês (mar/26)</div><div style="font-size:24px;font-weight:800;color:#0f172a" id="pg-kpi-utilizantes">9.085</div><div style="font-size:11px;color:#94a3b8">COUNT DISTINCT codigo_usuario</div></div>
-      <div class="card-box" style="padding:16px 20px" title="O QUE É: share do custo com rede_reembolso='Reembolso' nos 12m fechados. POR QUE EXISTE: proxy de vazamento de rede — gasto fora da rede credenciada. SINAL: tendência de alta = rede insuficiente em alguma praça/especialidade (reembolso costuma custar mais que rede)."><div style="font-size:11px;color:#64748b">Reembolso · share do custo</div><div style="font-size:24px;font-weight:800;color:#0f172a" id="pg-kpi-reembolso">3,3%</div><div style="font-size:11px;color:#94a3b8" id="pg-kpi-reembolso-sub">proxy de vazamento de rede</div></div>
+    <section class="card-box pg-filter-panel" id="pg-filtros" aria-labelledby="pg-filter-title" style="display:none">
+      <div class="pg-filter-head">
+        <div class="pg-filter-heading">
+          <span class="pg-filter-heading-icon" aria-hidden="true"><i class="fa-solid fa-sliders"></i></span>
+          <div>
+            <div class="pg-filter-title" id="pg-filter-title">Explore um recorte da carteira</div>
+            <div class="pg-filter-description">Combine dimensões e recalcule todos os indicadores, gráficos e insights abaixo.</div>
+          </div>
+        </div>
+        <span class="pg-filter-count" id="pg-filter-count">Visão completa</span>
+      </div>
+
+      <div class="pg-filter-fields" id="pg-filter-fields"></div>
+
+      <div class="pg-filter-selection" id="pg-filter-selection" hidden>
+        <div class="pg-filter-selection-label">Recorte selecionado</div>
+        <div class="pg-filter-chips" id="pg-filter-chips"></div>
+      </div>
+
+      <div class="pg-filter-footer">
+        <div class="pg-filter-feedback">
+          <div class="pg-filter-status" id="pg-f-status" aria-live="polite">Visão total da carteira, sem filtros.</div>
+          <div class="pg-filter-note"><i class="fa-solid fa-circle-info" aria-hidden="true"></i> Linha de cuidado ainda não está disponível na fonte Databricks.</div>
+        </div>
+        <div class="pg-filter-actions">
+          <button type="button" class="pg-filter-clear" id="pg-f-limpar" disabled>Limpar tudo</button>
+          <button type="button" class="pg-filter-apply" id="pg-f-aplicar">
+            <i class="fa-solid fa-arrow-rotate-right" aria-hidden="true"></i>
+            <span>Aplicar recorte</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <div class="pg-kpi-grid">
+      <div class="card-box pg-kpi-card" id="pg-kpi-fechado-card" style="padding:16px 20px" title="O QUE É: SUM(sinistro) do último mês com faturamento completo (regra: mês M fecha quando M+2 começa — lag de cobrança ~2 meses). POR QUE EXISTE: é o único mês recente comparável com o histórico. SINAL: comparar com a média 12m (~R$ 9,8M); acima disso por 2+ meses = pressão de custo. NÃO É sinistralidade (não temos prêmio na base)."><div style="font-size:11px;color:#64748b" id="pg-kpi-fechado-label">Sinistro · último mês fechado (mar/26)</div><div style="font-size:24px;font-weight:800;color:#0f172a" id="pg-kpi-fechado">R$ 10,67M</div><div style="font-size:11px;color:#94a3b8">mês fecha em M+2 (lag ~2 meses)</div></div>
+      <div class="card-box pg-kpi-card" id="pg-kpi-custo-card" style="padding:16px 20px" title="O QUE É: SUM(sinistro) ÷ COUNT(DISTINCT codigo_usuario) nos 12 meses fechados. POR QUE EXISTE: normaliza o custo pelo nº de pessoas que USARAM. NÃO é per capita — quem não usou não está na base; per capita real virá do join com beneficiaries (H4). SINAL: alta = severidade/mix piorando; queda = mix mais leve."><div style="font-size:11px;color:#64748b" id="pg-kpi-custo-label">Custo por utilizante · 2025</div><div style="font-size:24px;font-weight:800;color:#0f172a" id="pg-kpi-custo">R$ 4.543</div><div style="font-size:11px;color:#94a3b8" id="pg-kpi-custo-sub">25.239 utilizantes · não é per capita (falta vidas)</div></div>
+      <div class="card-box pg-kpi-card" id="pg-kpi-utilizantes-card" style="padding:16px 20px" title="O QUE É: COUNT(DISTINCT codigo_usuario) no último mês fechado. POR QUE EXISTE: mede FREQUÊNCIA (quantas pessoas usaram), separando volume de severidade — se o custo sobe com utilizantes estáveis, o problema é severidade, não frequência. ARMADILHA: nunca somar utilizantes de meses (mesma pessoa conta 2x)."><div style="font-size:11px;color:#64748b" id="pg-kpi-utilizantes-label">Utilizantes no mês (mar/26)</div><div style="font-size:24px;font-weight:800;color:#0f172a" id="pg-kpi-utilizantes">9.085</div><div style="font-size:11px;color:#94a3b8">COUNT DISTINCT codigo_usuario</div></div>
+      <div class="card-box pg-kpi-card" id="pg-kpi-reembolso-card" style="padding:16px 20px" title="O QUE É: share do custo com rede_reembolso='Reembolso' nos 12m fechados. POR QUE EXISTE: proxy de vazamento de rede — gasto fora da rede credenciada. SINAL: tendência de alta = rede insuficiente em alguma praça/especialidade (reembolso costuma custar mais que rede)."><div style="font-size:11px;color:#64748b">Reembolso · share do custo</div><div style="font-size:24px;font-weight:800;color:#0f172a" id="pg-kpi-reembolso">3,3%</div><div style="font-size:11px;color:#94a3b8" id="pg-kpi-reembolso-sub">proxy de vazamento de rede</div></div>
     </div>
 
     <div class="sinistro-chart-grid">
-      <div class="chart-card">
+      <div class="chart-card" id="pg-b1-card">
         <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">B1 · Sinistro mensal (data do atendimento)</h2>
         <div style="font-size:11px;color:#94a3b8;margin-bottom:14px" id="pg-b1-sub"><code>gold_sinistro_evento</code> · Delta v44 · tracejado laranja = meses parciais (lag de faturamento ~2 meses)</div>
         <div class="chart-wrap"><canvas id="pgChartMensal"></canvas></div>
       </div>
-      <div class="chart-card">
+      <div class="chart-card" id="pg-b2-card">
         <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">B2 · Composição do custo por tipo de evento</h2>
         <div style="font-size:11px;color:#94a3b8;margin-bottom:14px" id="pg-b2-sub">Internação = 24,6% do custo com só 2,5% dos itens · mix mensal (mock: shares médios aplicados)</div>
         <div class="chart-wrap"><canvas id="pgChartComposicao"></canvas></div>
       </div>
-      <div class="chart-card">
+      <div class="chart-card" id="pg-b3-card">
         <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">B3 · Top lotações · share do custo (2024+)</h2>
         <div style="font-size:11px;color:#94a3b8;margin-bottom:14px" id="pg-b3-sub">Barra laranja = 'Sem lotação': 20,7% do custo sem o dado na ORIGEM (levar à operadora)</div>
         <div class="chart-wrap"><canvas id="pgChartLotacao"></canvas></div>
       </div>
-      <div class="chart-card">
+      <div class="chart-card" id="pg-b5-internacao-card">
         <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">B5 · Custo de internação por agrupamento clínico (R$ M)</h2>
         <div style="font-size:11px;color:#94a3b8;margin-bottom:14px" id="pg-b5-sub">10.871 internações distintas · custo médio R$ 3.728 · duração mediana 1 dia (p90: 4)</div>
         <div class="chart-wrap"><canvas id="pgChartInternacao"></canvas></div>
@@ -48,7 +82,7 @@
     </div>
 
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;margin:14px 0">
-      <div class="card-box" style="padding:18px 22px">
+      <div class="card-box" id="pg-b4-concentracao-card" style="padding:18px 22px">
         <div style="font-size:13px;font-weight:600;color:#334155;margin-bottom:10px"><i class="fa-solid fa-user-group" style="margin-right:6px;color:#1d4ed8"></i>B4 · Concentração em beneficiários (só agregados)</div>
         <div style="display:flex;gap:14px;flex-wrap:wrap">
           <div style="flex:1;min-width:120px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:12px"><div style="font-size:11px;color:#64748b" id="pg-conc-top1-label">Top 1% (272 pessoas)</div><div style="font-size:22px;font-weight:800;color:#1d4ed8" id="pg-conc-top1">36,4%</div><div style="font-size:11px;color:#94a3b8" id="pg-conc-janela">do custo total</div></div>
@@ -56,7 +90,7 @@
         </div>
         <div style="font-size:11px;color:#64748b;margin-top:10px">Argumento de gestão de casos: grupo pequeno e endereçável concentra o custo. Lista individual: só no B4+ abaixo (uso interno autorizado 14/jul; antes era vetado).</div>
       </div>
-      <div class="card-box" style="padding:18px 22px">
+      <div class="card-box" id="pg-b4-prestadores-card" style="padding:18px 22px">
         <div style="font-size:13px;font-weight:600;color:#334155;margin-bottom:10px"><i class="fa-solid fa-hospital" style="margin-right:6px;color:#1d4ed8"></i>B4 · Top prestadores (rede pulverizada)</div>
         <table style="width:100%;font-size:12px;border-collapse:collapse">
           <tbody id="pg-prestadores-tbody">
@@ -70,7 +104,7 @@
         </table>
         <div style="font-size:11px;color:#64748b;margin-top:8px" id="pg-prestadores-note">Top 10 juntos = <b>13,1%</b> (35.466 prestadores) — a alavanca está em categorias e pessoas, não num player.</div>
       </div>
-      <div class="card-box" style="padding:18px 22px">
+      <div class="card-box" id="pg-b5-saude-mental-card" style="padding:18px 22px">
         <div style="font-size:13px;font-weight:600;color:#334155;margin-bottom:10px"><i class="fa-solid fa-brain" style="margin-right:6px;color:#1d4ed8"></i>B5 · Saúde mental e internação</div>
         <div style="display:grid;gap:8px;font-size:12px;color:#334155">
           <div style="display:flex;justify-content:space-between"><span>Saúde mental (share do custo)</span><b id="pg-sm-share">3,5% – 7,7%</b></div>
@@ -90,11 +124,11 @@
         <div style="font-size:13px;font-weight:600;color:#334155"><i class="fa-solid fa-user-shield" style="margin-right:6px;color:#b45309"></i>B4+ · Top 10 beneficiários por uso (12m fechados)</div>
         <span style="font-size:10px;font-weight:800;color:#b45309;background:#fffbeb;border:1px solid #fcd34d;border-radius:999px;padding:3px 10px">DADO SENSÍVEL · USO INTERNO</span>
       </div>
-      <div style="font-size:11px;color:#94a3b8;margin-bottom:10px">Identificação pelo código da carteirinha (a base não tem nome/CPF do beneficiário) · sem dados clínicos individuais · tabela só aparece com dados ao vivo · ⚠ = ID corrompido na origem</div>
+      <div style="font-size:11px;color:#94a3b8;margin-bottom:10px">Identificação pelo código da carteirinha (a base não tem nome/CPF do beneficiário) · sem dados clínicos individuais · tabela só aparece com dados ao vivo · IDs do lote corrompido (042026) reconstruídos por chave composta (~98% match único) · ⚠ = irrecuperável</div>
       <table style="width:100%;font-size:12px;border-collapse:collapse"><tbody id="pg-top-uti-tbody"></tbody></table>
     </div>
 
-    <div class="card-box" style="padding:18px 22px;margin-top:14px">
+    <div class="card-box" style="padding:18px 22px;margin-top:14px" id="pg-b6-card">
       <div style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px"><i class="fa-solid fa-scale-balanced" style="margin-right:6px;color:#1d4ed8"></i>B6 · Impacto Sanus — janelas pareadas, recalculado na gold</div>
       <div style="font-size:11px;color:#94a3b8;margin-bottom:14px">Mesma metodologia da aba Análise Sinistro (ago–set/25 × out–nov/25) · eixo: data do atendimento · fonte: <code>gold_sinistro_evento</code> v44</div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px">
@@ -141,7 +175,46 @@
       <div style="font-size:11px;color:#64748b;margin-top:10px" id="pg-b6-nota">Nota da migração: a competência 09/2025 tem <b>zero linhas</b> na base (não veio da operadora) — a estimativa hardcoded da aba antiga só é necessária no eixo competência; no eixo data do atendimento, set/25 existe normalmente (R$ 10,3M).</div>
     </div>
 
-    <div class="card-box" style="padding:14px 22px;font-size:11px;color:#64748b;margin-top:14px">
-      Regras de leitura: janela de tendência 2025-01+ (2024 = rampa de implantação) · exclui <code>flag_data_suspeita</code> · sem dados individuais de beneficiário · sinistro bruto por <code>data_atendimento</code> (não é loss ratio — sem prêmio na base) · pendência: alinhar definição de custo total (copart) com a aba Análise Sinistro.
+    <div class="card-box" style="padding:18px 22px;margin-top:14px" id="pg-b7-card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
+        <div>
+          <div style="font-size:13px;font-weight:600;color:#334155"><i class="fa-solid fa-code-compare" style="margin-right:6px;color:#0f766e"></i>B7 · Comparação madura 4+4 meses</div>
+          <div style="font-size:11px;color:#94a3b8;margin-top:4px">Jun–Set/25 × Out/25–Jan/26 · mesmas famílias presentes nos dois lados · normalizado por mês</div>
+        </div>
+        <span style="font-size:10px;font-weight:800;color:#0f766e;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:999px;padding:4px 10px" id="pg-b7-cohort">COHORT COMPARÁVEL</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;margin-top:14px">
+        <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:13px"><div style="font-size:11px;color:#64748b">Sinistro · média mensal</div><div style="font-size:17px;font-weight:800;color:#0f172a;margin-top:6px"><span id="pg-b7-sin-pre">—</span> <span style="color:#94a3b8">→</span> <span id="pg-b7-sin-pos" style="color:#0f766e">—</span></div><div id="pg-b7-sin-delta" style="font-size:11px;font-weight:700;margin-top:5px">—</div></div>
+        <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:13px"><div style="font-size:11px;color:#64748b">Itens · média mensal</div><div style="font-size:17px;font-weight:800;color:#0f172a;margin-top:6px"><span id="pg-b7-itens-pre">—</span> <span style="color:#94a3b8">→</span> <span id="pg-b7-itens-pos" style="color:#0f766e">—</span></div><div id="pg-b7-itens-delta" style="font-size:11px;font-weight:700;margin-top:5px">—</div></div>
+        <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:13px"><div style="font-size:11px;color:#64748b">Sinistro / família / mês</div><div style="font-size:17px;font-weight:800;color:#0f172a;margin-top:6px"><span id="pg-b7-spf-pre">—</span> <span style="color:#94a3b8">→</span> <span id="pg-b7-spf-pos" style="color:#0f766e">—</span></div><div id="pg-b7-spf-delta" style="font-size:11px;font-weight:700;margin-top:5px">—</div></div>
+        <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:13px"><div style="font-size:11px;color:#64748b">Itens / família / mês</div><div style="font-size:17px;font-weight:800;color:#0f172a;margin-top:6px"><span id="pg-b7-ipf-pre">—</span> <span style="color:#94a3b8">→</span> <span id="pg-b7-ipf-pos" style="color:#0f766e">—</span></div><div id="pg-b7-ipf-delta" style="font-size:11px;font-weight:700;margin-top:5px">—</div></div>
+      </div>
+      <div class="pg-split-grid" style="display:grid;grid-template-columns:minmax(280px,.9fr) minmax(300px,1.5fr);gap:14px;margin-top:14px">
+        <div style="border:1px solid #e2e8f0;border-radius:10px;padding:13px"><div style="font-size:11px;font-weight:700;color:#475569;margin-bottom:8px">Mudança por tipo de evento</div><table style="width:100%;font-size:11px;border-collapse:collapse"><tbody id="pg-b7-tipos"></tbody></table></div>
+        <div style="background:#f0fdfa;border:1px solid #99f6e4;border-radius:10px;padding:14px"><div style="font-size:11px;font-weight:800;color:#0f766e;text-transform:uppercase">Leitura executiva automática</div><div id="pg-b7-insight" style="font-size:12px;line-height:1.55;color:#334155;margin-top:6px">Aguardando dados ao vivo para comparar frequência e severidade.</div><div style="font-size:10px;color:#64748b;margin-top:8px">Associação temporal. Não atribui a mudança à Sanus sem grupo de controle e ajuste de exposição.</div></div>
+      </div>
+    </div>
+
+    <div class="card-box" style="padding:18px 22px;margin-top:14px" id="pg-b8-card">
+      <div style="font-size:13px;font-weight:600;color:#334155"><i class="fa-solid fa-route" style="margin-right:6px;color:#7c3aed"></i>B8 · Alcance e proximidade da jornada Sanus</div>
+      <div style="font-size:11px;color:#94a3b8;margin-top:4px">Recuperado do BI antigo com regra auditável: <code>cpf_atendido ↔ cpf_titular</code> · janela 12m fechados · cobertura parcial para dependentes</div>
+      <div class="pg-split-grid" style="display:grid;grid-template-columns:minmax(300px,1fr) minmax(320px,1.3fr);gap:14px;margin-top:14px">
+        <div style="border:1px solid #e2e8f0;border-radius:10px;padding:14px">
+          <div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><div style="font-size:11px;font-weight:700;color:#475569">Famílias utilizantes alcançadas</div><b id="pg-b8-alcance" style="font-size:20px;color:#7c3aed">—</b></div>
+          <div id="pg-b8-alcance-sub" style="font-size:10px;color:#94a3b8;margin-top:3px">Qualquer serviço digital mapeado</div>
+          <table style="width:100%;font-size:11px;border-collapse:collapse;margin-top:10px"><tbody id="pg-b8-servicos"></tbody></table>
+        </div>
+        <div style="border:1px solid #e2e8f0;border-radius:10px;padding:14px">
+          <div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><div style="font-size:11px;font-weight:700;color:#475569">Utilizações após contato digital</div><b id="pg-b8-prox-share" style="font-size:20px;color:#7c3aed">—</b></div>
+          <div id="pg-b8-prox-sub" style="font-size:10px;color:#94a3b8;margin-top:3px">Até 40 dias após o contato mais próximo</div>
+          <div id="pg-b8-funil" style="display:grid;gap:7px;margin-top:11px"></div>
+        </div>
+      </div>
+      <div id="pg-b8-insight" style="font-size:12px;line-height:1.55;color:#334155;background:#faf5ff;border:1px solid #e9d5ff;border-radius:10px;padding:12px 14px;margin-top:14px">Aguardando dados ao vivo para medir alcance e proximidade.</div>
+      <div style="font-size:10px;color:#64748b;margin-top:8px">Proximidade não significa que a Sanus causou a utilização; o indicador mostra quanto da jornada observada está temporalmente conectada a um contato conhecido.</div>
+    </div>
+
+    <div class="card-box" id="pg-metodologia-card" style="padding:14px 22px;font-size:11px;color:#64748b;margin-top:14px">
+      Regras de leitura: janela de tendência 2025-01+ (2024 = rampa de implantação) · exclui <code>flag_data_suspeita</code> · dado individual somente no B4+ com acesso interno · sinistro bruto por <code>data_atendimento</code> (não é loss ratio — sem prêmio na base) · pendência: alinhar definição de custo total (copart) com a aba Análise Sinistro.
     </div>
   </div>
