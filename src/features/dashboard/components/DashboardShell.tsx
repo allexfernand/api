@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import Image from "next/image";
 import { apiRequest } from "../../../lib/api/client";
 import { authResponseSchema } from "../../../contracts/auth";
@@ -22,6 +22,7 @@ const tabs = [
   ["petit-comite-mds", "Petit Comitê MDS"],
   ["analise-sinistro", "Análise Sinistro"],
   ["preview-gold", "PREVIEW-gold"],
+  ["sinistralidade-v2", "Sinistralidade Multiempresa"],
   ["qualidade-estrategica", "Qualidade · Estratégica"],
   ["qualidade-operacional", "Qualidade · Operacional"],
 ] as const;
@@ -340,6 +341,12 @@ export function DashboardShell() {
   const [dashboardUser, setDashboardUser] = useState("");
   const hidePetitMds = dashboardUser === "sanus";
 
+  const activate = useCallback((tab: string) => {
+    const nextTab = hidePetitMds && tab === "petit-comite-mds" ? "demografica" : tab;
+    setActiveTab(nextTab);
+    legacy("activateTab", nextTab);
+  }, [hidePetitMds]);
+
   useEffect(() => {
     apiRequest("/api/data?scope=auth", { schema: authResponseSchema })
       .then((auth) => {
@@ -368,14 +375,7 @@ export function DashboardShell() {
   useEffect(() => {
     if (dashboardUser) document.body.dataset.dashboardUser = dashboardUser;
     else delete document.body.dataset.dashboardUser;
-    if (dashboardUser === "sanus" && activeTab === "petit-comite-mds") activate("demografica");
-  }, [activeTab, dashboardUser]);
-
-  function activate(tab: string) {
-    const nextTab = hidePetitMds && tab === "petit-comite-mds" ? "demografica" : tab;
-    setActiveTab(nextTab);
-    legacy("activateTab", nextTab);
-  }
+  }, [dashboardUser]);
 
   return (
     <>

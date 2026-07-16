@@ -66,7 +66,7 @@ document.addEventListener('click', event => {
 });
 
 function isMdsRestrictedTab(tabName) {
-  return ['petit-comite', 'coordenacao-cuidado', 'analise-sinistro', 'qualidade-operacional'].includes(tabName);
+  return ['petit-comite', 'coordenacao-cuidado', 'analise-sinistro', 'sinistralidade-v2', 'qualidade-operacional'].includes(tabName);
 }
 
 function normalizeDashboardUser(user) {
@@ -245,7 +245,7 @@ function isPetitMdsTab(tab = getActiveTab()) {
 }
 
 function isSinistroTab(tab = getActiveTab()) {
-  return tab === 'analise-sinistro';
+  return tab === 'analise-sinistro' || tab === 'sinistralidade-v2';
 }
 
 function selectedGroupsLabel() {
@@ -1188,6 +1188,7 @@ async function downloadDashboardPdf() {
 
 function isPeriodFilteredTab(tab = getActiveTab()) {
   const activeTab = tab;
+  if (activeTab === 'sinistralidade-v2') return false;
   return activeTab === 'agendamentos' || activeTab === 'coordenacao-cuidado' || activeTab === 'sessoes' || isPetitTab(activeTab) || activeTab.startsWith('qualidade') || isSinistroTab(activeTab);
 }
 
@@ -1199,6 +1200,5 @@ function loadPeriodFilteredTab() {
   else if (activeTab === 'petit-comite') renderPetitComite();
   else if (activeTab === 'petit-comite-mds') renderPetitComiteMds();
   else if (activeTab.startsWith('qualidade')) loadQuality();
-  else if (isSinistroTab(activeTab)) renderAnaliseSinistro();
+  else if (activeTab === 'analise-sinistro') renderAnaliseSinistro();
 }
-

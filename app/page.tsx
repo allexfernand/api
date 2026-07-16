@@ -7,8 +7,8 @@ export default function Page() {
   return (
     <>
       <DashboardPage fragments={fragments} />
-      <Script src="/scripts/dashboard.js?v=20260715-sanus-user" strategy="afterInteractive" />
-      <Script src="/scripts/gold-preview.js?v=20260715-sanus-user" strategy="afterInteractive" />
+      <Script src="/scripts/dashboard.js?v=20260716-sinistralidade-v2" strategy="afterInteractive" />
+      <Script src="/scripts/gold-preview.js?v=20260716-sinistralidade-v2" strategy="afterInteractive" />
     </>
   );
 }
