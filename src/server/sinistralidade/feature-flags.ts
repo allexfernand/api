@@ -1,10 +1,10 @@
-// Flags de rollout da evolução longitudinal da Sinistralidade 360.
-// Padrão: desligado. A ativação é gradual, por ambiente.
+// Flags da Sinistralidade 360.
+// Padrão: ligado. Defina a variável como "false" para desligar num ambiente.
 
 declare const process: { env: Record<string, string | undefined> };
 
 function flag(name: string) {
-  return String(process.env[name] || "").trim().toLowerCase() === "true";
+  return String(process.env[name] || "").trim().toLowerCase() !== "false";
 }
 
 export type SinistralidadeFeatureFlags = {

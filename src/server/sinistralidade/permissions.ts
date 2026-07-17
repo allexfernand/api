@@ -1,10 +1,10 @@
 // Níveis de acesso da Sinistralidade 360 (GOV-06):
 //   1. Agregado empresarial — qualquer usuário autenticado com company scope.
-//   2. Ranking individual mascarado — flag + permissão explícita por usuário.
-//   3. Detalhe individual clínico — flag + permissão explícita por usuário.
+//   2. Ranking individual mascarado — liberado por padrão; restrinja via lista.
+//   3. Detalhe individual clínico — liberado por padrão; restrinja via lista.
 // O perfil MDS nunca recebe acesso individual, independentemente das listas.
-// Acesso administrativo genérico NÃO é autorização clínica implícita: as
-// listas de usuários precisam ser configuradas explicitamente.
+// Para restringir, configure SINISTRALIDADE_INDIVIDUAL_*_USERS com uma lista
+// de usuários (ou "*").
 
 import type { DashboardRole } from "../../contracts/common";
 import { sinistralidadeFeatureFlags } from "./feature-flags";
@@ -27,6 +27,9 @@ function userList(name: string) {
 function userAllowed(auth: AuthIdentity, envName: string) {
   if (auth.role === "mds") return false;
   const allowed = userList(envName);
+  // Sem lista configurada, o acesso é liberado por padrão (exceto MDS).
+  // Configure a variável com uma lista de usuários (ou "*") para restringir.
+  if (!allowed.length) return true;
   if (allowed.includes("*")) return true;
   return allowed.includes(auth.user.toLowerCase());
 }

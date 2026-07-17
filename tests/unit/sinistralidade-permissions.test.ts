@@ -20,20 +20,20 @@ afterEach(() => {
 });
 
 describe("feature flags", () => {
-  it("todas desligadas por padrão", () => {
+  it("todas ligadas por padrão", () => {
     expect(sinistralidadeFeatureFlags()).toEqual({
-      longitudinal: false,
-      individualRanking: false,
-      individualDetail: false,
-      companyBenchmark: false,
+      longitudinal: true,
+      individualRanking: true,
+      individualDetail: true,
+      companyBenchmark: true,
     });
   });
 
-  it("liga somente com valor literal true", () => {
-    process.env.SINISTRALIDADE_360_LONGITUDINAL_ENABLED = "TRUE";
-    process.env.SINISTRALIDADE_360_INDIVIDUAL_RANKING_ENABLED = "1";
-    expect(sinistralidadeFeatureFlags().longitudinal).toBe(true);
-    expect(sinistralidadeFeatureFlags().individualRanking).toBe(false);
+  it("desliga somente com valor literal false", () => {
+    process.env.SINISTRALIDADE_360_LONGITUDINAL_ENABLED = "FALSE";
+    process.env.SINISTRALIDADE_360_INDIVIDUAL_RANKING_ENABLED = "0";
+    expect(sinistralidadeFeatureFlags().longitudinal).toBe(false);
+    expect(sinistralidadeFeatureFlags().individualRanking).toBe(true);
   });
 });
 
@@ -41,30 +41,26 @@ describe("permissões individuais (GOV-06)", () => {
   const admin = { user: "Analista", role: "full" as const };
   const mds = { user: "mds", role: "mds" as const };
 
-  it("acesso administrativo genérico não é autorização individual implícita", () => {
-    process.env.SINISTRALIDADE_360_INDIVIDUAL_RANKING_ENABLED = "true";
-    process.env.SINISTRALIDADE_360_INDIVIDUAL_DETAIL_ENABLED = "true";
-    // Flags ligadas, mas sem lista de usuários: nada é liberado.
-    expect(individualAccessForAuth(admin)).toEqual({ ranking: false, detail: false });
-    expect(() => assertIndividualRanking(admin)).toThrow("Ranking individual não autorizado");
-    expect(() => assertIndividualDetail(admin)).toThrow("Detalhe individual não autorizado");
+  it("sem lista configurada, acesso individual é liberado por padrão", () => {
+    expect(individualAccessForAuth(admin)).toEqual({ ranking: true, detail: true });
+    expect(() => assertIndividualRanking(admin)).not.toThrow();
+    expect(() => assertIndividualDetail(admin)).not.toThrow();
   });
 
-  it("libera por usuário explícito, sem diferenciar caixa", () => {
-    process.env.SINISTRALIDADE_360_INDIVIDUAL_RANKING_ENABLED = "true";
+  it("lista configurada restringe aos usuários citados, sem diferenciar caixa", () => {
     process.env.SINISTRALIDADE_INDIVIDUAL_RANKING_USERS = "analista, outro";
+    process.env.SINISTRALIDADE_INDIVIDUAL_DETAIL_USERS = "somente-outro";
     expect(individualAccessForAuth(admin).ranking).toBe(true);
     expect(individualAccessForAuth(admin).detail).toBe(false);
   });
 
   it("flag desligada bloqueia mesmo com usuário na lista", () => {
+    process.env.SINISTRALIDADE_360_INDIVIDUAL_DETAIL_ENABLED = "false";
     process.env.SINISTRALIDADE_INDIVIDUAL_DETAIL_USERS = "analista";
     expect(individualAccessForAuth(admin).detail).toBe(false);
   });
 
   it("MDS nunca recebe acesso individual, mesmo com curinga", () => {
-    process.env.SINISTRALIDADE_360_INDIVIDUAL_RANKING_ENABLED = "true";
-    process.env.SINISTRALIDADE_360_INDIVIDUAL_DETAIL_ENABLED = "true";
     process.env.SINISTRALIDADE_INDIVIDUAL_RANKING_USERS = "*";
     process.env.SINISTRALIDADE_INDIVIDUAL_DETAIL_USERS = "*";
     expect(individualAccessForAuth(mds)).toEqual({ ranking: false, detail: false });
@@ -72,6 +68,7 @@ describe("permissões individuais (GOV-06)", () => {
   });
 
   it("erros de permissão carregam statusCode 403", () => {
+    process.env.SINISTRALIDADE_360_INDIVIDUAL_DETAIL_ENABLED = "false";
     try {
       assertIndividualDetail(admin);
       expect.unreachable();
