@@ -14,7 +14,9 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "databricks:sinistralidade:plan": "node scripts/deploy-sinistralidade-v2.mjs",
-    "databricks:sinistralidade:apply": "node scripts/deploy-sinistralidade-v2.mjs --apply"
+    "databricks:sinistralidade:apply": "node scripts/deploy-sinistralidade-v2.mjs --apply",
+    "databricks:sinistralidade:close-month": "node scripts/close-sinistralidade-month.mjs",
+    "databricks:sinistralidade:onboard": "node scripts/onboard-sinistralidade-company.mjs"
   },
   "engines": {
     "node": ">=20.9.0"

@@ -17,6 +17,8 @@ const allFiles = [
   "004_analytics_marts.sql",
   "006_quality_baseline.sql",
   "007_manifest_baseline.sql",
+  "008_longitudinal_marts.sql",
+  "010_longitudinal_baseline.sql",
 ];
 const only = process.argv.find((argument) => argument.startsWith("--only="))?.split("=")[1];
 const files = only ? allFiles.filter((file) => file === only) : allFiles;
@@ -40,6 +42,16 @@ const targetObjects = [
   "mart_fatura_coordenacao_v2",
   "mart_familia_antes_depois_v2",
   "mart_comparativo_semestral_v2",
+  "mart_evento_empresa_mes_v2",
+  "mart_pessoa_mes_v2",
+  "mart_procedimento_mes_v2",
+  "mart_internacao_mes_v2",
+  "mart_internacao_grupo_mes_v2",
+  "mart_prestador_mes_v2",
+  "mart_concentracao_mes_v2",
+  "mart_ps_item_mes_v2",
+  "mart_familia_mes_relativo_v2",
+  "mart_coordenacao_empresa_mes_v2",
 ];
 
 function retarget(sql) {
