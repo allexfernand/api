@@ -10,7 +10,7 @@ import { getCell, toInt, toNullableNum, toNum } from "../serializers";
 import { TABLES, type QueryRunner } from "../query-runner";
 
 export const CONCENTRATION_UNITS = {
-  participacao: "%",
+  participacao: "fração (0–1)",
   pessoas: "pessoas",
   custo: "R$",
 };
@@ -44,9 +44,9 @@ export async function concentrationScope(q: QueryRunner, companyKey: string, per
 export const BENCHMARK_UNITS = {
   custo: "R$",
   custo_por_utilizante: "R$/pessoa",
-  custo_por_vida: "R$/vida",
+  custo_por_vida: "R$/vida-mês",
   servicos_por_utilizante: "serviços/pessoa",
-  participacao: "%",
+  participacao: "fração (0–1)",
 };
 
 export async function companyBenchmarkScope(q: QueryRunner, auth: AuthIdentity, period: ResolvedPeriod) {

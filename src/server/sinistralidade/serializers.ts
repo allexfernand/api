@@ -57,6 +57,24 @@ export function movingAverage(values: (number | null)[], window = 3): (number | 
   });
 }
 
+/**
+ * Meses da janela em que a empresa tem cobertura no mart mensal. Séries densas
+ * por entidade só podem preencher zero nesses meses; mês sem cobertura da
+ * empresa permanece NULL (contrato: ausência de cobertura nunca vira zero).
+ */
+export async function fetchCoveredMonths(
+  q: QueryRunner,
+  companyKey: string,
+  months: string[],
+): Promise<Set<string>> {
+  if (!months.length) return new Set();
+  const rows = await q(
+    `SELECT DISTINCT month_key FROM ${TABLES.martMonth}
+    WHERE company_key = '${companyKey}' AND month_key IN (${months.map((month) => `'${month}'`).join(",")})`,
+  );
+  return new Set(rows.map((row) => String(getCell(row[0]))));
+}
+
 export type Coverage = LongitudinalEnvelope["coverage"];
 
 export async function fetchCoverage(
@@ -65,6 +83,11 @@ export async function fetchCoverage(
   months: string[],
 ): Promise<Coverage> {
   if (!months.length) return null;
+  const monthsSql = months.map((month) => `'${month}'`).join(",");
+  const eligibilityRowsPromise = q(
+    `SELECT count(*), count(vidas_elegiveis) FROM ${TABLES.martMonth}
+    WHERE company_key = '${companyKey}' AND month_key IN (${monthsSql})`,
+  );
   const rows = await q(
     `SELECT
       round(avg(CASE WHEN person_key IS NOT NULL THEN 1.0 ELSE 0.0 END), 4),
@@ -75,10 +98,21 @@ export async function fetchCoverage(
       round(avg(CASE WHEN nullif(trim(codigo_cid_normalizado), '') IS NOT NULL THEN 1.0 ELSE 0.0 END), 4)
     FROM ${TABLES.gold}
     WHERE NOT flag_data_suspeita AND company_key = '${companyKey}'
-      AND month_key IN (${months.map((month) => `'${month}'`).join(",")})`,
+      AND month_key IN (${monthsSql})`,
   );
   const row = rows[0];
   if (!row) return null;
+  // Elegibilidade real: todos os meses da janela com denominador → available;
+  // apenas alguns → partial; nenhum → unavailable.
+  const eligibilityRow = (await eligibilityRowsPromise)[0];
+  const monthsWithData = eligibilityRow ? toInt(eligibilityRow[0]) : 0;
+  const monthsWithDenominator = eligibilityRow ? toInt(eligibilityRow[1]) : 0;
+  const eligibility =
+    monthsWithData > 0 && monthsWithDenominator === months.length
+      ? "available"
+      : monthsWithDenominator > 0
+        ? "partial"
+        : "unavailable";
   return {
     person: toNullableNum(row[0]),
     episode: toNullableNum(row[1]),
@@ -86,7 +120,7 @@ export async function fetchCoverage(
     procedure: toNullableNum(row[3]),
     provider: toNullableNum(row[4]),
     cid: toNullableNum(row[5]),
-    eligibility: "unavailable",
+    eligibility,
   };
 }
 

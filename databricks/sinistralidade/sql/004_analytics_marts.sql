@@ -95,6 +95,10 @@ SELECT company_key, month_key, 'procedure', entity_key, entity_label,
 FROM procedure_rank
 WHERE least(rank_custo, rank_quantidade) <= 10;
 
+-- NOTA de semântica: apesar do nome, esta view entrega o RANKING COMPLETO do
+-- bimestre (sem filtro <= 10). O corte Top 10 é responsabilidade do
+-- consumidor (ex.: API legacy aplica least(rank_*) <= 10). Não adicionar o
+-- filtro aqui sem coordenar com os consumidores.
 CREATE OR REPLACE VIEW hive_metastore.sanus_prod.mart_top10_bimestre_v2 AS
 WITH person_base AS (
   SELECT
@@ -133,20 +137,38 @@ SELECT *,
   '1.0.0' AS contract_version
 FROM unified;
 
+-- Saúde mental no grão de ADMISSÃO (mesma técnica do 008): classificar por
+-- linha dividia a mesma internação entre saude_mental=true/false (dupla
+-- contagem) e o episode_key da Gold inclui a data (grão atendimento-dia).
 CREATE OR REPLACE VIEW hive_metastore.sanus_prod.mart_saude_mental_internacao_v2 AS
+WITH admission_base AS (
+  SELECT
+    company_key,
+    sha2(concat_ws('||', company_key, person_key,
+      coalesce(nullif(trim(numero_conta_medica), ''), 'SEM_CONTA'),
+      coalesce(nullif(trim(authorization_id), ''), 'SEM_SENHA'),
+      coalesce(nullif(trim(prestador), ''), 'SEM_PRESTADOR')), 256) AS admission_key,
+    min(month_key) AS month_key,
+    max(coalesce(flag_saude_mental, false)) AS saude_mental,
+    max(person_key) AS person_key,
+    max(duracao_internacao_dias) AS duracao_internacao_dias,
+    sum(custo_assistencial_bruto) AS custo_admissao
+  FROM hive_metastore.sanus_prod.gold_sinistro_evento_v2
+  WHERE NOT flag_data_suspeita AND flag_internacao
+  GROUP BY company_key, 2
+)
 SELECT
   company_key,
   month_key,
-  coalesce(flag_saude_mental, false) AS saude_mental,
-  count(DISTINCT episode_key) AS episodios_internacao,
+  saude_mental,
+  count(DISTINCT admission_key) AS episodios_internacao,
   count(DISTINCT person_key) AS utilizantes,
-  round(sum(custo_assistencial_bruto), 2) AS custo_total,
-  round(sum(custo_assistencial_bruto) / count(DISTINCT episode_key), 2) AS custo_medio_por_episodio,
+  round(sum(custo_admissao), 2) AS custo_total,
+  round(sum(custo_admissao) / nullif(count(DISTINCT admission_key), 0), 2) AS custo_medio_por_episodio,
   percentile(duracao_internacao_dias, 0.5) AS duracao_mediana_dias,
   percentile(duracao_internacao_dias, 0.9) AS duracao_p90_dias,
   '1.0.0' AS contract_version
-FROM hive_metastore.sanus_prod.gold_sinistro_evento_v2
-WHERE NOT flag_data_suspeita AND flag_internacao
+FROM admission_base
 GROUP BY 1, 2, 3;
 
 CREATE OR REPLACE VIEW hive_metastore.sanus_prod.mart_ps_episodio_item_v2 AS
@@ -290,7 +312,11 @@ WITH month_base AS (
   WHERE month(to_date(concat(m.month_key, '-01'))) BETWEEN 1 AND 6
 )
 SELECT company_key, year(to_date(concat(month_key, '-01'))) AS comparison_year,
-  sum(linhas_cobranca) AS sinistros, sum(quantidade_servicos) AS itens,
+  -- ATENÇÃO de unidade: "sinistros" aqui = LINHAS DE COBRANÇA (compat com o
+  -- consumidor 1.0.0), não sinistros/episódios distintos. Use a coluna
+  -- explícita linhas_cobranca em consumidores novos.
+  sum(linhas_cobranca) AS sinistros, sum(linhas_cobranca) AS linhas_cobranca,
+  sum(quantidade_servicos) AS itens,
   round(sum(custo_assistencial_bruto), 2) AS custo_assistencial_bruto,
   count(DISTINCT month_key) AS observed_months,
   sum(CASE WHEN month_status = 'closed' THEN 1 ELSE 0 END) AS closed_months,

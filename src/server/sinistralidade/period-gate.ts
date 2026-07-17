@@ -7,6 +7,8 @@
 //     permanecem na resposta com status e sem métricas.
 
 import { getCell } from "../databricks/client";
+import { companyScopeSql } from "../auth/company-scope";
+import type { DashboardRole } from "../../contracts/common";
 import type { MonthStatusEntry, PeriodStatus, ScopeState, WindowMonths } from "../../contracts/sinistralidade-v2";
 import { TABLES, type QueryRunner } from "./query-runner";
 
@@ -98,4 +100,56 @@ export async function resolvePeriod(
 
 export function monthsInSql(months: string[]) {
   return months.map((month) => `'${month}'`).join(",");
+}
+
+/**
+ * Gate agregado para escopos multiempresa (company-benchmark): o status de um
+ * mês é a visão conservadora do escopo do usuário — `closed` somente quando
+ * toda empresa com registro naquele mês está fechada; `partial` quando alguma
+ * empresa está parcial; caso contrário `unknown`.
+ */
+export function aggregateMonthStatuses(statuses: PeriodStatus[]): PeriodStatus {
+  if (!statuses.length) return "unknown";
+  if (statuses.some((status) => status === "partial")) return "partial";
+  if (statuses.every((status) => status === "closed")) return "closed";
+  return "unknown";
+}
+
+export async function resolvePeriodAcrossCompanies(
+  q: QueryRunner,
+  auth: { user: string; role: DashboardRole },
+  endMonth: string,
+  windowMonths: WindowMonths,
+  includePartial: boolean,
+): Promise<ResolvedPeriod> {
+  const spine = monthSpine(endMonth, windowMonths);
+  const rows = await q(
+    `SELECT month_key, status FROM ${TABLES.monthStatus}
+     WHERE month_key IN (${monthsInSql(spine)})${companyScopeSql(auth)}
+     QUALIFY row_number() OVER (PARTITION BY company_key, month_key ORDER BY updated_at DESC) = 1`,
+  );
+  const statusesByMonth = new Map<string, PeriodStatus[]>();
+  for (const row of rows) {
+    const month = String(getCell(row[0]) || "");
+    const raw = String(getCell(row[1]) || "unknown").toLowerCase();
+    const status: PeriodStatus = raw === "closed" ? "closed" : raw === "partial" ? "partial" : "unknown";
+    statusesByMonth.set(month, [...(statusesByMonth.get(month) ?? []), status]);
+  }
+  const months: MonthStatusEntry[] = spine.map((month) => ({
+    month,
+    status: aggregateMonthStatuses(statusesByMonth.get(month) ?? []),
+  }));
+
+  const { state, usableMonths, warnings } = classifyPeriod(months, includePartial);
+  return {
+    state,
+    requested: { endMonth, windowMonths, includePartial },
+    effective: {
+      startMonth: usableMonths[0] ?? null,
+      endMonth: usableMonths.at(-1) ?? null,
+      months,
+    },
+    usableMonths,
+    warnings,
+  };
 }

@@ -14,7 +14,7 @@ export const TIMELINE_UNITS = {
   internacoes: "episódios",
   familias: "famílias",
   custo_por_utilizante: "R$/pessoa",
-  custo_por_vida_elegivel: "R$/vida",
+  custo_por_vida_elegivel: "R$/vida-mês",
   variacao: "%",
 };
 

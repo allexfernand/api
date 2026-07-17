@@ -99,8 +99,8 @@ export function ProviderAnalysis({ data, periodLabel }: { data: ProviderTrendsDa
                       <tr key={`${entry.entity_key}-${point.month}`}>
                         <td>{entry.provider}</td>
                         <td className={styles.txt}>{point.month}</td>
-                        <td className={styles.num}>{number.format(point.service_quantity)}</td>
-                        <td className={styles.num}>{moneyFull.format(point.gross_cost)}</td>
+                        <td className={styles.num}>{point.service_quantity === null ? "—" : number.format(point.service_quantity)}</td>
+                        <td className={styles.num}>{point.gross_cost === null ? "—" : moneyFull.format(point.gross_cost)}</td>
                       </tr>
                     )),
                   )}

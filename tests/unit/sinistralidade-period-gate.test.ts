@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyPeriod, monthSpine } from "../../src/server/sinistralidade/period-gate";
+import { aggregateMonthStatuses, classifyPeriod, monthSpine } from "../../src/server/sinistralidade/period-gate";
 import type { MonthStatusEntry } from "../../src/contracts/sinistralidade-v2";
 
 function months(entries: [string, "closed" | "partial" | "unknown"][]): MonthStatusEntry[] {
@@ -38,5 +38,21 @@ describe("gate de período longitudinal", () => {
     expect(result.state).toBe("valid");
     expect(result.usableMonths).toEqual(["2026-04", "2026-05"]);
     expect(result.warnings).toEqual([]);
+  });
+});
+
+describe("gate agregado multiempresa (company-benchmark)", () => {
+  it("mês fechado somente quando toda empresa com registro está fechada", () => {
+    expect(aggregateMonthStatuses(["closed", "closed"])).toBe("closed");
+    expect(aggregateMonthStatuses(["closed", "unknown"])).toBe("unknown");
+  });
+
+  it("qualquer empresa parcial torna o mês parcial", () => {
+    expect(aggregateMonthStatuses(["closed", "partial"])).toBe("partial");
+    expect(aggregateMonthStatuses(["partial"])).toBe("partial");
+  });
+
+  it("mês sem registro de nenhuma empresa é unknown", () => {
+    expect(aggregateMonthStatuses([])).toBe("unknown");
   });
 });

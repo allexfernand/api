@@ -202,3 +202,39 @@ tiverem seis meses fechados. Não alterar esse comportamento por inferência de 
 
 O plano completo, com o checklist de execução atualizado, está em
 `docs/sinistralidade/PLANO_EVOLUCAO_ANALITICA_360.md`.
+
+## Semântica de métricas (auditoria 2026-07-17)
+
+Registro das definições fixadas após a auditoria da camada de dados:
+
+- **Internações = ADMISSÕES.** O `episode_key` da Gold inclui `Data_Atendto`
+  (grão atendimento-dia); uma internação faturada em várias datas gerava vários
+  "episódios". Os marts de internação (004/008) agora contam `admission_key`
+  (hash de empresa + pessoa + conta + senha + prestador, sem a data), com o mês
+  atribuído ao primeiro mês observado. A coluna `atendimentos_dia` preserva a
+  contagem antiga para reconciliação (check `admission_vs_day_ratio`, 009).
+- **Flags de exibição**: padrão ligado; defina a env como `false` para desligar.
+  Listas `SINISTRALIDADE_INDIVIDUAL_*_USERS` vazias liberam por padrão (MDS
+  continua sem acesso individual).
+- **`vidas_elegiveis` = `sum(member_month_weight)`** (vida-mês). Todo indicador
+  "por vida" é na prática **por vida-mês** (padrão PMPM): `custo_por_vida_elegivel`
+  divide o custo da janela pela soma dos denominadores mensais.
+- **"Custo por utilizante"** tem duas definições distintas e rotuladas:
+  KPI executivo = pessoas DISTINTAS na janela; benchmark/procedimentos =
+  soma de utilizantes-mês (`monthly_utilizers_sum`, pessoa conta por mês).
+- **Participações/shares** nos payloads longitudinais são **frações (0–1)**;
+  variações MoM/YoY são **percentuais (0–100)**. O mapa `units` de cada scope
+  reflete isso ("fração (0–1)" vs "%").
+- **Estornos** (`flag_estorno`, custo negativo) permanecem nas somas (custo
+  líquido real), mas pessoas com custo líquido ≤ 0 no mês ficam fora do ranking
+  de concentração para manter o acumulado monotônico; share de estornos é
+  monitorado pelo check `refund_share` (009).
+- **`mart_top10_bimestre_v2`** entrega o ranking completo; o corte Top 10 é do
+  consumidor. **`mart_comparativo_semestral_v2.sinistros`** = linhas de
+  cobrança (coluna `linhas_cobranca` explícita adicionada).
+- **Benchmark multiempresa**: o gate de período usa o status agregado das
+  empresas do escopo (fechado somente se todas fecharam o mês), em vez de uma
+  linha inexistente `company_key='*'`.
+- **Séries densas por entidade** (ranking, procedimentos, prestadores, detalhe
+  individual): mês coberto sem consumo = 0; mês sem cobertura da empresa =
+  `null` — nunca zero, inclusive com `include_partial=true`.

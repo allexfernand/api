@@ -11,7 +11,7 @@ export const EVENT_MIX_UNITS = {
   servicos: "serviços",
   utilizantes: "pessoas",
   internacoes: "episódios",
-  participacao: "%",
+  participacao: "fração (0–1)",
 };
 
 export async function eventMixScope(q: QueryRunner, companyKey: string, period: ResolvedPeriod) {
@@ -36,12 +36,11 @@ export async function eventMixScope(q: QueryRunner, companyKey: string, period: 
   }));
 
   // Totais do período por evento, com desempate determinístico por nome.
-  const totals = new Map<string, { gross_cost: number; service_quantity: number; utilizers_max: number }>();
+  const totals = new Map<string, { gross_cost: number; service_quantity: number }>();
   for (const entry of months) {
-    const current = totals.get(entry.event_type) ?? { gross_cost: 0, service_quantity: 0, utilizers_max: 0 };
+    const current = totals.get(entry.event_type) ?? { gross_cost: 0, service_quantity: 0 };
     current.gross_cost += entry.gross_cost;
     current.service_quantity += entry.service_quantity;
-    current.utilizers_max = Math.max(current.utilizers_max, entry.utilizers);
     totals.set(entry.event_type, current);
   }
   const windowCost = [...totals.values()].reduce((total, entry) => total + entry.gross_cost, 0);

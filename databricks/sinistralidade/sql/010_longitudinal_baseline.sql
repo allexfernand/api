@@ -11,10 +11,24 @@ USING (
   WITH gold AS (
     SELECT company_key, month_key,
       round(sum(custo_assistencial_bruto), 2) AS gold_cost,
-      count(DISTINCT person_key) AS gold_people,
-      count(DISTINCT CASE WHEN flag_internacao THEN episode_key END) AS gold_episodes
+      count(DISTINCT person_key) AS gold_people
     FROM hive_metastore.sanus_prod.gold_sinistro_evento_v2
     WHERE NOT flag_data_suspeita
+    GROUP BY 1, 2
+  ), gold_admissions AS (
+    -- Admissão (hash sem a data), atribuída ao primeiro mês observado —
+    -- mesma regra do mart_internacao_mes_v2.
+    SELECT company_key, min(month_key) AS month_key,
+      sha2(concat_ws('||', company_key, person_key,
+        coalesce(nullif(trim(numero_conta_medica), ''), 'SEM_CONTA'),
+        coalesce(nullif(trim(authorization_id), ''), 'SEM_SENHA'),
+        coalesce(nullif(trim(prestador), ''), 'SEM_PRESTADOR')), 256) AS admission_key
+    FROM hive_metastore.sanus_prod.gold_sinistro_evento_v2
+    WHERE NOT flag_data_suspeita AND flag_internacao
+    GROUP BY company_key, 3
+  ), gold_episodes AS (
+    SELECT company_key, month_key, count(DISTINCT admission_key) AS gold_episodes
+    FROM gold_admissions
     GROUP BY 1, 2
   ), metrics AS (
     SELECT
@@ -47,13 +61,27 @@ USING (
         ) p ON g.company_key = p.company_key AND g.month_key = p.month_key
         WHERE coalesce(p.mart_people, 0) <> g.gold_people
       ) AS people_divergences,
-      (SELECT count(*) FROM gold g
+      (SELECT count(*) FROM gold_episodes g
         LEFT JOIN (
           SELECT company_key, month_key, sum(episodios_internacao) AS mart_episodes
           FROM hive_metastore.sanus_prod.mart_internacao_mes_v2 GROUP BY 1, 2
         ) i ON g.company_key = i.company_key AND g.month_key = i.month_key
         WHERE coalesce(i.mart_episodes, 0) <> g.gold_episodes
       ) AS episode_divergences,
+      (SELECT count(*) FROM gold g
+        LEFT JOIN (
+          SELECT company_key, month_key, round(sum(custo_assistencial_bruto), 2) AS mart_cost
+          FROM hive_metastore.sanus_prod.mart_procedimento_mes_v2 GROUP BY 1, 2
+        ) pr ON g.company_key = pr.company_key AND g.month_key = pr.month_key
+        WHERE abs(coalesce(pr.mart_cost, 0) - g.gold_cost) > 0.05
+      ) AS procedimento_cost_divergences,
+      (SELECT count(*) FROM gold g
+        LEFT JOIN (
+          SELECT company_key, month_key, round(sum(custo_assistencial_bruto), 2) AS mart_cost
+          FROM hive_metastore.sanus_prod.mart_prestador_mes_v2 GROUP BY 1, 2
+        ) pv ON g.company_key = pv.company_key AND g.month_key = pv.month_key
+        WHERE abs(coalesce(pv.mart_cost, 0) - g.gold_cost) > 0.05
+      ) AS prestador_cost_divergences,
       (SELECT count(*) FROM (
         SELECT company_key, month_key
         FROM hive_metastore.sanus_prod.mart_evento_empresa_mes_v2
@@ -63,6 +91,9 @@ USING (
       (SELECT count(*) FROM hive_metastore.sanus_prod.mart_concentracao_mes_v2
         WHERE participacao_top1 > participacao_top5 + 1e-9
            OR participacao_top5 > participacao_top10 + 1e-9
+           OR participacao_top10 > 1.0 + 1e-9
+           OR participacao_top10pct > 1.0 + 1e-9
+           OR participacao_top10pct + 1e-9 < participacao_top1
            OR pessoas_para_50pct > pessoas_para_80pct
       ) AS concentration_violations,
       (SELECT count(DISTINCT company_key) FROM hive_metastore.sanus_prod.mart_evento_empresa_mes_v2) AS companies_observed
@@ -72,7 +103,7 @@ USING (
     CAST(NULL AS STRING) AS company_key, CAST(NULL AS STRING) AS month_key,
     check_name, status, observed_value, expected_value, tolerance, details,
     current_timestamp() AS checked_at, '1.1.0' AS contract_version
-  FROM metrics LATERAL VIEW STACK(8,
+  FROM metrics LATERAL VIEW STACK(10,
     'longitudinal_grain_uniqueness',
       CASE WHEN evento_grain_violations + pessoa_grain_violations = 0 THEN 'passed' ELSE 'failed' END,
       cast(evento_grain_violations + pessoa_grain_violations AS DOUBLE), cast(0 AS DOUBLE), cast(0 AS DOUBLE),
@@ -92,7 +123,15 @@ USING (
     'longitudinal_episode_reconciliation',
       CASE WHEN episode_divergences = 0 THEN 'passed' ELSE 'failed' END,
       cast(episode_divergences AS DOUBLE), cast(0 AS DOUBLE), cast(0 AS DOUBLE),
-      'Episódios de internação por count(distinct episode_key) idênticos à Gold',
+      'Admissões de internação (hash sem data, mês inicial) idênticas à Gold',
+    'longitudinal_cost_reconciliation_procedimento',
+      CASE WHEN procedimento_cost_divergences = 0 THEN 'passed' ELSE 'failed' END,
+      cast(procedimento_cost_divergences AS DOUBLE), cast(0 AS DOUBLE), cast(0.05 AS DOUBLE),
+      'Custo por empresa/mês do mart de procedimento reconcilia com a Gold (tolerância R$ 0,05)',
+    'longitudinal_cost_reconciliation_prestador',
+      CASE WHEN prestador_cost_divergences = 0 THEN 'passed' ELSE 'failed' END,
+      cast(prestador_cost_divergences AS DOUBLE), cast(0 AS DOUBLE), cast(0.05 AS DOUBLE),
+      'Custo por empresa/mês do mart de prestador reconcilia com a Gold (tolerância R$ 0,05)',
     'longitudinal_event_share_totals',
       CASE WHEN share_violations = 0 THEN 'passed' ELSE 'failed' END,
       cast(share_violations AS DOUBLE), cast(0 AS DOUBLE), cast(0.001 AS DOUBLE),

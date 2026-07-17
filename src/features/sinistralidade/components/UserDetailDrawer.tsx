@@ -93,11 +93,11 @@ export function UserDetailDrawer({
                       {detail.monthly.map((entry) => (
                         <tr key={entry.month}>
                           <td>{monthLabel(entry.month)}</td>
-                          <td>{entry.primary_event || (entry.has_data ? "—" : "sem consumo")}</td>
+                          <td>{entry.primary_event || (entry.has_data ? "—" : entry.covered ? "sem consumo" : "sem cobertura")}</td>
                           <td className={styles.num}>{entry.rank_position === null ? "—" : `#${entry.rank_position}`}</td>
-                          <td className={styles.num}>{number.format(entry.service_quantity)}</td>
-                          <td className={styles.num}>{number.format(entry.hospitalization_episodes)}</td>
-                          <td className={styles.num}>{moneyFull.format(entry.gross_cost)}</td>
+                          <td className={styles.num}>{entry.service_quantity === null ? "—" : number.format(entry.service_quantity)}</td>
+                          <td className={styles.num}>{entry.hospitalization_episodes === null ? "—" : number.format(entry.hospitalization_episodes)}</td>
+                          <td className={styles.num}>{entry.gross_cost === null ? "—" : moneyFull.format(entry.gross_cost)}</td>
                         </tr>
                       ))}
                     </tbody>

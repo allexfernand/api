@@ -23,9 +23,9 @@ export function CompanyBenchmark({ data }: { data: BenchmarkData }) {
               <th scope="col" className={styles.num}>Meses</th>
               <th scope="col" className={styles.num}>Custo (R$)</th>
               <th scope="col" className={styles.num}>Participação</th>
-              <th scope="col" className={styles.num}>Custo por utilizante</th>
-              <th scope="col" className={styles.num}>Serviços por utilizante</th>
-              <th scope="col" className={styles.num}>Custo por vida elegível</th>
+              <th scope="col" className={styles.num}>Custo por utilizante-mês</th>
+              <th scope="col" className={styles.num}>Serviços por utilizante-mês</th>
+              <th scope="col" className={styles.num}>Custo por vida elegível (mês)</th>
             </tr>
           </thead>
           <tbody>
@@ -47,6 +47,10 @@ export function CompanyBenchmark({ data }: { data: BenchmarkData }) {
           </tbody>
         </table>
       </div>
+      <p className={styles.methodNote}>
+        “Por utilizante-mês” divide pela soma de utilizantes mensais (a mesma pessoa conta em cada mês em que usou);
+        difere do KPI executivo, que usa pessoas distintas na janela.
+      </p>
       {anyInvalidDenominator ? (
         <p className={styles.methodNote}>
           Empresas sem snapshot de elegibilidade contemporâneo em todos os meses aparecem com denominador inválido e não são ranqueadas por custo por vida.

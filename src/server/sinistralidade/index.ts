@@ -15,7 +15,7 @@ import { assertCompanyAccess, companyScopeSql } from "../auth/company-scope";
 import { auditIndividualAccess } from "./audit";
 import { sinistralidadeFeatureFlags } from "./feature-flags";
 import { legacyScopeData } from "./legacy";
-import { resolvePeriod, type ResolvedPeriod } from "./period-gate";
+import { resolvePeriod, resolvePeriodAcrossCompanies, type ResolvedPeriod } from "./period-gate";
 import {
   assertIndividualDetail,
   assertIndividualRanking,
@@ -117,7 +117,12 @@ async function handleLongitudinal(
   }
 
   const q = await createQueryRunner(scope);
-  const period = await resolvePeriod(q, companyKey ?? "*", input.end_month, windowMonths, includePartial);
+  // Benchmark é multiempresa: o gate usa o status agregado das empresas do
+  // escopo do usuário, não uma linha inexistente company_key='*'.
+  const period =
+    scope === "company-benchmark"
+      ? await resolvePeriodAcrossCompanies(q, auth, input.end_month, windowMonths, includePartial)
+      : await resolvePeriod(q, companyKey as string, input.end_month, windowMonths, includePartial);
   const qualityRunId = await fetchLatestQualityRunId(q);
 
   if (period.state === "blocked") {
@@ -172,6 +177,17 @@ async function handleLongitudinal(
       const detail = await userDetailScope(q, companyKey as string, period, input.entity_key.toLowerCase());
       if (!detail) {
         // Não distingue "pessoa de outra empresa" de "sem consumo": evita sondagem.
+        // A tentativa é auditada mesmo sem resultado — sondagem deixa rastro.
+        auditIndividualAccess({
+          user: auth.user,
+          role: auth.role,
+          companyKey: companyKey as string,
+          personKey: input.entity_key,
+          scope,
+          endMonth: input.end_month,
+          windowMonths,
+          outcome: "not_found",
+        });
         return res.status(404).json({ error: "Beneficiário sem consumo na janela para esta empresa." });
       }
       auditIndividualAccess({

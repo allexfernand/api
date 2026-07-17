@@ -112,7 +112,8 @@ export type TopUserRow = {
   recurrence: number | null;
   primary_event: string | null;
   cost_share: number | null;
-  monthly: { month: string; gross_cost: number; service_quantity: number; hospitalization_episodes: number }[];
+  // Mês coberto sem consumo = 0; mês sem cobertura da empresa = null.
+  monthly: { month: string; gross_cost: number | null; service_quantity: number | null; hospitalization_episodes: number | null }[];
 };
 
 export type TopUsersData = { rows: TopUserRow[]; window_total_cost: number };
@@ -125,10 +126,11 @@ export type UserDetailData = {
   monthly: {
     month: string;
     has_data: boolean;
-    billing_lines: number;
-    service_quantity: number;
-    gross_cost: number;
-    hospitalization_episodes: number;
+    covered: boolean;
+    billing_lines: number | null;
+    service_quantity: number | null;
+    gross_cost: number | null;
+    hospitalization_episodes: number | null;
     primary_event: string | null;
     rank_position: number | null;
   }[];
@@ -156,7 +158,7 @@ export type ProcedureWindowRow = {
 export type ProcedureTrendsData = {
   window: ProcedureWindowRow[];
   pareto: { entity_key: string; description: string; gross_cost: number; cost_share: number | null; cumulative_cost_share: number | null }[];
-  series: { entity_key: string; description: string; monthly: { month: string; service_quantity: number; gross_cost: number }[] }[];
+  series: { entity_key: string; description: string; monthly: { month: string; service_quantity: number | null; gross_cost: number | null }[] }[];
   growth_ranking: {
     entity_key: string;
     description: string;
@@ -207,7 +209,7 @@ export type ProviderTrendsData = {
     cumulative_cost_share: number | null;
     position: number;
   }[];
-  series: { entity_key: string; provider: string; monthly: { month: string; service_quantity: number; gross_cost: number }[] }[];
+  series: { entity_key: string; provider: string; monthly: { month: string; service_quantity: number | null; gross_cost: number | null }[] }[];
   network_split: { month: string; reimbursement: boolean; gross_cost: number; service_quantity: number }[];
 };
 

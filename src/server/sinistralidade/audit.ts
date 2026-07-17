@@ -15,6 +15,8 @@ export function auditIndividualAccess(entry: {
   scope: string;
   endMonth: string | null;
   windowMonths: number | null;
+  /** "success" (padrão) ou "not_found" — sondagens malsucedidas também deixam rastro. */
+  outcome?: "success" | "not_found";
 }) {
   logger.info("sinistralidade.individual_access", {
     user: entry.user,
@@ -24,6 +26,7 @@ export function auditIndividualAccess(entry: {
     scope: entry.scope,
     endMonth: entry.endMonth,
     windowMonths: entry.windowMonths,
+    outcome: entry.outcome ?? "success",
     accessedAt: new Date().toISOString(),
   });
 }

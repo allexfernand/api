@@ -4,7 +4,7 @@
 import type { ResolvedPeriod } from "../period-gate";
 import { monthsInSql } from "../period-gate";
 import { escape } from "../../databricks/client";
-import { getCell, toInt, toNullableNum, toNum } from "../serializers";
+import { fetchCoveredMonths, getCell, toInt, toNullableNum, toNum } from "../serializers";
 import { TABLES, type QueryRunner } from "../query-runner";
 
 export const PROVIDER_UNITS = {
@@ -13,7 +13,7 @@ export const PROVIDER_UNITS = {
   utilizantes: "pessoas",
   internacoes: "episódios",
   ticket: "R$/serviço",
-  participacao: "%",
+  participacao: "fração (0–1)",
 };
 
 export async function providerTrendsScope(
@@ -67,13 +67,15 @@ export async function providerTrendsScope(
   });
 
   const topKeys = window.slice(0, 5).map((entry) => entry.entity_key);
-  const [seriesRows, splitRows] = await Promise.all([
+  const [coveredMonths, [seriesRows, splitRows]] = await Promise.all([
+    fetchCoveredMonths(q, companyKey, period.usableMonths),
+    Promise.all([
     topKeys.length
       ? q(
           `SELECT prestador_key, month_key, sum(quantidade_servicos), round(sum(custo_assistencial_bruto), 2)
           FROM ${TABLES.martPrestadorMes}
           WHERE company_key = '${companyKey}' AND month_key IN (${months})
-            AND prestador_key IN (${topKeys.map((key) => `'${key}'`).join(",")})
+            AND prestador_key IN (${topKeys.map((key) => `'${escape(key)}'`).join(",")})
           GROUP BY prestador_key, month_key ORDER BY month_key`,
         )
       : Promise.resolve([]),
@@ -83,6 +85,7 @@ export async function providerTrendsScope(
       WHERE company_key = '${companyKey}' AND month_key IN (${months})
       GROUP BY month_key, reembolso ORDER BY month_key`,
     ),
+    ]),
   ]);
 
   const seriesByKey = new Map<string, { month: string; service_quantity: number; gross_cost: number }[]>();
@@ -98,9 +101,13 @@ export async function providerTrendsScope(
     series: topKeys.map((key) => ({
       entity_key: key,
       provider: window.find((entry) => entry.entity_key === key)?.provider ?? key,
-      monthly: period.usableMonths.map((month) => {
+      // Mês coberto sem consumo do prestador = zero; sem cobertura = null.
+      monthly: period.usableMonths.map((month): { month: string; service_quantity: number | null; gross_cost: number | null } => {
         const found = (seriesByKey.get(key) ?? []).find((entry) => entry.month === month);
-        return found ?? { month, service_quantity: 0, gross_cost: 0 };
+        if (found) return found;
+        return coveredMonths.has(month)
+          ? { month, service_quantity: 0, gross_cost: 0 }
+          : { month, service_quantity: null, gross_cost: null };
       }),
     })),
     network_split: splitRows.map((row) => ({

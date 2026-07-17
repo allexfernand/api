@@ -5,7 +5,7 @@ const apply = process.argv.includes("--apply");
 const host = String(process.env.DATABRICKS_HOST || "").replace(/\/$/, "");
 const token = process.env.DATABRICKS_TOKEN;
 const warehouseId = process.env.DATABRICKS_WAREHOUSE_ID;
-const targetCatalog = process.env.SINISTRALIDADE_TARGET_CATALOG || "sanus_databricks";
+const targetCatalog = process.env.SINISTRALIDADE_TARGET_CATALOG || "hive_metastore";
 const targetSchema = process.env.SINISTRALIDADE_TARGET_SCHEMA || "sinistralidade_hml";
 const target = `${targetCatalog}.${targetSchema}`;
 const createSchema = process.env.SINISTRALIDADE_CREATE_SCHEMA !== "false";

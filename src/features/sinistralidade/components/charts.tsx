@@ -262,20 +262,25 @@ export function StackedBarChart({
   );
 }
 
-export function Sparkline({ values, color = SEMANTIC_COLORS.cost, ariaLabel }: { values: number[]; color?: string; ariaLabel: string }) {
-  if (!values.length) return null;
+export function Sparkline({ values, color = SEMANTIC_COLORS.cost, ariaLabel }: { values: (number | null)[]; color?: string; ariaLabel: string }) {
+  const present = values.filter((value): value is number => value !== null);
+  if (!present.length) return null;
   const width = 120;
   const height = 28;
-  const max = Math.max(...values, 1);
-  const min = Math.min(...values, 0);
+  const max = Math.max(...present, 1);
+  const min = Math.min(...present, 0);
   const xAt = (index: number) => scale(index, 0, Math.max(values.length - 1, 1), 2, width - 2);
   const yAt = (value: number) => scale(value, min, max, height - 3, 3);
-  const path = values.map((value, index) => `${index === 0 ? "M" : "L"}${xAt(index)},${yAt(value)}`).join(" ");
-  const lastIndex = values.length - 1;
+  // Mês sem cobertura (null) interrompe o traço — nunca vira zero visual.
+  const path = values
+    .map((value, index) => (value === null ? null : `${index === 0 || values[index - 1] === null ? "M" : "L"}${xAt(index)},${yAt(value)}`))
+    .filter(Boolean)
+    .join(" ");
+  const lastIndex = values.length - 1 - [...values].reverse().findIndex((value) => value !== null);
   return (
     <svg viewBox={`0 0 ${width} ${height}`} className={styles.sparkline} role="img" aria-label={ariaLabel}>
       <path d={path} fill="none" stroke={color} strokeWidth={1.6} strokeLinejoin="round" strokeLinecap="round" />
-      <circle cx={xAt(lastIndex)} cy={yAt(values[lastIndex])} r={2.25} fill={color} />
+      <circle cx={xAt(lastIndex)} cy={yAt(values[lastIndex] as number)} r={2.25} fill={color} />
     </svg>
   );
 }

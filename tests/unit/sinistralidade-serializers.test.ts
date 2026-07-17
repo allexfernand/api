@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { longitudinalEnvelopeSchema } from "../../src/contracts/sinistralidade-v2";
+import { escape } from "../../src/server/databricks/client";
 import type { ResolvedPeriod } from "../../src/server/sinistralidade/period-gate";
 import {
   buildEnvelope,
@@ -36,6 +37,12 @@ describe("serialização longitudinal", () => {
     expect(suppressSmallGroup(0, true)).toBe(0);
     expect(suppressSmallGroup(5, true)).toBe(5);
     expect(suppressSmallGroup(null, true)).toBeNull();
+  });
+
+  it("escape neutraliza aspas e barra invertida em literais SQL", () => {
+    expect(escape("O'Brien")).toBe("O''Brien");
+    expect(escape("termina em \\")).toBe("termina em \\\\");
+    expect(escape("mix \\' perigoso")).toBe("mix \\\\'' perigoso");
   });
 
   it("envelope construído valida contra o schema do contrato", () => {

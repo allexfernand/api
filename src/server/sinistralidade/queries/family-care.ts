@@ -85,27 +85,39 @@ export async function careTimelineScope(
     ),
   ]);
   return {
-    demographics: demographicRows.map((row) => ({
-      dimension: String(getCell(row[0])),
-      value: String(getCell(row[1])),
-      used_plan: toBool(row[2]),
-      had_care_coordination: toBool(row[3]),
-      people: suppressSmallGroup(toInt(row[4]), options.suppressSmallGroups),
-      gross_cost: toNum(row[5]),
-    })),
-    monthly: rows.map((row) => ({
-      month: String(getCell(row[0])),
-      used_plan: toBool(row[1]),
-      had_care_coordination: toBool(row[2]),
-      people: suppressSmallGroup(toInt(row[3]), options.suppressSmallGroups),
-      families: suppressSmallGroup(toInt(row[4]), options.suppressSmallGroups),
-      billing_lines: toInt(row[5]),
-      gross_cost: toNum(row[6]),
-      coordination_events: toInt(row[7]),
-      holders: suppressSmallGroup(toInt(row[8]), options.suppressSmallGroups),
-      dependents: suppressSmallGroup(toInt(row[9]), options.suppressSmallGroups),
-      people_without_family_bridge: toInt(row[10]),
-    })),
+    demographics: demographicRows.map((row) => {
+      const rawPeople = toInt(row[4]);
+      const people = suppressSmallGroup(rawPeople, options.suppressSmallGroups);
+      // Supressão em cascata (GOV-08): célula com contagem suprimida não pode
+      // expor o custo do grupo pequeno — inferência de identidade.
+      const suppressed = people === null && rawPeople !== 0;
+      return {
+        dimension: String(getCell(row[0])),
+        value: String(getCell(row[1])),
+        used_plan: toBool(row[2]),
+        had_care_coordination: toBool(row[3]),
+        people,
+        gross_cost: suppressed ? null : toNum(row[5]),
+      };
+    }),
+    monthly: rows.map((row) => {
+      const rawPeople = toInt(row[3]);
+      const people = suppressSmallGroup(rawPeople, options.suppressSmallGroups);
+      const suppressed = people === null && rawPeople !== 0;
+      return {
+        month: String(getCell(row[0])),
+        used_plan: toBool(row[1]),
+        had_care_coordination: toBool(row[2]),
+        people,
+        families: suppressSmallGroup(toInt(row[4]), options.suppressSmallGroups),
+        billing_lines: suppressed ? null : toInt(row[5]),
+        gross_cost: suppressed ? null : toNum(row[6]),
+        coordination_events: suppressed ? null : toInt(row[7]),
+        holders: suppressSmallGroup(toInt(row[8]), options.suppressSmallGroups),
+        dependents: suppressSmallGroup(toInt(row[9]), options.suppressSmallGroups),
+        people_without_family_bridge: suppressSmallGroup(toInt(row[10]), options.suppressSmallGroups),
+      };
+    }),
   };
 }
 

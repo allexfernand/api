@@ -127,7 +127,7 @@ export async function legacyScopeData(q: QueryRunner, input: SinistralidadeQuery
     }));
   }
   // year-over-year
-  const comparisonYear = input.year ?? 2026;
+  const comparisonYear = input.year ?? new Date().getUTCFullYear();
   const rows = await q(
     `SELECT comparison_year, sinistros, itens, custo_assistencial_bruto, observed_months, closed_months, publication_status FROM ${TABLES.martHalfYear} WHERE company_key = '${companyKey}' AND comparison_year IN (${comparisonYear - 1}, ${comparisonYear}) ORDER BY comparison_year`,
   );

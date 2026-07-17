@@ -5,7 +5,7 @@
 import type { ResolvedPeriod } from "../period-gate";
 import { monthsInSql } from "../period-gate";
 import { escape } from "../../databricks/client";
-import { getCell, growth, toInt, toNum } from "../serializers";
+import { fetchCoveredMonths, getCell, growth, toInt, toNum } from "../serializers";
 import { TABLES, type QueryRunner } from "../query-runner";
 
 export const PROCEDURE_UNITS = {
@@ -15,7 +15,7 @@ export const PROCEDURE_UNITS = {
   linhas: "linhas de cobrança",
   utilizantes: "pessoas",
   internacoes: "episódios",
-  participacao: "%",
+  participacao: "fração (0–1)",
 };
 
 export async function procedureTrendsScope(
@@ -71,6 +71,7 @@ export async function procedureTrendsScope(
   });
 
   const topKeys = window.slice(0, options.limit).map((entry) => entry.entity_key);
+  const coveredMonths = await fetchCoveredMonths(q, companyKey, period.usableMonths);
   const seriesRows = topKeys.length
     ? await q(
         `SELECT procedimento_key, month_key, sum(quantidade_servicos), round(sum(custo_assistencial_bruto), 2)
@@ -92,18 +93,24 @@ export async function procedureTrendsScope(
   const series = topKeys.map((key) => ({
     entity_key: key,
     description: window.find((entry) => entry.entity_key === key)?.description ?? key,
-    // Série densa dentro da janela: mês sem consumo do item = zero.
-    monthly: period.usableMonths.map((month) => {
+    // Série densa dentro da janela: mês coberto sem consumo do item = zero;
+    // mês sem cobertura da empresa = null (nunca zero).
+    monthly: period.usableMonths.map((month): { month: string; service_quantity: number | null; gross_cost: number | null } => {
       const found = (seriesByKey.get(key) ?? []).find((entry) => entry.month === month);
-      return found ?? { month, service_quantity: 0, gross_cost: 0 };
+      if (found) return found;
+      return coveredMonths.has(month)
+        ? { month, service_quantity: 0, gross_cost: 0 }
+        : { month, service_quantity: null, gross_cost: null };
     }),
   }));
 
-  // Crescimento: último mês utilizável × mês anterior utilizável, por item.
+  // Crescimento: dois últimos meses utilizáveis COM cobertura, por item.
+  const growthMonths = period.usableMonths.filter((month) => coveredMonths.has(month));
   const growthRanking = series
     .map((entry) => {
-      const last = entry.monthly.at(-1)?.gross_cost ?? null;
-      const previous = entry.monthly.length > 1 ? entry.monthly.at(-2)!.gross_cost : null;
+      const covered = entry.monthly.filter((point) => growthMonths.includes(point.month));
+      const last = covered.at(-1)?.gross_cost ?? null;
+      const previous = covered.length > 1 ? covered.at(-2)!.gross_cost : null;
       const result = growth(last, previous);
       return {
         entity_key: entry.entity_key,

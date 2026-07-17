@@ -24,12 +24,21 @@ FROM hive_metastore.sanus_prod.gold_sinistro_evento_v2
 GROUP BY 1, 2
 ORDER BY 1, 2;
 
+-- Integridade de ADMISSÃO (o episode_key deriva de pessoa+data+prestador e é
+-- 1:1 por construção — o check antigo por episode_key nunca disparava).
+-- A admissão (sem a data) deve ter duração única e não se arrastar por mais
+-- de 2 meses-calendário; muitos atendimentos-dia numa mesma admissão indicam
+-- faturamento fragmentado a investigar.
 SELECT
   company_key,
-  episode_key,
-  count(DISTINCT person_key) AS people,
-  count(DISTINCT data_atendimento) AS dates,
-  count(DISTINCT prestador) AS providers
+  sha2(concat_ws('||', company_key, person_key,
+    coalesce(nullif(trim(numero_conta_medica), ''), 'SEM_CONTA'),
+    coalesce(nullif(trim(authorization_id), ''), 'SEM_SENHA'),
+    coalesce(nullif(trim(prestador), ''), 'SEM_PRESTADOR')), 256) AS admission_key,
+  count(DISTINCT episode_key) AS atendimentos_dia,
+  count(DISTINCT duracao_internacao_dias) AS duracoes_distintas,
+  count(DISTINCT month_key) AS meses_tocados
 FROM hive_metastore.sanus_prod.gold_sinistro_evento_v2
+WHERE flag_internacao
 GROUP BY 1, 2
-HAVING people > 1 OR dates > 1 OR providers > 1;
+HAVING duracoes_distintas > 1 OR meses_tocados > 2 OR atendimentos_dia > 60;

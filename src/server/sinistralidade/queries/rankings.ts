@@ -7,14 +7,14 @@
 import type { RankingBy } from "../../../contracts/sinistralidade-v2";
 import type { ResolvedPeriod } from "../period-gate";
 import { monthSpine, monthsInSql } from "../period-gate";
-import { getCell, maskedBeneficiaryLabel, toInt, toNum } from "../serializers";
+import { fetchCoveredMonths, getCell, maskedBeneficiaryLabel, toInt, toNum } from "../serializers";
 import { TABLES, type QueryRunner } from "../query-runner";
 
 export const TOP_USERS_UNITS = {
   custo: "R$",
   servicos: "serviços",
   internacoes: "episódios",
-  participacao: "%",
+  participacao: "fração (0–1)",
   recorrencia: "meses com uso",
 };
 
@@ -71,7 +71,8 @@ export async function topUsersWindowScope(
   const windowMonths = period.requested.windowMonths ?? period.usableMonths.length;
   const firstMonth = period.usableMonths[0];
   const previousSpine = monthSpine(firstMonth, windowMonths + 1).slice(0, windowMonths);
-  const [previousRows, sparkRows] = await Promise.all([
+  const [coveredMonths, previousRows, sparkRows] = await Promise.all([
+    fetchCoveredMonths(q, companyKey, period.usableMonths),
     q(
       `SELECT person_key, row_number() OVER (ORDER BY sum(${orderColumn}) DESC, person_key) AS posicao
       FROM ${TABLES.martPessoaMes}
@@ -107,11 +108,17 @@ export async function topUsersWindowScope(
     const previous = previousRank.get(personKey) ?? null;
     const grossCost = toNum(row[5]);
     const spark = sparkByPerson.get(personKey) ?? [];
-    // Série densa: mês da janela sem consumo recebe zero (entidade presente na janela).
-    const monthly = period.usableMonths.map((month) => {
-      const found = spark.find((entry) => entry.month === month);
-      return found ?? { month, gross_cost: 0, service_quantity: 0, hospitalization_episodes: 0 };
-    });
+    // Série densa: mês coberto sem consumo recebe zero (entidade presente na
+    // janela); mês sem cobertura da empresa permanece null (nunca zero).
+    const monthly = period.usableMonths.map(
+      (month): { month: string; gross_cost: number | null; service_quantity: number | null; hospitalization_episodes: number | null } => {
+        const found = spark.find((entry) => entry.month === month);
+        if (found) return found;
+        return coveredMonths.has(month)
+          ? { month, gross_cost: 0, service_quantity: 0, hospitalization_episodes: 0 }
+          : { month, gross_cost: null, service_quantity: null, hospitalization_episodes: null };
+      },
+    );
     return {
       entity_key: personKey,
       label: maskedBeneficiaryLabel(personKey),
@@ -184,7 +191,8 @@ export async function userDetailScope(
       GROUP BY 1 ORDER BY 3 DESC, 1 LIMIT 10`,
     ),
     q(
-      // Uma linha por episódio: agrupamento dominante por custo, mês inicial.
+      // Uma linha por ADMISSÃO (hash sem a data — o episode_key da Gold é
+      // grão atendimento-dia): agrupamento dominante por custo, mês inicial.
       `SELECT min(month_key),
         max_by(coalesce(nullif(trim(agrupamento_internacao), ''), 'Sem agrupamento'),
           struct(custo_assistencial_bruto, coalesce(nullif(trim(agrupamento_internacao), ''), 'Sem agrupamento'))),
@@ -192,7 +200,10 @@ export async function userDetailScope(
         max(CASE WHEN coalesce(flag_saude_mental, false) THEN 1 ELSE 0 END)
       FROM ${TABLES.gold}
       WHERE NOT flag_data_suspeita AND ${personFilter} AND flag_internacao AND month_key IN (${months})
-      GROUP BY episode_key
+      GROUP BY sha2(concat_ws('||', company_key, person_key,
+        coalesce(nullif(trim(numero_conta_medica), ''), 'SEM_CONTA'),
+        coalesce(nullif(trim(authorization_id), ''), 'SEM_SENHA'),
+        coalesce(nullif(trim(prestador), ''), 'SEM_PRESTADOR')), 256)
       ORDER BY 1`,
     ),
     q(
@@ -206,6 +217,7 @@ export async function userDetailScope(
   ]);
 
   if (!monthlyRows.length) return null;
+  const coveredMonths = await fetchCoveredMonths(q, companyKey, period.usableMonths);
   const rankByMonth = new Map(rankRows.map((row) => [String(getCell(row[0])), toInt(row[1])]));
   const monthlyByKey = new Map(monthlyRows.map((row) => [String(getCell(row[0])), row]));
 
@@ -216,13 +228,17 @@ export async function userDetailScope(
     relationship: String(getCell(monthlyRows.at(-1)?.[7] as never) || "") || null,
     monthly: period.usableMonths.map((month) => {
       const row = monthlyByKey.get(month);
+      // Mês coberto sem consumo da pessoa = zero; sem cobertura da empresa = null.
+      const covered = coveredMonths.has(month);
+      const fallback = covered ? 0 : null;
       return {
         month,
         has_data: Boolean(row),
-        billing_lines: row ? toInt(row[1]) : 0,
-        service_quantity: row ? toNum(row[2]) : 0,
-        gross_cost: row ? toNum(row[3]) : 0,
-        hospitalization_episodes: row ? toInt(row[4]) : 0,
+        covered,
+        billing_lines: row ? toInt(row[1]) : fallback,
+        service_quantity: row ? toNum(row[2]) : fallback,
+        gross_cost: row ? toNum(row[3]) : fallback,
+        hospitalization_episodes: row ? toInt(row[4]) : fallback,
         primary_event: row ? String(getCell(row[5]) || "") || null : null,
         rank_position: rankByMonth.get(month) ?? null,
       };

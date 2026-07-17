@@ -101,5 +101,7 @@ export const toNum = (v: DatabricksCell) => {
   return Number.isFinite(n) ? n : 0;
 };
 export const toFloat = (v: DatabricksCell) => toNum(v);
-export const escape = (s: unknown) => String(s).replace(/'/g, "''");
+// Escapa literais SQL: duplica a barra invertida antes da aspa, pois o parser
+// do Spark trata \ como caractere de escape em literais por padrão.
+export const escape = (s: unknown) => String(s).replace(/\\/g, "\\\\").replace(/'/g, "''");
 export const quoteIdent = (s: unknown) => `\`${String(s).replace(/`/g, "``")}\``;
