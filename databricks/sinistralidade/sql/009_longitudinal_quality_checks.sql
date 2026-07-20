@@ -266,27 +266,11 @@ SELECT 'eligibility_denominator' AS check_name, m.company_key, m.month_key,
 FROM hive_metastore.sanus_prod.mart_sinistro_empresa_mes_v2 m
 WHERE m.vidas_elegiveis IS NULL AND m.custo_por_vida_elegivel IS NOT NULL;
 
--- 11. Reconciliação Preview Gold × V2: mesmo período e mesma definição.
---     A Preview Gold usa a Gold v1; divergências devem ser registradas e
---     explicadas antes de promover a leitura oficial para a V2.
-WITH v1 AS (
-  SELECT date_format(data_atendimento, 'yyyy-MM') AS month_key,
-    count(*) AS linhas, round(sum(sinistro), 2) AS custo
-  FROM hive_metastore.sanus_prod.gold_sinistro_evento
-  GROUP BY 1
-), v2 AS (
-  SELECT month_key, sum(linhas_cobranca) AS linhas,
-    round(sum(custo_assistencial_bruto), 2) AS custo
-  FROM hive_metastore.sanus_prod.mart_evento_empresa_mes_v2
-  GROUP BY 1
-)
-SELECT 'preview_gold_vs_v2' AS check_name,
-  coalesce(v1.month_key, v2.month_key) AS month_key,
-  v1.linhas AS v1_linhas, v2.linhas AS v2_linhas,
-  v1.custo AS v1_custo, v2.custo AS v2_custo,
-  round(coalesce(v2.custo, 0) - coalesce(v1.custo, 0), 2) AS diferenca_custo
-FROM v1 FULL OUTER JOIN v2 ON v1.month_key = v2.month_key
-ORDER BY 2;
+-- 11. (removido em 2026-07-20) Reconciliação Preview Gold × V2: a Gold v1 foi
+--     aposentada — a PREVIEW-gold consome a v2 desde a migração da rota, a
+--     reconciliação final fechou em R$ 0,00 em todos os meses exceto a linha
+--     de data suspeita, e as views v1 foram removidas (backup em
+--     databricks/sinistralidade/legacy/gold_v1_views_backup.sql).
 
 -- 12. Execução multiempresa: o conjunto precisa conter mais de uma empresa
 --     homologada antes da publicação do benchmark. Reporte de contagem.

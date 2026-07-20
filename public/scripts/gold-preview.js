@@ -341,9 +341,9 @@
       badge.textContent = `DADOS AO VIVO · Delta v${v == null ? '?' : v}`;
       badge.style.color = '#0f766e'; badge.style.background = '#ecfdf5'; badge.style.borderColor = '#6ee7b7';
     }
-    setText('pg-subtitle', `Dados ao vivo · visões gold_sinistro_*_mes + gold_sinistro_evento · fonte Delta v${v == null ? '?' : v} · exclui flag_data_suspeita · filtros recalculam todos os blocos`);
+    setText('pg-subtitle', `Dados ao vivo · visão gold_sinistro_evento_v2 · fonte Delta v${v == null ? '?' : v} · exclui flag_data_suspeita · filtros recalculam todos os blocos`);
     const b1 = document.getElementById('pg-b1-sub');
-    if (b1) b1.innerHTML = `<code>gold_sinistro_evento</code> · Delta v${v == null ? '?' : v} · tracejado laranja = meses parciais (lag de faturamento ~2 meses)`;
+    if (b1) b1.innerHTML = `<code>gold_sinistro_evento_v2</code> · Delta v${v == null ? '?' : v} · tracejado laranja = meses parciais (lag de faturamento ~2 meses)`;
     setText('pg-b2-sub', 'Mix mensal real por tipo de evento · fonte: gold_sinistro_tipo_evento_mes (visão materializada DAT-175)');
   }
 
@@ -662,7 +662,7 @@
       target: '#pg-b1-card', title: 'B1 · Sinistro mensal', kind: 'Gráfico',
       purpose: 'Apresenta a evolução do custo assistencial pela data em que o atendimento ocorreu.',
       reading: 'A linha azul representa meses fechados. O trecho laranja tracejado mostra meses ainda parciais e naturalmente subestimados pelo atraso de cobrança.',
-      source: 'Soma mensal de sinistro em gold_sinistro_evento, excluindo registros com flag_data_suspeita.',
+      source: 'Soma mensal de sinistro em gold_sinistro_evento_v2, excluindo registros com flag_data_suspeita.',
       attention: 'Não compare diretamente meses parciais com meses fechados e não interprete a série como loss ratio.',
     },
     b2: {
@@ -718,7 +718,7 @@
       target: '#pg-b6-card', title: 'B6 · Impacto Sanus — janelas pareadas', kind: 'Comparação temporal',
       purpose: 'Compara períodos anteriores e posteriores em eventos, sinistro e utilizantes usando a metodologia histórica da análise Sanus.',
       reading: 'A seta mostra before → after e o badge mostra a variação percentual. Eventos representam frequência, sinistro representa custo e utilizantes representam pessoas distintas.',
-      source: 'Médias mensais de ago–set/25 contra out–nov/25 pela data do atendimento em gold_sinistro_evento.',
+      source: 'Médias mensais de ago–set/25 contra out–nov/25 pela data do atendimento em gold_sinistro_evento_v2.',
       attention: 'É associação temporal, não prova de impacto causal. Há diferença metodológica em relação ao BI antigo no eixo de competência e coparticipação.',
     },
     b7: {
