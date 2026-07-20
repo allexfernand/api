@@ -184,7 +184,8 @@ body {
 }
 .clear-btn:hover{background:#fee2e2;color:#b91c1c;border-color:#fecaca}
 
-.container{padding:24px 32px;max-width:1320px;margin:0 auto}
+/* Aproveita melhor monitores largos sem perder a leitura confortável em notebook. */
+.container{padding:24px 32px;max-width:1720px;margin:0 auto}
 
 .card-box {
   background: var(--surface);
