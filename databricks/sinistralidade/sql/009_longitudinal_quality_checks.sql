@@ -270,8 +270,8 @@ WHERE m.vidas_elegiveis IS NULL AND m.custo_por_vida_elegivel IS NOT NULL;
 --     A Preview Gold usa a Gold v1; divergências devem ser registradas e
 --     explicadas antes de promover a leitura oficial para a V2.
 WITH v1 AS (
-  SELECT date_format(Data_Atendto, 'yyyy-MM') AS month_key,
-    count(*) AS linhas, round(sum(Sinistro), 2) AS custo
+  SELECT date_format(data_atendimento, 'yyyy-MM') AS month_key,
+    count(*) AS linhas, round(sum(sinistro), 2) AS custo
   FROM hive_metastore.sanus_prod.gold_sinistro_evento
   GROUP BY 1
 ), v2 AS (

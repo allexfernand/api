@@ -6,9 +6,13 @@ const host = String(process.env.DATABRICKS_HOST || "").replace(/\/$/, "");
 const token = process.env.DATABRICKS_TOKEN;
 const warehouseId = process.env.DATABRICKS_WAREHOUSE_ID;
 const targetCatalog = process.env.SINISTRALIDADE_TARGET_CATALOG || "hive_metastore";
-const targetSchema = process.env.SINISTRALIDADE_TARGET_SCHEMA || "sinistralidade_hml";
+const targetSchema = process.env.SINISTRALIDADE_TARGET_SCHEMA || "sanus_prod";
+// Sufixo de homologação: quando o token não pode criar schemas, os objetos de
+// homologação vivem no mesmo schema com sufixo no nome (ex.: mart_x_v2_hml).
+// Default: "_hml". Para publicar em produção use SINISTRALIDADE_TARGET_SUFFIX="".
+const targetSuffix = process.env.SINISTRALIDADE_TARGET_SUFFIX ?? "_hml";
 const target = `${targetCatalog}.${targetSchema}`;
-const createSchema = process.env.SINISTRALIDADE_CREATE_SCHEMA !== "false";
+const createSchema = process.env.SINISTRALIDADE_CREATE_SCHEMA === "true";
 
 const allFiles = [
   "001_control_tables.sql",
@@ -57,7 +61,7 @@ const targetObjects = [
 function retarget(sql) {
   let output = sql;
   for (const object of targetObjects) {
-    output = output.replaceAll(`hive_metastore.sanus_prod.${object}`, `${target}.${object}`);
+    output = output.replaceAll(`hive_metastore.sanus_prod.${object}`, `${target}.${object}${targetSuffix}`);
   }
   return output;
 }
@@ -118,7 +122,7 @@ for (const file of files) {
   planned.push({ file, statements });
 }
 
-console.log(JSON.stringify({ mode: apply ? "apply" : "plan", target, files: planned.map(({ file, statements }) => ({ file, statements: statements.length })) }, null, 2));
+console.log(JSON.stringify({ mode: apply ? "apply" : "plan", target, objectSuffix: targetSuffix || "(nenhum — produção)", files: planned.map(({ file, statements }) => ({ file, statements: statements.length })) }, null, 2));
 
 if (apply) {
   if (createSchema) {

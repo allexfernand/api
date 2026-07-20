@@ -98,7 +98,7 @@ USING (
       ) AS concentration_violations,
       (SELECT count(DISTINCT company_key) FROM hive_metastore.sanus_prod.mart_evento_empresa_mes_v2) AS companies_observed
   )
-  SELECT 'longitudinal-baseline-2026-07-16' AS quality_run_id,
+  SELECT 'longitudinal-baseline-2026-07-20-admissao' AS quality_run_id,
     'hive_metastore.sanus_prod.mart_longitudinal_v2' AS object_name,
     CAST(NULL AS STRING) AS company_key, CAST(NULL AS STRING) AS month_key,
     check_name, status, observed_value, expected_value, tolerance, details,

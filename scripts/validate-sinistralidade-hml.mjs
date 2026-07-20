@@ -5,15 +5,16 @@
 
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { loadEnvConfig } from "@next/env";
+import nextEnv from "@next/env";
 
-loadEnvConfig(process.cwd());
+nextEnv.loadEnvConfig(process.cwd());
 
 const host = String(process.env.DATABRICKS_HOST || "").replace(/\/$/, "");
 const token = process.env.DATABRICKS_TOKEN;
 const warehouseId = process.env.DATABRICKS_WAREHOUSE_ID;
 const targetCatalog = process.env.SINISTRALIDADE_TARGET_CATALOG || "hive_metastore";
-const targetSchema = process.env.SINISTRALIDADE_TARGET_SCHEMA || "sinistralidade_hml";
+const targetSchema = process.env.SINISTRALIDADE_TARGET_SCHEMA || "sanus_prod";
+const targetSuffix = process.env.SINISTRALIDADE_TARGET_SUFFIX ?? "_hml";
 const target = `${targetCatalog}.${targetSchema}`;
 if (!host || !token || !warehouseId) throw new Error("DATABRICKS_HOST/TOKEN/WAREHOUSE_ID obrigatórios.");
 
@@ -41,7 +42,7 @@ const GATE_PREFIXES = [
 function retarget(sql) {
   let output = sql;
   for (const object of targetObjects) {
-    output = output.replaceAll(`hive_metastore.sanus_prod.${object}`, `${target}.${object}`);
+    output = output.replaceAll(`hive_metastore.sanus_prod.${object}`, `${target}.${object}${targetSuffix}`);
   }
   return output;
 }
