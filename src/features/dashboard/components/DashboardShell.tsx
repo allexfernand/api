@@ -13,21 +13,38 @@ declare global {
   }
 }
 
-const tabs = [
-  ["demografica", "Análise Demográfica"],
-  ["agendamentos", "Agendamentos"],
-  ["coordenacao-cuidado", "Coordenação de Cuidado"],
-  ["sessoes", "Sessões"],
-  ["petit-comite", "Petit Comitê"],
-  ["petit-comite-mds", "Petit Comitê MDS"],
-  ["analise-sinistro", "Análise Sinistro"],
-  ["qualidade-estrategica", "Qualidade · Estratégica"],
-  ["qualidade-operacional", "Qualidade · Operacional"],
-] as const;
-
-const claimsTabs = [
-  ["sinistralidade-v2", "Visão 360", "Visão executiva multiempresa"],
-  ["preview-gold", "Preview Gold", "Exploração técnica da camada Gold"],
+const navSections = [
+  {
+    label: "Visão Geral",
+    items: [
+      ["demografica", "Análise Demográfica", "fa-chart-pie"],
+      ["agendamentos", "Agendamentos", "fa-calendar-check"],
+      ["sessoes", "Sessões", "fa-comments"],
+    ],
+  },
+  {
+    label: "Executivo",
+    items: [
+      ["petit-comite", "Petit Comitê", "fa-briefcase"],
+      ["petit-comite-mds", "Petit Comitê MDS", "fa-handshake"],
+      ["coordenacao-cuidado", "Coordenação de Cuidado", "fa-heart-pulse"],
+    ],
+  },
+  {
+    label: "Sinistralidade",
+    items: [
+      ["analise-sinistro", "Análise Sinistro", "fa-file-invoice-dollar"],
+      ["sinistralidade-v2", "Visão 360", "fa-compass-drafting"],
+      ["preview-gold", "Preview Gold", "fa-layer-group"],
+    ],
+  },
+  {
+    label: "Qualidade",
+    items: [
+      ["qualidade-estrategica", "Estratégica", "fa-bullseye"],
+      ["qualidade-operacional", "Operacional", "fa-list-check"],
+    ],
+  },
 ] as const;
 
 const defaultLogo = { src: "/assets/logo_sanus.svg", alt: "Sanus", width: 112, height: 32 };
@@ -103,7 +120,13 @@ function LoginOverlay({ authenticated }: { authenticated: boolean }) {
   );
 }
 
-function Header() {
+function Header({
+  sidebarCollapsed,
+  onToggleSidebar,
+}: {
+  sidebarCollapsed: boolean;
+  onToggleSidebar: () => void;
+}) {
   async function logout() {
     await apiRequest<{ ok: boolean }>("/api/auth/logout", { method: "POST" }).catch(() => null);
     window.location.href = "/";
@@ -111,8 +134,17 @@ function Header() {
 
   return (
     <header className="header">
-      <div>
-        <Image src={logo.src} alt={logo.alt} width={logo.width} height={logo.height} priority />
+      <div className="header-left">
+        <button
+          type="button"
+          className="sidebar-toggle"
+          aria-label={sidebarCollapsed ? "Abrir menu lateral" : "Fechar menu lateral"}
+          aria-controls="dashboard-sidebar"
+          aria-expanded={!sidebarCollapsed}
+          onClick={onToggleSidebar}
+        >
+          <i className="fa-solid fa-bars" aria-hidden="true" />
+        </button>
       </div>
       <div className="header-right">
         <span className="status loading" id="status">
@@ -133,80 +165,42 @@ function Header() {
 function Navigation({
   activeTab,
   hidePetitMds,
+  sidebarCollapsed,
   onChange,
 }: {
   activeTab: string;
   hidePetitMds: boolean;
+  sidebarCollapsed: boolean;
   onChange: (tab: string) => void;
 }) {
-  const [claimsOpen, setClaimsOpen] = useState(false);
-  const visibleTabs = hidePetitMds ? tabs.filter(([id]) => id !== "petit-comite-mds") : tabs;
-  const claimsActive = claimsTabs.some(([id]) => id === activeTab);
-
-  const claimsMenu = (
-    <div
-      className={`claims-tab-group ${claimsOpen ? "open" : ""}`}
-      onMouseEnter={() => setClaimsOpen(true)}
-      onMouseLeave={() => setClaimsOpen(false)}
-      onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget)) setClaimsOpen(false);
-      }}
-    >
-      <button
-        type="button"
-        className={`tab featured claims-tab-trigger ${claimsActive ? "active" : ""}`}
-        data-tab={claimsActive ? activeTab : undefined}
-        aria-haspopup="menu"
-        aria-expanded={claimsOpen}
-        onClick={(event) => {
-          event.stopPropagation();
-          setClaimsOpen((current) => !current);
-        }}
-        onKeyDown={(event) => {
-          if (event.key === "Escape") setClaimsOpen(false);
-        }}
-      >
-        Sinistralidade
-        <i className="fa-solid fa-chevron-down claims-tab-chevron" aria-hidden="true" />
-      </button>
-      <div className="claims-subtabs" role="menu" aria-label="Visões de sinistralidade">
-        {claimsTabs.map(([id, label, description]) => (
-          <button
-            type="button"
-            className={`tab claims-subtab ${activeTab === id ? "active" : ""}`}
-            data-tab={id}
-            role="menuitem"
-            key={id}
-            onClick={(event) => {
-              event.stopPropagation();
-              onChange(id);
-              setClaimsOpen(false);
-            }}
-          >
-            <span>{label}</span>
-            <small>{description}</small>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-
   return (
-    <nav className="tabs" aria-label="Áreas do dashboard">
-      {visibleTabs.map(([id, label]) => (
-        <div className="dashboard-tab-slot" key={id}>
-          <button
-            type="button"
-            className={`tab ${activeTab === id ? "active" : ""}`}
-            data-tab={id}
-            onClick={() => onChange(id)}
-          >
-            {label}
-          </button>
-          {id === "demografica" ? claimsMenu : null}
-        </div>
-      ))}
-    </nav>
+    <aside className="dashboard-sidebar" id="dashboard-sidebar" aria-label="Menu lateral do dashboard">
+      <div className="sidebar-brand">
+        <Image src={defaultLogo.src} alt={defaultLogo.alt} width={defaultLogo.width} height={defaultLogo.height} priority />
+      </div>
+      <nav className="tabs sidebar-nav" aria-label="Áreas do dashboard">
+        {navSections.map((section) => (
+          <div className="sidebar-section" key={section.label}>
+            <div className="sidebar-section-label">{section.label}</div>
+            {section.items
+              .filter(([id]) => !(hidePetitMds && id === "petit-comite-mds"))
+              .map(([id, label, icon]) => (
+                <button
+                  type="button"
+                  className={`tab sidebar-tab ${activeTab === id ? "active" : ""}`}
+                  data-tab={id}
+                  key={id}
+                  title={sidebarCollapsed ? label : undefined}
+                  onClick={() => onChange(id)}
+                >
+                  <i className={`fa-solid ${icon}`} aria-hidden="true" />
+                  <span>{label}</span>
+                </button>
+              ))}
+          </div>
+        ))}
+      </nav>
+    </aside>
   );
 }
 
@@ -391,12 +385,14 @@ export function DashboardShell() {
   const [authenticated, setAuthenticated] = useState(false);
   const [activeTab, setActiveTab] = useState("demografica");
   const [dashboardUser, setDashboardUser] = useState("");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const hidePetitMds = dashboardUser === "sanus";
 
   const activate = useCallback((tab: string) => {
     const nextTab = hidePetitMds && tab === "petit-comite-mds" ? "demografica" : tab;
     setActiveTab(nextTab);
     legacy("activateTab", nextTab);
+    if (window.matchMedia("(max-width: 760px)").matches) setSidebarCollapsed(true);
   }, [hidePetitMds]);
 
   useEffect(() => {
@@ -425,15 +421,34 @@ export function DashboardShell() {
   }, [authenticated]);
 
   useEffect(() => {
+    if (window.matchMedia("(max-width: 760px)").matches) setSidebarCollapsed(true);
+  }, []);
+
+  useEffect(() => {
     if (dashboardUser) document.body.dataset.dashboardUser = dashboardUser;
     else delete document.body.dataset.dashboardUser;
   }, [dashboardUser]);
 
+  useEffect(() => {
+    document.body.dataset.sidebar = sidebarCollapsed ? "collapsed" : "expanded";
+    return () => {
+      delete document.body.dataset.sidebar;
+    };
+  }, [sidebarCollapsed]);
+
   return (
     <>
       <LoginOverlay authenticated={authenticated} />
-      <Header />
-      <Navigation activeTab={activeTab} hidePetitMds={hidePetitMds} onChange={activate} />
+      <Header
+        sidebarCollapsed={sidebarCollapsed}
+        onToggleSidebar={() => setSidebarCollapsed((current) => !current)}
+      />
+      <Navigation
+        activeTab={activeTab}
+        hidePetitMds={hidePetitMds}
+        sidebarCollapsed={sidebarCollapsed}
+        onChange={activate}
+      />
       <Filters />
     </>
   );
