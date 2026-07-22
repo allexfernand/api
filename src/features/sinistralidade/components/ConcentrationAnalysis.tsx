@@ -8,9 +8,26 @@ import { ChartCard, ChartLegend, LineChart, SERIES_PALETTE } from "./charts";
 import type { ConcentrationData } from "../types";
 import { monthLabel, number, percent } from "../types";
 
+type ConcentrationMonth = ConcentrationData["monthly"][number];
+
+// Resumo de um mês da janela: os cinco indicadores de concentração.
+function MonthConcentration({ entry }: { entry: ConcentrationMonth }) {
+  return (
+    <div className={styles.psSummary}>
+      <div><strong>{entry.top10_share === null ? "—" : `${percent.format(entry.top10_share * 100)}%`}</strong><span>do custo vem do Top 10</span></div>
+      <div><strong>{entry.people_to_50pct === null ? "—" : number.format(entry.people_to_50pct)}</strong><span>pessoas explicam 50% do custo</span></div>
+      <div><strong>{entry.people_to_80pct === null ? "—" : number.format(entry.people_to_80pct)}</strong><span>pessoas explicam 80% do custo</span></div>
+      <div><strong>{number.format(entry.top10_recurrent_from_previous_month)}/10</strong><span>do Top 10 já estavam no Top 10 anterior</span></div>
+      <div><strong>{number.format(entry.utilizers)}</strong><span>utilizantes no mês</span></div>
+    </div>
+  );
+}
+
 export function ConcentrationAnalysis({ data, periodLabel }: { data: ConcentrationData; periodLabel: string }) {
   const monthly = data.monthly;
-  const last = monthly.at(-1);
+  // Leitura dos dois últimos meses da janela (feedback C4): o mês mais recente
+  // costuma estar parcial; o penúltimo ancora a comparação.
+  const lastTwo = monthly.slice(-2);
   const series = [
     { name: "Top 1", key: "top1_share" as const },
     { name: "Top 5", key: "top5_share" as const },
@@ -66,16 +83,17 @@ export function ConcentrationAnalysis({ data, periodLabel }: { data: Concentrati
       </article>
       <article className={styles.card}>
         <div className={styles.cardTitle}>
-          <h3>Leitura do último mês da janela</h3>
-          <p>{last ? monthLabel(last.month) : "Sem meses aprovados"}</p>
+          <h3>Leitura dos dois últimos meses da janela</h3>
+          <p>{lastTwo.length ? lastTwo.map((entry) => monthLabel(entry.month)).join(" · ") : "Sem meses aprovados"}</p>
         </div>
-        {last ? (
-          <div className={styles.psSummary}>
-            <div><strong>{last.top10_share === null ? "—" : `${percent.format(last.top10_share * 100)}%`}</strong><span>do custo vem do Top 10</span></div>
-            <div><strong>{last.people_to_50pct === null ? "—" : number.format(last.people_to_50pct)}</strong><span>pessoas explicam 50% do custo</span></div>
-            <div><strong>{last.people_to_80pct === null ? "—" : number.format(last.people_to_80pct)}</strong><span>pessoas explicam 80% do custo</span></div>
-            <div><strong>{number.format(last.top10_recurrent_from_previous_month)}/10</strong><span>do Top 10 já estavam no Top 10 anterior</span></div>
-            <div><strong>{number.format(last.utilizers)}</strong><span>utilizantes no mês</span></div>
+        {lastTwo.length ? (
+          <div className={styles.blockStack}>
+            {lastTwo.map((entry) => (
+              <div key={entry.month}>
+                <h4 className={styles.subMonth}>{monthLabel(entry.month)}</h4>
+                <MonthConcentration entry={entry} />
+              </div>
+            ))}
           </div>
         ) : (
           <div className={styles.blockEmpty}>Sem dados de concentração na janela.</div>

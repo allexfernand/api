@@ -59,7 +59,6 @@ export function ChartCard({
   title,
   subtitle,
   unit,
-  periodLabel,
   coverageNote,
   chart,
   table,
@@ -68,7 +67,8 @@ export function ChartCard({
   title: string;
   subtitle?: string;
   unit: string;
-  periodLabel: string;
+  /** Mantido por compatibilidade com os chamadores; não é mais exibido na legenda. */
+  periodLabel?: string;
   coverageNote?: string | null;
   chart: ReactNode;
   table: ReactNode;
@@ -82,7 +82,7 @@ export function ChartCard({
           <h4>{title}</h4>
           <p>
             {subtitle ? `${subtitle} · ` : ""}
-            Unidade: {unit} · Período: {periodLabel}
+            Unidade: {unit}
             {coverageNote ? ` · ${coverageNote}` : ""}
           </p>
         </div>

@@ -46,7 +46,7 @@ export function ProcedureAnalysis({ data, periodLabel }: { data: ProcedureTrends
                 <th scope="col">Grupo</th>
                 <th scope="col" className={styles.num}>Serviços</th>
                 <th scope="col" className={styles.num}>Linhas</th>
-                <th scope="col" className={styles.num}>Episódios</th>
+                <th scope="col" className={styles.num}>Internações</th>
                 <th scope="col" className={styles.num}>Custo médio (R$/serviço)</th>
                 <th scope="col" className={styles.num}>{view === "growth" ? "Crescimento M/M" : "Custo (R$)"}</th>
               </tr>

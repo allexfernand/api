@@ -238,3 +238,6 @@ Registro das definições fixadas após a auditoria da camada de dados:
 - **Séries densas por entidade** (ranking, procedimentos, prestadores, detalhe
   individual): mês coberto sem consumo = 0; mês sem cobertura da empresa =
   `null` — nunca zero, inclusive com `include_partial=true`.
+
+O dicionário completo da camada de dados (views, colunas, métricas, agregações e
+veredito de coerência) está em `docs/sinistralidade/CAMADA_DE_DADOS.md`.

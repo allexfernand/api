@@ -23,7 +23,6 @@ export function AnalyticsHeader({
   envelope: LongitudinalEnvelope | null;
   onChange: (patch: Partial<SinistralidadeFilters>) => void;
 }) {
-  const selectedCompany = companies.find((company) => company.company_key === filters.companyKey);
   return (
     <header className={styles.hero}>
       <div className={styles.heroIdentity}>
@@ -63,34 +62,11 @@ export function AnalyticsHeader({
           </select>
         </label>
       </div>
-      <div className={styles.heroMeta}>
-        <PeriodBadge envelope={envelope} includePartial={filters.includePartial} />
-        <span>{selectedCompany?.operator || "Operadora não informada"}</span>
-        <span>Contrato Gold v{envelope?.contract_version || "1.1.0"}</span>
-        {envelope?.quality_run_id ? <span>Qualidade: {envelope.quality_run_id}</span> : null}
-        {envelope?.updated_at ? <span>Atualização: {new Date(envelope.updated_at).toLocaleDateString("pt-BR")}</span> : null}
-        {envelope ? (
-          <span className={styles.monthStrip} aria-label="Status dos meses da janela">
-            {envelope.effective_period.months.map((entry) => (
-              <i
-                key={entry.month}
-                className={`${styles.monthDot} ${entry.status === "closed" ? styles.monthClosed : entry.status === "partial" ? styles.monthPartial : styles.monthUnknown}`}
-                title={`${monthLabel(entry.month)}: ${entry.status === "closed" ? "fechado" : entry.status === "partial" ? "parcial" : "sem gate de fechamento"}`}
-              />
-            ))}
-          </span>
-        ) : null}
-      </div>
+      {envelope?.updated_at ? (
+        <div className={styles.heroMeta}>
+          <span>Atualização: {new Date(envelope.updated_at).toLocaleDateString("pt-BR")}</span>
+        </div>
+      ) : null}
     </header>
   );
-}
-
-function PeriodBadge({ envelope, includePartial }: { envelope: LongitudinalEnvelope | null; includePartial: boolean }) {
-  if (!envelope) return <span className={styles.pending}>Resolvendo período…</span>;
-  if (envelope.state === "valid") return <span className={styles.closed}>Janela com meses fechados</span>;
-  if (envelope.state === "partial") return <span className={styles.pending}>Dado observado · não fechado</span>;
-  if (envelope.state === "blocked") {
-    return <span className={styles.pending}>{includePartial ? "Sem dados na janela" : "Bloqueado: nenhum mês fechado"}</span>;
-  }
-  return <span className={styles.pending}>Comparação não válida</span>;
 }
