@@ -165,21 +165,27 @@ function Header({
 function Navigation({
   activeTab,
   hidePetitMds,
+  hideMdsRestrictedSections,
   sidebarCollapsed,
   onChange,
 }: {
   activeTab: string;
   hidePetitMds: boolean;
+  hideMdsRestrictedSections: boolean;
   sidebarCollapsed: boolean;
   onChange: (tab: string) => void;
 }) {
+  const visibleSections = hideMdsRestrictedSections
+    ? navSections.filter((section) => !["Sinistralidade", "Qualidade"].includes(section.label))
+    : navSections;
+
   return (
     <aside className="dashboard-sidebar" id="dashboard-sidebar" aria-label="Menu lateral do dashboard">
       <div className="sidebar-brand">
         <Image src={defaultLogo.src} alt={defaultLogo.alt} width={defaultLogo.width} height={defaultLogo.height} priority />
       </div>
       <nav className="tabs sidebar-nav" aria-label="Áreas do dashboard">
-        {navSections.map((section) => (
+        {visibleSections.map((section) => (
           <div className="sidebar-section" key={section.label}>
             <div className="sidebar-section-label">{section.label}</div>
             {section.items
@@ -385,8 +391,10 @@ export function DashboardShell() {
   const [authenticated, setAuthenticated] = useState(false);
   const [activeTab, setActiveTab] = useState("demografica");
   const [dashboardUser, setDashboardUser] = useState("");
+  const [dashboardRole, setDashboardRole] = useState("");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const hidePetitMds = dashboardUser === "sanus";
+  const isMdsDashboard = dashboardRole === "mds";
 
   const activate = useCallback((tab: string) => {
     const nextTab = hidePetitMds && tab === "petit-comite-mds" ? "demografica" : tab;
@@ -399,10 +407,12 @@ export function DashboardShell() {
     apiRequest("/api/data?scope=auth", { schema: authResponseSchema })
       .then((auth) => {
         setDashboardUser(normalizeDashboardUser(auth.user));
+        setDashboardRole(auth.role);
         setAuthenticated(true);
       })
       .catch(() => {
         setDashboardUser("");
+        setDashboardRole("");
         setAuthenticated(false);
       });
     const onTabChange = (event: Event) => setActiveTab((event as CustomEvent<string>).detail);
@@ -446,6 +456,7 @@ export function DashboardShell() {
       <Navigation
         activeTab={activeTab}
         hidePetitMds={hidePetitMds}
+        hideMdsRestrictedSections={isMdsDashboard}
         sidebarCollapsed={sidebarCollapsed}
         onChange={activate}
       />
