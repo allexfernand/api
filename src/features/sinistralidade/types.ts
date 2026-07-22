@@ -79,7 +79,19 @@ export type TimelineKpis = {
   normalized_state: "valid" | "not_comparable";
 };
 
-export type TimelineData = { months: TimelineMonth[]; kpis: TimelineKpis | null; updatedAt: string | null };
+export type CompetencyMonth = {
+  month: string;
+  gross_cost: number | null;
+  service_quantity: number | null;
+  billing_lines: number | null;
+};
+
+export type TimelineData = {
+  months: TimelineMonth[];
+  competency: CompetencyMonth[];
+  kpis: TimelineKpis | null;
+  updatedAt: string | null;
+};
 
 export type EventMixData = {
   months: {

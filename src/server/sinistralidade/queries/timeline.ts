@@ -39,9 +39,9 @@ export type TimelineMonth = {
 
 export async function timelineScope(q: QueryRunner, companyKey: string, period: ResolvedPeriod) {
   const spine = period.effective.months.map((entry) => entry.month);
-  if (!spine.length) return { months: [], kpis: null, updatedAt: null };
+  if (!spine.length) return { months: [], competency: [], kpis: null, updatedAt: null };
 
-  const [monthRows, episodeRows, yoyRows] = await Promise.all([
+  const [monthRows, episodeRows, yoyRows, competencyRows] = await Promise.all([
     q(
       `SELECT month_key, linhas_cobranca, quantidade_servicos, utilizantes, familias_utilizantes,
         custo_assistencial_bruto, vidas_elegiveis, custo_por_vida_elegivel, freshness
@@ -61,6 +61,19 @@ export async function timelineScope(q: QueryRunner, companyKey: string, period: 
       FROM ${TABLES.martMonth}
       WHERE company_key = '${companyKey}'
         AND month_key IN (${monthsInSql(spine.map((month) => `${Number(month.slice(0, 4)) - 1}${month.slice(4)}`))})`,
+    ),
+    // Série por COMPETÊNCIA DE FATURAMENTO (feedback C1): custo agrupado por
+    // competencia_cobranca (dd/MM/yyyy → yyyy-MM), alinhado aos mesmos meses da
+    // janela. É o "quanto foi faturado no mês", independente da data do serviço.
+    q(
+      `SELECT date_format(to_date(competencia_cobranca, 'dd/MM/yyyy'), 'yyyy-MM') AS competencia,
+        round(sum(custo_assistencial_bruto), 2) AS custo,
+        sum(quantidade_servicos) AS servicos,
+        count(*) AS linhas
+      FROM ${TABLES.gold}
+      WHERE NOT flag_data_suspeita AND company_key = '${companyKey}'
+        AND date_format(to_date(competencia_cobranca, 'dd/MM/yyyy'), 'yyyy-MM') IN (${monthsInSql(spine)})
+      GROUP BY 1`,
     ),
   ]);
 
@@ -143,5 +156,18 @@ export async function timelineScope(q: QueryRunner, companyKey: string, period: 
     .sort()
     .at(-1);
 
-  return { months, kpis, updatedAt: freshness || null };
+  // Série de competência alinhada à espinha: mês sem faturamento na competência
+  // fica null (nunca zero), coerente com a série de atendimento.
+  const competencyByMonth = new Map(competencyRows.map((row) => [String(getCell(row[0])), row]));
+  const competency = spine.map((month) => {
+    const row = competencyByMonth.get(month);
+    return {
+      month,
+      gross_cost: row ? toNum(row[1]) : null,
+      service_quantity: row ? toNum(row[2]) : null,
+      billing_lines: row ? toInt(row[3]) : null,
+    };
+  });
+
+  return { months, competency, kpis, updatedAt: freshness || null };
 }

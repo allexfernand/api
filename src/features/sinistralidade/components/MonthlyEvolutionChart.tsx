@@ -21,10 +21,55 @@ const METRICS: { key: MetricKey; label: string; unit: string; color: string; isM
   { key: "cost_per_utilizer", label: "Custo por utilizante", unit: "R$/pessoa", color: SEMANTIC_COLORS.cost, isMoney: true },
 ];
 
+type Basis = "atendimento" | "competencia";
+
 export function MonthlyEvolutionChart({ data, periodLabel }: { data: TimelineData; periodLabel: string }) {
   const [metricKey, setMetricKey] = useState<MetricKey>("gross_cost");
+  // Eixo temporal (feedback C1): data de atendimento (quando o serviço ocorreu,
+  // padrão) ou competência de faturamento (quando foi faturado — "quanto pagamos
+  // no mês", independente da data do serviço).
+  const [basis, setBasis] = useState<Basis>("atendimento");
   const metric = METRICS.find((entry) => entry.key === metricKey)!;
   const months = data.months;
+  const competency = data.competency ?? [];
+
+  if (basis === "competencia") {
+    const money2 = (value: number) => money.format(value);
+    const series = [
+      {
+        name: "Custo por competência",
+        color: SEMANTIC_COLORS.cost,
+        unit: "R$",
+        points: competency.map((entry) => ({ x: entry.month, y: entry.gross_cost })),
+      },
+    ];
+    return (
+      <article className={styles.card}>
+        <div className={styles.cardHeaderRow}>
+          <div className={styles.cardTitle}>
+            <h3>Evolução mensal</h3>
+            <p>Custo por <strong>competência de faturamento</strong> (mês em que foi faturado, não a data do atendimento).</p>
+          </div>
+          <BasisSwitch basis={basis} onChange={setBasis} />
+        </div>
+        <ChartCard
+          title="Custo por competência"
+          unit="R$"
+          periodLabel={periodLabel}
+          chart={
+            <LineChart
+              series={series}
+              formatValue={money2}
+              ariaLabel="Custo mensal por competência de faturamento (R$)"
+            />
+          }
+          legend={<ChartLegend items={series.map((entry) => ({ name: entry.name, color: entry.color }))} />}
+          table={<CompetencyTable rows={competency} />}
+        />
+      </article>
+    );
+  }
+
   const partialMonths = months.filter((entry) => entry.status !== "closed").map((entry) => entry.month);
   const format = (value: number) => (metric.isMoney ? money.format(value) : number.format(value));
 
@@ -52,19 +97,22 @@ export function MonthlyEvolutionChart({ data, periodLabel }: { data: TimelineDat
           <h3>Evolução mensal</h3>
           <p>Meses parciais ou sem gate aparecem com faixa âmbar; meses sem cobertura ficam sem valor.</p>
         </div>
-        <div className={styles.metricPicker} role="tablist" aria-label="Métrica da evolução">
-          {METRICS.map((entry) => (
-            <button
-              key={entry.key}
-              type="button"
-              role="tab"
-              aria-selected={entry.key === metricKey}
-              className={entry.key === metricKey ? styles.metricActive : undefined}
-              onClick={() => setMetricKey(entry.key)}
-            >
-              {entry.label}
-            </button>
-          ))}
+        <div className={styles.evolutionControls}>
+          <BasisSwitch basis={basis} onChange={setBasis} />
+          <div className={styles.metricPicker} role="tablist" aria-label="Métrica da evolução">
+            {METRICS.map((entry) => (
+              <button
+                key={entry.key}
+                type="button"
+                role="tab"
+                aria-selected={entry.key === metricKey}
+                className={entry.key === metricKey ? styles.metricActive : undefined}
+                onClick={() => setMetricKey(entry.key)}
+              >
+                {entry.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
       <ChartCard
@@ -83,6 +131,44 @@ export function MonthlyEvolutionChart({ data, periodLabel }: { data: TimelineDat
         table={<EvolutionTable months={months} />}
       />
     </article>
+  );
+}
+
+function BasisSwitch({ basis, onChange }: { basis: Basis; onChange: (value: Basis) => void }) {
+  return (
+    <div className={styles.metricPicker} role="tablist" aria-label="Eixo temporal">
+      <button type="button" role="tab" aria-selected={basis === "atendimento"} className={basis === "atendimento" ? styles.metricActive : undefined} onClick={() => onChange("atendimento")}>
+        Atendimento
+      </button>
+      <button type="button" role="tab" aria-selected={basis === "competencia"} className={basis === "competencia" ? styles.metricActive : undefined} onClick={() => onChange("competencia")}>
+        Competência
+      </button>
+    </div>
+  );
+}
+
+function CompetencyTable({ rows }: { rows: TimelineData["competency"] }) {
+  return (
+    <table className={styles.table}>
+      <thead>
+        <tr>
+          <th scope="col">Competência</th>
+          <th scope="col" className={styles.num}>Custo faturado (R$)</th>
+          <th scope="col" className={styles.num}>Serviços</th>
+          <th scope="col" className={styles.num}>Linhas</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((entry) => (
+          <tr key={entry.month}>
+            <td>{monthLabel(entry.month)}</td>
+            <td className={styles.num}>{entry.gross_cost === null ? "—" : moneyFull.format(entry.gross_cost)}</td>
+            <td className={styles.num}>{entry.service_quantity === null ? "—" : number.format(entry.service_quantity)}</td>
+            <td className={styles.num}>{entry.billing_lines === null ? "—" : number.format(entry.billing_lines)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
