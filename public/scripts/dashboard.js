@@ -1,5 +1,5 @@
 (async function loadSanusDashboard() {
-  const chunks = ["/scripts/features/core.js?v=20260722-partner-vision","/scripts/features/claims.js?v=20260722-partner-vision","/scripts/features/period-filters.js?v=20260722-partner-vision","/scripts/features/executive-committee.js?v=20260722-partner-vision","/scripts/features/care-coordination.js?v=20260722-partner-vision","/scripts/features/appointments.js?v=20260722-partner-vision","/scripts/features/sessions.js?v=20260722-partner-vision","/scripts/features/demographics.js?v=20260722-partner-vision","/scripts/features/quality-and-bootstrap.js?v=20260722-partner-vision"];
+  const chunks = ["/scripts/features/core.js?v=20260722-partner-multi","/scripts/features/claims.js?v=20260722-partner-multi","/scripts/features/period-filters.js?v=20260722-partner-multi","/scripts/features/executive-committee.js?v=20260722-partner-multi","/scripts/features/care-coordination.js?v=20260722-partner-multi","/scripts/features/appointments.js?v=20260722-partner-multi","/scripts/features/sessions.js?v=20260722-partner-multi","/scripts/features/demographics.js?v=20260722-partner-multi","/scripts/features/quality-and-bootstrap.js?v=20260722-partner-multi"];
   for (const src of chunks) {
     await new Promise((resolve, reject) => {
       const script = document.createElement('script');

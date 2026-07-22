@@ -67,7 +67,8 @@ async function loadPartnerVision() {
   if (dependentes) dependentes.textContent = '—';
 
   const p = new URLSearchParams();
-  if (currentPartnerBrokerId) p.set('partner_broker_id', currentPartnerBrokerId);
+  if (currentPartnerBrokerIds.length > 1) p.set('partner_broker_ids', JSON.stringify(currentPartnerBrokerIds));
+  else if (currentPartnerBrokerIds.length === 1) p.set('partner_broker_id', currentPartnerBrokerIds[0]);
   const data = await safeGet('/api/demographics' + (p.toString() ? '?' + p.toString() : ''));
   if (!data || data.error) {
     if (loading) loading.style.display = 'none';
@@ -84,8 +85,8 @@ async function loadPartnerVision() {
   if (titulares) titulares.textContent = fmt(Number(data.titulares) || 0);
   if (dependentes) dependentes.textContent = fmt(Number(data.dependentes) || 0);
   if (context) {
-    context.textContent = currentPartnerBrokerId
-      ? `Parceiro: ${selectedPartnerLabel() || currentPartnerBrokerId}`
+    context.textContent = currentPartnerBrokerIds.length
+      ? `Parceiro: ${selectedPartnerVisionLabel()}`
       : 'Todos os parceiros · beneficiaries · acumulado desde mai/2022';
   }
   if (loading) loading.style.display = 'none';

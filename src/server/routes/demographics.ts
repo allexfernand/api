@@ -25,6 +25,13 @@ const PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.partner_brokers`;
 const ORGANIZATION_PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.organization_partner_brokers`;
 
 function partnerBrokerCondition(partnerBrokerId: unknown) {
+  const partnerIds = Array.isArray(partnerBrokerId)
+    ? partnerBrokerId.map((value) => String(value).trim()).filter(Boolean)
+    : [];
+  if (partnerIds.length) {
+    const ids = partnerIds.map((id) => `'${escape(id)}'`).join(",");
+    return `CAST(opb.partner_broker_id AS STRING) IN (${ids})`;
+  }
   if (String(partnerBrokerId) === MDS_PARTNER_SCOPE) {
     return `CAST(opb.partner_broker_id AS STRING) IN (
       SELECT CAST(pb.id AS STRING)
@@ -34,6 +41,20 @@ function partnerBrokerCondition(partnerBrokerId: unknown) {
     )`;
   }
   return `CAST(opb.partner_broker_id AS STRING) = '${escape(partnerBrokerId)}'`;
+}
+
+function parsePartnerBrokerIds(query: Record<string, any>, fallback: unknown) {
+  if (fallback === MDS_PARTNER_SCOPE) return fallback;
+  if (query.partner_broker_ids) {
+    try {
+      const parsed = JSON.parse(String(query.partner_broker_ids));
+      if (Array.isArray(parsed)) {
+        const partnerIds = [...new Set(parsed.map((value) => String(value).trim()).filter(Boolean))];
+        return partnerIds.length ? partnerIds : fallback || null;
+      }
+    } catch {}
+  }
+  return fallback ? fallback : null;
 }
 
 function buildFilters(groupNames: string[], company: unknown, typeFilter: unknown, partnerBrokerId: unknown) {
@@ -90,7 +111,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   const groupNames = parseGroupNames(req.query);
   const company = req.query.company || null;
   const typeFilter = req.query.type || null;
-  const partnerBrokerId = scopedPartnerBrokerId(req, req.query.partner_broker_id || null);
+  const scopedPartnerBroker = scopedPartnerBrokerId(req, req.query.partner_broker_id || null);
+  const partnerBrokerId = parsePartnerBrokerIds(req.query, scopedPartnerBroker);
   const groupFilter = buildFilters(groupNames, company, typeFilter, partnerBrokerId);
 
   try {

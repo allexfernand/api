@@ -16,6 +16,7 @@ let usersData = [], companiesData = [], sessionCompaniesData = [], eChart, agegr
 let currentGroup = '', currentType = '', currentCompany = '';
 let currentGroups = [];
 let currentPartnerBrokerId = '';
+let currentPartnerBrokerIds = [];
 let currentCareBeneficiaryType = '';
 let partnerOptionsCache = [];
 let groupOptionsCache = { orgs: null, sessions: null, petitMds: null };
@@ -157,6 +158,7 @@ function updateFilterVisibility() {
   const typeGroup = document.getElementById('filter-type-group');
   const companyGroup = document.getElementById('filter-company-group');
   const partnerGroup = document.getElementById('filter-partner-group');
+  const partnerMultiGroup = document.getElementById('filter-partner-multi-group');
   const qualityCollaboratorGroup = document.getElementById('filter-quality-operational-collaborator-group');
   const qualitySetorGroup = document.getElementById('filter-quality-operational-setor-group');
   const qualityStatusGroup = document.getElementById('filter-quality-operational-status-group');
@@ -176,7 +178,8 @@ function updateFilterVisibility() {
   if (groupGroup) groupGroup.style.display = (isSinistro || isQualityOperational || isPartnerVision) ? 'none' : 'flex';
   if (typeGroup) typeGroup.style.display = (activeTab === 'sessoes' || activeTab === 'coordenacao-cuidado' || isPetitTab(activeTab) || activeTab.startsWith('qualidade') || isSinistro || isPartnerVision) ? 'none' : 'flex';
   if (companyGroup) companyGroup.style.display = (activeTab === 'sessoes' || isSinistro || isQualityOperational || isPartnerVision) ? 'none' : 'flex';
-  if (partnerGroup) partnerGroup.style.display = (!isSinistro && isPartnerFilteredTab(activeTab)) ? 'flex' : 'none';
+  if (partnerGroup) partnerGroup.style.display = (!isSinistro && !isPartnerVision && isPartnerFilteredTab(activeTab)) ? 'flex' : 'none';
+  if (partnerMultiGroup) partnerMultiGroup.style.display = isPartnerVision ? 'flex' : 'none';
   if (qualityCollaboratorGroup) qualityCollaboratorGroup.style.display = isQualityOperational ? 'flex' : 'none';
   if (qualitySetorGroup) qualitySetorGroup.style.display = isQualityOperational ? 'flex' : 'none';
   if (qualityStatusGroup) qualityStatusGroup.style.display = isQualityOperational ? 'flex' : 'none';
@@ -353,6 +356,8 @@ function onGroupSelectionChange() {
 document.addEventListener('click', (event) => {
   const wrap = document.getElementById('group-select');
   if (wrap && !wrap.contains(event.target)) closeGroupDropdown();
+  const partnerWrap = document.getElementById('partner-multi-select');
+  if (partnerWrap && !partnerWrap.contains(event.target)) closePartnerMultiDropdown();
   const qualityWrap = document.getElementById('quality-operational-collaborator-select');
   if (qualityWrap && !qualityWrap.contains(event.target)) closeQualityOperationalCollaboratorDropdown();
 });
@@ -442,6 +447,15 @@ function selectedPartnerLabel() {
   return partner ? partner.broker_name : currentPartnerBrokerId;
 }
 
+function selectedPartnerVisionLabel() {
+  if (!currentPartnerBrokerIds.length) return 'Todos os parceiros';
+  if (currentPartnerBrokerIds.length === 1) {
+    const partner = partnerOptionsCache.find((item) => String(item.broker_id) === String(currentPartnerBrokerIds[0]));
+    return partner ? partner.broker_name : currentPartnerBrokerIds[0];
+  }
+  return `${currentPartnerBrokerIds.length} parceiros selecionados`;
+}
+
 function isMdsPartner(partner) {
   const text = `${partner?.broker_name || ''} ${partner?.broker_name_secondary || ''}`
     .normalize('NFD')
@@ -468,28 +482,109 @@ function clearMdsPartnerScopeIfNeeded() {
 
 function renderPartnerOptions() {
   const sel = document.getElementById('partner-select');
-  if (!sel) return;
   const current = currentPartnerBrokerId;
   const scopedOptions = isPetitMdsTab() ? partnerOptionsCache.filter(isMdsPartner) : partnerOptionsCache;
   const options = [...scopedOptions].sort((a, b) =>
     String(a.broker_name || '').localeCompare(String(b.broker_name || ''), 'pt-BR', { sensitivity: 'base' })
   );
-  if (isPetitMdsTab() && !options.length) {
-    sel.innerHTML = '<option value="">(Parceiro MDS não encontrado)</option>';
-    sel.disabled = true;
-    return;
+  if (sel) {
+    if (isPetitMdsTab() && !options.length) {
+      sel.innerHTML = '<option value="">(Parceiro MDS não encontrado)</option>';
+      sel.disabled = true;
+      renderPartnerMultiOptions();
+      return;
+    }
+    const allOption = isPetitMdsTab() ? '' : '<option value="">(Todos os parceiros)</option>';
+    sel.innerHTML = allOption + options.map((partner) => {
+      const id = String(partner.broker_id || '');
+      const name = partner.broker_name || 'Sem nome';
+      const secondary = partner.broker_name_secondary ? ` · ${partner.broker_name_secondary}` : '';
+      const inactive = partner.broker_active === false ? ' · inativo' : '';
+      const total = Number(partner.total_orgs) || 0;
+      const selected = id === current ? ' selected' : '';
+      return `<option value="${escapeAttr(id)}"${selected}>${escapeHtml(name)}${escapeHtml(secondary)} (${fmt(total)})${escapeHtml(inactive)}</option>`;
+    }).join('');
+    sel.disabled = false;
   }
-  const allOption = isPetitMdsTab() ? '' : '<option value="">(Todos os parceiros)</option>';
-  sel.innerHTML = allOption + options.map((partner) => {
+  renderPartnerMultiOptions();
+}
+
+function updatePartnerMultiLabel() {
+  const label = document.getElementById('partner-multi-select-label');
+  if (!label) return;
+  label.textContent = selectedPartnerVisionLabel();
+  label.title = currentPartnerBrokerIds.map((id) => {
+    const partner = partnerOptionsCache.find((item) => String(item.broker_id) === String(id));
+    return partner?.broker_name || id;
+  }).join(' · ');
+}
+
+function renderPartnerMultiOptions() {
+  const list = document.getElementById('partner-multi-select-options');
+  if (!list) return;
+  const search = String(document.getElementById('partner-multi-select-search')?.value || '').trim().toLowerCase();
+  const options = [...partnerOptionsCache]
+    .sort((a, b) => String(a.broker_name || '').localeCompare(String(b.broker_name || ''), 'pt-BR', { sensitivity: 'base' }))
+    .filter((partner) => {
+      const name = `${partner.broker_name || ''} ${partner.broker_name_secondary || ''}`.toLowerCase();
+      return !search || name.includes(search);
+    });
+  list.innerHTML = options.length ? options.map((partner) => {
     const id = String(partner.broker_id || '');
     const name = partner.broker_name || 'Sem nome';
     const secondary = partner.broker_name_secondary ? ` · ${partner.broker_name_secondary}` : '';
     const inactive = partner.broker_active === false ? ' · inativo' : '';
     const total = Number(partner.total_orgs) || 0;
-    const selected = id === current ? ' selected' : '';
-    return `<option value="${escapeAttr(id)}"${selected}>${escapeHtml(name)}${escapeHtml(secondary)} (${fmt(total)})${escapeHtml(inactive)}</option>`;
-  }).join('');
-  sel.disabled = false;
+    const checked = currentPartnerBrokerIds.includes(id) ? 'checked' : '';
+    return `<label class="multi-select-option" title="${escapeAttr(name + secondary)}">
+      <input type="checkbox" value="${escapeAttr(id)}" ${checked} onchange="onPartnerCheckboxChange(this.value,this.checked)" />
+      <span>${escapeHtml(name)}${escapeHtml(secondary)} (${fmt(total)})${escapeHtml(inactive)}</span>
+    </label>`;
+  }).join('') : '<div style="font-size:12px;color:#94a3b8;padding:10px;text-align:center">Nenhum parceiro encontrado.</div>';
+  updatePartnerMultiLabel();
+}
+
+function togglePartnerMultiDropdown() {
+  const wrap = document.getElementById('partner-multi-select');
+  if (!wrap) return;
+  wrap.classList.toggle('open');
+  if (wrap.classList.contains('open')) {
+    const search = document.getElementById('partner-multi-select-search');
+    if (search) setTimeout(() => search.focus(), 0);
+  }
+}
+
+function closePartnerMultiDropdown() {
+  const wrap = document.getElementById('partner-multi-select');
+  if (wrap) wrap.classList.remove('open');
+}
+
+function onPartnerSelectionChange() {
+  currentCompany = '';
+  updatePartnerMultiLabel();
+  updateFilterInfo();
+  loadPartnerVision();
+}
+
+function onPartnerCheckboxChange(value, checked) {
+  if (checked) {
+    if (!currentPartnerBrokerIds.includes(value)) currentPartnerBrokerIds.push(value);
+  } else {
+    currentPartnerBrokerIds = currentPartnerBrokerIds.filter((id) => id !== value);
+  }
+  onPartnerSelectionChange();
+}
+
+function selectAllPartnerSelection() {
+  currentPartnerBrokerIds = [...new Set(partnerOptionsCache.map((partner) => String(partner.broker_id || '')).filter(Boolean))];
+  renderPartnerMultiOptions();
+  onPartnerSelectionChange();
+}
+
+function clearPartnerSelection() {
+  currentPartnerBrokerIds = [];
+  renderPartnerMultiOptions();
+  onPartnerSelectionChange();
 }
 
 async function loadPartnerOptions() {
@@ -558,7 +653,11 @@ function updateFilterInfo() {
   }
   if (currentGroups.length === 1) parts.push(currentGroups[0]);
   else if (currentGroups.length > 1) parts.push(`${currentGroups.length} grupos econômicos`);
-  if (isPartnerFilteredTab(activeTab) && currentPartnerBrokerId) parts.push(`Parceiro: ${selectedPartnerLabel()}`);
+  if (isPartnerVisionTab(activeTab) && currentPartnerBrokerIds.length) {
+    parts.push(selectedPartnerVisionLabel());
+  } else if (isPartnerFilteredTab(activeTab) && currentPartnerBrokerId) {
+    parts.push(`Parceiro: ${selectedPartnerLabel()}`);
+  }
   if (currentCompany && activeTab !== 'sessoes') parts.push(currentCompany);
   if (activeTab === 'coordenacao-cuidado' && currentCareBeneficiaryType) parts.push(`Vínculo: ${careBeneficiaryTypeLabel()}`);
   if (currentType && activeTab !== 'sessoes' && activeTab !== 'coordenacao-cuidado' && !isPetitTab(activeTab) && !activeTab.startsWith('qualidade')) parts.push(currentType === 'TITULAR' ? 'Titular' : 'Dependente');
@@ -569,6 +668,7 @@ async function clearFilters() {
   const activeTab = getActiveTab();
   currentGroup = ''; currentGroups = []; currentType = ''; currentCompany = '';
   currentPartnerBrokerId = '';
+  currentPartnerBrokerIds = [];
   currentCareBeneficiaryType = '';
   selectedSessionTypificationFinisher = '';
   selectedQualityOperationalCollaborators = new Set();
@@ -579,6 +679,7 @@ async function clearFilters() {
   renderGroupOptions();
   const partnerSelect = document.getElementById('partner-select');
   if (partnerSelect) partnerSelect.value = '';
+  renderPartnerMultiOptions();
   document.getElementById('type-select').value  = '';
   syncCareBeneficiaryTypeControls();
   const typificationFinisherSelect = document.getElementById('session-typification-finisher-select');

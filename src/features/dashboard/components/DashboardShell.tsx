@@ -264,6 +264,41 @@ function Filters() {
           <option value="">(Todos os parceiros)</option>
         </select>
       </div>
+      <div className="filter-group" id="filter-partner-multi-group" style={{ display: "none" }}>
+        <label>🤝 Parceiros</label>
+        <div className="multi-select" id="partner-multi-select">
+          <button
+            type="button"
+            className="filter-select multi-select-button"
+            id="partner-multi-select-button"
+            onClick={() => legacy("togglePartnerMultiDropdown")}
+          >
+            <span id="partner-multi-select-label">(Todos os parceiros)</span>
+            <i className="fa-solid fa-chevron-down" />
+          </button>
+          <div className="multi-select-menu" id="partner-multi-select-menu">
+            <input
+              className="multi-select-search"
+              id="partner-multi-select-search"
+              type="text"
+              placeholder="Buscar parceiro..."
+              onInput={() => legacy("renderPartnerMultiOptions")}
+            />
+            <div className="multi-select-actions">
+              <button type="button" onClick={() => legacy("selectAllPartnerSelection")}>
+                Selecionar todos
+              </button>
+              <button type="button" onClick={() => legacy("clearPartnerSelection")}>
+                Limpar
+              </button>
+              <button type="button" onClick={() => legacy("closePartnerMultiDropdown")}>
+                Fechar
+              </button>
+            </div>
+            <div className="multi-select-options" id="partner-multi-select-options" />
+          </div>
+        </div>
+      </div>
       <div className="filter-group" id="filter-type-group">
         <label>👤 Tipo Beneficiário</label>
         <select className="filter-select" id="type-select">
