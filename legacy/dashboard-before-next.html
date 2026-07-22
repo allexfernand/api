@@ -2253,7 +2253,6 @@ const SESSIONS_Q3C_MONTHS = ['2026-01', '2026-02', '2026-03', '2026-04', '2026-0
 const SINISTRO_AS03_MONTHS = ['2025-07', '2025-08', '2025-09', '2025-10', '2025-11', '2025-12', '2026-01', '2026-02', '2026-03'];
 const AUTH_STORAGE_KEY = 'sanus-dashboard-basic-auth';
 const DEFAULT_LOGO = { src: '/assets/logo_sanus.svg', alt: 'Sanus' };
-const SANUS_USER_LOGO = { src: '/assets/logo_inter.png', alt: 'Inter' };
 
 let usersData = [], companiesData = [], sessionCompaniesData = [], eChart, agegroupChart, appointmentTypesTrendChart, appointmentsDailyChart, appointmentsStatusChart, careCoordinationLinesChart, careLinesEvolutionChart, careComplementChart, careActiveComplementChart, petitCareLinesChart, petitSessionsEvolChart, petitSessionsTotalEvolChart, sessionsEvolChart, sessionsJanMay2026EvolChart, sessionsQ3cChart, sessionsTotalEvolChart, sessionsAttendanceChart, sessionsDailyChart, sessionsTopGroupsChart, sinistroEventsEvolutionChart, sinistroValuesEvolutionChart, sinistroQuarterlyEvolutionChart, sinistroCohortEvolutionChart, qualityVolumeEvolutionChart, qualityDailyVolumeEvolutionChart, qualityEvolutionChart, qualityCriteriaEvolutionChart;
 let currentGroup = '', currentType = '', currentCompany = '';
@@ -2320,7 +2319,7 @@ function isSanusDashboardUser() {
 
 function applyDashboardUser(user = '') {
   currentDashboardUser = normalizeDashboardUser(user);
-  const logo = currentDashboardUser === 'sanus' ? SANUS_USER_LOGO : DEFAULT_LOGO;
+  const logo = DEFAULT_LOGO;
   const headerLogo = document.getElementById('dashboard-logo');
   if (headerLogo) {
     headerLogo.src = logo.src;

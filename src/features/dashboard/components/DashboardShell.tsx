@@ -31,7 +31,6 @@ const claimsTabs = [
 ] as const;
 
 const defaultLogo = { src: "/assets/logo_sanus.svg", alt: "Sanus", width: 112, height: 32 };
-const sanusUserLogo = { src: "/assets/logo_inter.png", alt: "Inter", width: 112, height: 32 };
 
 function legacy(name: string, ...args: unknown[]) {
   return window.SanusDashboard?.[name]?.(...args);
@@ -104,9 +103,7 @@ function LoginOverlay({ authenticated }: { authenticated: boolean }) {
   );
 }
 
-function Header({ dashboardUser }: { dashboardUser: string }) {
-  const logo = dashboardUser === "sanus" ? sanusUserLogo : defaultLogo;
-
+function Header() {
   async function logout() {
     await apiRequest<{ ok: boolean }>("/api/auth/logout", { method: "POST" }).catch(() => null);
     window.location.href = "/";
@@ -435,7 +432,7 @@ export function DashboardShell() {
   return (
     <>
       <LoginOverlay authenticated={authenticated} />
-      <Header dashboardUser={dashboardUser} />
+      <Header />
       <Navigation activeTab={activeTab} hidePetitMds={hidePetitMds} onChange={activate} />
       <Filters />
     </>
