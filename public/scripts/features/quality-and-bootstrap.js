@@ -1454,6 +1454,7 @@ async function loadAll(fetchOrgs=true) {
     loadDemographics();
     loadCompanies();
     loadAgeGroups();
+    if (getActiveTab() === 'visao-parceiros') loadPartnerVision();
   } catch(err) {
     setStatus('error','✗ Erro: '+err.message);
   }

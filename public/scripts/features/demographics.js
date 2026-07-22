@@ -48,6 +48,49 @@ function renderDemographics(d) {
   s('d-ratio', tit>0?(dep/tit).toFixed(2).replace('.',','):'—');
 }
 
+async function loadPartnerVision() {
+  const loading = document.getElementById('partner-vision-loading');
+  const error = document.getElementById('partner-vision-error');
+  const total = document.getElementById('partner-vision-total-lives');
+  const titulares = document.getElementById('partner-vision-total-titular');
+  const dependentes = document.getElementById('partner-vision-total-dependent');
+  const context = document.getElementById('partner-vision-context');
+  if (!total) return;
+
+  if (loading) loading.style.display = 'block';
+  if (error) {
+    error.style.display = 'none';
+    error.textContent = '';
+  }
+  total.textContent = '—';
+  if (titulares) titulares.textContent = '—';
+  if (dependentes) dependentes.textContent = '—';
+
+  const p = new URLSearchParams();
+  if (currentPartnerBrokerId) p.set('partner_broker_id', currentPartnerBrokerId);
+  const data = await safeGet('/api/demographics' + (p.toString() ? '?' + p.toString() : ''));
+  if (!data || data.error) {
+    if (loading) loading.style.display = 'none';
+    if (error) {
+      error.style.display = 'block';
+      error.textContent = data?.error ? String(data.error).slice(0, 180) : 'Erro ao carregar visão do parceiro';
+    }
+    if (context) context.textContent = 'Não foi possível carregar os dados do parceiro.';
+    return;
+  }
+
+  const totalBeneficiarios = Number(data.total_beneficiarios ?? data.total_vidas) || 0;
+  total.textContent = fmt(totalBeneficiarios);
+  if (titulares) titulares.textContent = fmt(Number(data.titulares) || 0);
+  if (dependentes) dependentes.textContent = fmt(Number(data.dependentes) || 0);
+  if (context) {
+    context.textContent = currentPartnerBrokerId
+      ? `Parceiro: ${selectedPartnerLabel() || currentPartnerBrokerId}`
+      : 'Todos os parceiros · beneficiaries · acumulado desde mai/2022';
+  }
+  if (loading) loading.style.display = 'none';
+}
+
 // --- Empresas (quadro Beneficiários por Empresa) ---
 function filterCompanies() {
   const q = document.getElementById('company-search').value.toLowerCase();

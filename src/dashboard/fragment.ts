@@ -3,6 +3,7 @@ import { join } from "node:path";
 
 export type DashboardFragmentName =
   | "demographics"
+  | "partner-vision"
   | "appointments"
   | "care-coordination"
   | "sessions"
@@ -18,6 +19,7 @@ export type DashboardFragments = Record<DashboardFragmentName, string>;
 
 export const dashboardFragmentNames: DashboardFragmentName[] = [
   "demographics",
+  "partner-vision",
   "appointments",
   "care-coordination",
   "sessions",

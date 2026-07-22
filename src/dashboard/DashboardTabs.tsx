@@ -14,6 +14,7 @@ export function DashboardTabs({ fragments }: { fragments: DashboardFragments }) 
   return (
     <main className="container">
       <DemographicsTab html={fragments.demographics} />
+      <DemographicsTab html={fragments["partner-vision"]} />
       <AppointmentsTab html={fragments.appointments} />
       <CareCoordinationTab html={fragments["care-coordination"]} />
       <SessionsTab html={fragments.sessions} />

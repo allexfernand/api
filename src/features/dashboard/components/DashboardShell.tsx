@@ -18,6 +18,7 @@ const navSections = [
     label: "Visão Geral",
     items: [
       ["demografica", "Análise Demográfica", "fa-chart-pie"],
+      ["visao-parceiros", "Visão Parceiros", "fa-handshake-angle"],
       ["agendamentos", "Agendamentos", "fa-calendar-check"],
       ["sessoes", "Sessões", "fa-comments"],
     ],
@@ -166,12 +167,14 @@ function Navigation({
   activeTab,
   hidePetitMds,
   hideMdsRestrictedSections,
+  showPartnerVision,
   sidebarCollapsed,
   onChange,
 }: {
   activeTab: string;
   hidePetitMds: boolean;
   hideMdsRestrictedSections: boolean;
+  showPartnerVision: boolean;
   sidebarCollapsed: boolean;
   onChange: (tab: string) => void;
 }) {
@@ -190,6 +193,7 @@ function Navigation({
             <div className="sidebar-section-label">{section.label}</div>
             {section.items
               .filter(([id]) => !(hidePetitMds && id === "petit-comite-mds"))
+              .filter(([id]) => showPartnerVision || id !== "visao-parceiros")
               .map(([id, label, icon]) => (
                 <button
                   type="button"
@@ -394,14 +398,16 @@ export function DashboardShell() {
   const [dashboardRole, setDashboardRole] = useState("");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const hidePetitMds = dashboardUser === "sanus";
+  const showPartnerVision = dashboardUser === "sanus";
   const isMdsDashboard = dashboardRole === "mds";
 
   const activate = useCallback((tab: string) => {
-    const nextTab = hidePetitMds && tab === "petit-comite-mds" ? "demografica" : tab;
+    let nextTab = hidePetitMds && tab === "petit-comite-mds" ? "demografica" : tab;
+    if (!showPartnerVision && nextTab === "visao-parceiros") nextTab = "demografica";
     setActiveTab(nextTab);
     legacy("activateTab", nextTab);
     if (window.matchMedia("(max-width: 760px)").matches) setSidebarCollapsed(true);
-  }, [hidePetitMds]);
+  }, [hidePetitMds, showPartnerVision]);
 
   useEffect(() => {
     apiRequest("/api/data?scope=auth", { schema: authResponseSchema })
@@ -440,6 +446,10 @@ export function DashboardShell() {
   }, [dashboardUser]);
 
   useEffect(() => {
+    if (!showPartnerVision && activeTab === "visao-parceiros") activate("demografica");
+  }, [activeTab, activate, showPartnerVision]);
+
+  useEffect(() => {
     document.body.dataset.sidebar = sidebarCollapsed ? "collapsed" : "expanded";
     return () => {
       delete document.body.dataset.sidebar;
@@ -457,6 +467,7 @@ export function DashboardShell() {
         activeTab={activeTab}
         hidePetitMds={hidePetitMds}
         hideMdsRestrictedSections={isMdsDashboard}
+        showPartnerVision={showPartnerVision}
         sidebarCollapsed={sidebarCollapsed}
         onChange={activate}
       />

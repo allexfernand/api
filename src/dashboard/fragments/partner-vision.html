@@ -1,0 +1,27 @@
+<!-- Tab: Visão Parceiros -->
+  <div class="tab-content" id="tab-visao-parceiros">
+    <div class="card-box" style="display:flex;align-items:center;gap:20px;padding:20px 28px;flex-wrap:wrap">
+      <div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#00A69C,#2E7D9A);display:flex;align-items:center;justify-content:center">
+        <i class="fa-solid fa-handshake-angle" style="font-size:20px;color:#fff"></i>
+      </div>
+      <div style="min-width:220px">
+        <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;margin-bottom:3px">Total de vidas cadastradas</div>
+        <div style="font-size:34px;font-weight:700;color:#00A69C;letter-spacing:-1px;line-height:1" id="partner-vision-total-lives">—</div>
+        <div style="font-size:11px;color:#cbd5e1;margin-top:3px" id="partner-vision-context">Selecione um parceiro para carregar a visão</div>
+        <div style="display:flex;gap:20px;margin-top:10px;flex-wrap:wrap">
+          <div style="display:flex;align-items:center;gap:6px">
+            <i class="fa-solid fa-user" style="font-size:11px;color:#64748b"></i>
+            <span style="font-size:12px;color:#64748b">Titular: <strong id="partner-vision-total-titular" style="color:#1e293b">—</strong></span>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px">
+            <i class="fa-solid fa-users" style="font-size:11px;color:#64748b"></i>
+            <span style="font-size:12px;color:#64748b">Dependente: <strong id="partner-vision-total-dependent" style="color:#1e293b">—</strong></span>
+          </div>
+        </div>
+      </div>
+      <div class="loading-box" id="partner-vision-loading" style="display:none;margin-left:auto;padding:0">
+        <i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...
+      </div>
+      <div style="font-size:11px;color:#f59e0b;margin-left:auto;display:none" id="partner-vision-error"></div>
+    </div>
+  </div>
