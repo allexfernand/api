@@ -1,11 +1,11 @@
 <!-- Tab: Visão Parceiros -->
   <div class="tab-content" id="tab-visao-parceiros">
-    <div class="card-box" style="display:flex;align-items:center;gap:20px;padding:20px 28px;flex-wrap:wrap">
+    <div class="card-box" data-qtag="#VP01" style="display:flex;align-items:center;gap:20px;padding:20px 28px;flex-wrap:wrap">
       <div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#00A69C,#2E7D9A);display:flex;align-items:center;justify-content:center">
         <i class="fa-solid fa-handshake-angle" style="font-size:20px;color:#fff"></i>
       </div>
       <div style="min-width:220px">
-        <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;margin-bottom:3px">Total de vidas cadastradas</div>
+        <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;margin-bottom:3px">#VP01 · Total de vidas cadastradas</div>
         <div style="font-size:34px;font-weight:700;color:#00A69C;letter-spacing:-1px;line-height:1" id="partner-vision-total-lives">—</div>
         <div style="font-size:11px;color:#cbd5e1;margin-top:3px" id="partner-vision-context">Selecione um parceiro para carregar a visão</div>
         <div style="display:flex;gap:20px;margin-top:10px;flex-wrap:wrap">
@@ -23,5 +23,22 @@
         <i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...
       </div>
       <div style="font-size:11px;color:#f59e0b;margin-left:auto;display:none" id="partner-vision-error"></div>
+    </div>
+    <div class="card-box" data-qtag="#VP02" style="margin-top:16px;padding:20px 24px">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:14px">
+        <div>
+          <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px">#VP02 · Evolução de vidas por parceiro</div>
+          <div style="font-size:18px;font-weight:700;color:#1e293b;line-height:1.2">Vidas acumuladas por mês</div>
+          <div style="font-size:12px;color:#64748b;margin-top:4px" id="partner-vision-evolution-context">Selecione um ou mais parceiros para comparar a evolução.</div>
+        </div>
+        <div class="loading-box" id="partner-vision-evolution-loading" style="display:none;padding:0">
+          <i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...
+        </div>
+      </div>
+      <div id="skel-partner-vision-evolution" class="skeleton" style="height:280px"></div>
+      <div style="height:280px;display:none" id="partner-vision-evolution-chart-wrap">
+        <canvas id="partnerVisionEvolutionChart"></canvas>
+      </div>
+      <div style="font-size:11px;color:#f59e0b;margin-top:10px;display:none" id="partner-vision-evolution-error"></div>
     </div>
   </div>

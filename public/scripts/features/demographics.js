@@ -48,6 +48,146 @@ function renderDemographics(d) {
   s('d-ratio', tit>0?(dep/tit).toFixed(2).replace('.',','):'—');
 }
 
+function partnerVisionParams() {
+  const p = new URLSearchParams();
+  if (currentPartnerBrokerIds.length > 1) p.set('partner_broker_ids', JSON.stringify(currentPartnerBrokerIds));
+  else if (currentPartnerBrokerIds.length === 1) p.set('partner_broker_id', currentPartnerBrokerIds[0]);
+  return p;
+}
+
+function partnerVisionMonthWindow(count = 12) {
+  const out = [];
+  const d = new Date();
+  d.setDate(1);
+  for (let i = count - 1; i >= 0; i--) {
+    const dd = new Date(d);
+    dd.setMonth(d.getMonth() - i);
+    out.push(`${dd.getFullYear()}-${String(dd.getMonth() + 1).padStart(2, '0')}`);
+  }
+  return out;
+}
+
+function partnerVisionMonthLabel(month) {
+  const [year, mm] = String(month).split('-');
+  return `${mN[mm] || mm}/${String(year).slice(2)}`;
+}
+
+async function loadPartnerVisionEvolution() {
+  const skel = document.getElementById('skel-partner-vision-evolution');
+  const wrap = document.getElementById('partner-vision-evolution-chart-wrap');
+  const cv = document.getElementById('partnerVisionEvolutionChart');
+  const loading = document.getElementById('partner-vision-evolution-loading');
+  const error = document.getElementById('partner-vision-evolution-error');
+  const context = document.getElementById('partner-vision-evolution-context');
+  if (!cv) return;
+
+  if (loading) loading.style.display = 'block';
+  if (error) {
+    error.style.display = 'none';
+    error.textContent = '';
+  }
+  if (skel) {
+    skel.style.display = 'block';
+    skel.innerHTML = '';
+  }
+  if (wrap) wrap.style.display = 'none';
+
+  const p = partnerVisionParams();
+  const data = await safeGet('/api/demographics-partner-evolution' + (p.toString() ? '?' + p.toString() : ''));
+  if (!data || data.error || !Array.isArray(data.series)) {
+    if (loading) loading.style.display = 'none';
+    if (skel) skel.style.display = 'none';
+    if (error) {
+      error.style.display = 'block';
+      error.textContent = data?.error ? String(data.error).slice(0, 180) : 'Erro ao carregar evolução de vidas por parceiro';
+    }
+    return;
+  }
+
+  const months = partnerVisionMonthWindow(12);
+  const labels = months.map(partnerVisionMonthLabel);
+  const grouped = new Map();
+  data.series.forEach((item) => {
+    const id = String(item.partner_broker_id || item.partner_name || '');
+    if (!id) return;
+    if (!grouped.has(id)) grouped.set(id, { name: item.partner_name || id, rows: [] });
+    grouped.get(id).rows.push({
+      mes: String(item.mes || ''),
+      cumulative: Number(item.cumulative_total) || 0,
+    });
+  });
+
+  const palette = ['#00A69C', '#2E7D9A', '#2563eb', '#7c3aed', '#f59e0b', '#ef4444', '#10b981', '#64748b', '#db2777', '#14b8a6', '#8b5cf6', '#f97316'];
+  const datasets = [...grouped.values()].map((partner, index) => {
+    const rows = partner.rows.sort((a, b) => a.mes.localeCompare(b.mes));
+    let rowIndex = 0;
+    let carry = 0;
+    const values = months.map((month) => {
+      while (rowIndex < rows.length && rows[rowIndex].mes <= month) {
+        carry = rows[rowIndex].cumulative || carry;
+        rowIndex += 1;
+      }
+      return carry;
+    });
+    const color = palette[index % palette.length];
+    return {
+      label: partner.name,
+      data: values,
+      borderColor: color,
+      backgroundColor: color + '22',
+      borderWidth: 2,
+      pointRadius: 2,
+      pointHoverRadius: 4,
+      tension: 0.3,
+      fill: false,
+    };
+  });
+
+  if (partnerVisionEvolutionChart) partnerVisionEvolutionChart.destroy();
+  if (!datasets.length) {
+    if (skel) {
+      skel.style.display = 'block';
+      skel.innerHTML = '<div style="display:flex;height:100%;align-items:center;justify-content:center;color:#94a3b8;font-size:12px">Nenhuma vida encontrada para os parceiros selecionados.</div>';
+    }
+    if (loading) loading.style.display = 'none';
+    if (context) context.textContent = 'Sem dados para o recorte selecionado.';
+    return;
+  }
+
+  if (skel) skel.style.display = 'none';
+  if (wrap) wrap.style.display = 'block';
+  partnerVisionEvolutionChart = new Chart(cv, {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'bottom', labels: { boxWidth: 10, boxHeight: 10, color: '#64748b', font: { size: 11 } } },
+        tooltip: {
+          backgroundColor: '#1e293b',
+          borderColor: '#334155',
+          borderWidth: 1,
+          titleColor: '#94a3b8',
+          bodyColor: '#f1f5f9',
+          callbacks: { label: c => `${c.dataset.label}: ${fmt(c.parsed.y)} vidas` },
+        },
+      },
+      scales: {
+        x: { ticks: { font: { size: 10 }, color: '#94a3b8' }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } },
+        y: { beginAtZero: true, ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => fmt(v) }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } },
+      },
+    },
+  });
+  if (context) {
+    context.textContent = currentPartnerBrokerIds.length
+      ? `Comparando ${selectedPartnerVisionLabel()} · últimos 12 meses`
+      : `Top ${data.top_limit || datasets.length} parceiros por vidas · últimos 12 meses`;
+  }
+  if (loading) loading.style.display = 'none';
+}
+
 async function loadPartnerVision() {
   const loading = document.getElementById('partner-vision-loading');
   const error = document.getElementById('partner-vision-error');
@@ -66,9 +206,8 @@ async function loadPartnerVision() {
   if (titulares) titulares.textContent = '—';
   if (dependentes) dependentes.textContent = '—';
 
-  const p = new URLSearchParams();
-  if (currentPartnerBrokerIds.length > 1) p.set('partner_broker_ids', JSON.stringify(currentPartnerBrokerIds));
-  else if (currentPartnerBrokerIds.length === 1) p.set('partner_broker_id', currentPartnerBrokerIds[0]);
+  loadPartnerVisionEvolution();
+  const p = partnerVisionParams();
   const data = await safeGet('/api/demographics' + (p.toString() ? '?' + p.toString() : ''));
   if (!data || data.error) {
     if (loading) loading.style.display = 'none';
