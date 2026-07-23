@@ -234,7 +234,7 @@ body[data-sidebar="collapsed"] .sidebar-tab span{opacity:0;position:absolute;tra
 .partner-summary-name{display:inline-flex;align-items:center;gap:7px;font-weight:800;color:#0f766e}
 .partner-summary-name i{font-size:10px;color:#94a3b8}
 .partner-company-row td{background:#fbfdff;color:#475569}
-.partner-company-row .company-name{padding-left:24px;font-weight:700;color:#334155}
+.partner-company-row .drilldown-name{padding-left:24px;font-weight:700;color:#334155}
 .partner-company-row.is-loading td{color:#94a3b8;text-align:left!important;font-weight:600!important}
 .card-box[data-qtag]::before,.chart-card[data-qtag]::before{
   content:attr(data-qtag);

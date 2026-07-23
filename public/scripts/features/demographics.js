@@ -124,36 +124,39 @@ async function togglePartnerCompanyDrilldown(partnerId) {
   }
 
   const requestId = ++partnerVisionCompanyDrilldownRequestId;
-  insertPartnerCompanyRows(anchorRow, key, `<tr class="partner-company-row is-loading" data-parent-partner-key="${key}"><td colspan="6"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando empresas do parceiro...</td></tr>`);
+  insertPartnerCompanyRows(anchorRow, key, `<tr class="partner-company-row is-loading" data-parent-partner-key="${key}"><td colspan="6"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando grupos econômicos do parceiro...</td></tr>`);
 
   const months = partnerVisionMonthWindow();
   const sessionComparisonMonths = months.slice(-2);
   const monthParam = months.join(',');
-  const companyParams = partnerVisionSingleParams(partnerId);
-  const companyData = await safeGet('/api/companies?' + companyParams.toString());
+  const groupParams = partnerVisionSingleParams(partnerId);
+  const groupData = await safeGet('/api/data?' + groupParams.toString());
   if (requestId !== partnerVisionCompanyDrilldownRequestId) return;
-  if (!companyData || companyData.error || !Array.isArray(companyData.companies) || !companyData.companies.length) {
-    insertPartnerCompanyRows(anchorRow, key, `<tr class="partner-company-row is-loading" data-parent-partner-key="${key}"><td colspan="6">Nenhuma empresa encontrada para este parceiro.</td></tr>`);
+  if (!groupData || groupData.error || !Array.isArray(groupData.groups) || !groupData.groups.length) {
+    insertPartnerCompanyRows(anchorRow, key, `<tr class="partner-company-row is-loading" data-parent-partner-key="${key}"><td colspan="6">Nenhum grupo econômico encontrado para este parceiro.</td></tr>`);
     return;
   }
 
-  const companyRows = await Promise.all(companyData.companies.map(async (company) => {
-    const companyName = String(company.empresa || '').trim();
+  const groupRows = await Promise.all(groupData.groups.map(async (group) => {
+    const groupName = String(group.economic_group || '').trim();
+    const demographicsParams = partnerVisionSingleParams(partnerId);
     const sessionsParams = partnerVisionSingleParams(partnerId);
     const appointmentsParams = partnerVisionSingleParams(partnerId);
-    sessionsParams.set('company', companyName);
+    demographicsParams.set('group_name', groupName);
+    sessionsParams.set('group_name', groupName);
     sessionsParams.set('meses', monthParam);
-    appointmentsParams.set('company', companyName);
+    appointmentsParams.set('group_name', groupName);
     appointmentsParams.set('meses', monthParam);
 
-    const [sessions, appointments] = await Promise.all([
+    const [demographics, sessions, appointments] = await Promise.all([
+      safeGet('/api/demographics?' + demographicsParams.toString()),
       safeGet('/api/sessions-evolution?' + sessionsParams.toString()),
       safeGet('/api/appointments-evolution?' + appointmentsParams.toString()),
     ]);
     const sessionsByMonth = seriesTotalsByMonth(sessions);
     return {
-      company: companyName || 'Empresa sem nome',
-      lives: Number(company.total) || 0,
+      group: groupName || 'Grupo sem nome',
+      lives: demographics && !demographics.error ? Number(demographics.total_beneficiarios ?? demographics.total_vidas) || 0 : null,
       sessions: sessions && !sessions.error ? sumSeriesTotal(sessions) : null,
       appointments: appointments && !appointments.error ? sumSeriesTotal(appointments) : null,
       sessionComparison: sessionComparisonMonths.map((month) => sessionsByMonth.get(month) || 0),
@@ -161,9 +164,9 @@ async function togglePartnerCompanyDrilldown(partnerId) {
   }));
   if (requestId !== partnerVisionCompanyDrilldownRequestId) return;
 
-  insertPartnerCompanyRows(anchorRow, key, companyRows.map((row) => `<tr class="partner-company-row" data-parent-partner-key="${key}">
-    <td class="company-name">${escapeHtml(row.company)}</td>
-    <td>${fmt(row.lives)}</td>
+  insertPartnerCompanyRows(anchorRow, key, groupRows.map((row) => `<tr class="partner-company-row" data-parent-partner-key="${key}">
+    <td class="drilldown-name">${escapeHtml(row.group)}</td>
+    <td>${row.lives === null ? '—' : fmt(row.lives)}</td>
     <td>${row.sessions === null ? '—' : fmt(row.sessions)}</td>
     <td>${row.appointments === null ? '—' : fmt(row.appointments)}</td>
     <td>${fmt(row.sessionComparison[0] || 0)}</td>
@@ -239,7 +242,7 @@ async function loadPartnerVisionSummary() {
   </tr>`;
   }).join('');
 
-  if (context) context.textContent = `${partners.length} parceiro(s) · clique em um parceiro para ver empresas`;
+  if (context) context.textContent = `${partners.length} parceiro(s) · clique em um parceiro para ver grupos econômicos`;
   if (loading) loading.style.display = 'none';
   if (rows.some((row) => row.hasError) && error) {
     error.style.display = 'block';
