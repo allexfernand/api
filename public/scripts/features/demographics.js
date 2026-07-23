@@ -73,6 +73,7 @@ function partnerVisionMonthLabel(month) {
 }
 
 async function loadPartnerVisionEvolution() {
+  const requestId = ++partnerVisionEvolutionRequestId;
   const skel = document.getElementById('skel-partner-vision-evolution');
   const wrap = document.getElementById('partner-vision-evolution-chart-wrap');
   const cv = document.getElementById('partnerVisionEvolutionChart');
@@ -94,6 +95,7 @@ async function loadPartnerVisionEvolution() {
 
   const p = partnerVisionParams();
   const data = await safeGet('/api/demographics-partner-evolution' + (p.toString() ? '?' + p.toString() : ''));
+  if (requestId !== partnerVisionEvolutionRequestId) return;
   if (!data || data.error || !Array.isArray(data.series)) {
     if (loading) loading.style.display = 'none';
     if (skel) skel.style.display = 'none';
@@ -189,6 +191,7 @@ async function loadPartnerVisionEvolution() {
 }
 
 async function loadPartnerVision() {
+  const requestId = ++partnerVisionRequestId;
   const loading = document.getElementById('partner-vision-loading');
   const error = document.getElementById('partner-vision-error');
   const total = document.getElementById('partner-vision-total-lives');
@@ -209,6 +212,7 @@ async function loadPartnerVision() {
   loadPartnerVisionEvolution();
   const p = partnerVisionParams();
   const data = await safeGet('/api/demographics' + (p.toString() ? '?' + p.toString() : ''));
+  if (requestId !== partnerVisionRequestId) return;
   if (!data || data.error) {
     if (loading) loading.style.display = 'none';
     if (error) {

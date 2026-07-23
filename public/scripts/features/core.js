@@ -17,6 +17,9 @@ let currentGroup = '', currentType = '', currentCompany = '';
 let currentGroups = [];
 let currentPartnerBrokerId = '';
 let currentPartnerBrokerIds = [];
+let partnerVisionSelectionTouched = false;
+let partnerVisionRequestId = 0;
+let partnerVisionEvolutionRequestId = 0;
 let currentCareBeneficiaryType = '';
 let partnerOptionsCache = [];
 let groupOptionsCache = { orgs: null, sessions: null, petitMds: null };
@@ -456,11 +459,31 @@ function selectedPartnerVisionLabel() {
   return `${currentPartnerBrokerIds.length} parceiros selecionados`;
 }
 
-function isMdsPartner(partner) {
-  const text = `${partner?.broker_name || ''} ${partner?.broker_name_secondary || ''}`
+function normalizedPartnerSearchText(partner) {
+  return `${partner?.broker_name || ''} ${partner?.broker_name_secondary || ''}`
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase();
+}
+
+function matchesPartnerVisionDefault(partner) {
+  const text = normalizedPartnerSearchText(partner);
+  return /(^|[^a-z0-9])mds([^a-z0-9]|$)/.test(text)
+    || /(^|[^a-z0-9])wiz([^a-z0-9]|$)/.test(text)
+    || /(^|[^a-z0-9])inter([^a-z0-9]|$)/.test(text);
+}
+
+function applyPartnerVisionDefaultSelectionIfNeeded() {
+  if (getActiveTab() !== 'visao-parceiros' || partnerVisionSelectionTouched || currentPartnerBrokerIds.length || !partnerOptionsCache.length) return false;
+  currentPartnerBrokerIds = [...new Set(partnerOptionsCache
+    .filter(matchesPartnerVisionDefault)
+    .map((partner) => String(partner.broker_id || '').trim())
+    .filter(Boolean))];
+  return currentPartnerBrokerIds.length > 0;
+}
+
+function isMdsPartner(partner) {
+  const text = normalizedPartnerSearchText(partner);
   return /(^|[^a-z0-9])mds([^a-z0-9]|$)/.test(text);
 }
 
@@ -506,7 +529,9 @@ function renderPartnerOptions() {
     }).join('');
     sel.disabled = false;
   }
+  const appliedPartnerVisionDefault = applyPartnerVisionDefaultSelectionIfNeeded();
   renderPartnerMultiOptions();
+  if (appliedPartnerVisionDefault && getActiveTab() === 'visao-parceiros') loadPartnerVision();
 }
 
 function updatePartnerMultiLabel() {
@@ -567,6 +592,7 @@ function onPartnerSelectionChange() {
 }
 
 function onPartnerCheckboxChange(value, checked) {
+  partnerVisionSelectionTouched = true;
   if (checked) {
     if (!currentPartnerBrokerIds.includes(value)) currentPartnerBrokerIds.push(value);
   } else {
@@ -576,12 +602,14 @@ function onPartnerCheckboxChange(value, checked) {
 }
 
 function selectAllPartnerSelection() {
+  partnerVisionSelectionTouched = true;
   currentPartnerBrokerIds = [...new Set(partnerOptionsCache.map((partner) => String(partner.broker_id || '')).filter(Boolean))];
   renderPartnerMultiOptions();
   onPartnerSelectionChange();
 }
 
 function clearPartnerSelection() {
+  partnerVisionSelectionTouched = true;
   currentPartnerBrokerIds = [];
   renderPartnerMultiOptions();
   onPartnerSelectionChange();
@@ -668,6 +696,7 @@ async function clearFilters() {
   const activeTab = getActiveTab();
   currentGroup = ''; currentGroups = []; currentType = ''; currentCompany = '';
   currentPartnerBrokerId = '';
+  if (isPartnerVisionTab(activeTab)) partnerVisionSelectionTouched = true;
   currentPartnerBrokerIds = [];
   currentCareBeneficiaryType = '';
   selectedSessionTypificationFinisher = '';

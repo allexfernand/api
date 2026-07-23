@@ -223,6 +223,7 @@ body[data-sidebar="collapsed"] .sidebar-tab span{opacity:0;position:absolute;tra
 }
 .card-box:hover{box-shadow:var(--shadow-md)}
 .card-box[data-qtag],.chart-card[data-qtag]{position:relative}
+.partner-vision-half-card{width:calc(50% - 8px);min-width:480px}
 .card-box[data-qtag]::before,.chart-card[data-qtag]::before{
   content:attr(data-qtag);
   position:absolute;
@@ -780,6 +781,7 @@ body.pg-help-open{overflow:hidden}
   .card-box{padding:20px}
   .chart-card{padding:18px}
   .chart-wrap{height:300px}
+  .partner-vision-half-card{width:100%;min-width:0}
   .pg-filter-fields{grid-template-columns:repeat(2,minmax(0,1fr))}
   #tab-preview-gold .pg-split-grid{grid-template-columns:1fr!important}
 }
