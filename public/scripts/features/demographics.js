@@ -72,6 +72,89 @@ function partnerVisionMonthLabel(month) {
   return `${mN[mm] || mm}/${String(year).slice(2)}`;
 }
 
+function selectedPartnerVisionItems() {
+  return currentPartnerBrokerIds.map((id) => {
+    const partner = partnerOptionsCache.find((item) => String(item.broker_id) === String(id));
+    return {
+      id: String(id),
+      name: partner?.broker_name || partner?.broker_name_secondary || String(id),
+    };
+  });
+}
+
+function partnerVisionSingleParams(partnerId) {
+  const p = new URLSearchParams();
+  p.set('partner_broker_id', partnerId);
+  return p;
+}
+
+function sumSeriesTotal(data) {
+  if (!data || !Array.isArray(data.series)) return 0;
+  return data.series.reduce((sum, item) => sum + (Number(item.total) || 0), 0);
+}
+
+async function loadPartnerVisionSummary() {
+  const requestId = ++partnerVisionSummaryRequestId;
+  const loading = document.getElementById('partner-vision-summary-loading');
+  const error = document.getElementById('partner-vision-summary-error');
+  const body = document.getElementById('partner-vision-summary-body');
+  const context = document.getElementById('partner-vision-summary-context');
+  if (!body) return;
+
+  if (loading) loading.style.display = 'block';
+  if (error) {
+    error.style.display = 'none';
+    error.textContent = '';
+  }
+
+  const partners = selectedPartnerVisionItems();
+  if (!partners.length) {
+    body.innerHTML = '<tr><td colspan="4">Selecione parceiros para carregar a tabela.</td></tr>';
+    if (context) context.textContent = 'Nenhum parceiro selecionado.';
+    if (loading) loading.style.display = 'none';
+    return;
+  }
+
+  body.innerHTML = '<tr><td colspan="4">Carregando volumes...</td></tr>';
+  const monthParam = partnerVisionMonthWindow().join(',');
+  const rows = await Promise.all(partners.map(async (partner) => {
+    const demographicsParams = partnerVisionSingleParams(partner.id);
+    const sessionsParams = partnerVisionSingleParams(partner.id);
+    const appointmentsParams = partnerVisionSingleParams(partner.id);
+    sessionsParams.set('meses', monthParam);
+    appointmentsParams.set('meses', monthParam);
+
+    const [demographics, sessions, appointments] = await Promise.all([
+      safeGet('/api/demographics?' + demographicsParams.toString()),
+      safeGet('/api/sessions-evolution?' + sessionsParams.toString()),
+      safeGet('/api/appointments-evolution?' + appointmentsParams.toString()),
+    ]);
+
+    return {
+      name: partner.name,
+      lives: demographics && !demographics.error ? Number(demographics.total_beneficiarios ?? demographics.total_vidas) || 0 : null,
+      sessions: sessions && !sessions.error ? sumSeriesTotal(sessions) : null,
+      appointments: appointments && !appointments.error ? sumSeriesTotal(appointments) : null,
+      hasError: Boolean(demographics?.error || sessions?.error || appointments?.error),
+    };
+  }));
+  if (requestId !== partnerVisionSummaryRequestId) return;
+
+  body.innerHTML = rows.map((row) => `<tr>
+    <td>${escapeHtml(row.name)}</td>
+    <td>${row.lives === null ? '—' : fmt(row.lives)}</td>
+    <td>${row.sessions === null ? '—' : fmt(row.sessions)}</td>
+    <td>${row.appointments === null ? '—' : fmt(row.appointments)}</td>
+  </tr>`).join('');
+
+  if (context) context.textContent = `${partners.length} parceiro(s) · sessões e agendamentos de jan/26 até mês atual`;
+  if (loading) loading.style.display = 'none';
+  if (rows.some((row) => row.hasError) && error) {
+    error.style.display = 'block';
+    error.textContent = 'Alguns volumes não puderam ser carregados.';
+  }
+}
+
 async function loadPartnerVisionEvolution() {
   const requestId = ++partnerVisionEvolutionRequestId;
   const skel = document.getElementById('skel-partner-vision-evolution');
@@ -210,6 +293,7 @@ async function loadPartnerVision() {
   if (dependentes) dependentes.textContent = '—';
 
   loadPartnerVisionEvolution();
+  loadPartnerVisionSummary();
   const p = partnerVisionParams();
   const data = await safeGet('/api/demographics' + (p.toString() ? '?' + p.toString() : ''));
   if (requestId !== partnerVisionRequestId) return;

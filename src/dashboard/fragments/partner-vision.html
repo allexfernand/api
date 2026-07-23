@@ -24,21 +24,51 @@
       </div>
       <div style="font-size:11px;color:#f59e0b;margin-left:auto;display:none" id="partner-vision-error"></div>
     </div>
-    <div class="card-box partner-vision-half-card" data-qtag="#VP02" style="margin-top:16px;padding:20px 24px">
-      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:14px">
-        <div>
-          <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px">#VP02 · Evolução de vidas por parceiro</div>
-          <div style="font-size:18px;font-weight:700;color:#1e293b;line-height:1.2">Vidas acumuladas por mês</div>
-          <div style="font-size:12px;color:#64748b;margin-top:4px" id="partner-vision-evolution-context">Selecione um ou mais parceiros para comparar a evolução.</div>
+    <div class="partner-vision-row">
+      <div class="card-box partner-vision-half-card" data-qtag="#VP02" style="padding:20px 24px">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:14px">
+          <div>
+            <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px">#VP02 · Evolução de vidas por parceiro</div>
+            <div style="font-size:18px;font-weight:700;color:#1e293b;line-height:1.2">Vidas acumuladas por mês</div>
+            <div style="font-size:12px;color:#64748b;margin-top:4px" id="partner-vision-evolution-context">Selecione um ou mais parceiros para comparar a evolução.</div>
+          </div>
+          <div class="loading-box" id="partner-vision-evolution-loading" style="display:none;padding:0">
+            <i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...
+          </div>
         </div>
-        <div class="loading-box" id="partner-vision-evolution-loading" style="display:none;padding:0">
-          <i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...
+        <div id="skel-partner-vision-evolution" class="skeleton" style="height:280px"></div>
+        <div style="height:280px;display:none" id="partner-vision-evolution-chart-wrap">
+          <canvas id="partnerVisionEvolutionChart"></canvas>
         </div>
+        <div style="font-size:11px;color:#f59e0b;margin-top:10px;display:none" id="partner-vision-evolution-error"></div>
       </div>
-      <div id="skel-partner-vision-evolution" class="skeleton" style="height:280px"></div>
-      <div style="height:280px;display:none" id="partner-vision-evolution-chart-wrap">
-        <canvas id="partnerVisionEvolutionChart"></canvas>
+      <div class="card-box partner-vision-half-card" data-qtag="#VP03" style="padding:20px 24px">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:14px">
+          <div>
+            <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px">#VP03 · Volumes por parceiro</div>
+            <div style="font-size:18px;font-weight:700;color:#1e293b;line-height:1.2">Vidas, sessões e agendamentos</div>
+            <div style="font-size:12px;color:#64748b;margin-top:4px" id="partner-vision-summary-context">Comparativo dos parceiros selecionados.</div>
+          </div>
+          <div class="loading-box" id="partner-vision-summary-loading" style="display:none;padding:0">
+            <i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...
+          </div>
+        </div>
+        <div class="table-scroll">
+          <table class="partner-vision-summary-table">
+            <thead>
+              <tr>
+                <th>Parceiro</th>
+                <th>Vidas</th>
+                <th>Sessões</th>
+                <th>Agendamentos</th>
+              </tr>
+            </thead>
+            <tbody id="partner-vision-summary-body">
+              <tr><td colspan="4">Selecione parceiros para carregar a tabela.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div style="font-size:11px;color:#f59e0b;margin-top:10px;display:none" id="partner-vision-summary-error"></div>
       </div>
-      <div style="font-size:11px;color:#f59e0b;margin-top:10px;display:none" id="partner-vision-evolution-error"></div>
     </div>
   </div>
