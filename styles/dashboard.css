@@ -229,6 +229,17 @@ body[data-sidebar="collapsed"] .sidebar-tab span{opacity:0;position:absolute;tra
 .partner-vision-summary-table th{padding:10px 8px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.55px;color:#94a3b8;border-bottom:1px solid #e2e8f0}
 .partner-vision-summary-table td{padding:12px 8px;border-bottom:1px solid #f1f5f9;color:#334155}
 .partner-vision-summary-table td:not(:first-child){text-align:right;font-weight:800;color:#1e293b}
+.partner-usage-trend{min-width:132px;display:grid;gap:6px;justify-items:end}
+.partner-trend-head{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:3px 8px;font-size:10px;font-weight:800;border:1px solid #e2e8f0;background:#f8fafc;color:#475569}
+.partner-trend-head strong{font-size:10px}
+.partner-trend-bars{height:38px;display:flex;align-items:end;justify-content:flex-end;gap:4px}
+.partner-trend-bar{width:10px;border-radius:999px 999px 2px 2px;background:#cbd5e1}
+.partner-usage-trend.up .partner-trend-head{background:#ecfdf5;border-color:#bbf7d0;color:#047857}
+.partner-usage-trend.up .partner-trend-bar{background:#10b981}
+.partner-usage-trend.down .partner-trend-head{background:#fff1f2;border-color:#fecdd3;color:#be123c}
+.partner-usage-trend.down .partner-trend-bar{background:#f43f5e}
+.partner-usage-trend.stable .partner-trend-head{background:#eff6ff;border-color:#bfdbfe;color:#1d4ed8}
+.partner-usage-trend.stable .partner-trend-bar{background:#3b82f6}
 .card-box[data-qtag]::before,.chart-card[data-qtag]::before{
   content:attr(data-qtag);
   position:absolute;

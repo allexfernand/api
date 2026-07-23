@@ -93,6 +93,45 @@ function sumSeriesTotal(data) {
   return data.series.reduce((sum, item) => sum + (Number(item.total) || 0), 0);
 }
 
+function seriesTotalsByMonth(data) {
+  const out = new Map();
+  if (!data || !Array.isArray(data.series)) return out;
+  data.series.forEach((item) => out.set(String(item.mes || ''), Number(item.total) || 0));
+  return out;
+}
+
+function partnerUsageTrend(values) {
+  const first = Number(values[0]) || 0;
+  const last = Number(values[values.length - 1]) || 0;
+  const total = values.reduce((sum, value) => sum + (Number(value) || 0), 0);
+  if (total === 0) return { label: 'Sem uso', className: 'flat', deltaText: '0', values };
+  const delta = last - first;
+  if (delta > 0) {
+    const pct = first > 0 ? `+${Math.round((delta / first) * 100)}%` : `+${fmt(delta)}`;
+    return { label: 'Ascendência', className: 'up', deltaText: pct, values };
+  }
+  if (delta < 0) {
+    const pct = first > 0 ? `${Math.round((delta / first) * 100)}%` : `-${fmt(Math.abs(delta))}`;
+    return { label: 'Queda', className: 'down', deltaText: pct, values };
+  }
+  return { label: 'Estável', className: 'stable', deltaText: '0%', values };
+}
+
+function renderPartnerUsageTrend(trend, months) {
+  const max = Math.max(...trend.values, 1);
+  const bars = trend.values.map((value, index) => {
+    const height = Math.max(10, Math.round((Number(value) || 0) / max * 34));
+    return `<span class="partner-trend-bar" style="height:${height}px" title="${partnerVisionMonthLabel(months[index])}: ${fmt(value)} usos"></span>`;
+  }).join('');
+  return `<div class="partner-usage-trend ${trend.className}">
+    <div class="partner-trend-head">
+      <span>${trend.label}</span>
+      <strong>${trend.deltaText}</strong>
+    </div>
+    <div class="partner-trend-bars">${bars}</div>
+  </div>`;
+}
+
 async function loadPartnerVisionSummary() {
   const requestId = ++partnerVisionSummaryRequestId;
   const loading = document.getElementById('partner-vision-summary-loading');
@@ -109,14 +148,16 @@ async function loadPartnerVisionSummary() {
 
   const partners = selectedPartnerVisionItems();
   if (!partners.length) {
-    body.innerHTML = '<tr><td colspan="4">Selecione parceiros para carregar a tabela.</td></tr>';
+    body.innerHTML = '<tr><td colspan="5">Selecione parceiros para carregar a tabela.</td></tr>';
     if (context) context.textContent = 'Nenhum parceiro selecionado.';
     if (loading) loading.style.display = 'none';
     return;
   }
 
-  body.innerHTML = '<tr><td colspan="4">Carregando volumes...</td></tr>';
-  const monthParam = partnerVisionMonthWindow().join(',');
+  body.innerHTML = '<tr><td colspan="5">Carregando volumes...</td></tr>';
+  const months = partnerVisionMonthWindow();
+  const trendMonths = months.slice(-3);
+  const monthParam = months.join(',');
   const rows = await Promise.all(partners.map(async (partner) => {
     const demographicsParams = partnerVisionSingleParams(partner.id);
     const sessionsParams = partnerVisionSingleParams(partner.id);
@@ -130,11 +171,17 @@ async function loadPartnerVisionSummary() {
       safeGet('/api/appointments-evolution?' + appointmentsParams.toString()),
     ]);
 
+    const sessionsByMonth = seriesTotalsByMonth(sessions);
+    const appointmentsByMonth = seriesTotalsByMonth(appointments);
+    const trend = partnerUsageTrend(trendMonths.map((month) => (
+      (sessionsByMonth.get(month) || 0) + (appointmentsByMonth.get(month) || 0)
+    )));
     return {
       name: partner.name,
       lives: demographics && !demographics.error ? Number(demographics.total_beneficiarios ?? demographics.total_vidas) || 0 : null,
       sessions: sessions && !sessions.error ? sumSeriesTotal(sessions) : null,
       appointments: appointments && !appointments.error ? sumSeriesTotal(appointments) : null,
+      trend,
       hasError: Boolean(demographics?.error || sessions?.error || appointments?.error),
     };
   }));
@@ -145,9 +192,10 @@ async function loadPartnerVisionSummary() {
     <td>${row.lives === null ? '—' : fmt(row.lives)}</td>
     <td>${row.sessions === null ? '—' : fmt(row.sessions)}</td>
     <td>${row.appointments === null ? '—' : fmt(row.appointments)}</td>
+    <td>${renderPartnerUsageTrend(row.trend, trendMonths)}</td>
   </tr>`).join('');
 
-  if (context) context.textContent = `${partners.length} parceiro(s) · sessões e agendamentos de jan/26 até mês atual`;
+  if (context) context.textContent = `${partners.length} parceiro(s) · tendência de uso nos últimos ${trendMonths.length} meses`;
   if (loading) loading.style.display = 'none';
   if (rows.some((row) => row.hasError) && error) {
     error.style.display = 'block';
