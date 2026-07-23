@@ -1,5 +1,5 @@
 (async function loadSanusDashboard() {
-  const chunks = ["/scripts/features/core.js?v=20260722-partner-vp02","/scripts/features/claims.js?v=20260722-partner-vp02","/scripts/features/period-filters.js?v=20260722-partner-vp02","/scripts/features/executive-committee.js?v=20260722-partner-vp02","/scripts/features/care-coordination.js?v=20260722-partner-vp02","/scripts/features/appointments.js?v=20260722-partner-vp02","/scripts/features/sessions.js?v=20260722-partner-vp02","/scripts/features/demographics.js?v=20260722-partner-vp02","/scripts/features/quality-and-bootstrap.js?v=20260722-partner-vp02"];
+  const chunks = ["/scripts/features/core.js?v=20260723-partner-vp02-jan26","/scripts/features/claims.js?v=20260723-partner-vp02-jan26","/scripts/features/period-filters.js?v=20260723-partner-vp02-jan26","/scripts/features/executive-committee.js?v=20260723-partner-vp02-jan26","/scripts/features/care-coordination.js?v=20260723-partner-vp02-jan26","/scripts/features/appointments.js?v=20260723-partner-vp02-jan26","/scripts/features/sessions.js?v=20260723-partner-vp02-jan26","/scripts/features/demographics.js?v=20260723-partner-vp02-jan26","/scripts/features/quality-and-bootstrap.js?v=20260723-partner-vp02-jan26"];
   for (const src of chunks) {
     await new Promise((resolve, reject) => {
       const script = document.createElement('script');

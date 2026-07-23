@@ -55,14 +55,14 @@ function partnerVisionParams() {
   return p;
 }
 
-function partnerVisionMonthWindow(count = 12) {
+function partnerVisionMonthWindow() {
   const out = [];
-  const d = new Date();
-  d.setDate(1);
-  for (let i = count - 1; i >= 0; i--) {
-    const dd = new Date(d);
-    dd.setMonth(d.getMonth() - i);
-    out.push(`${dd.getFullYear()}-${String(dd.getMonth() + 1).padStart(2, '0')}`);
+  const cursor = new Date(2026, 0, 1);
+  const end = new Date();
+  end.setDate(1);
+  while (cursor <= end) {
+    out.push(`${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`);
+    cursor.setMonth(cursor.getMonth() + 1);
   }
   return out;
 }
@@ -104,7 +104,7 @@ async function loadPartnerVisionEvolution() {
     return;
   }
 
-  const months = partnerVisionMonthWindow(12);
+  const months = partnerVisionMonthWindow();
   const labels = months.map(partnerVisionMonthLabel);
   const grouped = new Map();
   data.series.forEach((item) => {
@@ -182,8 +182,8 @@ async function loadPartnerVisionEvolution() {
   });
   if (context) {
     context.textContent = currentPartnerBrokerIds.length
-      ? `Comparando ${selectedPartnerVisionLabel()} · últimos 12 meses`
-      : `Top ${data.top_limit || datasets.length} parceiros por vidas · últimos 12 meses`;
+      ? `Comparando ${selectedPartnerVisionLabel()} · jan/26 até mês atual`
+      : `Top ${data.top_limit || datasets.length} parceiros por vidas · jan/26 até mês atual`;
   }
   if (loading) loading.style.display = 'none';
 }
