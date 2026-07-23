@@ -138,6 +138,8 @@ async function loadPartnerVisionSummary() {
   const error = document.getElementById('partner-vision-summary-error');
   const body = document.getElementById('partner-vision-summary-body');
   const context = document.getElementById('partner-vision-summary-context');
+  const sessionsPrevHeader = document.getElementById('partner-vision-summary-sessions-prev');
+  const sessionsCurrentHeader = document.getElementById('partner-vision-summary-sessions-current');
   if (!body) return;
 
   if (loading) loading.style.display = 'block';
@@ -148,15 +150,18 @@ async function loadPartnerVisionSummary() {
 
   const partners = selectedPartnerVisionItems();
   if (!partners.length) {
-    body.innerHTML = '<tr><td colspan="5">Selecione parceiros para carregar a tabela.</td></tr>';
+    body.innerHTML = '<tr><td colspan="7">Selecione parceiros para carregar a tabela.</td></tr>';
     if (context) context.textContent = 'Nenhum parceiro selecionado.';
     if (loading) loading.style.display = 'none';
     return;
   }
 
-  body.innerHTML = '<tr><td colspan="5">Carregando volumes...</td></tr>';
+  body.innerHTML = '<tr><td colspan="7">Carregando volumes...</td></tr>';
   const months = partnerVisionMonthWindow();
+  const sessionComparisonMonths = months.slice(-2);
   const trendMonths = months.slice(-3);
+  if (sessionsPrevHeader) sessionsPrevHeader.textContent = `Sessões ${partnerVisionMonthLabel(sessionComparisonMonths[0] || '')}`;
+  if (sessionsCurrentHeader) sessionsCurrentHeader.textContent = `Sessões ${partnerVisionMonthLabel(sessionComparisonMonths[1] || sessionComparisonMonths[0] || '')}`;
   const monthParam = months.join(',');
   const rows = await Promise.all(partners.map(async (partner) => {
     const demographicsParams = partnerVisionSingleParams(partner.id);
@@ -181,6 +186,7 @@ async function loadPartnerVisionSummary() {
       lives: demographics && !demographics.error ? Number(demographics.total_beneficiarios ?? demographics.total_vidas) || 0 : null,
       sessions: sessions && !sessions.error ? sumSeriesTotal(sessions) : null,
       appointments: appointments && !appointments.error ? sumSeriesTotal(appointments) : null,
+      sessionComparison: sessionComparisonMonths.map((month) => sessionsByMonth.get(month) || 0),
       trend,
       hasError: Boolean(demographics?.error || sessions?.error || appointments?.error),
     };
@@ -192,10 +198,12 @@ async function loadPartnerVisionSummary() {
     <td>${row.lives === null ? '—' : fmt(row.lives)}</td>
     <td>${row.sessions === null ? '—' : fmt(row.sessions)}</td>
     <td>${row.appointments === null ? '—' : fmt(row.appointments)}</td>
+    <td>${fmt(row.sessionComparison[0] || 0)}</td>
+    <td>${fmt(row.sessionComparison[1] || 0)}</td>
     <td>${renderPartnerUsageTrend(row.trend, trendMonths)}</td>
   </tr>`).join('');
 
-  if (context) context.textContent = `${partners.length} parceiro(s) · tendência de uso nos últimos ${trendMonths.length} meses`;
+  if (context) context.textContent = `${partners.length} parceiro(s) · tendência de uso nos últimos ${trendMonths.length} meses; colunas destacam sessões dos últimos 2 meses`;
   if (loading) loading.style.display = 'none';
   if (rows.some((row) => row.hasError) && error) {
     error.style.display = 'block';
