@@ -21,6 +21,7 @@ let partnerVisionSelectionTouched = false;
 let partnerVisionRequestId = 0;
 let partnerVisionEvolutionRequestId = 0;
 let partnerVisionSummaryRequestId = 0;
+let partnerVisionCompanyDrilldownRequestId = 0;
 let currentCareBeneficiaryType = '';
 let partnerOptionsCache = [];
 let groupOptionsCache = { orgs: null, sessions: null, petitMds: null };

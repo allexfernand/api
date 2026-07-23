@@ -100,36 +100,75 @@ function seriesTotalsByMonth(data) {
   return out;
 }
 
-function partnerUsageTrend(values) {
-  const first = Number(values[0]) || 0;
-  const last = Number(values[values.length - 1]) || 0;
-  const total = values.reduce((sum, value) => sum + (Number(value) || 0), 0);
-  if (total === 0) return { label: 'Sem uso', className: 'flat', deltaText: '0', values };
-  const delta = last - first;
-  if (delta > 0) {
-    const pct = first > 0 ? `+${Math.round((delta / first) * 100)}%` : `+${fmt(delta)}`;
-    return { label: 'Ascendência', className: 'up', deltaText: pct, values };
-  }
-  if (delta < 0) {
-    const pct = first > 0 ? `${Math.round((delta / first) * 100)}%` : `-${fmt(Math.abs(delta))}`;
-    return { label: 'Queda', className: 'down', deltaText: pct, values };
-  }
-  return { label: 'Estável', className: 'stable', deltaText: '0%', values };
+function partnerVisionRowKey(value) {
+  return String(value || '').replace(/[^a-zA-Z0-9_-]/g, '_');
 }
 
-function renderPartnerUsageTrend(trend, months) {
-  const max = Math.max(...trend.values, 1);
-  const bars = trend.values.map((value, index) => {
-    const height = Math.max(10, Math.round((Number(value) || 0) / max * 34));
-    return `<span class="partner-trend-bar" style="height:${height}px" title="${partnerVisionMonthLabel(months[index])}: ${fmt(value)} usos"></span>`;
-  }).join('');
-  return `<div class="partner-usage-trend ${trend.className}">
-    <div class="partner-trend-head">
-      <span>${trend.label}</span>
-      <strong>${trend.deltaText}</strong>
-    </div>
-    <div class="partner-trend-bars">${bars}</div>
-  </div>`;
+function removePartnerCompanyRows(key) {
+  document.querySelectorAll(`tr[data-parent-partner-key="${key}"]`).forEach((row) => row.remove());
+}
+
+function insertPartnerCompanyRows(anchorRow, key, rowsHtml) {
+  removePartnerCompanyRows(key);
+  anchorRow.insertAdjacentHTML('afterend', rowsHtml);
+}
+
+async function togglePartnerCompanyDrilldown(partnerId) {
+  const key = partnerVisionRowKey(partnerId);
+  const anchorRow = document.getElementById(`partner-summary-row-${key}`);
+  if (!anchorRow) return;
+  const existing = document.querySelector(`tr[data-parent-partner-key="${key}"]`);
+  if (existing) {
+    removePartnerCompanyRows(key);
+    return;
+  }
+
+  const requestId = ++partnerVisionCompanyDrilldownRequestId;
+  insertPartnerCompanyRows(anchorRow, key, `<tr class="partner-company-row is-loading" data-parent-partner-key="${key}"><td colspan="6"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando empresas do parceiro...</td></tr>`);
+
+  const months = partnerVisionMonthWindow();
+  const sessionComparisonMonths = months.slice(-2);
+  const monthParam = months.join(',');
+  const companyParams = partnerVisionSingleParams(partnerId);
+  const companyData = await safeGet('/api/companies?' + companyParams.toString());
+  if (requestId !== partnerVisionCompanyDrilldownRequestId) return;
+  if (!companyData || companyData.error || !Array.isArray(companyData.companies) || !companyData.companies.length) {
+    insertPartnerCompanyRows(anchorRow, key, `<tr class="partner-company-row is-loading" data-parent-partner-key="${key}"><td colspan="6">Nenhuma empresa encontrada para este parceiro.</td></tr>`);
+    return;
+  }
+
+  const companyRows = await Promise.all(companyData.companies.map(async (company) => {
+    const companyName = String(company.empresa || '').trim();
+    const sessionsParams = partnerVisionSingleParams(partnerId);
+    const appointmentsParams = partnerVisionSingleParams(partnerId);
+    sessionsParams.set('company', companyName);
+    sessionsParams.set('meses', monthParam);
+    appointmentsParams.set('company', companyName);
+    appointmentsParams.set('meses', monthParam);
+
+    const [sessions, appointments] = await Promise.all([
+      safeGet('/api/sessions-evolution?' + sessionsParams.toString()),
+      safeGet('/api/appointments-evolution?' + appointmentsParams.toString()),
+    ]);
+    const sessionsByMonth = seriesTotalsByMonth(sessions);
+    return {
+      company: companyName || 'Empresa sem nome',
+      lives: Number(company.total) || 0,
+      sessions: sessions && !sessions.error ? sumSeriesTotal(sessions) : null,
+      appointments: appointments && !appointments.error ? sumSeriesTotal(appointments) : null,
+      sessionComparison: sessionComparisonMonths.map((month) => sessionsByMonth.get(month) || 0),
+    };
+  }));
+  if (requestId !== partnerVisionCompanyDrilldownRequestId) return;
+
+  insertPartnerCompanyRows(anchorRow, key, companyRows.map((row) => `<tr class="partner-company-row" data-parent-partner-key="${key}">
+    <td class="company-name">${escapeHtml(row.company)}</td>
+    <td>${fmt(row.lives)}</td>
+    <td>${row.sessions === null ? '—' : fmt(row.sessions)}</td>
+    <td>${row.appointments === null ? '—' : fmt(row.appointments)}</td>
+    <td>${fmt(row.sessionComparison[0] || 0)}</td>
+    <td>${fmt(row.sessionComparison[1] || 0)}</td>
+  </tr>`).join(''));
 }
 
 async function loadPartnerVisionSummary() {
@@ -150,16 +189,15 @@ async function loadPartnerVisionSummary() {
 
   const partners = selectedPartnerVisionItems();
   if (!partners.length) {
-    body.innerHTML = '<tr><td colspan="7">Selecione parceiros para carregar a tabela.</td></tr>';
+    body.innerHTML = '<tr><td colspan="6">Selecione parceiros para carregar a tabela.</td></tr>';
     if (context) context.textContent = 'Nenhum parceiro selecionado.';
     if (loading) loading.style.display = 'none';
     return;
   }
 
-  body.innerHTML = '<tr><td colspan="7">Carregando volumes...</td></tr>';
+  body.innerHTML = '<tr><td colspan="6">Carregando volumes...</td></tr>';
   const months = partnerVisionMonthWindow();
   const sessionComparisonMonths = months.slice(-2);
-  const trendMonths = months.slice(-3);
   if (sessionsPrevHeader) sessionsPrevHeader.textContent = `Sessões ${partnerVisionMonthLabel(sessionComparisonMonths[0] || '')}`;
   if (sessionsCurrentHeader) sessionsCurrentHeader.textContent = `Sessões ${partnerVisionMonthLabel(sessionComparisonMonths[1] || sessionComparisonMonths[0] || '')}`;
   const monthParam = months.join(',');
@@ -177,33 +215,31 @@ async function loadPartnerVisionSummary() {
     ]);
 
     const sessionsByMonth = seriesTotalsByMonth(sessions);
-    const appointmentsByMonth = seriesTotalsByMonth(appointments);
-    const trend = partnerUsageTrend(trendMonths.map((month) => (
-      (sessionsByMonth.get(month) || 0) + (appointmentsByMonth.get(month) || 0)
-    )));
     return {
+      id: partner.id,
       name: partner.name,
       lives: demographics && !demographics.error ? Number(demographics.total_beneficiarios ?? demographics.total_vidas) || 0 : null,
       sessions: sessions && !sessions.error ? sumSeriesTotal(sessions) : null,
       appointments: appointments && !appointments.error ? sumSeriesTotal(appointments) : null,
       sessionComparison: sessionComparisonMonths.map((month) => sessionsByMonth.get(month) || 0),
-      trend,
       hasError: Boolean(demographics?.error || sessions?.error || appointments?.error),
     };
   }));
   if (requestId !== partnerVisionSummaryRequestId) return;
 
-  body.innerHTML = rows.map((row) => `<tr>
-    <td>${escapeHtml(row.name)}</td>
+  body.innerHTML = rows.map((row) => {
+    const key = partnerVisionRowKey(row.id);
+    return `<tr class="partner-summary-row" id="partner-summary-row-${key}" data-partner-id="${escapeAttr(row.id)}" onclick="togglePartnerCompanyDrilldown(this.dataset.partnerId)">
+    <td><span class="partner-summary-name"><i class="fa-solid fa-chevron-right"></i>${escapeHtml(row.name)}</span></td>
     <td>${row.lives === null ? '—' : fmt(row.lives)}</td>
     <td>${row.sessions === null ? '—' : fmt(row.sessions)}</td>
     <td>${row.appointments === null ? '—' : fmt(row.appointments)}</td>
     <td>${fmt(row.sessionComparison[0] || 0)}</td>
     <td>${fmt(row.sessionComparison[1] || 0)}</td>
-    <td>${renderPartnerUsageTrend(row.trend, trendMonths)}</td>
-  </tr>`).join('');
+  </tr>`;
+  }).join('');
 
-  if (context) context.textContent = `${partners.length} parceiro(s) · tendência de uso nos últimos ${trendMonths.length} meses; colunas destacam sessões dos últimos 2 meses`;
+  if (context) context.textContent = `${partners.length} parceiro(s) · clique em um parceiro para ver empresas`;
   if (loading) loading.style.display = 'none';
   if (rows.some((row) => row.hasError) && error) {
     error.style.display = 'block';
