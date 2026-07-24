@@ -182,12 +182,15 @@ GROUP BY 1, 2, 3;
 
 -- ---------------------------------------------------------------------------
 -- mart_internacao_grupo_mes_v2
--- Grão: company_key + month_key + agrupamento_internacao.
+-- Grão: company_key + month_key + acomodacao_internacao (nativa).
+-- B5 (decisão 2026-07-24): agrupamento por ACOMODAÇÃO nativa da operadora
+-- (UTI/Enfermaria/Apartamento/Day-hospital/Psiquiatria/Isolamento), derivada do
+-- grupo estatístico, substituindo o agrupamento clínico enriquecido por LLM.
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE VIEW hive_metastore.sanus_prod.mart_internacao_grupo_mes_v2 AS
 WITH admission_base AS (
-  -- Agrupamento no grão de ADMISSÃO (ver mart_internacao_mes_v2): usa o
-  -- agrupamento dominante por custo para que cada admissão conte uma vez.
+  -- Agrupamento no grão de ADMISSÃO (ver mart_internacao_mes_v2): usa a
+  -- acomodação dominante por custo para que cada admissão conte uma vez.
   -- A admissão pertence à mesma conta/senha/prestador, então o prestador é
   -- único por definição; prestadores_envolvidos conta admissões da linha.
   SELECT
@@ -197,8 +200,8 @@ WITH admission_base AS (
       coalesce(nullif(trim(authorization_id), ''), 'SEM_SENHA'),
       coalesce(nullif(trim(prestador), ''), 'SEM_PRESTADOR')), 256) AS admission_key,
     min(month_key) AS month_key,
-    max_by(coalesce(nullif(trim(agrupamento_internacao), ''), 'Sem agrupamento'),
-      struct(custo_assistencial_bruto, coalesce(nullif(trim(agrupamento_internacao), ''), 'Sem agrupamento'))) AS agrupamento_internacao,
+    max_by(coalesce(nullif(trim(acomodacao_internacao), ''), 'Outras diárias'),
+      struct(custo_assistencial_bruto, coalesce(nullif(trim(acomodacao_internacao), ''), 'Outras diárias'))) AS acomodacao_internacao,
     max(person_key) AS person_key,
     max(duracao_internacao_dias) AS duracao_internacao_dias,
     count(DISTINCT prestador) AS prestadores_no_episodio,
@@ -210,14 +213,14 @@ WITH admission_base AS (
 SELECT
   company_key,
   month_key,
-  agrupamento_internacao,
+  acomodacao_internacao,
   count(DISTINCT admission_key) AS episodios_internacao,
   count(DISTINCT person_key) AS utilizantes,
   round(sum(custo_admissao), 2) AS custo_total,
   round(sum(custo_admissao) / nullif(count(DISTINCT admission_key), 0), 2) AS custo_medio_por_episodio,
   percentile(duracao_internacao_dias, 0.5) AS duracao_mediana_dias,
   sum(prestadores_no_episodio) AS prestadores_envolvidos,
-  '1.1.0' AS contract_version
+  '1.2.0' AS contract_version
 FROM admission_base
 GROUP BY 1, 2, 3;
 

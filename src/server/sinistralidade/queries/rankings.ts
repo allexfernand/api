@@ -192,10 +192,10 @@ export async function userDetailScope(
     ),
     q(
       // Uma linha por ADMISSÃO (hash sem a data — o episode_key da Gold é
-      // grão atendimento-dia): agrupamento dominante por custo, mês inicial.
+      // grão atendimento-dia): acomodação nativa dominante por custo, mês inicial.
       `SELECT min(month_key),
-        max_by(coalesce(nullif(trim(agrupamento_internacao), ''), 'Sem agrupamento'),
-          struct(custo_assistencial_bruto, coalesce(nullif(trim(agrupamento_internacao), ''), 'Sem agrupamento'))),
+        max_by(coalesce(nullif(trim(acomodacao_internacao), ''), 'Outras diárias'),
+          struct(custo_assistencial_bruto, coalesce(nullif(trim(acomodacao_internacao), ''), 'Outras diárias'))),
         max(duracao_internacao_dias), round(sum(custo_assistencial_bruto), 2),
         max(CASE WHEN coalesce(flag_saude_mental, false) THEN 1 ELSE 0 END)
       FROM ${TABLES.gold}

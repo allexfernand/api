@@ -34,14 +34,14 @@ export async function hospitalizationTrendsScope(
       ORDER BY month_key, saude_mental DESC`,
     ),
     q(
-      `SELECT agrupamento_internacao, sum(episodios_internacao), sum(utilizantes),
+      `SELECT acomodacao_internacao, sum(episodios_internacao), sum(utilizantes),
         round(sum(custo_total), 2),
         round(sum(custo_total) / nullif(sum(episodios_internacao), 0), 2),
         percentile(duracao_mediana_dias, 0.5)
       FROM ${TABLES.martInternacaoGrupoMes}
       WHERE company_key = '${companyKey}' AND month_key IN (${months})
-      GROUP BY agrupamento_internacao
-      ORDER BY 4 DESC, agrupamento_internacao
+      GROUP BY acomodacao_internacao
+      ORDER BY 4 DESC, acomodacao_internacao
       LIMIT 20`,
     ),
     q(

@@ -1,4 +1,36 @@
-# De-para — grupo estatístico nativo → tipo_evento (RASCUNHO para validação)
+# De-para — grupo estatístico nativo → tipo_evento
+
+> **REVISÃO 2026-07-24 (aplicada em homologação):**
+> - **Taxa/Mat/Med** (era ~40% do custo num balde só) **quebrado** em quatro rótulos
+>   nativos: **Medicamento** (MCM/MED/MAC/MIB), **Material-OPME** (MTC/MAT/MES/MOP),
+>   **Taxas** (TUS/TAS/TEQ/TCC/TOT/TAD/GAS) e **Honorário médico** (HNN/HON — R$24,6M,
+>   maior que Internação, por isso rótulo próprio). Medicina preventiva (MPB/MPC) → Consulta.
+> - **Internação = diárias plenas nativas** (semântica muda vs LLM: itens consumidos na
+>   internação vão para o que são — material/medicamento/exame; a diária é a "Internação").
+>   Custo Internação R$40,8M (LLM) → R$20,0M (nativo); linhas 39.149 → 12.392.
+> - **Pronto Socorro** deixa de ser categoria de evento (vira `flag_pronto_socorro`).
+> - Total de custo **preservado** (~R$165,8M antes e depois — só redistribuição).
+>
+> **DECISÕES CONFIRMADAS (2026-07-20):**
+> 1. **Rótulos**: mapeamento conservador (~12 rótulos), sem criar categorias novas.
+>    - **Internação** = diárias plenas (DEF, DAP, DUT, DUP, DPE, DSI, DBR, DOT, ISO, THT).
+>    - **Hospital Dia** = rótulo próprio (DDH, PDH, DDA, DDE).
+>    - **Home Care** = HDC, GHC.
+>    - **Pronto Socorro** = NÃO vem do grupo; vem de flag nativa (TUSS 10101039 + `raw_eme`). CUR → Consulta.
+>    - **Oncologia Ambulatorial** = ONC + QMT + RDT.
+>    - **Honorário médico** (HNN, HON) e **Medicina preventiva** (MPB, MPC) → baldes existentes (não viram rótulo novo).
+> 2. **Coluna "Grupo" (macrogroup)**: derivar do **capítulo TUSS nativo** (prefixo do código); 28% sem código = "Sem TUSS".
+> 3. **B5 agrupamento**: por **acomodação nativa** (UTI/Enfermaria/Apartamento/Day-hospital/Psiquiatria), não clínico.
+> 4. **flag_saude_mental**: **keyword (determinística) UNIÃO códigos nativos** (psiquiatria PDE/PDA + psicologia TNP).
+>
+> **Fonte técnica:** join Silver↔Bronze por `(source_file_sha256, source_row_number)` — validado 1:1
+> (1.571.862 = 1.571.862). Permite o protótipo sem esperar o pipeline Bronze→Silver carregar as colunas.
+
+---
+
+## (rascunho original abaixo — mantido para referência das opções)
+
+
 
 **Objetivo (B1):** substituir o `tipo_evento` enriquecido (72% regra + 25% LLM + 3% fallback)
 pela classificação **nativa da operadora** `raw_codigo_grupo_estatistico` / `raw_nome_grupo_estatistico`

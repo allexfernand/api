@@ -220,7 +220,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
                 round(100 * sum(CASE WHEN rn <= ceil(n * 0.01) THEN c END) / max(tot), 1),
                 round(100 * sum(CASE WHEN rn <= ceil(n * 0.05) THEN c END) / max(tot), 1)
          FROM r`),
-      q(`SELECT COALESCE(NULLIF(trim(g.agrupamento_internacao), ''), 'Outros') AS agr,
+      q(`SELECT COALESCE(NULLIF(trim(g.acomodacao_internacao), ''), 'Outras diárias') AS agr,
                 round(sum(g.custo_assistencial_bruto) / 1e6, 2)
          FROM ${GOLD} g WHERE NOT g.flag_data_suspeita AND g.flag_internacao AND g.${JANELA_2024}${filtroSql}
          GROUP BY 1 ORDER BY 2 DESC LIMIT 8`),

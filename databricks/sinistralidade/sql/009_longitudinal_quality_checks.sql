@@ -20,7 +20,7 @@ SELECT 'grain_mart_internacao_mes_v2' AS check_name, company_key, month_key, sau
 FROM hive_metastore.sanus_prod.mart_internacao_mes_v2
 GROUP BY 1, 2, 3, 4 HAVING count(*) > 1;
 
-SELECT 'grain_mart_internacao_grupo_mes_v2' AS check_name, company_key, month_key, agrupamento_internacao, count(*) AS duplicates
+SELECT 'grain_mart_internacao_grupo_mes_v2' AS check_name, company_key, month_key, acomodacao_internacao, count(*) AS duplicates
 FROM hive_metastore.sanus_prod.mart_internacao_grupo_mes_v2
 GROUP BY 1, 2, 3, 4 HAVING count(*) > 1;
 
