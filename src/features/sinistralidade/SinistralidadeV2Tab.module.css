@@ -1771,9 +1771,34 @@
   }
 }
 
-/* Gaveta não-modal: convive com a página, não bloqueia interação. */
+/* Gaveta não-modal: convive com a página, não bloqueia interação.
+   `.drawer` (acima) não tem `position` própria — no UserDetailDrawer o
+   posicionamento vem do `.drawerOverlay` (position: fixed) que o envolve.
+   Esta gaveta não tem overlay, então precisa se posicionar sozinha aqui.
+   z-index 40 (abaixo dos 200 do `.drawerOverlay`) garante que a gaveta modal
+   do beneficiário sempre vence se as duas estiverem abertas ao mesmo tempo. */
 .lineageDrawer {
+  position: fixed;
+  top: 0;
+  right: 0;
   z-index: 40;
+}
+
+/* Tela estreita: painel lateral de 560px não cabe. Vira uma folha inferior
+   (bottom sheet) com altura limitada, para a página continuar parcialmente
+   visível acima dela; o conteúdo próprio rola dentro do `overflow-y: auto`
+   já existente em `.drawer`. Mesmo breakpoint já usado no restante do
+   arquivo (linhas com `@media (max-width: 640px)`). */
+@media (max-width: 640px) {
+  .lineageDrawer {
+    top: auto;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: auto;
+    max-height: 70vh;
+  }
 }
 
 .lineageLayer {
