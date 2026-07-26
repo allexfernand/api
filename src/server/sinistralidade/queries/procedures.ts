@@ -26,10 +26,13 @@ const PROCEDURE_SOURCES = [
     columns: [
       "procedimento_key",
       "month_key",
-      "custo_assistencial_bruto",
-      "quantidade_servicos",
+      "descricao_comercial",
+      "grupo_comercial",
       "linhas_cobranca",
+      "quantidade_servicos",
       "utilizantes",
+      "episodios_internacao",
+      "custo_assistencial_bruto",
     ],
   },
 ];

@@ -32,17 +32,21 @@ export const HOSPITALIZATION_LINEAGE: LineageEntry[] = [
           "episodios_internacao",
           "utilizantes",
           "custo_total",
+          "custo_medio_por_episodio",
+          "duracao_mediana_dias",
+          "duracao_p90_dias",
+          "cobertura_duracao",
         ],
       },
       {
         object: TABLES.martInternacaoGrupoMes,
         role: "quebra por acomodação",
-        columns: ["month_key", "acomodacao_internacao", "episodios_internacao", "utilizantes"],
+        columns: ["acomodacao_internacao", "episodios_internacao", "utilizantes", "custo_total", "duracao_mediana_dias"],
       },
       {
         object: TABLES.martPrestadorMes,
         role: "prestadores que internaram",
-        columns: ["month_key", "prestador_key", "prestador_label", "episodios_internacao", "utilizantes"],
+        columns: ["prestador_key", "prestador_label", "episodios_internacao", "utilizantes", "custo_assistencial_bruto"],
       },
     ],
     formula:

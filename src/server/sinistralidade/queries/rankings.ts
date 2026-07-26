@@ -4,12 +4,11 @@
 // eventos e internações — somente com permissão própria e auditoria.
 // Nenhum identificador direto sai daqui.
 
-import type { RankingBy } from "../../../contracts/sinistralidade-v2";
+import type { RankingBy, LineageEntry } from "../../../contracts/sinistralidade-v2";
 import type { ResolvedPeriod } from "../period-gate";
 import { monthSpine, monthsInSql } from "../period-gate";
 import { fetchCoveredMonths, getCell, maskedBeneficiaryLabel, toInt, toNum } from "../serializers";
 import { TABLES, type QueryRunner } from "../query-runner";
-import type { LineageEntry } from "../../../contracts/sinistralidade-v2";
 
 export const TOP_USERS_UNITS = {
   custo: "R$",
@@ -34,10 +33,11 @@ export const TOP_USERS_LINEAGE: LineageEntry[] = [
           "month_key",
           "faixa_etaria",
           "parentesco",
-          "custo_assistencial_bruto",
-          "quantidade_servicos",
           "linhas_cobranca",
+          "quantidade_servicos",
+          "custo_assistencial_bruto",
           "episodios_internacao",
+          "evento_principal",
         ],
       },
     ],
@@ -201,9 +201,13 @@ export const USER_DETAIL_LINEAGE: LineageEntry[] = [
         columns: [
           "person_key",
           "month_key",
-          "custo_assistencial_bruto",
-          "quantidade_servicos",
           "linhas_cobranca",
+          "quantidade_servicos",
+          "custo_assistencial_bruto",
+          "episodios_internacao",
+          "evento_principal",
+          "faixa_etaria",
+          "parentesco",
         ],
       },
       {
@@ -212,10 +216,19 @@ export const USER_DETAIL_LINEAGE: LineageEntry[] = [
         columns: [
           "person_key",
           "month_key",
+          "company_key",
           "tipo_evento",
+          "quantidade_servicos",
+          "custo_assistencial_bruto",
           "descricao_procedimento",
+          "macrogroup",
           "prestador",
+          "numero_conta_medica",
+          "authorization_id",
           "flag_internacao",
+          "acomodacao_internacao",
+          "duracao_internacao_dias",
+          "flag_saude_mental",
           "flag_data_suspeita",
         ],
       },
