@@ -38,22 +38,23 @@ export function LineageProvider({ available, children }: { available: boolean; c
   const effectiveActiveId = active ? activeId : null;
 
   const toggle = useCallback(() => {
-    setEnabled((current) => {
-      if (current) {
-        // Desligar o modo fecha a gaveta: alvo selecionado sem modo ativo não faz sentido.
-        setActiveId(null);
-      } else {
-        // Ligar o modo dispara uma nova tentativa: se a última busca tinha
-        // falhado, "settled" fica preso na tentativa antiga e o status
-        // derivado mostraria "error" mesmo com uma busca nova em andamento.
-        // Bumping o attempt aqui faz o status cair em "loading" de verdade.
-        // Se o registro já estiver carregado, o guard `entries.size > 0` do
-        // hook garante que isso não dispara uma nova requisição.
-        retry();
-      }
-      return !current;
-    });
-  }, [retry]);
+    // Efeitos colaterais fora do updater: updaters do React devem ser puros,
+    // e em StrictMode rodam duas vezes — dentro do updater, retry() dobraria
+    // o attempt a cada toggle.
+    if (enabled) {
+      // Desligar o modo fecha a gaveta: alvo selecionado sem modo ativo não faz sentido.
+      setActiveId(null);
+    } else {
+      // Ligar o modo dispara uma nova tentativa: se a última busca tinha
+      // falhado, "settled" fica preso na tentativa antiga e o status
+      // derivado mostraria "error" mesmo com uma busca nova em andamento.
+      // Bumping o attempt aqui faz o status cair em "loading" de verdade.
+      // Se o registro já estiver carregado, o guard `entries.size > 0` do
+      // hook garante que isso não dispara uma nova requisição.
+      retry();
+    }
+    setEnabled((current) => !current);
+  }, [enabled, retry]);
 
   const open = useCallback((id: string) => setActiveId(id), []);
   const close = useCallback(() => setActiveId(null), []);
