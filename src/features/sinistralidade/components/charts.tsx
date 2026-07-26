@@ -344,11 +344,16 @@ export function ParetoChart({
   formatValue = (value: number) => compact.format(value),
   ariaLabel,
   height = 240,
+  barColor,
 }: {
   items: { label: string; value: number; cumulativeShare: number | null }[];
   formatValue?: (value: number) => string;
   ariaLabel: string;
   height?: number;
+  /** Cor por barra (ex.: destacar uma categoria específica, como "Sem lotação").
+   * Sem esta prop, todas as barras usam SEMANTIC_COLORS.cost — comportamento
+   * inalterado para quem já chama ParetoChart sem ela. */
+  barColor?: (item: { label: string; value: number; cumulativeShare: number | null }, index: number) => string;
 }) {
   if (!items.length) return <ChartEmpty />;
   const width = 720;
@@ -357,6 +362,7 @@ export function ParetoChart({
   const innerHeight = height - pad.top - pad.bottom;
   const barWidth = Math.min(34, ((width - pad.left - pad.right) / items.length) * 0.7);
   const xFor = (index: number) => scale(index, 0, Math.max(items.length - 1, 1), pad.left + barWidth / 2, width - pad.right - barWidth / 2);
+  const colorFor = barColor ?? (() => SEMANTIC_COLORS.cost);
 
   return (
     <svg viewBox={`0 0 ${width} ${height}`} className={styles.chartSvg} role="img" aria-label={ariaLabel}>
@@ -373,7 +379,7 @@ export function ParetoChart({
         const barHeight = (item.value / max) * innerHeight;
         return (
           <g key={item.label + index}>
-            <rect x={xFor(index) - barWidth / 2} y={height - pad.bottom - barHeight} width={barWidth} height={barHeight} fill={SEMANTIC_COLORS.cost} rx={3}>
+            <rect x={xFor(index) - barWidth / 2} y={height - pad.bottom - barHeight} width={barWidth} height={barHeight} fill={colorFor(item, index)} rx={3}>
               <title>{`${item.label}: ${formatValue(item.value)}${item.cumulativeShare !== null ? ` · acumulado ${(item.cumulativeShare * 100).toFixed(1)}%` : ""}`}</title>
             </rect>
             <text x={xFor(index)} y={height - 8} textAnchor="middle" className={styles.axisText}>

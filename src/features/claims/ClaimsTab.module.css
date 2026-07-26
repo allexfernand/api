@@ -666,8 +666,125 @@
   white-space: nowrap;
 }
 
+.txt {
+  text-align: left;
+  white-space: normal;
+}
+
 @media (max-width: 900px) {
   .kpiGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Composição por evento, lotações e concentração (EventMix / Locations /
+   Concentration). .card/.cardTitle/.twoColumns espelham o desenho de
+   SinistralidadeV2Tab.module.css para os dois painéis lado a lado de
+   Concentration, sem acoplar este módulo ao de outra feature. */
+
+.card {
+  padding: 20px 22px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.cardTitle {
+  margin: 0 0 14px;
+}
+
+.cardTitle h3 {
+  margin: 0 0 4px;
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.cardTitle p {
+  margin: 0;
+  color: var(--text-faint);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.twoColumns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+/* Nota de destaque (ex.: "Sem lotação" ausente na origem, não no cálculo) —
+   mesma paleta âmbar do .partialBand/gridline de charts.tsx, para o alerta
+   ficar visualmente ligado à barra que ele explica. */
+.note {
+  margin: 0;
+  padding: 11px 14px;
+  border: 1px solid #fde68a;
+  border-left: 3px solid #f59e0b;
+  border-radius: var(--radius-sm);
+  background: #fffbeb;
+  color: #92400e;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.semLotacaoRow td {
+  background: #fffbeb;
+  color: #92400e;
+  font-weight: 700;
+}
+
+.tileRow {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.tile {
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+
+.tileLabel {
+  color: var(--text-faint);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
+.tileValue {
+  margin: 8px 0 4px;
+  color: var(--brand);
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+}
+
+.tileHelper {
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.panelFooter {
+  margin: 12px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-light);
+  color: var(--text-faint);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+@media (max-width: 900px) {
+  .twoColumns {
+    grid-template-columns: 1fr;
+  }
+
+  .tileRow {
+    grid-template-columns: 1fr;
   }
 }
