@@ -187,9 +187,20 @@ topo da aba informando que o modo está ativo e como sair.
 
 ### Alvos
 
-Com o modo ligado, `ChartCard` e `Kpi` que tenham `lineageId` recebem `role="button"`,
-`tabIndex={0}`, cursor de ponteiro e borda de destaque. Com o modo desligado não recebem
-atributo nenhum — sem handler morto no DOM.
+Com o modo ligado, cada bloco com `lineageId` ganha contorno tracejado e um selo "linhagem"
+na borda superior esquerda. **O alvo clicável é o selo, não o bloco inteiro.**
+
+Envolver o bloco num `role="button"` seria ARIA inválido: o `ChartCard` já contém o botão
+"ver tabela" e o `TopUsersTable` contém `<select>` de ordenação — controle interativo dentro
+de controle interativo. Além de inválido, o clique nesses controles borbulharia e abriria a
+gaveta junto. O selo é um `<button>` de verdade, então Enter, Espaço e ordem de tabulação
+funcionam sem código extra.
+
+O selo fica à esquerda porque o canto superior direito do `ChartCard` já é do botão "ver
+tabela" (`.chartCaption` usa `justify-content: space-between`).
+
+Com o modo desligado, `LineageAnchor` devolve os filhos sem envoltório e sem atributo algum —
+o DOM fica idêntico ao de hoje.
 
 ### Gaveta
 

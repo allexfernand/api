@@ -1626,7 +1626,13 @@ git commit -m "feat(sinistralidade): contexto e busca do registro de linhagem no
 
 **Interfaces:**
 - Consumes: `useLineage()` (Task 6).
-- Produces: `<LineageAnchor lineageId={string | undefined} label={string}>{children}</LineageAnchor>`; `ChartCard` e `Kpi` passam a aceitar a prop opcional `lineageId?: string`.
+- Produces: `<LineageAnchor lineageId={string | undefined} label={string}>{children}</LineageAnchor>`, que renderiza os filhos mais um `<button>` com `aria-label={`Ver linhagem Databricks de ${label}`}`; `ChartCard` e `Kpi` passam a aceitar a prop opcional `lineageId?: string`.
+
+**Decisão de acessibilidade:** o alvo clicável é um botão próprio no canto do
+bloco, não o bloco inteiro. O `ChartCard` já contém o botão "ver tabela" e o
+`TopUsersTable` contém `<select>` de ordenação — envolver esses blocos num
+`role="button"` aninharia controles interativos, o que é ARIA inválido e faria
+o clique nos controles internos borbulhar e abrir a gaveta junto.
 
 - [ ] **Step 1: Escrever o componente de âncora**
 
@@ -1635,11 +1641,17 @@ Create `src/features/sinistralidade/components/LineageAnchor.tsx`:
 ```tsx
 "use client";
 
-// Transforma qualquer bloco num alvo clicável enquanto o modo "Análise
+// Marca um bloco como tendo linhagem disponível enquanto o modo "Análise
 // Databricks" está ligado. Com o modo desligado devolve os filhos sem
 // envoltório extra e sem nenhum atributo: o DOM fica idêntico ao original.
+//
+// O alvo clicável é um <button> próprio, não o card inteiro. Envolver o card
+// num role="button" aninharia controles interativos — o ChartCard já contém o
+// botão "ver tabela" e o TopUsersTable contém selects de ordenação. Aninhar
+// quebra a semântica ARIA e faria o clique nesses controles borbulhar e abrir
+// a gaveta junto.
 
-import type { KeyboardEvent, ReactNode } from "react";
+import type { ReactNode } from "react";
 import styles from "../SinistralidadeV2Tab.module.css";
 import { useLineage } from "./LineageProvider";
 
@@ -1657,27 +1669,26 @@ export function LineageAnchor({
 
   const active = activeId === lineageId;
 
-  function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-    if (event.key !== "Enter" && event.key !== " ") return;
-    event.preventDefault();
-    open(lineageId as string);
-  }
-
   return (
-    <div
-      className={`${styles.lineageAnchor} ${active ? styles.lineageAnchorActive : ""}`}
-      role="button"
-      tabIndex={0}
-      aria-pressed={active}
-      aria-label={`Ver linhagem Databricks de ${label}`}
-      onClick={() => open(lineageId)}
-      onKeyDown={onKeyDown}
-    >
+    <div className={`${styles.lineageAnchor} ${active ? styles.lineageAnchorActive : ""}`}>
       {children}
+      <button
+        type="button"
+        className={styles.lineageBadge}
+        aria-label={`Ver linhagem Databricks de ${label}`}
+        aria-expanded={active}
+        onClick={() => open(lineageId)}
+      >
+        <i className="fa-solid fa-diagram-project" aria-hidden="true" />
+        <span>linhagem</span>
+      </button>
     </div>
   );
 }
 ```
+
+Nada de `tabIndex` nem de manipulador de teclado: um `<button>` de verdade já
+responde a Enter e Espaço e já entra na ordem de tabulação.
 
 - [ ] **Step 2: Adicionar as classes de estilo**
 
@@ -1687,22 +1698,53 @@ No fim de `src/features/sinistralidade/SinistralidadeV2Tab.module.css`:
 /* ---- Modo Análise Databricks (contrato 1.2.0) ---- */
 .lineageAnchor {
   position: relative;
-  cursor: pointer;
   border-radius: 12px;
   outline: 2px dashed rgba(37, 99, 235, 0.35);
-  outline-offset: 4px;
+  outline-offset: 6px;
   transition: outline-color 0.15s var(--ease);
 }
 
-.lineageAnchor:hover,
-.lineageAnchor:focus-visible {
-  outline-color: rgba(37, 99, 235, 0.9);
-  outline-style: solid;
+.lineageAnchor:hover {
+  outline-color: rgba(37, 99, 235, 0.65);
 }
 
 .lineageAnchorActive {
   outline-color: #2563eb;
   outline-style: solid;
+}
+
+/* Canto SUPERIOR ESQUERDO, sobre a borda: o canto direito do ChartCard já é
+   ocupado pelo botão "ver tabela" (.chartCaption usa space-between). */
+.lineageBadge {
+  position: absolute;
+  top: -10px;
+  left: 12px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border: 1px solid #2563eb;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1e40af;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  cursor: pointer;
+  line-height: 1.6;
+}
+
+.lineageBadge:hover,
+.lineageBadge:focus-visible {
+  background: #2563eb;
+  color: #fff;
+}
+
+.lineageAnchorActive .lineageBadge {
+  background: #2563eb;
+  color: #fff;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2300,10 +2342,12 @@ Run: `npm run dev`
 
 Abra `http://localhost:3000`, entre com as credenciais de `DASHBOARD_AUTH_USER`, vá em Sinistralidade → Visão 360 e confirme:
 - O botão "Análise Databricks" aparece no cabeçalho.
-- Ligado, os cards ganham contorno tracejado e a faixa de aviso aparece.
-- Clicar num card abre a gaveta com nome de tabela e colunas.
-- Clicar num segundo card troca o conteúdo sem fechar.
-- `Escape` fecha; desligar o modo remove os contornos.
+- Ligado, os cards ganham contorno tracejado, um selo "linhagem" na borda superior esquerda, e a faixa de aviso aparece.
+- O selo não colide com o botão "ver tabela" do canto direito.
+- Clicar no selo abre a gaveta com nome de tabela e colunas.
+- Clicar no botão "ver tabela" de um card **não** abre a gaveta — os controles internos seguem funcionando.
+- Clicar no selo de um segundo card troca o conteúdo sem fechar.
+- `Escape` fecha; desligar o modo remove contornos e selos.
 - Um bloco em estado "Período bloqueado pelo gate de fechamento" ainda abre a gaveta — este é o cenário que mais justifica o recurso.
 
 - [ ] **Step 9: Commit**
@@ -2344,6 +2388,13 @@ test("modo Análise Databricks revela a linhagem de um bloco", async ({ page }) 
   await expect(page.getByRole("button", { name: /Ver linhagem Databricks de/ })).toHaveCount(0);
 
   await toggle.click();
+
+  // O botão "ver tabela" do ChartCard segue funcionando: o selo é um alvo
+  // separado, não um wrapper que captura o clique dos controles internos.
+  const verTabela = page.getByRole("button", { name: /tabela/i }).first();
+  await verTabela.click();
+  await expect(page.getByRole("complementary", { name: "Linhagem Databricks" })).toHaveCount(0);
+  await verTabela.click();
 
   const alvo = page.getByRole("button", { name: "Ver linhagem Databricks de Custo assistencial (janela)" });
   await expect(alvo).toBeVisible();
