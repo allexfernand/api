@@ -78,7 +78,11 @@ test("modo Análise Databricks revela a linhagem de um bloco e troca de alvo sem
   const verTabela = page.getByRole("button", { name: "Ver tabela" }).first();
   await verTabela.click();
   await expect(page.getByRole("complementary", { name: "Linhagem Databricks" })).toHaveCount(0);
-  await verTabela.click();
+  // Depois do clique, o mesmo card lê "Ver gráfico": reusar o locator "Ver
+  // tabela".first() aqui resolveria para um SEGUNDO card, não restauraria o
+  // primeiro. Precisa seguir o rótulo que o card mudou para.
+  const verGrafico = page.getByRole("button", { name: "Ver gráfico" }).first();
+  await verGrafico.click();
 
   await custoKpi.click();
   const gaveta = page.getByRole("complementary", { name: "Linhagem Databricks" });
