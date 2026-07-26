@@ -18,6 +18,7 @@ const registro = lineageRegistry();
 // nenhum do código.
 const QUERIES_DIR = "../../src/server/sinistralidade/queries";
 const SERVER_DIR = "../../src/server/sinistralidade";
+const ROUTE_GOLD_PREVIEW = "../../src/server/routes/gold-preview.ts";
 
 // Mapa explícito por id, e não inferência: a maioria das entradas mora no
 // mesmo arquivo que a consulta que descreve, mas duas famílias de exceção
@@ -54,6 +55,20 @@ const ENTRY_SOURCE_FILES: Record<string, string[]> = {
   "kpi.services_per_utilizer": [`${QUERIES_DIR}/kpis-lineage.ts`, `${QUERIES_DIR}/timeline.ts`],
   "kpi.cost_per_eligible_life": [`${QUERIES_DIR}/kpis-lineage.ts`, `${QUERIES_DIR}/timeline.ts`],
   "kpi.hospitalizations_per_thousand_lives": [`${QUERIES_DIR}/kpis-lineage.ts`, `${QUERIES_DIR}/timeline.ts`],
+  "claims.kpis": [`${QUERIES_DIR}/gold-preview-lineage.ts`, ROUTE_GOLD_PREVIEW],
+  "claims.monthly": [`${QUERIES_DIR}/gold-preview-lineage.ts`, ROUTE_GOLD_PREVIEW],
+  "claims.competency": [`${QUERIES_DIR}/gold-preview-lineage.ts`, ROUTE_GOLD_PREVIEW],
+  "claims.quarterly": [`${QUERIES_DIR}/gold-preview-lineage.ts`, ROUTE_GOLD_PREVIEW],
+  "claims.event-mix": [`${QUERIES_DIR}/gold-preview-lineage.ts`, ROUTE_GOLD_PREVIEW],
+  "claims.locations": [`${QUERIES_DIR}/gold-preview-lineage.ts`, ROUTE_GOLD_PREVIEW],
+  "claims.concentration": [`${QUERIES_DIR}/gold-preview-lineage.ts`, ROUTE_GOLD_PREVIEW],
+  "claims.providers": [`${QUERIES_DIR}/gold-preview-lineage.ts`, ROUTE_GOLD_PREVIEW],
+  "claims.hospitalization": [`${QUERIES_DIR}/gold-preview-lineage.ts`, ROUTE_GOLD_PREVIEW],
+  "claims.mental-health": [`${QUERIES_DIR}/gold-preview-lineage.ts`, ROUTE_GOLD_PREVIEW],
+  "claims.sanus-impact": [`${QUERIES_DIR}/gold-preview-lineage.ts`, ROUTE_GOLD_PREVIEW],
+  "claims.mature-comparison": [`${QUERIES_DIR}/gold-preview-lineage.ts`, ROUTE_GOLD_PREVIEW],
+  "claims.sanus-journey": [`${QUERIES_DIR}/gold-preview-lineage.ts`, ROUTE_GOLD_PREVIEW],
+  "claims.top-users": [`${QUERIES_DIR}/gold-preview-lineage.ts`, ROUTE_GOLD_PREVIEW],
 };
 
 const fileTextCache = new Map<string, string>();
@@ -204,8 +219,30 @@ describe("registro de linhagem", () => {
     ]);
   });
 
-  it("tem 25 entradas no total", () => {
-    expect(registro.entries).toHaveLength(25);
+  it("tem 39 entradas no total", () => {
+    expect(registro.entries).toHaveLength(39);
+  });
+
+  it("cobre os blocos da aba Análise Sinistro", () => {
+    const ids = registro.entries.map((entry) => entry.id);
+    expect(ids).toEqual(
+      expect.arrayContaining([
+        "claims.kpis",
+        "claims.monthly",
+        "claims.competency",
+        "claims.quarterly",
+        "claims.event-mix",
+        "claims.locations",
+        "claims.concentration",
+        "claims.providers",
+        "claims.hospitalization",
+        "claims.mental-health",
+        "claims.sanus-impact",
+        "claims.mature-comparison",
+        "claims.sanus-journey",
+        "claims.top-users",
+      ]),
+    );
   });
 });
 
@@ -260,7 +297,7 @@ describe("rota scope=lineage", () => {
       ctx.res,
     );
     expect(ctx.statusCode).toBe(200);
-    expect((ctx.body as { lineage: { entries: unknown[] } }).lineage.entries).toHaveLength(25);
+    expect((ctx.body as { lineage: { entries: unknown[] } }).lineage.entries).toHaveLength(39);
     expect(ctx.headers["Cache-Control"]).toBe("private, max-age=3600");
   });
 
