@@ -11,7 +11,7 @@ import {
 
 const COMPANY = "a".repeat(64);
 
-describe("contrato sinistralidade 1.1.0", () => {
+describe("contrato sinistralidade 1.2.0", () => {
   it("é aditivo: mantém todos os escopos 1.0.0", () => {
     expect(SINISTRALIDADE_CONTRACT_VERSION).toBe("1.2.0");
     for (const scope of ["metadata", "overview", "top10", "bimester", "mental-health", "ps-package", "care-coordination", "family-before-after", "year-over-year"]) {

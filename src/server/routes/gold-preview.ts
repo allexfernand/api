@@ -11,6 +11,7 @@
 import { getDashboardAuth, rejectMdsAuth, requireBasicAuth } from "../../../lib/basic-auth";
 import { escape, getCell, resolveWarehouseId, runQuery, toInt, toNum } from "../../../lib/databricks";
 import { setApiCors, setStableCache } from "../../../lib/http";
+import { SINISTRALIDADE_CONTRACT_VERSION } from "../../contracts/sinistralidade-v2";
 import { companyScopeSql } from "../auth/company-scope";
 
 type ApiRequest = { method?: string; query: Record<string, any>; headers?: Record<string, string | string[] | undefined> };
@@ -452,7 +453,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       },
       fonte: {
         gold: "gold_sinistro_evento_v2",
-        contract_version: "1.1.0",
+        contract_version: SINISTRALIDADE_CONTRACT_VERSION,
         delta_version: toInt(versao[0]),
         delta_timestamp: getCell(versao[1]),
         gerado_em: new Date().toISOString(),
