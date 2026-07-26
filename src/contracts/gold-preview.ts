@@ -17,7 +17,11 @@ const serieCompetencia = z.object({
 });
 
 export const goldPreviewSchema = z.object({
-  filtros: z.object({ aplicados: z.record(z.string(), z.array(z.string())), disponiveis: z.object({}).passthrough() }),
+  filtros: z.object({
+    aplicados: z.record(z.string(), z.array(z.string())),
+    disponiveis: z.object({}).passthrough(),
+    notas: z.array(z.string()),
+  }),
   fonte: z.object({
     gold: z.string(),
     contract_version: z.string(),
@@ -29,7 +33,9 @@ export const goldPreviewSchema = z.object({
   }),
   mensal: z.array(serieMensal),
   competencia: z.array(serieCompetencia),
-  composicao_tipo_evento: z.array(z.object({}).passthrough()),
+  // Mapa mês -> tipo de evento -> sinistro (não uma lista): construído em
+  // gold-preview.ts como `Record<string, Record<string, number>>`.
+  composicao_tipo_evento: z.record(z.string(), z.record(z.string(), z.number())),
   kpis: z.object({
     ultimo_mes_fechado: z.string().nullable(),
     sinistro_ultimo_mes_fechado: z.number().nullable(),
@@ -50,8 +56,9 @@ export const goldPreviewSchema = z.object({
     janela: z.array(z.string()),
     utilizantes: z.number(),
     top1_pessoas: z.number(),
-    top1_share: z.number().nullable(),
-    top5_share: z.number().nullable(),
+    // toNum() nunca devolve null (cai para 0); não usar .nullable() aqui.
+    top1_share: z.number(),
+    top5_share: z.number(),
   }),
   internacao: z.object({
     por_agrupamento: z.array(z.object({ agrupamento: z.string(), sinistro_mi: z.number() })),
@@ -71,7 +78,17 @@ export const goldPreviewSchema = z.object({
   top_utilizantes: z.object({
     janela: z.array(z.string()),
     aviso: z.string(),
-    lista: z.array(z.object({}).passthrough()),
+    lista: z.array(z.object({
+      codigo_usuario: z.string(),
+      id_corrompido: z.boolean(),
+      faixa_etaria: z.string(),
+      parentesco: z.string(),
+      lotacao: z.string(),
+      custo: z.number(),
+      itens: z.number(),
+      internacoes: z.number(),
+      share: z.number(),
+    })),
   }),
   carteira: z.object({
     operadoras: z.array(z.string()),

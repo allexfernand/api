@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 import { goldPreviewSchema } from "../../src/contracts/gold-preview";
 
 const minimo = {
-  filtros: { aplicados: {}, disponiveis: {} },
+  filtros: {
+    aplicados: {},
+    disponiveis: {},
+    notas: ["cidade/estado: snapshot de elegibilidade da família do titular; cobertura parcial da ponte familiar"],
+  },
   fonte: {
     gold: "gold_sinistro_evento_v2",
     contract_version: "1.2.0",
@@ -14,7 +18,8 @@ const minimo = {
   },
   mensal: [{ mes: "2026-01", utilizantes: 10, itens: 20, sinistro: 1000, parcial: false }],
   competencia: [{ mes: "2026-01", sinistro: 900, servicos: 18, linhas: 20 }],
-  composicao_tipo_evento: [],
+  // Mapa mês -> tipo de evento -> sinistro, como o handler realmente monta (não uma lista).
+  composicao_tipo_evento: { "2026-01": { Consulta: 1000, "Internação": 500 } },
   kpis: {
     ultimo_mes_fechado: "2026-01",
     sinistro_ultimo_mes_fechado: 1000,
@@ -33,7 +38,21 @@ const minimo = {
   impacto_sanus: { metodologia: "x", pre: null, pos: null, trimestres_utilizantes: [] },
   comparacao_madura: { metodologia: "x", before_meses: [], after_meses: [], familias_comuns: 0 },
   jornada_sanus: { janela: [], metodologia: "x", servicos: [], proximidade: {} },
-  top_utilizantes: { janela: [], aviso: "x", lista: [] },
+  top_utilizantes: {
+    janela: [],
+    aviso: "x",
+    lista: [{
+      codigo_usuario: "Beneficiário abcd1234",
+      id_corrompido: false,
+      faixa_etaria: "30-39",
+      parentesco: "Titular",
+      lotacao: "Matriz",
+      custo: 5000,
+      itens: 12,
+      internacoes: 0,
+      share: 1.2,
+    }],
+  },
   carteira: { operadoras: [], empresas: [], beneficiarios_total: 0 },
 };
 
@@ -43,7 +62,8 @@ describe("contrato do payload gold-preview", () => {
   });
 
   it("exige a série de competência", () => {
-    const { competencia, ...sem } = minimo;
+    const sem: Record<string, unknown> = { ...minimo };
+    delete sem.competencia;
     expect(goldPreviewSchema.safeParse(sem).success).toBe(false);
   });
 
@@ -55,5 +75,13 @@ describe("contrato do payload gold-preview", () => {
   it("rejeita papel desconhecido", () => {
     const outro = { ...minimo, fonte: { ...minimo.fonte, role: "root" } };
     expect(goldPreviewSchema.safeParse(outro).success).toBe(false);
+  });
+
+  it("rejeita composicao_tipo_evento como lista (o handler monta um mapa por mês, não um array)", () => {
+    const listaEmVezDeMapa = {
+      ...minimo,
+      composicao_tipo_evento: [{ tipo: "Consulta", sinistro: 1000 }],
+    };
+    expect(goldPreviewSchema.safeParse(listaEmVezDeMapa).success).toBe(false);
   });
 });
