@@ -73,7 +73,7 @@ describe("serialização longitudinal", () => {
     expect(longitudinalEnvelopeSchema.safeParse(envelope).success).toBe(true);
     expect(envelope.state).toBe("partial");
     expect(envelope.warnings).toHaveLength(2);
-    expect(envelope.contract_version).toBe("1.1.0");
+    expect(envelope.contract_version).toBe("1.2.0");
     // O frontend não deduz validade por null: o estado sempre acompanha.
     expect(["valid", "partial", "blocked", "not_comparable"]).toContain(envelope.state);
   });
