@@ -336,13 +336,13 @@ A rota consulta seis tabelas, declaradas como constantes locais nas linhas 23-28
 | `MART_PRESTADOR` | `mart_prestador_mes_v2` | `TABLES.martPrestadorMes` — existe |
 | `COORDENACAO` | `fact_coordenacao_evento_gold_v2` | **não existe — criar `factCoordenacao`** |
 | `SNAPSHOT` | `beneficiary_eligibility_snapshot_v2` | **não existe — criar `eligibilitySnapshot`** |
-| `SILVER_FINAL` | `utilizacao_silver_final` | **não existe — criar `silverFinal`** |
+| `SILVER_FINAL` | `utilizacao_silver_final` | não existe, e **não deve ser criada** |
 
-Acrescente as três chaves que faltam a `TABLES` em `src/server/sinistralidade/query-runner.ts` e referencie-as pelas chaves. Cravar a string faz o teste de `TABLES` falhar, e é ele que impede nome de tabela digitado errado.
+Acrescente a `TABLES` em `src/server/sinistralidade/query-runner.ts` **apenas** `factCoordenacao` e `eligibilitySnapshot`, e referencie-as pelas chaves nas entradas de linhagem. Cravar a string faz o teste de `TABLES` falhar, e é ele que impede nome de tabela digitado errado.
 
 **Cuidado com uma armadilha de nome:** `TABLES.martCare` já existe e aponta para `mart_fatura_coordenacao_v2`, que **não** é a mesma coisa que `COORDENACAO` (`fact_coordenacao_evento_gold_v2`). Não reaproveite `martCare` por semelhança de nome.
 
-`SILVER_FINAL` é usada só num `DESCRIBE HISTORY` para obter a versão Delta exibida no cabeçalho — não alimenta nenhum bloco de número, então nenhuma das 14 entradas precisa declará-la como fonte. Crie a chave assim mesmo, para que a constante da rota possa referenciá-la e o padrão fique uniforme.
+**Por que `silverFinal` fica de fora:** `SILVER_FINAL` é usada só num `DESCRIBE HISTORY` que obtém a versão Delta exibida no cabeçalho. Não alimenta nenhum bloco de número, então nenhuma das 14 entradas a declara como fonte — e uma chave em `TABLES` que nada consome é peso morto. A constante local da rota continua como está.
 
 Cada entrada segue o formato já usado nas 25 existentes: `id`, `kind: "block"`, `label`, `layer`, `sources` (com `object`, `role`, `columns`), `formula` em linguagem de negócio com notação de agregado permitida, `filters`, `notes` e `related` opcionais.
 
