@@ -15,8 +15,19 @@
 // A busca dentro da lista de opções sobrevive (relevante quando a faceta tem
 // muitos valores, como cidade — até 40), assim como o texto de status
 // descrevendo o recorte atual.
+//
+// Fechar o menu aberto com Escape ou clique fora dele também sobrevive
+// (fecharMenus/keydown do fragment original). Mesmo formato de efeito de
+// LineageDrawer.tsx: guarda no topo, registra o listener, limpa no retorno —
+// nenhum setState roda de forma síncrona no corpo do efeito, só dentro dos
+// callbacks dos listeners, que é o que react-hooks/set-state-in-effect
+// permite. O "outside" é checado contra o container de TODAS as facetas
+// (não só a aberta): clicar no toggle de uma faceta diferente enquanto outra
+// está aberta precisa deixar o onClick daquele toggle decidir (troca de
+// faceta aberta), sem o listener de documento fechando tudo por cima —
+// checar só o container da faceta aberta reabriria essa corrida.
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import styles from "../ClaimsTab.module.css";
 import type { GoldPreview } from "../../../contracts/gold-preview";
 import type { FacetField, FacetSelection } from "../hooks/useGoldPreviewFilters";
@@ -83,6 +94,26 @@ export function FacetPanel({
     cidade: "",
     servico_sanus: "",
   });
+  const camposContainerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!campoAberto) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setCampoAberto(null);
+    };
+    const onClickFora = (event: MouseEvent) => {
+      const container = camposContainerRef.current;
+      if (container && event.target instanceof Node && !container.contains(event.target)) {
+        setCampoAberto(null);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    document.addEventListener("click", onClickFora);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.removeEventListener("click", onClickFora);
+    };
+  }, [campoAberto]);
 
   const totalSelecionado = FACET_FIELDS.reduce((total, campo) => total + filtros.selecionados[campo].length, 0);
 
@@ -115,7 +146,7 @@ export function FacetPanel({
         </span>
       </div>
 
-      <div className={styles.filterFields}>
+      <div className={styles.filterFields} ref={camposContainerRef}>
         {FACET_FIELDS.map((campo) => {
           const meta = FACET_META[campo];
           const selecionados = filtros.selecionados[campo];
