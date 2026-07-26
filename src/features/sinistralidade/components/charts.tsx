@@ -4,7 +4,7 @@
 // sem dependência externa, SSR seguro, tokens visuais do site e alternativa
 // tabular acessível em todos os gráficos. Máximo de cinco séries simultâneas.
 
-import { useId, useState, type ReactNode } from "react";
+import { createContext, useContext, useId, useState, type ReactNode } from "react";
 import styles from "../SinistralidadeV2Tab.module.css";
 
 // Cores semânticas consistentes: custo, uso, internação, saúde mental,
@@ -23,6 +23,14 @@ export const SERIES_PALETTE = ["#00A69C", "#2563eb", "#7c3aed", "#ea580c", "#089
 
 export type SeriesPoint = { x: string; y: number | null };
 export type Series = { name: string; color: string; points: SeriesPoint[]; unit?: string };
+
+type ChartVisibility = {
+  hidden: string[];
+  toggle: (name: string) => void;
+  reset: () => void;
+};
+
+const ChartVisibilityContext = createContext<ChartVisibility | null>(null);
 
 function scale(value: number, min: number, max: number, from: number, to: number) {
   if (max === min) return (from + to) / 2;
@@ -75,6 +83,12 @@ export function ChartCard({
   legend?: ReactNode;
 }) {
   const [showTable, setShowTable] = useState(false);
+  const [hiddenSeries, setHiddenSeries] = useState<string[]>([]);
+  const visibility: ChartVisibility = {
+    hidden: hiddenSeries,
+    toggle: (name) => setHiddenSeries((current) => current.includes(name) ? current.filter((item) => item !== name) : [...current, name]),
+    reset: () => setHiddenSeries([]),
+  };
   return (
     <figure className={styles.chartFigure}>
       <figcaption className={styles.chartCaption}>
@@ -95,20 +109,41 @@ export function ChartCard({
           {showTable ? "Ver gráfico" : "Ver tabela"}
         </button>
       </figcaption>
-      {legend}
-      {showTable ? <div className={styles.tableWrap}>{table}</div> : chart}
+      <ChartVisibilityContext.Provider value={visibility}>
+        {legend ? (
+          <div className={styles.chartLegendRow}>
+            {legend}
+            {hiddenSeries.length ? (
+              <button type="button" className={styles.legendReset} onClick={visibility.reset}>Mostrar todas</button>
+            ) : <span className={styles.legendHint}>Clique para mostrar ou ocultar</span>}
+          </div>
+        ) : null}
+        {showTable ? <div className={styles.tableWrap}>{table}</div> : <div className={styles.chartArea}>{chart}</div>}
+      </ChartVisibilityContext.Provider>
     </figure>
   );
 }
 
 export function ChartLegend({ items }: { items: { name: string; color: string }[] }) {
+  const visibility = useContext(ChartVisibilityContext);
   return (
-    <div className={styles.chartLegend} role="list">
-      {items.map((item) => (
-        <span key={item.name} role="listitem">
-          <i style={{ background: item.color }} aria-hidden="true" /> {item.name}
-        </span>
-      ))}
+    <div className={styles.chartLegend} role="group" aria-label="Legenda interativa">
+      {items.map((item) => {
+        const isHidden = visibility?.hidden.includes(item.name) ?? false;
+        return (
+          <button
+            key={item.name}
+            type="button"
+            className={`${styles.legendButton} ${isHidden ? styles.legendButtonHidden : ""}`}
+            aria-pressed={!isHidden}
+            title={`${isHidden ? "Mostrar" : "Ocultar"} ${item.name}`}
+            onClick={() => visibility?.toggle(item.name)}
+          >
+            <i style={{ background: item.color }} aria-hidden="true" />
+            <span>{item.name}</span>
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -127,7 +162,9 @@ export function LineChart({
   ariaLabel: string;
 }) {
   const id = useId();
-  const visible = series.slice(0, 5);
+  const visibility = useContext(ChartVisibilityContext);
+  const visible = series.filter((entry) => !visibility?.hidden.includes(entry.name)).slice(0, 5);
+  if (!visible.length) return <ChartEmpty message="Selecione uma série na legenda para exibir o gráfico." />;
   const categories = visible[0]?.points.map((point) => point.x) ?? [];
   if (!categories.length) return <ChartEmpty />;
   const width = 720;
@@ -180,11 +217,20 @@ export function LineChart({
           .join(" ");
         return (
           <g key={`${id}-${entry.name}`}>
-            <path d={path} fill="none" stroke={entry.color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+            <path
+              d={path}
+              fill="none"
+              stroke={entry.color}
+              strokeWidth={entry.color === SEMANTIC_COLORS.neutral ? 1.8 : 2.5}
+              strokeDasharray={entry.color === SEMANTIC_COLORS.neutral ? "5 4" : undefined}
+              strokeLinejoin="round"
+              strokeLinecap="round"
+              opacity={entry.color === SEMANTIC_COLORS.neutral ? 0.82 : 1}
+            />
             {entry.points.map((point, index) =>
               point.y === null ? null : (
                 <g key={point.x}>
-                  <circle cx={xFor(index)} cy={yFor(point.y)} r={2.75} fill={entry.color} className={styles.chartDot} />
+                  <circle cx={xFor(index)} cy={yFor(point.y)} r={3.2} fill={entry.color} className={styles.chartDot} />
                   <circle cx={xFor(index)} cy={yFor(point.y)} r={9} className={styles.hitArea}>
                     <title>{`${entry.name} · ${monthTick(point.x)}: ${formatValue(point.y)}${entry.unit ? ` ${entry.unit}` : ""}`}</title>
                   </circle>
@@ -211,10 +257,13 @@ export function StackedBarChart({
   ariaLabel: string;
   height?: number;
 }) {
+  const visibility = useContext(ChartVisibilityContext);
+  const visibleSegments = segments.filter((segment) => !visibility?.hidden.includes(segment.name));
   if (!months.length) return <ChartEmpty />;
+  if (!visibleSegments.length) return <ChartEmpty message="Selecione uma série na legenda para exibir o gráfico." />;
   const width = 720;
   const pad = { top: 14, right: 14, bottom: 28, left: 52 };
-  const totals = months.map((_, index) => segments.reduce((total, segment) => total + (segment.values[index] ?? 0), 0));
+  const totals = months.map((_, index) => visibleSegments.reduce((total, segment) => total + (segment.values[index] ?? 0), 0));
   const dataMax = Math.max(...totals, 1);
   const ticks = niceTicks(0, dataMax);
   const max = Math.max(dataMax, ticks[ticks.length - 1]);
@@ -238,14 +287,14 @@ export function StackedBarChart({
         let cursor = height - pad.bottom;
         return (
           <g key={month}>
-            {segments.map((segment, segmentIndex) => {
+            {visibleSegments.map((segment, segmentIndex) => {
               const value = segment.values[index] ?? 0;
               const barHeight = (value / max) * innerHeight;
               cursor -= barHeight;
               // 1px de respiro entre segmentos empilhados para leitura do stack.
               const gap = segmentIndex > 0 ? 1 : 0;
               return value > 0 ? (
-                <rect key={segment.name} x={xFor(index) - barWidth / 2} y={cursor + gap} width={barWidth} height={Math.max(barHeight - gap, 0.5)} fill={segment.color} rx={1.5}>
+                <rect key={segment.name} x={xFor(index) - barWidth / 2} y={cursor + gap} width={barWidth} height={Math.max(barHeight - gap, 0.5)} fill={segment.color} rx={3} stroke="#ffffff" strokeWidth={0.75}>
                   <title>{`${segment.name} · ${monthTick(month)}: ${formatValue(value)}`}</title>
                 </rect>
               ) : null;
@@ -319,7 +368,7 @@ export function ParetoChart({
         const barHeight = (item.value / max) * innerHeight;
         return (
           <g key={item.label + index}>
-            <rect x={xFor(index) - barWidth / 2} y={height - pad.bottom - barHeight} width={barWidth} height={barHeight} fill={SEMANTIC_COLORS.cost} rx={1.5}>
+            <rect x={xFor(index) - barWidth / 2} y={height - pad.bottom - barHeight} width={barWidth} height={barHeight} fill={SEMANTIC_COLORS.cost} rx={3}>
               <title>{`${item.label}: ${formatValue(item.value)}${item.cumulativeShare !== null ? ` · acumulado ${(item.cumulativeShare * 100).toFixed(1)}%` : ""}`}</title>
             </rect>
             <text x={xFor(index)} y={height - 8} textAnchor="middle" className={styles.axisText}>
@@ -399,8 +448,9 @@ export function ScatterChart({
           cy={scale(point.y, 0, maxY, height - pad.bottom, pad.top)}
           r={4 + (point.size / maxSize) * 12}
           fill={SEMANTIC_COLORS.cost}
-          fillOpacity={0.45}
+          fillOpacity={0.52}
           stroke={SEMANTIC_COLORS.cost}
+          strokeWidth={1.25}
         >
           <title>{`${point.label} · ${xLabel}: ${formatX(point.x)} · ${yLabel}: ${formatY(point.y)}`}</title>
         </circle>

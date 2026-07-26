@@ -64,6 +64,12 @@ export function AnalyticsHeader({
       </div>
       {envelope?.updated_at ? (
         <div className={styles.heroMeta}>
+          <div className={styles.heroSignals} aria-label="Dimensões da visão">
+            <span><i className="fa-solid fa-coins" aria-hidden="true" />Custo</span>
+            <span><i className="fa-solid fa-users" aria-hidden="true" />Utilização</span>
+            <span><i className="fa-solid fa-heart-pulse" aria-hidden="true" />Severidade</span>
+            <span><i className="fa-solid fa-route" aria-hidden="true" />Cuidado e rede</span>
+          </div>
           <span>Atualização: {new Date(envelope.updated_at).toLocaleDateString("pt-BR")}</span>
         </div>
       ) : null}

@@ -147,16 +147,16 @@ function LongitudinalExperience({
     ? `${timeline.envelope.effective_period.start_month ? monthLabel(timeline.envelope.effective_period.start_month) : "—"} a ${timeline.envelope.effective_period.end_month ? monthLabel(timeline.envelope.effective_period.end_month) : "—"}`
     : "janela selecionada";
 
-  const navSections: { id: string; label: string }[] = [
-    { id: "sin-executivo", label: "Resumo executivo" },
-    { id: "sin-top", label: "Beneficiários" },
-    { id: "sin-procedimentos", label: "Procedimentos" },
-    { id: "sin-internacoes", label: "Internações" },
-    { id: "sin-prestadores", label: "Prestadores" },
-    { id: "sin-concentracao", label: "Concentração" },
-    { id: "sin-empresas", label: "Benchmark" },
-    { id: "sin-familia", label: "Família e coordenação" },
-    { id: "sin-ps360", label: "Pronto-socorro" },
+  const navSections: { id: string; label: string; icon: string }[] = [
+    { id: "sin-executivo", label: "Resumo executivo", icon: "fa-chart-line" },
+    { id: "sin-top", label: "Beneficiários", icon: "fa-users" },
+    { id: "sin-procedimentos", label: "Procedimentos", icon: "fa-stethoscope" },
+    { id: "sin-internacoes", label: "Internações", icon: "fa-hospital" },
+    { id: "sin-prestadores", label: "Prestadores", icon: "fa-building" },
+    { id: "sin-concentracao", label: "Concentração", icon: "fa-layer-group" },
+    { id: "sin-empresas", label: "Benchmark", icon: "fa-scale-balanced" },
+    { id: "sin-familia", label: "Família e coordenação", icon: "fa-people-roof" },
+    { id: "sin-ps360", label: "Pronto-socorro", icon: "fa-truck-medical" },
   ];
 
   return (
@@ -173,7 +173,7 @@ function LongitudinalExperience({
 
       <nav className={styles.anchorNav} aria-label="Seções da análise">
         {navSections.map((section) => (
-          <a key={section.id} href={`#${section.id}`}>{section.label}</a>
+          <a key={section.id} href={`#${section.id}`}><i className={`fa-solid ${section.icon}`} aria-hidden="true" />{section.label}</a>
         ))}
       </nav>
 
