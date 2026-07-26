@@ -1,8 +1,10 @@
 // Linhagem dos KPIs executivos da janela (ExecutiveKpis.tsx).
 // Todos são agregados calculados em JavaScript sobre o resultado do escopo
-// `timeline`; nenhum deles tem consulta própria. Por isso as fontes repetem as
-// do bloco timeline.monthly, mas a fórmula é a do agregado de janela.
-// Cada entrada declara apenas as colunas que o seu cálculo específico utiliza.
+// `timeline`; nenhum deles tem consulta própria. As tabelas de origem são as
+// mesmas que o bloco timeline.monthly consulta, mas cada entrada declara
+// apenas as colunas que o seu próprio cálculo lê — quem responde "esta coluna
+// alimenta este número?" é a lista da entrada, não a do bloco mensal.
+// A fórmula, por sua vez, é a do agregado de janela, não a da série mensal.
 
 import type { LineageEntry } from "../../../contracts/sinistralidade-v2";
 import { TABLES } from "../query-runner";
