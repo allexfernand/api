@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { lineageRegistry } from "../../src/server/sinistralidade/lineage";
 import { lineageRegistrySchema } from "../../src/contracts/sinistralidade-v2";
 import { TABLES } from "../../src/server/sinistralidade/query-runner";
+import { sinistralidadeV2Handler } from "../../src/server/sinistralidade/index";
 
 const registro = lineageRegistry();
 
@@ -106,5 +107,70 @@ describe("registro de linhagem", () => {
 
   it("tem 25 entradas no total", () => {
     expect(registro.entries).toHaveLength(25);
+  });
+});
+
+function fakeRes() {
+  const headers: Record<string, string> = {};
+  let statusCode = 0;
+  let body: unknown = null;
+  const res = {
+    setHeader(name: string, value: string) {
+      headers[name] = value;
+    },
+    status(code: number) {
+      statusCode = code;
+      return {
+        json(payload: unknown) {
+          body = payload;
+        },
+        end() {
+          body = null;
+        },
+      };
+    },
+  };
+  return { res, headers, get statusCode() { return statusCode; }, get body() { return body; } };
+}
+
+function basic(user: string, password: string) {
+  return `Basic ${Buffer.from(`${user}:${password}`).toString("base64")}`;
+}
+
+describe("rota scope=lineage", () => {
+  const env = process.env;
+
+  beforeEach(() => {
+    process.env = {
+      ...env,
+      DASHBOARD_AUTH_USER: "admin",
+      DASHBOARD_AUTH_PASSWORD: "senha-admin",
+      DASHBOARD_MDS_AUTH_USER: "mds",
+      DASHBOARD_MDS_AUTH_PASSWORD: "senha-mds",
+    };
+  });
+
+  afterEach(() => {
+    process.env = env;
+  });
+
+  it("entrega o registro para o papel full", async () => {
+    const ctx = fakeRes();
+    await sinistralidadeV2Handler(
+      { method: "GET", query: { scope: "lineage" }, headers: { authorization: basic("admin", "senha-admin") } },
+      ctx.res,
+    );
+    expect(ctx.statusCode).toBe(200);
+    expect((ctx.body as { lineage: { entries: unknown[] } }).lineage.entries).toHaveLength(25);
+    expect(ctx.headers["Cache-Control"]).toBe("private, max-age=3600");
+  });
+
+  it("recusa o papel mds com 403", async () => {
+    const ctx = fakeRes();
+    await sinistralidadeV2Handler(
+      { method: "GET", query: { scope: "lineage" }, headers: { authorization: basic("mds", "senha-mds") } },
+      ctx.res,
+    );
+    expect(ctx.statusCode).toBe(403);
   });
 });

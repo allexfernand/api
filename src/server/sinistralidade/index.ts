@@ -2,7 +2,7 @@
 // A rota HTTP é apenas um adaptador; período, permissão, consulta e
 // serialização vivem nos módulos deste diretório.
 
-import { getDashboardAuth, requireBasicAuth } from "../../../lib/basic-auth";
+import { getDashboardAuth, rejectMdsAuth, requireBasicAuth } from "../../../lib/basic-auth";
 import { setApiCors, setStableCache } from "../../../lib/http";
 import {
   SINISTRALIDADE_CONTRACT_VERSION,
@@ -15,6 +15,7 @@ import { assertCompanyAccess, companyScopeSql } from "../auth/company-scope";
 import { auditIndividualAccess } from "./audit";
 import { sinistralidadeFeatureFlags } from "./feature-flags";
 import { legacyScopeData } from "./legacy";
+import { lineageRegistry } from "./lineage";
 import { resolvePeriod, resolvePeriodAcrossCompanies, type ResolvedPeriod } from "./period-gate";
 import {
   assertIndividualDetail,
@@ -295,6 +296,7 @@ export async function sinistralidadeV2Handler(req: ApiRequest, res: ApiResponse)
       setStableCache(res);
       return res.status(200).json({
         source: legacyMetadata(),
+        role: auth.role,
         features: {
           longitudinal: flags.longitudinal,
           individual_ranking: access.ranking,
@@ -311,6 +313,14 @@ export async function sinistralidadeV2Handler(req: ApiRequest, res: ApiResponse)
           observed_rows: toInt(row[6] as never),
         })),
       });
+    }
+
+    // Linhagem: metadado estático. Não depende de empresa nem de período, não
+    // toca o Databricks e por isso é resolvida antes do gate de fechamento.
+    if (input.scope === "lineage") {
+      if (rejectMdsAuth(req, res)) return;
+      res.setHeader("Cache-Control", "private, max-age=3600");
+      return res.status(200).json({ lineage: lineageRegistry() });
     }
 
     if (isLongitudinalScope(input.scope)) {
