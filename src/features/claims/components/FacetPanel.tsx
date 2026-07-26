@@ -131,6 +131,7 @@ export function FacetPanel({
                 ? (opcoes.find((item) => item.value === selecionados[0])?.label ?? selecionados[0])
                 : `${selecionados.length} selecionados`;
           const labelId = `claims-filter-label-${campo}`;
+          const triggerId = `claims-filter-trigger-${campo}`;
 
           return (
             <div className={styles.filterField} key={campo}>
@@ -139,10 +140,11 @@ export function FacetPanel({
               </span>
               <button
                 type="button"
+                id={triggerId}
                 className={`${styles.filterTrigger} ${selecionados.length > 0 ? styles.filterTriggerActive : ""}`}
                 aria-expanded={aberto}
                 aria-haspopup="true"
-                aria-labelledby={labelId}
+                aria-labelledby={`${labelId} ${triggerId}`}
                 onClick={() => setCampoAberto(aberto ? null : campo)}
               >
                 <span className={styles.filterTriggerIcon} aria-hidden="true">
