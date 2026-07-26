@@ -1770,3 +1770,83 @@
     transition: none;
   }
 }
+
+/* Gaveta não-modal: convive com a página, não bloqueia interação. */
+.lineageDrawer {
+  z-index: 40;
+}
+
+.lineageLayer {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 999px;
+  margin-bottom: 14px;
+}
+
+.lineageLayer_silver { background: #e2e8f0; color: #334155; }
+.lineageLayer_gold { background: #fef3c7; color: #92400e; }
+.lineageLayer_mart { background: #dbeafe; color: #1e40af; }
+.lineageLayer_control { background: #ede9fe; color: #5b21b6; }
+
+.lineageFormula {
+  font-size: 13px;
+  line-height: 1.55;
+  color: #334155;
+  margin-bottom: 6px;
+}
+
+.lineageColumns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.lineageColumns code {
+  font-size: 11px;
+  background: #f1f5f9;
+  border-radius: 4px;
+  padding: 2px 6px;
+  color: #475569;
+}
+
+.lineageFilters,
+.lineageNotes {
+  font-size: 12px;
+  line-height: 1.5;
+  color: #475569;
+  padding-left: 18px;
+  margin-bottom: 6px;
+}
+
+.lineageFilters li,
+.lineageNotes li {
+  list-style: disc;
+  margin-bottom: 5px;
+}
+
+.lineageRelated {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.lineageRelated button {
+  font-size: 12px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  border-radius: 999px;
+  padding: 5px 12px;
+  cursor: pointer;
+  color: #1e40af;
+}
+
+.lineageRelated button:hover,
+.lineageRelated button:focus-visible {
+  border-color: #2563eb;
+  background: #eff6ff;
+}
