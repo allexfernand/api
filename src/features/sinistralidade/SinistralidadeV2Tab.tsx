@@ -190,7 +190,7 @@ function LongitudinalExperience({
           <div><span>Resumo executivo</span><h2>Evolução da janela de {filters.windowMonths} meses</h2></div>
           <p>Todos os valores reconciliam com a Gold v2; meses sem cobertura não viram zero.</p>
         </div>
-        <BlockState result={timeline} emptyMessage="Sem meses com dados na janela selecionada.">
+        <BlockState result={timeline} emptyMessage="Sem meses com dados na janela selecionada." lineageId="timeline.monthly" label="Custo">
           {(data) => (
             <>
               <ExecutiveKpis kpis={data.kpis} />
@@ -198,7 +198,7 @@ function LongitudinalExperience({
             </>
           )}
         </BlockState>
-        <BlockState result={eventMix} emptyMessage="Sem composição por evento na janela.">
+        <BlockState result={eventMix} emptyMessage="Sem composição por evento na janela." lineageId="event-mix.cost" label="Custo por evento">
           {(data) => <EventMixChart data={data} periodLabel={periodLabel} />}
         </BlockState>
       </section>
@@ -227,6 +227,8 @@ function LongitudinalExperience({
         <LazyScope<ProcedureTrendsData>
           url={ready ? scopeUrl("procedure-trends", { ...baseParams, limit: 10 }) : null}
           emptyMessage="Sem procedimentos na janela."
+          lineageId="procedure-trends.pareto"
+          label="Pareto"
         >
           {(data) => <ProcedureAnalysis data={data} periodLabel={periodLabel} />}
         </LazyScope>
@@ -236,6 +238,8 @@ function LongitudinalExperience({
         <LazyScope<HospitalizationTrendsData>
           url={ready ? scopeUrl("hospitalization-trends", baseParams) : null}
           emptyMessage="Sem episódios de internação na janela."
+          lineageId="hospitalization-trends.monthly"
+          label="Internações mensais"
         >
           {(data) => <HospitalizationAnalysis data={data} periodLabel={periodLabel} />}
         </LazyScope>
@@ -245,6 +249,8 @@ function LongitudinalExperience({
         <LazyScope<ProviderTrendsData>
           url={ready ? scopeUrl("provider-trends", { ...baseParams, limit: 20 }) : null}
           emptyMessage="Sem prestadores na janela."
+          lineageId="provider-trends.monthly"
+          label="Custo mensal por prestador"
         >
           {(data) => <ProviderAnalysis data={data} periodLabel={periodLabel} />}
         </LazyScope>
@@ -254,6 +260,8 @@ function LongitudinalExperience({
         <LazyScope<ConcentrationData>
           url={ready ? scopeUrl("concentration", baseParams) : null}
           emptyMessage="Sem dados de concentração na janela."
+          lineageId="concentration.monthly"
+          label="Concentração mensal"
         >
           {(data) => <ConcentrationAnalysis data={data} periodLabel={periodLabel} />}
         </LazyScope>
@@ -264,6 +272,8 @@ function LongitudinalExperience({
           <LazyScope<BenchmarkData>
             url={filters.endMonth ? scopeUrl("company-benchmark", { end_month: filters.endMonth, window_months: filters.windowMonths, include_partial: filters.includePartial }) : null}
             emptyMessage="Sem empresas comparáveis no seu escopo."
+            lineageId="company-benchmark.table"
+            label="Comparação entre empresas"
           >
             {(data) => <CompanyBenchmark data={data} />}
           </LazyScope>
@@ -279,12 +289,16 @@ function LongitudinalExperience({
         <LazyScope<FamilyTimelineData>
           url={ready ? scopeUrl("family-timeline", { company_key: filters.companyKey, end_month: filters.endMonth, window_months: filters.windowMonths, include_partial: filters.includePartial }) : null}
           emptyMessage="Sem famílias com entrada homologada."
+          lineageId="family-timeline.relative"
+          label="Custo por mês relativo"
         >
           {(data) => <FamilyTimelineBlock data={data} />}
         </LazyScope>
         <LazyScope<CareTimelineData>
           url={ready ? scopeUrl("care-timeline", baseParams) : null}
           emptyMessage="Sem meses de coordenação na janela."
+          lineageId="care-timeline.matrix"
+          label="Fatura × coordenação por mês"
         >
           {(data) => <CareTimelineBlock data={data} periodLabel={periodLabel} />}
         </LazyScope>
@@ -294,6 +308,8 @@ function LongitudinalExperience({
         <LazyScope<PsTrendsData>
           url={ready ? scopeUrl("ps-trends", { ...baseParams, limit: 20 }) : null}
           emptyMessage="Sem itens de pronto-socorro na janela."
+          lineageId="ps-trends.monthly"
+          label="Pronto-socorro mensal"
         >
           {(data) => <PsItemAnalysis data={data} periodLabel={periodLabel} />}
         </LazyScope>
@@ -337,7 +353,7 @@ function TopUsersBlock({
       : null,
   );
   return (
-    <BlockState result={result} emptyMessage="Sem beneficiários com consumo na janela.">
+    <BlockState result={result} emptyMessage="Sem beneficiários com consumo na janela." lineageId="top-users-window.table" label="Maiores utilizantes da janela">
       {(data) => (
         <TopUsersTable
           data={data}
@@ -409,15 +425,19 @@ function ThematicSection({
 function LazyScope<T>({
   url,
   emptyMessage,
+  lineageId,
+  label,
   children,
 }: {
   url: string | null;
   emptyMessage: string;
+  lineageId?: string;
+  label?: string;
   children: (data: T) => ReactNode;
 }) {
   const result = useSinistralidadeScope<T>(url);
   return (
-    <BlockState result={result} emptyMessage={emptyMessage}>
+    <BlockState result={result} emptyMessage={emptyMessage} lineageId={lineageId} label={label}>
       {children}
     </BlockState>
   );
