@@ -14,6 +14,44 @@ export const EVENT_MIX_UNITS = {
   participacao: "fração (0–1)",
 };
 
+import type { LineageEntry } from "../../../contracts/sinistralidade-v2";
+
+export const EVENT_MIX_LINEAGE: LineageEntry[] = [
+  {
+    id: "event-mix.cost",
+    kind: "block",
+    label: "Composição do custo por tipo de evento",
+    layer: "mart",
+    sources: [
+      {
+        object: TABLES.martEventoMes,
+        role: "fato principal",
+        columns: [
+          "month_key",
+          "tipo_evento",
+          "custo_assistencial_bruto",
+          "quantidade_servicos",
+          "linhas_cobranca",
+          "utilizantes",
+          "episodios_internacao",
+          "participacao_custo_mes",
+        ],
+      },
+    ],
+    formula:
+      "Custo e volume por tipo_evento em cada mês. Participação do período = custo do evento ÷ custo total da janela.",
+    filters: [
+      "company_key do escopo do usuário, aplicado no SQL",
+      "meses aprovados pelo gate de fechamento",
+    ],
+    notes: [
+      "Linha sem tipo_evento preenchido aparece como 'Sem classificação' em vez de ser descartada.",
+      "Empate de custo é desempatado pelo nome do evento, para a ordem ser estável entre execuções.",
+    ],
+    related: ["timeline.monthly"],
+  },
+];
+
 export async function eventMixScope(q: QueryRunner, companyKey: string, period: ResolvedPeriod) {
   if (!period.usableMonths.length) return { months: [], window_totals: [] };
   const rows = await q(

@@ -15,6 +15,45 @@ export const CONCENTRATION_UNITS = {
   custo: "R$",
 };
 
+import type { LineageEntry } from "../../../contracts/sinistralidade-v2";
+
+export const CONCENTRATION_LINEAGE: LineageEntry[] = [
+  {
+    id: "concentration.monthly",
+    kind: "block",
+    label: "Concentração mensal do custo em beneficiários",
+    layer: "mart",
+    sources: [
+      {
+        object: TABLES.martConcentracaoMes,
+        role: "fato principal",
+        columns: [
+          "month_key",
+          "pessoas_utilizantes",
+          "custo_total",
+          "participacao_top1",
+          "participacao_top5",
+          "participacao_top10",
+          "participacao_top10pct",
+          "pessoas_para_50pct",
+          "pessoas_para_80pct",
+          "top10_recorrentes_mes_anterior",
+        ],
+      },
+    ],
+    formula:
+      "Participação acumulada do custo detida pelos maiores utilizantes de cada mês, e quantas pessoas são necessárias para somar 50% e 80% do custo.",
+    filters: [
+      "company_key do escopo do usuário, aplicado no SQL",
+      "meses aprovados pelo gate de fechamento",
+    ],
+    notes: [
+      "Só agregados. Nenhuma identificação individual sai deste bloco.",
+      "top10_recorrentes_mes_anterior mede persistência: quantos do Top 10 do mês já estavam no Top 10 do mês anterior.",
+    ],
+  },
+];
+
 export async function concentrationScope(q: QueryRunner, companyKey: string, period: ResolvedPeriod) {
   if (!period.usableMonths.length) return { monthly: [] };
   const rows = await q(
@@ -48,6 +87,47 @@ export const BENCHMARK_UNITS = {
   servicos_por_utilizante: "serviços/pessoa",
   participacao: "fração (0–1)",
 };
+
+export const BENCHMARK_LINEAGE: LineageEntry[] = [
+  {
+    id: "company-benchmark.table",
+    kind: "block",
+    label: "Comparação entre empresas",
+    layer: "mart",
+    sources: [
+      {
+        object: TABLES.martMonth,
+        role: "fato principal, agregado por empresa",
+        columns: [
+          "company_key",
+          "month_key",
+          "custo_assistencial_bruto",
+          "utilizantes",
+          "quantidade_servicos",
+          "linhas_cobranca",
+          "vidas_elegiveis",
+        ],
+      },
+      {
+        object: TABLES.dimCompany,
+        role: "nome canônico da empresa",
+        columns: ["company_key", "nome_empresa_canonico"],
+      },
+    ],
+    formula:
+      "Uma linha por empresa: custo somado na janela, participação sobre o total do escopo, custo por utilizante e serviços por utilizante.",
+    filters: [
+      "todas as empresas do escopo do usuário — este bloco ignora o filtro de empresa da tela",
+      "meses aprovados pelo gate agregado: closed só quando toda empresa com registro no mês está fechada",
+    ],
+    notes: [
+      "Não existe mart próprio de benchmark: ele é derivado do mart mensal.",
+      "Custo por vida elegível só aparece quando todos os meses da janela têm denominador; caso contrário o estado é not_comparable e o campo fica null.",
+      "O somatório de utilizantes é por mês: a mesma pessoa em dois meses conta duas vezes. Não é população distinta.",
+    ],
+    related: ["timeline.monthly"],
+  },
+];
 
 export async function companyBenchmarkScope(q: QueryRunner, auth: AuthIdentity, period: ResolvedPeriod) {
   if (!period.usableMonths.length) return { companies: [] };

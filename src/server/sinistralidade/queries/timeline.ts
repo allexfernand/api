@@ -18,6 +18,88 @@ export const TIMELINE_UNITS = {
   variacao: "%",
 };
 
+import type { LineageEntry } from "../../../contracts/sinistralidade-v2";
+
+// Linhagem dos dois blocos que este escopo desenha. Mora aqui, ao lado do SQL,
+// para que uma mudança de consulta não passe sem revisar a documentação.
+export const TIMELINE_LINEAGE: LineageEntry[] = [
+  {
+    id: "timeline.monthly",
+    kind: "block",
+    label: "Evolução mensal por data de atendimento",
+    layer: "mart",
+    sources: [
+      {
+        object: TABLES.martMonth,
+        role: "fato principal",
+        columns: [
+          "month_key",
+          "custo_assistencial_bruto",
+          "utilizantes",
+          "familias_utilizantes",
+          "quantidade_servicos",
+          "linhas_cobranca",
+          "vidas_elegiveis",
+          "custo_por_vida_elegivel",
+          "freshness",
+        ],
+      },
+      {
+        object: TABLES.martInternacaoMes,
+        role: "episódios de internação do mês",
+        columns: ["month_key", "episodios_internacao"],
+      },
+      {
+        object: TABLES.monthStatus,
+        role: "gate de fechamento do período",
+        columns: ["company_key", "month_key", "status", "updated_at"],
+      },
+    ],
+    formula:
+      "Uma linha por mês da janela. Custo = SUM(custo_assistencial_bruto). Variação mês a mês e ano a ano calculadas sobre o custo; média móvel de 3 meses.",
+    filters: [
+      "company_key do escopo do usuário, aplicado no SQL",
+      "meses aprovados pelo gate de fechamento",
+    ],
+    notes: [
+      "A série é densa: todo mês da janela aparece. Mês sem cobertura vem com métricas null, nunca zero, e has_data = false.",
+      "Mês fora dos meses aprovados aparece com included = false e sem métricas.",
+    ],
+    related: ["timeline.competency"],
+  },
+  {
+    id: "timeline.competency",
+    kind: "block",
+    label: "Custo por competência de faturamento",
+    layer: "gold",
+    sources: [
+      {
+        object: TABLES.gold,
+        role: "fato assistencial",
+        columns: [
+          "competencia_cobranca",
+          "custo_assistencial_bruto",
+          "quantidade_servicos",
+          "company_key",
+          "flag_data_suspeita",
+        ],
+      },
+    ],
+    formula:
+      "SUM(custo_assistencial_bruto) agrupado por competencia_cobranca convertida de dd/MM/yyyy para yyyy-MM.",
+    filters: [
+      "company_key do escopo do usuário, aplicado no SQL",
+      "NOT flag_data_suspeita",
+      "competências dentro da janela selecionada",
+    ],
+    notes: [
+      "Responde 'quanto foi faturado no mês', não 'quanto foi atendido no mês'. É por isso que difere da série por data de atendimento.",
+      "Mês sem faturamento na competência vem null, nunca zero.",
+    ],
+    related: ["timeline.monthly"],
+  },
+];
+
 export type TimelineMonth = {
   month: string;
   status: string;
