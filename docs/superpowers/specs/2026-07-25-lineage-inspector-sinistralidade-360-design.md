@@ -217,8 +217,16 @@ foco no botão de fechar ao abrir, `Escape` fecha, foco retorna ao elemento ante
 porque é uma tarefa focada. Esta precisa deixar o usuário clicar de um bloco a outro
 comparando linhagens. Portanto: sem overlay, sem `aria-modal`, sem prender foco. Um `aside`
 com `role="complementary"` e `aria-live="polite"` no corpo, para o leitor de tela anunciar a
-troca de conteúdo. No breakpoint estreito já usado no arquivo, vira folha inferior modal —
-não há espaço para as duas coisas.
+troca de conteúdo. Em `max-width: 640px` — breakpoint que o arquivo já usa — vira folha
+inferior de altura limitada, para não enterrar a página numa tela estreita.
+
+**Posicionamento é responsabilidade do `.lineageDrawer`, não da classe `.drawer`
+reaproveitada.** `.drawer` não tem posicionamento próprio: quem a coloca na lateral é o
+`.drawerOverlay` do drawer modal (`position: fixed; inset: 0; justify-content: flex-end`).
+Sem overlay, ela cairia no fluxo do documento. (Descoberto na implementação da Task 8; a
+versão anterior desta seção mandava reaproveitar `.drawer` sem essa ressalva, e também dizia
+que a folha inferior seria modal — seria preciso renderizar um overlay condicionado a media
+query, o que CSS sozinho não faz. A folha inferior é não-modal como a variante lateral.)
 
 Ordem do corpo: selo da camada (colorido por Silver/Gold/Mart/Controle) → fórmula → fontes,
 cada uma com objeto, papel e colunas → filtros aplicados → notas → relacionados, clicáveis
