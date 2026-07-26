@@ -37,6 +37,11 @@ export const EVENT_MIX_LINEAGE: LineageEntry[] = [
           "participacao_custo_mes",
         ],
       },
+      {
+        object: TABLES.monthStatus,
+        role: "gate de fechamento do período",
+        columns: ["company_key", "month_key", "status", "updated_at"],
+      },
     ],
     formula:
       "Custo e volume por tipo_evento em cada mês. Participação do período = custo do evento ÷ custo total da janela.",

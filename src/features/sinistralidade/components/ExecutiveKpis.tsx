@@ -16,7 +16,7 @@ export function ExecutiveKpis({ kpis }: { kpis: TimelineKpis | null }) {
       <Kpi lineageId="kpi.gross_cost" label="Custo assistencial (janela)" value={money.format(kpis.gross_cost)} helper={`${kpis.months_included} mês(es) incluído(s) · R$`} />
       <Kpi lineageId="kpi.utilizers" label="Beneficiários utilizantes" value={number.format(kpis.utilizers)} helper="pessoas distintas na janela" />
       <Kpi lineageId="kpi.service_quantity" label="Serviços realizados" value={number.format(kpis.service_quantity)} helper="quantidade de serviços" />
-      <Kpi lineageId="kpi.hospitalization_episodes" label="Episódios de internação" value={number.format(kpis.hospitalization_episodes)} helper="episódios distintos (episode_key)" />
+      <Kpi lineageId="kpi.hospitalization_episodes" label="Episódios de internação" value={number.format(kpis.hospitalization_episodes)} helper="admissões distintas (admission_key)" />
       <Kpi lineageId="kpi.utilizing_families" label="Famílias utilizantes" value={number.format(kpis.utilizing_families)} helper="famílias distintas na janela" />
       <Kpi
         lineageId="kpi.cost_per_utilizer"

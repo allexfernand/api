@@ -41,6 +41,11 @@ export const FAMILY_LINEAGE: LineageEntry[] = [
           "coorte_entrada",
         ],
       },
+      {
+        object: TABLES.monthStatus,
+        role: "gate de fechamento do período",
+        columns: ["company_key", "month_key", "status", "updated_at"],
+      },
     ],
     formula:
       "O eixo não é o calendário: é o mês relativo à entrada do titular. Mês 0 é a entrada; negativos são anteriores.",
@@ -48,6 +53,7 @@ export const FAMILY_LINEAGE: LineageEntry[] = [
     notes: [
       "A entrada familiar é derivada do snapshot atual de elegibilidade, não de histórico retroativo.",
       "Dependentes sem ponte com o titular não estão associados: vw_beneficiarios não expõe essa identidade na origem.",
+      "O bloqueio HTTP 409 deste bloco vem do mesmo gate por mês calendário do handler (end_month/window_months): a consulta em si agrupa por mes_relativo e nunca filtra por month_key, mas o gate ainda decide se a tela é bloqueada.",
     ],
     related: ["care-timeline.matrix"],
   },
@@ -115,6 +121,11 @@ export const CARE_LINEAGE: LineageEntry[] = [
         object: TABLES.martCare,
         role: "quebra demográfica da matriz; dimensões demográficas sintetizadas via LATERAL VIEW explode",
         columns: ["person_key", "company_key", "month_key", "sex", "beneficiary_type", "state", "utilizou_plano", "teve_coordenacao", "custo_assistencial_bruto"],
+      },
+      {
+        object: TABLES.monthStatus,
+        role: "gate de fechamento do período",
+        columns: ["company_key", "month_key", "status", "updated_at"],
       },
     ],
     formula:
@@ -236,6 +247,11 @@ export const PS_LINEAGE: LineageEntry[] = [
         object: TABLES.martPsEpisode,
         role: "contagem de episódios de PS",
         columns: ["month_key", "episode_key"],
+      },
+      {
+        object: TABLES.monthStatus,
+        role: "gate de fechamento do período",
+        columns: ["company_key", "month_key", "status", "updated_at"],
       },
     ],
     formula:

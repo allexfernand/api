@@ -40,9 +40,14 @@ export const TOP_USERS_LINEAGE: LineageEntry[] = [
           "evento_principal",
         ],
       },
+      {
+        object: TABLES.monthStatus,
+        role: "gate de fechamento do período",
+        columns: ["company_key", "month_key", "status", "updated_at"],
+      },
     ],
     formula:
-      "Pessoas ordenadas pelo critério escolhido (custo, serviços, internações ou crescimento) somado na janela. A posição na janela anterior vem da mesma consulta deslocada.",
+      "Pessoas ordenadas pelo critério escolhido (custo, serviços ou internações) somado na janela. A posição na janela anterior vem da mesma consulta deslocada.",
     filters: [
       "company_key do escopo do usuário, aplicado no SQL",
       "meses aprovados pelo gate de fechamento",
@@ -51,6 +56,7 @@ export const TOP_USERS_LINEAGE: LineageEntry[] = [
     notes: [
       "A identidade é o person_key opaco: nome e CPF nunca saem da camada controlada.",
       "Todo acesso a este bloco é auditado no servidor.",
+      "A posição anterior — e position_delta e is_new_entrant, que dependem dela — vêm de uma janela anterior (previousSpine) calculada por aritmética de calendário, não verificada pelo gate de fechamento: a comparação pode envolver um mês que não está fechado.",
     ],
     related: ["user-detail", "concentration.monthly"],
   },

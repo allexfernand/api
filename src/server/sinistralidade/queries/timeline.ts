@@ -64,6 +64,7 @@ export const TIMELINE_LINEAGE: LineageEntry[] = [
     notes: [
       "A série é densa: todo mês da janela aparece. Mês sem cobertura vem com métricas null, nunca zero, e has_data = false.",
       "Mês fora dos meses aprovados aparece com included = false e sem métricas.",
+      "A variação ano a ano (yoy) compara com o mesmo mês do ano anterior, derivado por aritmética de calendário sobre a espinha da janela — não passa pelo gate de fechamento. A comparação pode envolver um mês do ano anterior que não está fechado.",
     ],
     related: ["timeline.competency", "kpi.gross_cost"],
   },

@@ -1,5 +1,7 @@
 // Escopo `hospitalization-trends`: internações gerais, saúde mental e
-// agrupamentos. Episódios sempre por count(distinct episode_key) (GOV-02).
+// agrupamentos. Episódios sempre por count(distinct admission_key) (GOV-02):
+// episode_key inclui a data de atendimento e superconta internações
+// faturadas em datas diferentes; admission_key colapsa a admissão clínica.
 
 import type { ResolvedPeriod } from "../period-gate";
 import { monthsInSql } from "../period-gate";
@@ -48,17 +50,22 @@ export const HOSPITALIZATION_LINEAGE: LineageEntry[] = [
         role: "prestadores que internaram",
         columns: ["prestador_key", "prestador_label", "episodios_internacao", "utilizantes", "custo_assistencial_bruto"],
       },
+      {
+        object: TABLES.monthStatus,
+        role: "gate de fechamento do período",
+        columns: ["company_key", "month_key", "status", "updated_at"],
+      },
     ],
     formula:
-      "Episódios = COUNT(DISTINCT episode_key) já consolidado no mart. Custo médio por episódio = custo_total ÷ episodios_internacao.",
+      "Episódios = COUNT(DISTINCT admission_key) já consolidado no mart: admission_key colapsa empresa + pessoa + conta + senha + prestador, sem a data de atendimento. Custo médio por episódio = custo_total ÷ episodios_internacao.",
     filters: [
       "company_key do escopo do usuário, aplicado no SQL",
       "meses aprovados pelo gate de fechamento",
-      "quando o filtro de saúde mental está ativo, só episódios classificados",
+      "mentalHealth informado restringe por saude_mental (true = só saúde mental; false = só não-saúde-mental); ausente traz todos",
     ],
     notes: [
-      "Internação conta ADMISSÕES, não diárias: o episode_key inclui a data de atendimento, e o episódio é atribuído ao mês inicial.",
-      "A classificação de saúde mental é aplicada no grão do episódio, não da linha de cobrança.",
+      "Internação conta ADMISSÕES, não diárias: o episode_key da Gold inclui a data de atendimento e superconta internações faturadas em datas diferentes; admission_key remove a data e colapsa a admissão clínica, atribuída ao mês inicial (o primeiro mês observado). O antigo episode_key sobrevive só como atendimentos_dia, para reconciliação.",
+      "A classificação de saúde mental é aplicada no grão da admissão, não da linha de cobrança: uma admissão com qualquer linha de saúde mental conta inteira como saúde mental.",
     ],
     related: ["timeline.monthly"],
   },

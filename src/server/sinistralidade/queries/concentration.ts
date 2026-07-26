@@ -40,6 +40,11 @@ export const CONCENTRATION_LINEAGE: LineageEntry[] = [
           "top10_recorrentes_mes_anterior",
         ],
       },
+      {
+        object: TABLES.monthStatus,
+        role: "gate de fechamento do período",
+        columns: ["company_key", "month_key", "status", "updated_at"],
+      },
     ],
     formula:
       "Participação acumulada do custo detida pelos maiores utilizantes de cada mês, e quantas pessoas são necessárias para somar 50% e 80% do custo.",
@@ -113,6 +118,11 @@ export const BENCHMARK_LINEAGE: LineageEntry[] = [
         object: TABLES.dimCompany,
         role: "nome canônico da empresa",
         columns: ["company_key", "nome_empresa_canonico"],
+      },
+      {
+        object: TABLES.monthStatus,
+        role: "gate de fechamento do período",
+        columns: ["company_key", "month_key", "status", "updated_at"],
       },
     ],
     formula:

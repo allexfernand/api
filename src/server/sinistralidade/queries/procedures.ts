@@ -49,7 +49,14 @@ export const PROCEDURE_LINEAGE: LineageEntry[] = [
     kind: "block",
     label: "Pareto de procedimentos por custo",
     layer: "mart",
-    sources: PROCEDURE_SOURCES,
+    sources: [
+      ...PROCEDURE_SOURCES,
+      {
+        object: TABLES.monthStatus,
+        role: "gate de fechamento do período",
+        columns: ["company_key", "month_key", "status", "updated_at"],
+      },
+    ],
     formula:
       "Procedimentos ordenados por SUM(custo_assistencial_bruto) na janela, com participação acumulada sobre o custo total.",
     filters: PROCEDURE_FILTERS,

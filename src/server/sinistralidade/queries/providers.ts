@@ -49,7 +49,14 @@ export const PROVIDER_LINEAGE: LineageEntry[] = [
     kind: "block",
     label: "Custo mensal por prestador",
     layer: "mart",
-    sources: PROVIDER_SOURCES,
+    sources: [
+      ...PROVIDER_SOURCES,
+      {
+        object: TABLES.monthStatus,
+        role: "gate de fechamento do período",
+        columns: ["company_key", "month_key", "status", "updated_at"],
+      },
+    ],
     formula:
       "Prestadores ordenados por SUM(custo_assistencial_bruto) na janela; ticket médio = custo ÷ quantidade_servicos.",
     filters: PROVIDER_FILTERS,
