@@ -18,11 +18,11 @@ const FILTROS_OPCIONAIS =
   "filtros opcionais de faixa etária, sexo, tipo de plano, cidade/estado e serviço Sanus, aplicados quando ativos na tela";
 
 // O filtro opcional de cidade/estado (facetas do usuário) não é um WHERE
-// literal: buildFiltroSql(), em gold-preview.ts, resolve family_key contra o
-// snapshot de elegibilidade ANTES de aplicar o filtro principal na Gold. Toda
-// consulta desta rota que recebe filtroSql herda essa subconsulta quando o
-// usuário escolhe cidade/estado — por isso vira fonte própria, e não só uma
-// linha de texto em `filters`, nas entradas cuja query inclui filtroSql.
+// literal: a rota resolve family_key contra o snapshot de elegibilidade ANTES
+// de aplicar o filtro principal na Gold. Toda consulta desta rota que aceita
+// o filtro do usuário herda essa subconsulta quando o usuário escolhe
+// cidade/estado — por isso vira fonte própria, e não só uma linha de texto em
+// `filters`, nas entradas cuja consulta aceita esse filtro.
 const FONTE_FILTRO_CIDADE_ESTADO = {
   object: TABLES.eligibilitySnapshot,
   role: "resolve family_key quando o filtro opcional de cidade/estado do usuário está ativo (subconsulta dentro do filtro aplicado no SQL)",
@@ -58,7 +58,7 @@ export const GOLD_PREVIEW_LINEAGE: LineageEntry[] = [
     ],
     notes: [
       "Esta rota não consulta o gate de fechamento por mês (monthStatus) da Visão 360: aqui o fechamento é decidido comparando o sinistro do próprio mês com um piso fixo (SINISTRO_MES_MINIMO), não com um status gravado por empresa/mês.",
-      "utilizantes_ultimo_mes_fechado usa a contagem direta da janela (kpiRows) e só cai para o valor da série mensal quando essa contagem é zero/falsy.",
+      "utilizantes_ultimo_mes_fechado usa a contagem direta da janela e só cai para o valor da série mensal quando essa contagem é zero/falsy.",
     ],
     related: ["claims.monthly"],
   },
@@ -128,8 +128,8 @@ export const GOLD_PREVIEW_LINEAGE: LineageEntry[] = [
       "Sem agregação no servidor: agrupa três meses consecutivos da série de claims.monthly e soma sinistro e itens no cliente; utilizantes do trimestre é a MÉDIA mensal, não a soma.",
     filters: ["os mesmos filtros de claims.monthly, por ser a mesma fonte — nenhum filtro adicional é aplicado aqui"],
     notes: [
-      "Este bloco não tem SELECT próprio em gold-preview.ts: a agregação trimestral é calculada no cliente a partir de `mensal` (src/features/claims/quarterly.ts, agruparTrimestres).",
-      "Qualquer alteração na consulta de claims.monthly (mensalGoldRows) se propaga para este bloco sem mudança de código nesta entrada.",
+      "Este bloco não tem consulta própria em gold-preview.ts: os números trimestrais são agregados no cliente a partir da série mensal (claims.monthly), sem nenhum SELECT dedicado no servidor. Utilizantes aparece como média mensal, não soma, porque somar contaria a mesma pessoa mais de uma vez entre os meses do trimestre.",
+      "Qualquer alteração na consulta que alimenta claims.monthly se propaga para este bloco sem mudança de código nesta entrada.",
     ],
     related: ["claims.monthly"],
   },
@@ -387,7 +387,7 @@ export const GOLD_PREVIEW_LINEAGE: LineageEntry[] = [
       FONTE_FILTRO_CIDADE_ESTADO,
     ],
     formula:
-      "servicos: alcance por serviço = COUNT(DISTINCT familia) com qualquer contato do serviço na janela, sobre COUNT(*) da coorte; proximidade: para cada evento de sinistro, distância em dias até o contato digital anterior mais próximo (0 a 40 dias); share_ate_40d = utilizacoes_ate_40d ÷ utilizacoes_cohort × 100.",
+      "servicos: alcance por serviço = COUNT(DISTINCT familia) com qualquer contato do serviço na janela, sobre COUNT(*) da coorte; proximidade: para cada evento de sinistro, distância em dias até o contato digital anterior mais próximo, agrupada em faixas — mesmo_dia (dias = 0), ate_7d (dias ≤ 7), ate_15d (dias ≤ 15) e ate_40d (dias ≤ 40, a mesma população de utilizacoes_ate_40d); media_dias = AVG(dias) entre os eventos com contato encontrado; familias_com_proximidade = COUNT(DISTINCT familia) entre esses mesmos eventos; share_ate_40d = utilizacoes_ate_40d ÷ utilizacoes_cohort × 100.",
     filters: [
       ESCOPO_USUARIO,
       NOT_SUSPEITA,
