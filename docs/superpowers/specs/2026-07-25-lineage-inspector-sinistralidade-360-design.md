@@ -210,8 +210,14 @@ o DOM fica idêntico ao de hoje.
 ### Gaveta
 
 Reaproveita as classes existentes em `SinistralidadeV2Tab.module.css` (`.drawer`,
-`.drawerHeader`, `.drawerBody`, `.drawerList`) e o padrão de foco de `UserDetailDrawer.tsx`:
-foco no botão de fechar ao abrir, `Escape` fecha, foco retorna ao elemento anterior.
+`.drawerHeader`, `.drawerBody`, `.drawerList`) e fecha com `Escape`.
+
+**Não move o foco ao abrir nem o restaura ao fechar**, ao contrário do `UserDetailDrawer.tsx`.
+Aquele é modal e precisa levar o foco para dentro. Este é um painel de consulta que fica ao
+lado enquanto a pessoa continua clicando nos blocos — mover o foco a cada seleção a tiraria
+de onde está trabalhando. O selo que abriu a gaveta mantém o foco. (A versão anterior desta
+seção mandava copiar o padrão de foco do drawer modal e, duas linhas abaixo, dizia "sem
+prender foco"; as duas coisas não coexistem.)
 
 **É não-modal, ao contrário de `UserDetailDrawer`.** Aquele tem overlay que captura clique
 porque é uma tarefa focada. Esta precisa deixar o usuário clicar de um bloco a outro
