@@ -5,6 +5,7 @@ import type { ResolvedPeriod } from "../period-gate";
 import { monthsInSql } from "../period-gate";
 import { getCell, toBool, toInt, toNullableNum, toNum } from "../serializers";
 import { TABLES, type QueryRunner } from "../query-runner";
+import type { LineageEntry } from "../../../contracts/sinistralidade-v2";
 
 export const HOSPITALIZATION_UNITS = {
   episodios: "episódios",
@@ -14,6 +15,50 @@ export const HOSPITALIZATION_UNITS = {
   duracao: "dias",
   cobertura: "%",
 };
+
+export const HOSPITALIZATION_LINEAGE: LineageEntry[] = [
+  {
+    id: "hospitalization-trends.monthly",
+    kind: "block",
+    label: "Internações mensais e saúde mental",
+    layer: "mart",
+    sources: [
+      {
+        object: TABLES.martInternacaoMes,
+        role: "fato principal",
+        columns: [
+          "month_key",
+          "saude_mental",
+          "episodios_internacao",
+          "utilizantes",
+          "custo_total",
+        ],
+      },
+      {
+        object: TABLES.martInternacaoGrupoMes,
+        role: "quebra por acomodação",
+        columns: ["month_key", "acomodacao_internacao", "episodios_internacao", "utilizantes"],
+      },
+      {
+        object: TABLES.martPrestadorMes,
+        role: "prestadores que internaram",
+        columns: ["month_key", "prestador_key", "prestador_label", "episodios_internacao", "utilizantes"],
+      },
+    ],
+    formula:
+      "Episódios = COUNT(DISTINCT episode_key) já consolidado no mart. Custo médio por episódio = custo_total ÷ episodios_internacao.",
+    filters: [
+      "company_key do escopo do usuário, aplicado no SQL",
+      "meses aprovados pelo gate de fechamento",
+      "quando o filtro de saúde mental está ativo, só episódios classificados",
+    ],
+    notes: [
+      "Internação conta ADMISSÕES, não diárias: o episode_key inclui a data de atendimento, e o episódio é atribuído ao mês inicial.",
+      "A classificação de saúde mental é aplicada no grão do episódio, não da linha de cobrança.",
+    ],
+    related: ["timeline.monthly"],
+  },
+];
 
 export async function hospitalizationTrendsScope(
   q: QueryRunner,

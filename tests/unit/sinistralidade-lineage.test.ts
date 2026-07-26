@@ -43,4 +43,49 @@ describe("registro de linhagem", () => {
       .filter((related) => !ids.has(related));
     expect(quebrados).toEqual([]);
   });
+
+  it("tem os 15 blocos clicáveis e as 9 métricas previstos", () => {
+    const ids = registro.entries.map((entry) => entry.id);
+    expect(ids).toEqual(
+      expect.arrayContaining([
+        "timeline.monthly",
+        "timeline.competency",
+        "event-mix.cost",
+        "top-users-window.table",
+        "procedure-trends.pareto",
+        "procedure-trends.scatter",
+        "procedure-trends.monthly",
+        "hospitalization-trends.monthly",
+        "provider-trends.monthly",
+        "provider-trends.network",
+        "concentration.monthly",
+        "company-benchmark.table",
+        "family-timeline.relative",
+        "care-timeline.matrix",
+        "ps-trends.monthly",
+        "user-detail",
+      ]),
+    );
+  });
+
+  it("cobre os 12 escopos longitudinais", () => {
+    const escopos = [
+      "timeline",
+      "event-mix",
+      "top-users-window",
+      "user-detail",
+      "procedure-trends",
+      "hospitalization-trends",
+      "provider-trends",
+      "concentration",
+      "company-benchmark",
+      "family-timeline",
+      "care-timeline",
+      "ps-trends",
+    ];
+    const semEntrada = escopos.filter(
+      (escopo) => !registro.entries.some((entry) => entry.id === escopo || entry.id.startsWith(`${escopo}.`)),
+    );
+    expect(semEntrada).toEqual([]);
+  });
 });

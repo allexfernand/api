@@ -9,6 +9,7 @@ import type { ResolvedPeriod } from "../period-gate";
 import { monthSpine, monthsInSql } from "../period-gate";
 import { fetchCoveredMonths, getCell, maskedBeneficiaryLabel, toInt, toNum } from "../serializers";
 import { TABLES, type QueryRunner } from "../query-runner";
+import type { LineageEntry } from "../../../contracts/sinistralidade-v2";
 
 export const TOP_USERS_UNITS = {
   custo: "R$",
@@ -17,6 +18,43 @@ export const TOP_USERS_UNITS = {
   participacao: "fração (0–1)",
   recorrencia: "meses com uso",
 };
+
+export const TOP_USERS_LINEAGE: LineageEntry[] = [
+  {
+    id: "top-users-window.table",
+    kind: "block",
+    label: "Maiores utilizantes da janela",
+    layer: "mart",
+    sources: [
+      {
+        object: TABLES.martPessoaMes,
+        role: "fato principal",
+        columns: [
+          "person_key",
+          "month_key",
+          "faixa_etaria",
+          "parentesco",
+          "custo_assistencial_bruto",
+          "quantidade_servicos",
+          "linhas_cobranca",
+          "episodios_internacao",
+        ],
+      },
+    ],
+    formula:
+      "Pessoas ordenadas pelo critério escolhido (custo, serviços, internações ou crescimento) somado na janela. A posição na janela anterior vem da mesma consulta deslocada.",
+    filters: [
+      "company_key do escopo do usuário, aplicado no SQL",
+      "meses aprovados pelo gate de fechamento",
+      "exige permissão de ranking individual",
+    ],
+    notes: [
+      "A identidade é o person_key opaco: nome e CPF nunca saem da camada controlada.",
+      "Todo acesso a este bloco é auditado no servidor.",
+    ],
+    related: ["user-detail", "concentration.monthly"],
+  },
+];
 
 const RANKING_COLUMN: Record<Exclude<RankingBy, "growth">, string> = {
   cost: "custo_assistencial_bruto",
@@ -149,6 +187,54 @@ export const USER_DETAIL_UNITS = {
   internacoes: "episódios",
   duracao: "dias",
 };
+
+export const USER_DETAIL_LINEAGE: LineageEntry[] = [
+  {
+    id: "user-detail",
+    kind: "block",
+    label: "Detalhe individual do beneficiário",
+    layer: "gold",
+    sources: [
+      {
+        object: TABLES.martPessoaMes,
+        role: "série mensal da pessoa",
+        columns: [
+          "person_key",
+          "month_key",
+          "custo_assistencial_bruto",
+          "quantidade_servicos",
+          "linhas_cobranca",
+        ],
+      },
+      {
+        object: TABLES.gold,
+        role: "composição por evento, procedimento, prestador e internação",
+        columns: [
+          "person_key",
+          "month_key",
+          "tipo_evento",
+          "descricao_procedimento",
+          "prestador",
+          "flag_internacao",
+          "flag_data_suspeita",
+        ],
+      },
+    ],
+    formula:
+      "Recorte da janela para uma única pessoa: série mensal, composição por evento, dez principais procedimentos, dez principais prestadores e internações do período.",
+    filters: [
+      "company_key do escopo do usuário, aplicado no SQL",
+      "NOT flag_data_suspeita",
+      "exige permissão de detalhe individual",
+    ],
+    notes: [
+      "Este bloco não tem botão de linhagem próprio: ele vive dentro da gaveta do beneficiário. Chegue aqui pelo bloco de maiores utilizantes.",
+      "Nenhum CID é exposto: a exposição de diagnóstico aguarda aprovação clínica.",
+      "A resposta é servida com Cache-Control: no-store e todo acesso é auditado, inclusive tentativa sem resultado.",
+    ],
+    related: ["top-users-window.table"],
+  },
+];
 
 export async function userDetailScope(
   q: QueryRunner,

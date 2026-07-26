@@ -6,13 +6,26 @@
 import { SINISTRALIDADE_CONTRACT_VERSION, type LineageEntry, type LineageRegistry } from "../../contracts/sinistralidade-v2";
 import { CONCENTRATION_LINEAGE, BENCHMARK_LINEAGE } from "./queries/concentration";
 import { EVENT_MIX_LINEAGE } from "./queries/event-mix";
+import { CARE_LINEAGE, FAMILY_LINEAGE, PS_LINEAGE } from "./queries/family-care";
+import { HOSPITALIZATION_LINEAGE } from "./queries/hospitalizations";
+import { PROCEDURE_LINEAGE } from "./queries/procedures";
+import { PROVIDER_LINEAGE } from "./queries/providers";
+import { TOP_USERS_LINEAGE, USER_DETAIL_LINEAGE } from "./queries/rankings";
 import { TIMELINE_LINEAGE } from "./queries/timeline";
 
 const ENTRIES: LineageEntry[] = [
   ...TIMELINE_LINEAGE,
   ...EVENT_MIX_LINEAGE,
+  ...TOP_USERS_LINEAGE,
+  ...USER_DETAIL_LINEAGE,
+  ...PROCEDURE_LINEAGE,
+  ...HOSPITALIZATION_LINEAGE,
+  ...PROVIDER_LINEAGE,
   ...CONCENTRATION_LINEAGE,
   ...BENCHMARK_LINEAGE,
+  ...FAMILY_LINEAGE,
+  ...CARE_LINEAGE,
+  ...PS_LINEAGE,
 ];
 
 export function lineageRegistry(): LineageRegistry {

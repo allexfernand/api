@@ -6,6 +6,7 @@ import { monthsInSql } from "../period-gate";
 import { escape } from "../../databricks/client";
 import { fetchCoveredMonths, getCell, toInt, toNullableNum, toNum } from "../serializers";
 import { TABLES, type QueryRunner } from "../query-runner";
+import type { LineageEntry } from "../../../contracts/sinistralidade-v2";
 
 export const PROVIDER_UNITS = {
   custo: "R$",
@@ -15,6 +16,60 @@ export const PROVIDER_UNITS = {
   ticket: "R$/serviço",
   participacao: "fração (0–1)",
 };
+
+const PROVIDER_SOURCES = [
+  {
+    object: TABLES.martPrestadorMes,
+    role: "fato principal",
+    columns: [
+      "prestador_key",
+      "prestador_label",
+      "tipo_prestador",
+      "especialidade_principal",
+      "month_key",
+      "custo_assistencial_bruto",
+      "quantidade_servicos",
+      "utilizantes",
+      "episodios_internacao",
+      "reembolso",
+    ],
+  },
+];
+
+const PROVIDER_FILTERS = [
+  "company_key do escopo do usuário, aplicado no SQL",
+  "meses aprovados pelo gate de fechamento",
+  "filtros opcionais de rede/reembolso e de especialidade",
+];
+
+export const PROVIDER_LINEAGE: LineageEntry[] = [
+  {
+    id: "provider-trends.monthly",
+    kind: "block",
+    label: "Custo mensal por prestador",
+    layer: "mart",
+    sources: PROVIDER_SOURCES,
+    formula:
+      "Prestadores ordenados por SUM(custo_assistencial_bruto) na janela; ticket médio = custo ÷ quantidade_servicos.",
+    filters: PROVIDER_FILTERS,
+    notes: ["prestador_key é a identidade canônica; prestador_label é o nome exibido."],
+    related: ["provider-trends.network"],
+  },
+  {
+    id: "provider-trends.network",
+    kind: "block",
+    label: "Rede contra reembolso",
+    layer: "mart",
+    sources: PROVIDER_SOURCES,
+    formula:
+      "Custo e serviços por mês, separados pela marcação de reembolso. Share de reembolso = custo em reembolso ÷ custo do mês.",
+    filters: PROVIDER_FILTERS,
+    notes: [
+      "Share de reembolso é proxy de vazamento de rede: gasto fora da rede credenciada, que costuma custar mais.",
+    ],
+    related: ["provider-trends.monthly"],
+  },
+];
 
 export async function providerTrendsScope(
   q: QueryRunner,

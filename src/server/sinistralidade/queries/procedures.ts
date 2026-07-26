@@ -7,6 +7,7 @@ import { monthsInSql } from "../period-gate";
 import { escape } from "../../databricks/client";
 import { fetchCoveredMonths, getCell, growth, toInt, toNum } from "../serializers";
 import { TABLES, type QueryRunner } from "../query-runner";
+import type { LineageEntry } from "../../../contracts/sinistralidade-v2";
 
 export const PROCEDURE_UNITS = {
   custo: "R$",
@@ -17,6 +18,67 @@ export const PROCEDURE_UNITS = {
   internacoes: "episódios",
   participacao: "fração (0–1)",
 };
+
+const PROCEDURE_SOURCES = [
+  {
+    object: TABLES.martProcedimentoMes,
+    role: "fato principal",
+    columns: [
+      "procedimento_key",
+      "month_key",
+      "custo_assistencial_bruto",
+      "quantidade_servicos",
+      "linhas_cobranca",
+      "utilizantes",
+    ],
+  },
+];
+
+const PROCEDURE_FILTERS = [
+  "company_key do escopo do usuário, aplicado no SQL",
+  "meses aprovados pelo gate de fechamento",
+  "quando há filtro de tipo de evento, os códigos vêm de gold_sinistro_evento_v2",
+];
+
+export const PROCEDURE_LINEAGE: LineageEntry[] = [
+  {
+    id: "procedure-trends.pareto",
+    kind: "block",
+    label: "Pareto de procedimentos por custo",
+    layer: "mart",
+    sources: PROCEDURE_SOURCES,
+    formula:
+      "Procedimentos ordenados por SUM(custo_assistencial_bruto) na janela, com participação acumulada sobre o custo total.",
+    filters: PROCEDURE_FILTERS,
+    notes: ["Mostra quantos procedimentos concentram a maior parte do custo."],
+    related: ["procedure-trends.scatter", "procedure-trends.monthly"],
+  },
+  {
+    id: "procedure-trends.scatter",
+    kind: "block",
+    label: "Dispersão: volume contra custo médio",
+    layer: "mart",
+    sources: PROCEDURE_SOURCES,
+    formula:
+      "Cada ponto é um procedimento: eixo de volume = SUM(quantidade_servicos); eixo de custo médio = SUM(custo_assistencial_bruto) ÷ SUM(quantidade_servicos).",
+    filters: PROCEDURE_FILTERS,
+    notes: [
+      "Separa frequência de severidade: muito volume com custo médio baixo é um problema diferente de pouco volume com custo médio alto.",
+    ],
+    related: ["procedure-trends.pareto"],
+  },
+  {
+    id: "procedure-trends.monthly",
+    kind: "block",
+    label: "Custo mensal por procedimento",
+    layer: "mart",
+    sources: PROCEDURE_SOURCES,
+    formula:
+      "Série mensal de SUM(custo_assistencial_bruto) e SUM(quantidade_servicos) para os procedimentos do recorte.",
+    filters: PROCEDURE_FILTERS,
+    related: ["procedure-trends.pareto"],
+  },
+];
 
 export async function procedureTrendsScope(
   q: QueryRunner,

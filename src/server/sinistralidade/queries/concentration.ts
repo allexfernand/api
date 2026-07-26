@@ -51,6 +51,7 @@ export const CONCENTRATION_LINEAGE: LineageEntry[] = [
       "Só agregados. Nenhuma identificação individual sai deste bloco.",
       "top10_recorrentes_mes_anterior mede persistência: quantos do Top 10 do mês já estavam no Top 10 do mês anterior.",
     ],
+    related: ["top-users-window.table"],
   },
 ];
 
