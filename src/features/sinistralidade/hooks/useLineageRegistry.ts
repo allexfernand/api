@@ -48,8 +48,13 @@ export function useLineageRegistry(enabled: boolean): LineageRegistryResult {
 
   const retry = useCallback(() => setAttempt((current) => current + 1), []);
 
-  const status: LineageStatus =
-    entries.size > 0 ? "ready" : settled && settled.attempt === attempt && !settled.ok ? "error" : enabled ? "loading" : "idle";
+  const status: LineageStatus = !enabled
+    ? "idle"
+    : entries.size > 0
+      ? "ready"
+      : settled && settled.attempt === attempt && !settled.ok
+        ? "error"
+        : "loading";
 
   return { status, entries, retry };
 }
