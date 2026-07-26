@@ -65,7 +65,7 @@ export const TIMELINE_LINEAGE: LineageEntry[] = [
       "A série é densa: todo mês da janela aparece. Mês sem cobertura vem com métricas null, nunca zero, e has_data = false.",
       "Mês fora dos meses aprovados aparece com included = false e sem métricas.",
     ],
-    related: ["timeline.competency"],
+    related: ["timeline.competency", "kpi.gross_cost"],
   },
   {
     id: "timeline.competency",

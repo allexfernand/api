@@ -12,6 +12,7 @@ import { PROCEDURE_LINEAGE } from "./queries/procedures";
 import { PROVIDER_LINEAGE } from "./queries/providers";
 import { TOP_USERS_LINEAGE, USER_DETAIL_LINEAGE } from "./queries/rankings";
 import { TIMELINE_LINEAGE } from "./queries/timeline";
+import { KPI_LINEAGE } from "./queries/kpis-lineage";
 
 const ENTRIES: LineageEntry[] = [
   ...TIMELINE_LINEAGE,
@@ -26,6 +27,7 @@ const ENTRIES: LineageEntry[] = [
   ...FAMILY_LINEAGE,
   ...CARE_LINEAGE,
   ...PS_LINEAGE,
+  ...KPI_LINEAGE,
 ];
 
 export function lineageRegistry(): LineageRegistry {

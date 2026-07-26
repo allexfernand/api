@@ -88,4 +88,23 @@ describe("registro de linhagem", () => {
     );
     expect(semEntrada).toEqual([]);
   });
+
+  it("tem as 9 métricas de KPI, todas kind=metric", () => {
+    const metricas = registro.entries.filter((entry) => entry.kind === "metric");
+    expect(metricas.map((entry) => entry.id).sort()).toEqual([
+      "kpi.cost_per_eligible_life",
+      "kpi.cost_per_utilizer",
+      "kpi.gross_cost",
+      "kpi.hospitalization_episodes",
+      "kpi.hospitalizations_per_thousand_lives",
+      "kpi.service_quantity",
+      "kpi.services_per_utilizer",
+      "kpi.utilizers",
+      "kpi.utilizing_families",
+    ]);
+  });
+
+  it("tem 25 entradas no total", () => {
+    expect(registro.entries).toHaveLength(25);
+  });
 });
