@@ -2,32 +2,10 @@
 // Todos são agregados calculados em JavaScript sobre o resultado do escopo
 // `timeline`; nenhum deles tem consulta própria. Por isso as fontes repetem as
 // do bloco timeline.monthly, mas a fórmula é a do agregado de janela.
+// Cada entrada declara apenas as colunas que o seu cálculo específico utiliza.
 
 import type { LineageEntry } from "../../../contracts/sinistralidade-v2";
 import { TABLES } from "../query-runner";
-
-const MART_MONTH = {
-  object: TABLES.martMonth,
-  role: "fato mensal somado na janela",
-  columns: [
-    "month_key",
-    "custo_assistencial_bruto",
-    "quantidade_servicos",
-    "vidas_elegiveis",
-  ],
-};
-
-const MART_PESSOA = {
-  object: TABLES.martPessoaMes,
-  role: "identidade distinta na janela",
-  columns: ["company_key", "month_key", "person_key", "family_key"],
-};
-
-const MART_INTERNACAO = {
-  object: TABLES.martInternacaoMes,
-  role: "episódios de internação",
-  columns: ["month_key", "episodios_internacao"],
-};
 
 const FILTROS = [
   "company_key do escopo do usuário, aplicado no SQL",
@@ -46,7 +24,13 @@ export const KPI_LINEAGE: LineageEntry[] = [
     kind: "metric",
     label: "Custo assistencial (janela)",
     layer: "mart",
-    sources: [MART_MONTH],
+    sources: [
+      {
+        object: TABLES.martMonth,
+        role: "fato mensal somado na janela",
+        columns: ["month_key", "custo_assistencial_bruto"],
+      },
+    ],
     formula: "SUM(custo_assistencial_bruto) dos meses incluídos.",
     filters: FILTROS,
     notes: [NOTA_JANELA, "É custo bruto: não desconta coparticipação."],
@@ -57,7 +41,13 @@ export const KPI_LINEAGE: LineageEntry[] = [
     kind: "metric",
     label: "Beneficiários utilizantes",
     layer: "mart",
-    sources: [MART_PESSOA],
+    sources: [
+      {
+        object: TABLES.martPessoaMes,
+        role: "identidade distinta na janela",
+        columns: ["company_key", "month_key", "person_key"],
+      },
+    ],
     formula: "COUNT(DISTINCT person_key) sobre todos os meses incluídos, de uma vez.",
     filters: FILTROS,
     notes: [
@@ -71,7 +61,13 @@ export const KPI_LINEAGE: LineageEntry[] = [
     kind: "metric",
     label: "Serviços realizados",
     layer: "mart",
-    sources: [MART_MONTH],
+    sources: [
+      {
+        object: TABLES.martMonth,
+        role: "fato mensal somado na janela",
+        columns: ["month_key", "quantidade_servicos"],
+      },
+    ],
     formula: "SUM(quantidade_servicos) dos meses incluídos.",
     filters: FILTROS,
     notes: [NOTA_JANELA],
@@ -82,7 +78,13 @@ export const KPI_LINEAGE: LineageEntry[] = [
     kind: "metric",
     label: "Episódios de internação",
     layer: "mart",
-    sources: [MART_INTERNACAO],
+    sources: [
+      {
+        object: TABLES.martInternacaoMes,
+        role: "episódios de internação",
+        columns: ["month_key", "episodios_internacao"],
+      },
+    ],
     formula: "SUM(episodios_internacao) dos meses incluídos.",
     filters: FILTROS,
     notes: [
@@ -95,7 +97,13 @@ export const KPI_LINEAGE: LineageEntry[] = [
     kind: "metric",
     label: "Famílias utilizantes",
     layer: "mart",
-    sources: [MART_PESSOA],
+    sources: [
+      {
+        object: TABLES.martPessoaMes,
+        role: "identidade distinta na janela",
+        columns: ["company_key", "month_key", "family_key"],
+      },
+    ],
     formula: "COUNT(DISTINCT family_key) sobre todos os meses incluídos, de uma vez.",
     filters: FILTROS,
     notes: [
@@ -109,7 +117,18 @@ export const KPI_LINEAGE: LineageEntry[] = [
     kind: "metric",
     label: "Custo por utilizante",
     layer: "mart",
-    sources: [MART_MONTH, MART_PESSOA],
+    sources: [
+      {
+        object: TABLES.martMonth,
+        role: "fato mensal somado na janela",
+        columns: ["month_key", "custo_assistencial_bruto"],
+      },
+      {
+        object: TABLES.martPessoaMes,
+        role: "identidade distinta na janela",
+        columns: ["company_key", "month_key", "person_key"],
+      },
+    ],
     formula: "SUM(custo_assistencial_bruto) ÷ COUNT(DISTINCT person_key) na janela.",
     filters: FILTROS,
     notes: [
@@ -123,7 +142,18 @@ export const KPI_LINEAGE: LineageEntry[] = [
     kind: "metric",
     label: "Serviços por utilizante",
     layer: "mart",
-    sources: [MART_MONTH, MART_PESSOA],
+    sources: [
+      {
+        object: TABLES.martMonth,
+        role: "fato mensal somado na janela",
+        columns: ["month_key", "quantidade_servicos"],
+      },
+      {
+        object: TABLES.martPessoaMes,
+        role: "identidade distinta na janela",
+        columns: ["company_key", "month_key", "person_key"],
+      },
+    ],
     formula: "SUM(quantidade_servicos) ÷ COUNT(DISTINCT person_key) na janela.",
     filters: FILTROS,
     notes: ["Mede intensidade de uso por pessoa que usou."],
@@ -134,7 +164,13 @@ export const KPI_LINEAGE: LineageEntry[] = [
     kind: "metric",
     label: "Custo por vida elegível",
     layer: "mart",
-    sources: [MART_MONTH],
+    sources: [
+      {
+        object: TABLES.martMonth,
+        role: "fato mensal somado na janela",
+        columns: ["month_key", "custo_assistencial_bruto", "vidas_elegiveis"],
+      },
+    ],
     formula: "SUM(custo_assistencial_bruto) ÷ SUM(vidas_elegiveis) dos meses incluídos.",
     filters: FILTROS,
     notes: [
@@ -149,7 +185,18 @@ export const KPI_LINEAGE: LineageEntry[] = [
     kind: "metric",
     label: "Internações por mil vidas",
     layer: "mart",
-    sources: [MART_INTERNACAO, MART_MONTH],
+    sources: [
+      {
+        object: TABLES.martInternacaoMes,
+        role: "episódios de internação",
+        columns: ["month_key", "episodios_internacao"],
+      },
+      {
+        object: TABLES.martMonth,
+        role: "fato mensal somado na janela",
+        columns: ["month_key", "vidas_elegiveis"],
+      },
+    ],
     formula: "SUM(episodios_internacao) ÷ SUM(vidas_elegiveis) × 1.000 nos meses incluídos.",
     filters: FILTROS,
     notes: [NOTA_DENOMINADOR, "Indicador de severidade populacional."],
