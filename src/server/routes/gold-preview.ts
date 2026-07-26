@@ -166,7 +166,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     }
 
     // ---- Fase 2: KPIs, blocos e impacto (dependem da janela 12m)
-    const [kpiRows, total24Rows, lotacaoRows, prestadorRows, concRows, intAgrupRows, intStatsRows, smTemaRows, impactoMesRows, triRows, carteiraRows, topUtiRows, facetRows, cidadeRows, maduroRows, servicoRows, proximidadeRows] = await Promise.all([
+    const [kpiRows, total24Rows, lotacaoRows, prestadorRows, concRows, intAgrupRows, intStatsRows, smTemaRows, impactoMesRows, triRows, carteiraRows, topUtiRows, facetRows, cidadeRows, maduroRows, servicoRows, proximidadeRows, competenciaRows] = await Promise.all([
       q(`SELECT round(sum(g.custo_assistencial_bruto), 2), count(DISTINCT g.person_key),
                 round(sum(CASE WHEN g.flag_reembolso THEN g.custo_assistencial_bruto END), 2),
                 count(DISTINCT CASE WHEN g.month_key = '${ultimoFechadoMes ?? ""}' THEN g.person_key END)
@@ -363,6 +363,17 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
                 sum(CASE WHEN dias <= 15 THEN 1 ELSE 0 END),
                 count(*), round(avg(dias), 1), count(DISTINCT familia)
          FROM proximos`),
+      // Série por COMPETÊNCIA DE COBRANÇA: "quanto foi faturado no mês",
+      // contra o "quanto foi atendido no mês" da série `mensal`. Mesmo
+      // recorte de filtros; o eixo é que muda.
+      q(`SELECT date_format(to_date(g.competencia_cobranca, 'dd/MM/yyyy'), 'yyyy-MM') AS competencia,
+           round(sum(g.custo_assistencial_bruto), 2) AS sinistro,
+           sum(g.quantidade_servicos) AS servicos,
+           count(*) AS linhas
+         FROM ${GOLD} g
+         WHERE NOT g.flag_data_suspeita
+           AND date_format(to_date(g.competencia_cobranca, 'dd/MM/yyyy'), 'yyyy-MM') >= ${SERIE_INICIO}${filtroSql}
+         GROUP BY 1 ORDER BY 1`),
     ]);
 
     const kpi = kpiRows[0] || [];
@@ -415,6 +426,16 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       if (cid && !cidades.includes(cid)) cidades.push(cid);
     }
 
+    const competencia = competenciaRows
+      .map((r) => ({
+        mes: String(getCell(r[0])),
+        sinistro: toNum(r[1]),
+        servicos: toNum(r[2]),
+        linhas: toInt(r[3]),
+      }))
+      .filter((c) => mesValido(c.mes))
+      .sort((a, b) => a.mes.localeCompare(b.mes));
+
     const maduroBefore = maduro.before || { familias: 0, itens: 0, sinistro: 0, pronto_socorro: 0, internacao: 0, consulta: 0, terapia: 0 };
     const maduroAfter = maduro.after || { familias: 0, itens: 0, sinistro: 0, pronto_socorro: 0, internacao: 0, consulta: 0, terapia: 0 };
     const servicosJornada = servicoRows.map((r) => {
@@ -458,8 +479,10 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         delta_timestamp: getCell(versao[1]),
         gerado_em: new Date().toISOString(),
         filtro: "NOT flag_data_suspeita",
+        role: auth.role,
       },
       mensal: relevantes.map((m) => ({ ...m, parcial: parciais.includes(m.mes) })),
+      competencia,
       composicao_tipo_evento: composicao,
       kpis: {
         ultimo_mes_fechado: ultimoFechadoMes,

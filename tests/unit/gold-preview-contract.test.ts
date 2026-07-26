@@ -1,0 +1,59 @@
+import { describe, expect, it } from "vitest";
+import { goldPreviewSchema } from "../../src/contracts/gold-preview";
+
+const minimo = {
+  filtros: { aplicados: {}, disponiveis: {} },
+  fonte: {
+    gold: "gold_sinistro_evento_v2",
+    contract_version: "1.2.0",
+    delta_version: 44,
+    delta_timestamp: "2026-07-07T00:00:00Z",
+    gerado_em: "2026-07-26T00:00:00.000Z",
+    filtro: "NOT flag_data_suspeita",
+    role: "full",
+  },
+  mensal: [{ mes: "2026-01", utilizantes: 10, itens: 20, sinistro: 1000, parcial: false }],
+  competencia: [{ mes: "2026-01", sinistro: 900, servicos: 18, linhas: 20 }],
+  composicao_tipo_evento: [],
+  kpis: {
+    ultimo_mes_fechado: "2026-01",
+    sinistro_ultimo_mes_fechado: 1000,
+    utilizantes_ultimo_mes_fechado: 10,
+    janela_12m: ["2026-01"],
+    sinistro_12m: 1000,
+    utilizantes_12m: 10,
+    custo_por_utilizante_12m: 100,
+    reembolso_share_12m: 3.3,
+  },
+  lotacoes: [],
+  prestadores: { total_prestadores: 0, sinistro_total: 0, top: [] },
+  concentracao: { janela: ["2026-01"], utilizantes: 10, top1_pessoas: 1, top1_share: 30, top5_share: 50 },
+  internacao: { por_agrupamento: [], internacoes_distintas: 0, custo_medio: 0, duracao_mediana_dias: 0, duracao_p90_dias: 0 },
+  saude_mental: { share_flag: null, share_sem_classificacao: null, por_tema_mi: [] },
+  impacto_sanus: { metodologia: "x", pre: null, pos: null, trimestres_utilizantes: [] },
+  comparacao_madura: { metodologia: "x", before_meses: [], after_meses: [], familias_comuns: 0 },
+  jornada_sanus: { janela: [], metodologia: "x", servicos: [], proximidade: {} },
+  top_utilizantes: { janela: [], aviso: "x", lista: [] },
+  carteira: { operadoras: [], empresas: [], beneficiarios_total: 0 },
+};
+
+describe("contrato do payload gold-preview", () => {
+  it("aceita um payload completo", () => {
+    expect(goldPreviewSchema.parse(minimo).competencia).toHaveLength(1);
+  });
+
+  it("exige a série de competência", () => {
+    const { competencia, ...sem } = minimo;
+    expect(goldPreviewSchema.safeParse(sem).success).toBe(false);
+  });
+
+  it("exige o papel no bloco fonte", () => {
+    const semRole = { ...minimo, fonte: { ...minimo.fonte, role: undefined } };
+    expect(goldPreviewSchema.safeParse(semRole).success).toBe(false);
+  });
+
+  it("rejeita papel desconhecido", () => {
+    const outro = { ...minimo, fonte: { ...minimo.fonte, role: "root" } };
+    expect(goldPreviewSchema.safeParse(outro).success).toBe(false);
+  });
+});
