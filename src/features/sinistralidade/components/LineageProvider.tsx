@@ -31,13 +31,29 @@ export function LineageProvider({ available, children }: { available: boolean; c
   const active = available && enabled;
   const { status, entries, retry } = useLineageRegistry(active);
 
+  // A seleção só é visível com o modo realmente ativo: se available cair
+  // (papel do usuário mudou) sem passar por toggle(), a seleção exposta some
+  // na mesma renderização — derivado, sem efeito e sem ref durante o render
+  // (o lint deste projeto proíbe os dois, ver useLineageRegistry.ts).
+  const effectiveActiveId = active ? activeId : null;
+
   const toggle = useCallback(() => {
     setEnabled((current) => {
-      // Desligar o modo fecha a gaveta: alvo selecionado sem modo ativo não faz sentido.
-      if (current) setActiveId(null);
+      if (current) {
+        // Desligar o modo fecha a gaveta: alvo selecionado sem modo ativo não faz sentido.
+        setActiveId(null);
+      } else {
+        // Ligar o modo dispara uma nova tentativa: se a última busca tinha
+        // falhado, "settled" fica preso na tentativa antiga e o status
+        // derivado mostraria "error" mesmo com uma busca nova em andamento.
+        // Bumping o attempt aqui faz o status cair em "loading" de verdade.
+        // Se o registro já estiver carregado, o guard `entries.size > 0` do
+        // hook garante que isso não dispara uma nova requisição.
+        retry();
+      }
       return !current;
     });
-  }, []);
+  }, [retry]);
 
   const open = useCallback((id: string) => setActiveId(id), []);
   const close = useCallback(() => setActiveId(null), []);
@@ -48,14 +64,14 @@ export function LineageProvider({ available, children }: { available: boolean; c
       enabled: active,
       toggle,
       status,
-      activeId,
+      activeId: effectiveActiveId,
       open,
       close,
-      entry: activeId ? (entries.get(activeId) ?? null) : null,
+      entry: effectiveActiveId ? (entries.get(effectiveActiveId) ?? null) : null,
       entries,
       retry,
     }),
-    [available, active, toggle, status, activeId, open, close, entries, retry],
+    [available, active, toggle, status, effectiveActiveId, open, close, entries, retry],
   );
 
   return <LineageContext.Provider value={value}>{children}</LineageContext.Provider>;
