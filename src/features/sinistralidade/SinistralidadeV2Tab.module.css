@@ -1716,6 +1716,14 @@
 /* ---- Modo Análise Databricks (contrato 1.2.0) ---- */
 .lineageAnchor {
   position: relative;
+  min-width: 0;
+  /* O selo fica em top: -10px, saindo ~12px para dentro do conteúdo (ver
+     .lineageBadge abaixo). ChartCard não tem padding próprio no topo da
+     figura (.chartFigure { margin: 0 }), então sem este respiro o selo cai
+     em cima do título do gráfico. KPI e os cards com <article> já têm
+     padding interno suficiente; o respiro extra aqui é redundante para eles
+     mas inofensivo. */
+  padding-top: 14px;
   border-radius: 12px;
   outline: 2px dashed rgba(37, 99, 235, 0.35);
   outline-offset: 6px;
@@ -1874,4 +1882,43 @@
 .lineageRelated button:focus-visible {
   border-color: #2563eb;
   background: #eff6ff;
+}
+
+.lineageToggleRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.lineageToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #334155;
+  border-radius: 999px;
+  padding: 7px 14px;
+  cursor: pointer;
+}
+
+.lineageToggle:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.lineageToggleOn {
+  border-color: #2563eb;
+  background: #eff6ff;
+  color: #1e40af;
+}
+
+.lineageHint {
+  font-size: 12px;
+  color: #1e40af;
+  margin: 0;
 }

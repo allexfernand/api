@@ -4,12 +4,14 @@
 // ranqueia por custo por vida quando algum denominador é inválido.
 
 import styles from "../SinistralidadeV2Tab.module.css";
+import { LineageAnchor } from "./LineageAnchor";
 import type { BenchmarkData } from "../types";
 import { moneyFull, number, percent } from "../types";
 
 export function CompanyBenchmark({ data }: { data: BenchmarkData }) {
   const anyInvalidDenominator = data.companies.some((company) => company.normalized_state !== "valid");
   return (
+    <LineageAnchor lineageId="company-benchmark.table" label="Comparação entre empresas">
     <article className={styles.card}>
       <div className={styles.cardTitle}>
         <h3>Comparação entre empresas</h3>
@@ -57,5 +59,6 @@ export function CompanyBenchmark({ data }: { data: BenchmarkData }) {
         </p>
       ) : null}
     </article>
+    </LineageAnchor>
   );
 }

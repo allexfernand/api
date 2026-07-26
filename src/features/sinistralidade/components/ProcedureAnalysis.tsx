@@ -80,6 +80,7 @@ export function ProcedureAnalysis({ data, periodLabel }: { data: ProcedureTrends
             <p>Participação acumulada dos 20 maiores procedimentos.</p>
           </div>
           <ChartCard
+            lineageId="procedure-trends.pareto"
             title="Pareto"
             unit="R$ e % acumulado"
             periodLabel={periodLabel}
@@ -112,6 +113,7 @@ export function ProcedureAnalysis({ data, periodLabel }: { data: ProcedureTrends
             <p>Tamanho da bolha = custo total no período (50 maiores).</p>
           </div>
           <ChartCard
+            lineageId="procedure-trends.scatter"
             title="Dispersão"
             unit="serviços × R$/serviço"
             periodLabel={periodLabel}
@@ -151,6 +153,7 @@ export function ProcedureAnalysis({ data, periodLabel }: { data: ProcedureTrends
           <p>Até cinco séries simultâneas; meses sem consumo do item aparecem como zero dentro da janela.</p>
         </div>
         <ChartCard
+          lineageId="procedure-trends.monthly"
           title="Custo mensal por procedimento"
           unit="R$"
           periodLabel={periodLabel}

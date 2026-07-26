@@ -34,6 +34,7 @@ export function HospitalizationAnalysis({ data, periodLabel }: { data: Hospitali
             <p>Episódios distintos por episode_key. Critério de saúde mental: flag clínica da Gold (flag_saude_mental).</p>
           </div>
           <ChartCard
+            lineageId="hospitalization-trends.monthly"
             title="Internações mensais"
             unit="episódios"
             periodLabel={periodLabel}

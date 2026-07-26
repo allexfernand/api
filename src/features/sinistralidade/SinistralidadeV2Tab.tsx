@@ -17,6 +17,8 @@ import { ExecutiveKpis } from "./components/ExecutiveKpis";
 import { FamilyTimelineBlock, CareTimelineBlock } from "./components/FamilyCareAnalysis";
 import { HospitalizationAnalysis } from "./components/HospitalizationAnalysis";
 import { LegacyView } from "./components/LegacyView";
+import { LineageDrawer } from "./components/LineageDrawer";
+import { LineageProvider } from "./components/LineageProvider";
 import { MonthlyEvolutionChart } from "./components/MonthlyEvolutionChart";
 import { ProcedureAnalysis } from "./components/ProcedureAnalysis";
 import { ProviderAnalysis } from "./components/ProviderAnalysis";
@@ -30,6 +32,7 @@ import type {
   CareTimelineData,
   Company,
   ConcentrationData,
+  DashboardRole,
   EventMixData,
   FamilyTimelineData,
   Features,
@@ -45,6 +48,7 @@ import { monthLabel } from "./types";
 export function SinistralidadeV2Tab() {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [features, setFeatures] = useState<Features | null>(null);
+  const [role, setRole] = useState<DashboardRole | null>(null);
   const [metadataError, setMetadataError] = useState("");
   const [loading, setLoading] = useState(true);
   const { filters, update, windowOptions } = useSinistralidadeFilters();
@@ -59,6 +63,7 @@ export function SinistralidadeV2Tab() {
         const available = (body.companies ?? []) as Company[];
         setCompanies(available);
         setFeatures((body.features ?? null) as Features | null);
+        setRole((body.role ?? null) as DashboardRole | null);
         const defaultCompany = available.reduce<Company | null>((largest, company) =>
           !largest || company.observed_rows > largest.observed_rows ? company : largest, null);
         if (defaultCompany && !available.some((company) => company.company_key === filters.companyKey)) {
@@ -84,6 +89,7 @@ export function SinistralidadeV2Tab() {
             companies={companies}
             features={features}
             filters={filters}
+            role={role}
             update={update}
             windowOptions={windowOptions}
           />
@@ -103,12 +109,14 @@ function LongitudinalExperience({
   companies,
   features,
   filters,
+  role,
   update,
   windowOptions,
 }: {
   companies: Company[];
   features: Features;
   filters: ReturnType<typeof useSinistralidadeFilters>["filters"];
+  role: DashboardRole | null;
   update: ReturnType<typeof useSinistralidadeFilters>["update"];
   windowOptions: ReturnType<typeof useSinistralidadeFilters>["windowOptions"];
 }) {
@@ -160,7 +168,7 @@ function LongitudinalExperience({
   ];
 
   return (
-    <>
+    <LineageProvider available={role === "full"}>
       <AnalyticsHeader
         companies={companies}
         filters={filters}
@@ -292,7 +300,8 @@ function LongitudinalExperience({
       </ThematicSection>
 
       <UserDetailDrawer entityKey={selectedUser} filters={filters} onClose={() => setSelectedUser(null)} />
-    </>
+      <LineageDrawer />
+    </LineageProvider>
   );
 }
 

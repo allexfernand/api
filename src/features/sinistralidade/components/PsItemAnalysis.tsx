@@ -18,6 +18,7 @@ export function PsItemAnalysis({ data, periodLabel }: { data: PsTrendsData; peri
           <p>Itens vinculados ao episódio canônico de pronto-socorro.</p>
         </div>
         <ChartCard
+          lineageId="ps-trends.monthly"
           title="Pronto-socorro mensal"
           unit="R$ e episódios"
           periodLabel={periodLabel}

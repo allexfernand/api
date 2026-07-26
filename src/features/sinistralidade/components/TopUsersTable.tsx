@@ -7,6 +7,7 @@
 import { useState } from "react";
 import styles from "../SinistralidadeV2Tab.module.css";
 import { SEMANTIC_COLORS, Sparkline } from "./charts";
+import { LineageAnchor } from "./LineageAnchor";
 import type { TopUsersData } from "../types";
 import { money, number, percent } from "../types";
 
@@ -32,6 +33,7 @@ export function TopUsersTable({
   const [expanded, setExpanded] = useState(false);
   const rows = expanded ? data.rows : data.rows.slice(0, 10);
   return (
+    <LineageAnchor lineageId="top-users-window.table" label="Maiores utilizantes da janela">
     <article className={styles.card}>
       <div className={styles.cardHeaderRow}>
         <div className={styles.cardTitle}>
@@ -124,5 +126,6 @@ export function TopUsersTable({
         <p className={styles.methodNote}>O detalhe individual exige permissão clínica específica e é carregado sob demanda com auditoria.</p>
       ) : null}
     </article>
+    </LineageAnchor>
   );
 }
