@@ -87,6 +87,7 @@ execução; se `lineage` entrar no enum longitudinal, cai em `handleLongitudinal
 `end_month` e resolve gate de período — e o escopo passa a responder 400.
 | `hooks/useLineageRegistry.ts` | Busca o registro uma vez e cacheia | contrato |
 | `components/LineageProvider.tsx` | Estado do modo e do alvo ativo | hook |
+| `components/LineageAnchor.tsx` | Torna qualquer bloco um alvo clicável quando o modo está ligado | provider |
 | `components/LineageDrawer.tsx` | Renderiza uma entrada | provider |
 
 O padrão de co-locação já existe no código: cada arquivo em `src/server/sinistralidade/queries/`
@@ -125,22 +126,56 @@ Regras do conteúdo:
 - `layer` é obrigatório — é o campo que responde "Silver ou Gold?".
 - `filters` sempre declara o recorte por `company_key`, porque todo bloco aplica
   `companyScopeSql` e o usuário precisa saber que o número é da empresa dele.
-- `related` liga numerador e denominador quando vêm de objetos diferentes. Caso concreto:
-  "Custo por vida elegível" cruza `mart_evento_empresa_mes_v2` com
-  `fact_elegibilidade_mensal_gold_v2`.
+- `related` liga entradas que dividem fonte ou dependem uma da outra. Caso concreto: o KPI
+  "Custo por vida elegível" lê `vidas_elegiveis` de `mart_sinistro_empresa_mes_v2` — a mesma
+  fonte do numerador — e só tem valor quando **todos** os meses incluídos têm snapshot
+  contemporâneo; `related` aponta para `timeline.monthly`, onde o mesmo denominador aparece
+  mês a mês.
 - `notes` reaproveita texto já existente: os atributos `title` do Gold Preview seguem o
   formato *O QUE É / POR QUE EXISTE / SINAL / ARMADILHA*, e `docs/sinistralidade/IMPLEMENTACAO.md`
   tem a seção "Semântica de métricas (auditoria 2026-07-17)" com definições já fixadas.
 
 ### Entradas a escrever
 
-**12 blocos** (um por escopo longitudinal): `timeline`, `event-mix`, `top-users-window`,
-`user-detail`, `procedure-trends`, `hospitalization-trends`, `provider-trends`,
-`concentration`, `company-benchmark`, `family-timeline`, `care-timeline`, `ps-trends`.
+A contagem não é uma por escopo: **um escopo pode renderizar vários blocos visíveis**, e o
+usuário clica no bloco, não no escopo. `procedure-trends` desenha três cards (Pareto,
+Dispersão, Custo mensal), `provider-trends` dois, `timeline` dois. Cada um tem colunas e
+fórmula próprias, então cada um é uma entrada.
+
+**15 blocos clicáveis:**
+
+| id | Onde aparece |
+|---|---|
+| `timeline.competency` | `MonthlyEvolutionChart` — "Custo por competência" |
+| `timeline.monthly` | `MonthlyEvolutionChart` — card com seletor de métrica |
+| `event-mix.cost` | `EventMixChart` — "Custo por evento" |
+| `top-users-window.table` | `TopUsersTable` |
+| `procedure-trends.pareto` | `ProcedureAnalysis` — "Pareto" |
+| `procedure-trends.scatter` | `ProcedureAnalysis` — "Dispersão" |
+| `procedure-trends.monthly` | `ProcedureAnalysis` — "Custo mensal por procedimento" |
+| `hospitalization-trends.monthly` | `HospitalizationAnalysis` — "Internações mensais" |
+| `provider-trends.monthly` | `ProviderAnalysis` — "Custo mensal por prestador" |
+| `provider-trends.network` | `ProviderAnalysis` — "Rede × reembolso" |
+| `concentration.monthly` | `ConcentrationAnalysis` — "Concentração mensal" |
+| `company-benchmark.table` | `CompanyBenchmark` |
+| `family-timeline.relative` | `FamilyTimelineBlock` — "Custo por mês relativo" |
+| `care-timeline.matrix` | `CareTimelineBlock` — "Fatura × coordenação por mês" |
+| `ps-trends.monthly` | `PsItemAnalysis` — "Pronto-socorro mensal" |
 
 **9 métricas** (KPIs de `ExecutiveKpis.tsx`): custo assistencial da janela, beneficiários
 utilizantes, serviços realizados, episódios de internação, famílias utilizantes, custo por
 utilizante, serviços por utilizante, custo por vida elegível, internações por mil vidas.
+
+**1 entrada sem âncora:** `user-detail`. O escopo existe e é documentado, mas mora dentro de
+`UserDetailDrawer` — abrir a gaveta de linhagem por cima da gaveta do beneficiário empilharia
+dois painéis laterais. A entrada é alcançável pelo campo `related` de `top-users-window.table`.
+
+Total: **25 entradas, 24 clicáveis**.
+
+Três dos blocos clicáveis não são `ChartCard` (`top-users-window.table`,
+`company-benchmark.table`, `care-timeline.matrix`). Para não duplicar a lógica de
+acessibilidade em três lugares, o alvo é um componente próprio, `LineageAnchor`, que envolve
+qualquer conteúdo; `ChartCard` e `Kpi` delegam a ele.
 
 ## Interface
 
@@ -217,7 +252,8 @@ Nenhuma métrica publicada muda de significado, então não há nova versão pri
 ## Testes
 
 **Unitário — servidor** (`tests/unit/sinistralidade-lineage.test.ts`):
-- Existe entrada para os 12 escopos longitudinais e os 9 KPIs.
+- Existem as 25 entradas esperadas, e todo `related` aponta para um `id` existente.
+- Os 12 escopos longitudinais têm ao menos uma entrada com `id` prefixado pelo nome do escopo.
 - Todo `object` declarado existe na constante `TABLES` de `query-runner.ts`. Pega nome de
   tabela digitado errado, que é o modo de falha mais provável do registro.
 - `scope=lineage` responde 403 para papel `mds`.
@@ -235,7 +271,7 @@ Nenhuma métrica publicada muda de significado, então não há nova versão pri
 
 ## Critérios de aceite
 
-1. Usuário `full` liga o modo e clica em qualquer um dos 21 alvos; a gaveta mostra camada,
+1. Usuário `full` liga o modo e clica em qualquer um dos 24 alvos; a gaveta mostra camada,
    fórmula, fontes com colunas e filtros.
 2. Requisição de `scope=lineage` com credencial `mds` responde 403.
 3. Um bloco com período bloqueado (`409`) ainda abre linhagem.
