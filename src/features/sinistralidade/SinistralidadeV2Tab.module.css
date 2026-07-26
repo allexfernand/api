@@ -1712,3 +1712,61 @@
     width: 100%;
   }
 }
+
+/* ---- Modo Análise Databricks (contrato 1.2.0) ---- */
+.lineageAnchor {
+  position: relative;
+  border-radius: 12px;
+  outline: 2px dashed rgba(37, 99, 235, 0.35);
+  outline-offset: 6px;
+  transition: outline-color 0.15s var(--ease);
+}
+
+.lineageAnchor:hover {
+  outline-color: rgba(37, 99, 235, 0.65);
+}
+
+.lineageAnchorActive {
+  outline-color: #2563eb;
+  outline-style: solid;
+}
+
+/* Canto SUPERIOR ESQUERDO, sobre a borda: o canto direito do ChartCard já é
+   ocupado pelo botão "ver tabela" (.chartCaption usa space-between). */
+.lineageBadge {
+  position: absolute;
+  top: -10px;
+  left: 12px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border: 1px solid #2563eb;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1e40af;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  cursor: pointer;
+  line-height: 1.6;
+}
+
+.lineageBadge:hover,
+.lineageBadge:focus-visible {
+  background: #2563eb;
+  color: #fff;
+}
+
+.lineageAnchorActive .lineageBadge {
+  background: #2563eb;
+  color: #fff;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lineageAnchor {
+    transition: none;
+  }
+}

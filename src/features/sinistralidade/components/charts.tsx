@@ -6,6 +6,7 @@
 
 import { createContext, useContext, useId, useState, type ReactNode } from "react";
 import styles from "../SinistralidadeV2Tab.module.css";
+import { LineageAnchor } from "./LineageAnchor";
 
 // Cores semânticas consistentes: custo, uso, internação, saúde mental,
 // famílias. Laranja reservado a destaque/saúde mental, não à cor dominante.
@@ -71,6 +72,7 @@ export function ChartCard({
   chart,
   table,
   legend,
+  lineageId,
 }: {
   title: string;
   subtitle?: string;
@@ -81,6 +83,7 @@ export function ChartCard({
   chart: ReactNode;
   table: ReactNode;
   legend?: ReactNode;
+  lineageId?: string;
 }) {
   const [showTable, setShowTable] = useState(false);
   const [hiddenSeries, setHiddenSeries] = useState<string[]>([]);
@@ -90,37 +93,39 @@ export function ChartCard({
     reset: () => setHiddenSeries([]),
   };
   return (
-    <figure className={styles.chartFigure}>
-      <figcaption className={styles.chartCaption}>
-        <div>
-          <h4>{title}</h4>
-          <p>
-            {subtitle ? `${subtitle} · ` : ""}
-            Unidade: {unit}
-            {coverageNote ? ` · ${coverageNote}` : ""}
-          </p>
-        </div>
-        <button
-          type="button"
-          className={styles.tableToggle}
-          aria-pressed={showTable}
-          onClick={() => setShowTable((value) => !value)}
-        >
-          {showTable ? "Ver gráfico" : "Ver tabela"}
-        </button>
-      </figcaption>
-      <ChartVisibilityContext.Provider value={visibility}>
-        {legend ? (
-          <div className={styles.chartLegendRow}>
-            {legend}
-            {hiddenSeries.length ? (
-              <button type="button" className={styles.legendReset} onClick={visibility.reset}>Mostrar todas</button>
-            ) : <span className={styles.legendHint}>Clique para mostrar ou ocultar</span>}
+    <LineageAnchor lineageId={lineageId} label={title}>
+      <figure className={styles.chartFigure}>
+        <figcaption className={styles.chartCaption}>
+          <div>
+            <h4>{title}</h4>
+            <p>
+              {subtitle ? `${subtitle} · ` : ""}
+              Unidade: {unit}
+              {coverageNote ? ` · ${coverageNote}` : ""}
+            </p>
           </div>
-        ) : null}
-        {showTable ? <div className={styles.tableWrap}>{table}</div> : <div className={styles.chartArea}>{chart}</div>}
-      </ChartVisibilityContext.Provider>
-    </figure>
+          <button
+            type="button"
+            className={styles.tableToggle}
+            aria-pressed={showTable}
+            onClick={() => setShowTable((value) => !value)}
+          >
+            {showTable ? "Ver gráfico" : "Ver tabela"}
+          </button>
+        </figcaption>
+        <ChartVisibilityContext.Provider value={visibility}>
+          {legend ? (
+            <div className={styles.chartLegendRow}>
+              {legend}
+              {hiddenSeries.length ? (
+                <button type="button" className={styles.legendReset} onClick={visibility.reset}>Mostrar todas</button>
+              ) : <span className={styles.legendHint}>Clique para mostrar ou ocultar</span>}
+            </div>
+          ) : null}
+          {showTable ? <div className={styles.tableWrap}>{table}</div> : <div className={styles.chartArea}>{chart}</div>}
+        </ChartVisibilityContext.Provider>
+      </figure>
+    </LineageAnchor>
   );
 }
 
