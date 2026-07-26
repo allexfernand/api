@@ -12,7 +12,7 @@
 
 import type { ReactNode } from "react";
 import styles from "../SinistralidadeV2Tab.module.css";
-import { useLineage } from "./LineageProvider";
+import { useLineageOptional } from "./LineageProvider";
 
 export function LineageAnchor({
   lineageId,
@@ -23,9 +23,17 @@ export function LineageAnchor({
   label: string;
   children: ReactNode;
 }) {
-  const { enabled, activeId, open } = useLineage();
-  if (!enabled || !lineageId) return <>{children}</>;
+  // useLineageOptional (não useLineage) de propósito: ChartCard e Kpi são
+  // componentes de apresentação usados em vários pontos da árvore e podem
+  // renderizar antes de qualquer LineageProvider estar montado acima deles.
+  // Sem provider não há para onde mandar o clique, então a âncora não tem
+  // nada a oferecer — a resposta certa é devolver os filhos sem badge, igual
+  // ao caminho "modo desligado", nunca lançar. Não troque isto de volta para
+  // useLineage(): isso derrubaria qualquer card antes do provider existir.
+  const lineage = useLineageOptional();
+  if (!lineage?.enabled || !lineageId) return <>{children}</>;
 
+  const { activeId, open } = lineage;
   const active = activeId === lineageId;
 
   return (

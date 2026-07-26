@@ -82,3 +82,16 @@ export function useLineage(): LineageContextValue {
   if (!value) throw new Error("useLineage exige LineageProvider acima na árvore.");
   return value;
 }
+
+// Variante tolerante para consumidores decorativos (ex.: LineageAnchor), que
+// marcam blocos de apresentação reutilizados em vários lugares da árvore.
+// Esses blocos podem renderizar antes de qualquer LineageProvider existir
+// acima deles — não é um bug do consumidor, é só ordem de montagem — e sem
+// provider não há para onde mandar um clique, então null é a resposta certa,
+// não uma exceção. useLineage() continua lançando: quem chama useLineage()
+// diretamente (a gaveta, o botão de alternância no cabeçalho) genuinamente
+// não funciona sem provider, e esconder isso trocaria um bug alto por um
+// botão morto silencioso.
+export function useLineageOptional(): LineageContextValue | null {
+  return useContext(LineageContext);
+}
