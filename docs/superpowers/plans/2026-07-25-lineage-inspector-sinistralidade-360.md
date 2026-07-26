@@ -15,7 +15,7 @@
 - Diretório de trabalho: `/Users/marcoruas/Documents/SANUS/api`. Todos os caminhos são relativos a ele.
 - Nenhuma consulta ao Databricks no caminho do escopo `lineage`. Ele responde de memória.
 - Todo texto de interface em português do Brasil.
-- `formula` em linguagem de negócio. **Nunca** SQL literal em nenhuma entrada do registro.
+- `formula` descreve o cálculo, **nunca a instrução SQL executada**. Notação de função agregada (`SUM(custo_assistencial_bruto) ÷ COUNT(DISTINCT person_key)`) é permitida e preferida — é a convenção do `docs/sinistralidade/metricas-v2.yaml` do time, e é mais precisa que prosa. O proibido é o SELECT completo com seus filtros de `company_key`. (Decidido em 2026-07-26, após a revisão da Task 2 levantar o conflito.)
 - Todo `object` declarado em `sources` precisa existir em `TABLES` (`src/server/sinistralidade/query-runner.ts`). Há um teste que garante isso.
 - O escopo `lineage` entra em `sinistralidadeScopeSchema`, **nunca** em `longitudinalScopeSchema` — o handler usa `isLongitudinalScope()` para rotear, e o caminho longitudinal exige `end_month`.
 - Vitest roda com `environment: "node"` e só inclui `tests/unit/**/*.test.ts`. Não há jsdom: nenhum teste de componente React. Comportamento de cliente é verificado por Playwright.

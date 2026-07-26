@@ -122,7 +122,12 @@ type LineageRegistry = {
 
 Regras do conteúdo:
 
-- `formula` em linguagem de negócio, nunca SQL literal.
+- `formula` descreve o cálculo, **nunca a instrução SQL executada**. Notação de função
+  agregada (`SUM(custo_assistencial_bruto) ÷ COUNT(DISTINCT person_key)`) é permitida e
+  preferida: é a convenção do próprio `docs/sinistralidade/metricas-v2.yaml`, e é mais
+  precisa que prosa — "custo somado na janela" não diz qual coluna foi somada, que é
+  exatamente a pergunta que esta ferramenta existe para responder. O que não pode aparecer
+  é o SELECT completo, com seus filtros de `company_key`.
 - `layer` é obrigatório — é o campo que responde "Silver ou Gold?".
 - `filters` sempre declara o recorte por `company_key`, porque todo bloco aplica
   `companyScopeSql` e o usuário precisa saber que o número é da empresa dele.
