@@ -78,5 +78,5 @@ A migração foi feita preservando os contratos e o comportamento já implantado
 - `npm run lint`: regras do Next.js e TypeScript.
 - `npm run typecheck`: checagem estática.
 - `npm test`: testes unitários com Vitest.
-- `npm run test:e2e`: login e navegação pelas dez abas com Playwright.
+- `npm run test:e2e`: login e navegação pelas onze abas com Playwright.
 - `npm run build`: build equivalente ao deploy da Vercel.

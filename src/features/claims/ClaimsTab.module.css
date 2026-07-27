@@ -15,10 +15,14 @@
    outros. */
 
 .root {
-  display: flex;
+  display: none;
   flex-direction: column;
   gap: 20px;
   color: var(--text);
+}
+
+.root:global(.active) {
+  display: flex;
 }
 
 .loading,

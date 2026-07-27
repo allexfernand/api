@@ -8,7 +8,6 @@ export default function Page() {
     <>
       <DashboardPage fragments={fragments} />
       <Script src="/scripts/dashboard.js?v=20260723-partner-vp03-groups" strategy="afterInteractive" />
-      <Script src="/scripts/gold-preview.js?v=20260723-partner-vp03-groups" strategy="afterInteractive" />
     </>
   );
 }
