@@ -115,10 +115,20 @@ function MentalHealthPanel({
   internacao: GoldPreview["internacao"];
 }) {
   const piso = saudeMental.share_flag;
-  const teto = piso !== null && saudeMental.share_sem_classificacao !== null ? piso + saudeMental.share_sem_classificacao : null;
+  const semClassificacao = saudeMental.share_sem_classificacao;
+  const teto = piso !== null && semClassificacao !== null ? piso + semClassificacao : null;
   const intervalo = piso !== null && teto !== null
     ? `${formatadorPercentual.format(piso)}% – ${formatadorPercentual.format(teto)}%`
     : "—";
+  // Mesma condição que decide `intervalo` acima (o teto só existe com piso E
+  // share_sem_classificacao presentes) — sem isso, a nota podia explicar um
+  // teto que nem apareceu na tela (ex.: share_flag nulo com
+  // share_sem_classificacao presente: intervalo vira "—", mas a nota seguia
+  // descrevendo um teto que o usuário não tem como ver).
+  const notaSemClassificacao =
+    teto === null || semClassificacao === null
+      ? "Participação sem classificação indisponível."
+      : `${formatadorPercentual.format(semClassificacao)}% do custo está sem classificação — o teto do intervalo é um limite honesto, não uma confirmação de que todo esse custo é saúde mental.`;
 
   return (
     <article className={styles.card}>
@@ -132,11 +142,7 @@ function MentalHealthPanel({
             <span>Saúde mental (share do custo)</span>
             <strong>{intervalo}</strong>
           </div>
-          <p className={styles.factNote}>
-            {saudeMental.share_sem_classificacao === null
-              ? "Participação sem classificação indisponível."
-              : `${formatadorPercentual.format(saudeMental.share_sem_classificacao)}% do custo está sem classificação — o teto do intervalo é um limite honesto, não uma confirmação de que todo esse custo é saúde mental.`}
-          </p>
+          <p className={styles.factNote}>{notaSemClassificacao}</p>
           {saudeMental.por_tema_mi.length ? (
             <div className={styles.factSubList}>
               {saudeMental.por_tema_mi.map((tema) => (
