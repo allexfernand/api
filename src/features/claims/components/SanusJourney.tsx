@@ -124,7 +124,7 @@ export function SanusJourney({ jornada }: { jornada: GoldPreview["jornada_sanus"
       <article className={styles.card}>
         <div className={styles.cardTitle}>
           <h3>Alcance e proximidade da jornada Sanus</h3>
-          <p>Recuperado do BI antigo com regra auditável: cpf_atendido ↔ cpf_titular · janela 12m fechados · atualiza continuamente, diferente do resto da aba.</p>
+          <p>Recuperado do BI antigo com regra auditável: ponte por family_key (empresa + titular) · janela 12m fechados · atualiza continuamente, diferente do resto da aba.</p>
         </div>
         <div className={styles.journeyGrid}>
           <div className={styles.subpanel}>
