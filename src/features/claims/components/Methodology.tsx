@@ -19,9 +19,11 @@ export function Methodology() {
     <article className={`${styles.card} ${styles.methodologyCard}`}>
       <p className={styles.methodologyText}>
         <strong>Regras de leitura: </strong>
-        janela de tendência 2025-01+ (2024 é rampa de implantação) · exclui registros com <code>flag_data_suspeita</code> ·
-        dado individual (Top utilizantes) aparece só com acesso interno autorizado, sempre mascarado · sinistro bruto por{" "}
-        <code>data_atendimento</code> — não é taxa de sinistralidade nem loss ratio, pois a base não tem o prêmio mensal.
+        janela de tendência 2025-01+ nas séries mensal/competência/composição por evento; lotações, prestadores,
+        internação e saúde mental usam desde 2024-01 (2024 é rampa de implantação) · exclui registros com{" "}
+        <code>flag_data_suspeita</code> · dado individual (Top utilizantes) aparece só com acesso interno autorizado,
+        sempre mascarado · sinistro bruto por <code>data_atendimento</code> — não é taxa de sinistralidade nem loss
+        ratio, pois a base não tem o prêmio mensal.
       </p>
     </article>
   );

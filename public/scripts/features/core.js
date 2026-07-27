@@ -7,7 +7,6 @@ const fmtCurrency = n => Number(n || 0).toLocaleString('pt-BR', { style: 'curren
 const mN = {'01':'Jan','02':'Fev','03':'Mar','04':'Abr','05':'Mai','06':'Jun','07':'Jul','08':'Ago','09':'Set','10':'Out','11':'Nov','12':'Dez'};
 const SESSIONS_Q3_PRESENTATION_MONTHS = ['2025-09', '2025-10', '2025-11', '2025-12', '2026-01', '2026-02', '2026-03', '2026-04', '2026-05'];
 const SESSIONS_Q3C_MONTHS = ['2026-01', '2026-02', '2026-03', '2026-04', '2026-05'];
-const SINISTRO_AS03_MONTHS = ['2025-07', '2025-08', '2025-09', '2025-10', '2025-11', '2025-12', '2026-01', '2026-02', '2026-03'];
 window.__SANUS_DASHBOARD_BUILD__ = '20260714-tabs';
 let hasAuthenticatedSession = false;
 let currentDashboardUser = '';
