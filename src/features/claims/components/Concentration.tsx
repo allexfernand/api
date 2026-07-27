@@ -97,8 +97,13 @@ function acumulados(top: GoldPreview["prestadores"]["top"]) {
 
 function ProvidersPanel({ prestadores }: { prestadores: GoldPreview["prestadores"] }) {
   const top = acumulados(prestadores.top);
-  const somaSinistroTop = top.reduce((total, linha) => total + linha.sinistro, 0);
-  const shareTop = prestadores.sinistro_total ? (100 * somaSinistroTop) / prestadores.sinistro_total : null;
+  // Soma o `share` de cada linha (mesma conta de public/scripts/gold-preview.js,
+  // shareTop10), não uma razão recalculada a partir do sinistro bruto: as duas
+  // contas parecem equivalentes, mas divergem na prática (12,9% vs 13,0% contra
+  // a aba Preview Gold) porque o `share` por prestador não necessariamente usa
+  // `sinistro_total` como denominador. Somar o campo que já veio do servidor é o
+  // que preserva o número idêntico ao da aba de referência.
+  const shareTop = top.reduce((total, linha) => total + (linha.share ?? 0), 0);
 
   return (
     <LineageAnchor lineageId="claims.providers" label="Top prestadores">
@@ -130,7 +135,7 @@ function ProvidersPanel({ prestadores }: { prestadores: GoldPreview["prestadores
           </tbody>
         </table>
         <p className={styles.panelFooter}>
-          Top {top.length} juntos = <strong>{shareTop === null ? "—" : `${formatadorPercentual.format(shareTop)}%`}</strong> ({formatadorInteiro.format(prestadores.total_prestadores)} prestadores) — a alavanca está em categorias e pessoas, não num único player.
+          Top {top.length} juntos = <strong>{formatadorPercentual.format(shareTop)}%</strong> ({formatadorInteiro.format(prestadores.total_prestadores)} prestadores) — a alavanca está em categorias e pessoas, não num único player.
         </p>
       </article>
     </LineageAnchor>

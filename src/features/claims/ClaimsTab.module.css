@@ -7,6 +7,73 @@
    preview, popover de ajuda contextual, spinner de carregamento) ficou para
    trás por não ter consumidor aqui. */
 
+/* Raiz da aba (ClaimsTab.tsx) — o estado aqui é da aba inteira, não do
+   bloco: um payload só, então loading/error/forbidden substituem TODO o
+   conteúdo em vez de aparecer bloco a bloco. Mesma paleta de
+   SinistralidadeV2Tab.module.css (.blockLoading/.blockError), mas sem o
+   prefixo "block": aqui é o conteúdo inteiro da aba, não um card entre
+   outros. */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  color: var(--text);
+}
+
+.loading,
+.forbidden,
+.errorState {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 24px 22px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text-faint);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.forbidden,
+.errorState {
+  border-style: solid;
+}
+
+.forbidden {
+  border-color: #fde68a;
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.forbidden strong {
+  color: #92400e;
+}
+
+.errorState {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.errorState strong {
+  color: #991b1b;
+}
+
+.errorState button {
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 8px 14px;
+  border: 1px solid #fecaca;
+  border-radius: var(--radius-sm);
+  background: #fff;
+  color: #991b1b;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
 .hero {
   position: relative;
   display: flex;

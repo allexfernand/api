@@ -20,7 +20,7 @@ export function DashboardTabs({ fragments }: { fragments: DashboardFragments }) 
       <SessionsTab html={fragments.sessions} />
       <ExecutiveCommitteeTab html={fragments["executive-committee"]} />
       <ExecutiveCommitteeTab html={fragments["executive-committee-mds"]} />
-      <ClaimsAnalysisTab html={fragments["claims-analysis"]} />
+      <ClaimsAnalysisTab />
       <GoldPreviewTab html={fragments["gold-preview"]} />
       <SinistralidadeV2Tab />
       <StrategicQualityTab html={fragments["quality-strategic"]} />
