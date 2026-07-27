@@ -55,8 +55,12 @@ function niceTicks(min: number, max: number, count = 4) {
 const compact = new Intl.NumberFormat("pt-BR", { notation: "compact", maximumFractionDigits: 1 });
 
 // Rótulo curto do eixo X: meses YYYY-MM viram MM/AA; categorias que não são
-// mês (ex.: mês relativo à entrada familiar) aparecem como vieram.
-function monthTick(category: string) {
+// mês (ex.: mês relativo à entrada familiar) aparecem como vieram. Exportado
+// porque a mesma técnica estava duplicada, sem guarda, em cinco componentes
+// da aba Análise Sinistro (ExecutiveKpis/MonthlySeries/EventMix/Concentration/
+// SanusImpact) — um mês malformado rendia diferente em cada bloco da mesma
+// tela. Um único ponto de verdade, com a guarda de regex já usada aqui.
+export function monthTick(category: string) {
   return /^\d{4}-\d{2}$/.test(category) ? `${category.slice(5)}/${category.slice(2, 4)}` : category;
 }
 

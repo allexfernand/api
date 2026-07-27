@@ -18,22 +18,18 @@
 
 import styles from "../ClaimsTab.module.css";
 import type { GoldPreview } from "../../../contracts/gold-preview";
+import { monthTick } from "../../sinistralidade/components/charts";
 import { LineageAnchor } from "../../sinistralidade/components/LineageAnchor";
 
 const formatadorInteiro = new Intl.NumberFormat("pt-BR");
 const formatadorPercentual = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 const moedaCheia = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
 
-// "YYYY-MM" -> "MM/AA", mesma técnica de `monthTick` em charts.tsx.
-function mesCurto(mes: string): string {
-  return `${mes.slice(5)}/${mes.slice(2, 4)}`;
-}
-
 function janelaLabel(janela: string[]): string {
   if (!janela.length) return "janela indisponível";
   const inicio = janela[0];
   const fim = janela[janela.length - 1];
-  return inicio === fim ? mesCurto(inicio) : `${mesCurto(inicio)}–${mesCurto(fim)}`;
+  return inicio === fim ? monthTick(inicio) : `${monthTick(inicio)}–${monthTick(fim)}`;
 }
 
 export function Concentration({

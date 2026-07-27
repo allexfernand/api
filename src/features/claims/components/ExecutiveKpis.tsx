@@ -13,6 +13,7 @@
 
 import styles from "../ClaimsTab.module.css";
 import type { GoldPreview } from "../../../contracts/gold-preview";
+import { monthTick } from "../../sinistralidade/components/charts";
 import { LineageAnchor } from "../../sinistralidade/components/LineageAnchor";
 
 const formatadorInteiro = new Intl.NumberFormat("pt-BR");
@@ -29,17 +30,11 @@ const formatadorMoeda = new Intl.NumberFormat("pt-BR", {
 });
 const formatadorPercentual = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
-// Mesma técnica de `monthTick` em charts.tsx (MM/AA), para o rótulo do mês
-// no card ficar consistente com o eixo X dos gráficos logo abaixo.
-function mesCurto(mes: string | null): string {
-  return mes ? `${mes.slice(5)}/${mes.slice(2, 4)}` : "";
-}
-
 export function ExecutiveKpis({ kpis }: { kpis: GoldPreview["kpis"] }) {
-  const mesFechado = mesCurto(kpis.ultimo_mes_fechado);
+  const mesFechado = kpis.ultimo_mes_fechado ? monthTick(kpis.ultimo_mes_fechado) : "";
   const inicioJanela = kpis.janela_12m[0] ?? null;
   const fimJanela = kpis.janela_12m[kpis.janela_12m.length - 1] ?? null;
-  const janelaLabel = inicioJanela && fimJanela ? `${mesCurto(inicioJanela)}–${mesCurto(fimJanela)}` : "janela 12m";
+  const janelaLabel = inicioJanela && fimJanela ? `${monthTick(inicioJanela)}–${monthTick(fimJanela)}` : "janela 12m";
 
   return (
     <div className={styles.kpiGrid}>

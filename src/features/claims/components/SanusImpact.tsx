@@ -30,6 +30,7 @@
 
 import styles from "../ClaimsTab.module.css";
 import type { GoldPreview } from "../../../contracts/gold-preview";
+import { monthTick } from "../../sinistralidade/components/charts";
 import { LineageAnchor } from "../../sinistralidade/components/LineageAnchor";
 
 const formatadorInteiro = new Intl.NumberFormat("pt-BR");
@@ -62,19 +63,14 @@ function strArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
-// "YYYY-MM" -> "MM/AA", mesma técnica de `monthTick` em charts.tsx.
-function mesLabel(mes: string): string {
-  return /^\d{4}-\d{2}$/.test(mes) ? `${mes.slice(5)}/${mes.slice(2, 4)}` : mes;
-}
-
 // Rótulo do intervalo de meses (ex.: "ago/25–set/25") a partir do array real
 // de meses do payload — nunca escrito à mão: as janelas pré/pós e antes/depois
 // são constantes fixas no servidor (IMPACTO_PRE/POS, MADURO_PRE/POS) e podem
 // mudar sem aviso; o texto precisa acompanhar o dado, não descrevê-lo de cor.
 function intervaloMeses(meses: string[]): string {
   if (!meses.length) return "—";
-  const inicio = mesLabel(meses[0]);
-  const fim = mesLabel(meses[meses.length - 1]);
+  const inicio = monthTick(meses[0]);
+  const fim = monthTick(meses[meses.length - 1]);
   return inicio === fim ? inicio : `${inicio}–${fim}`;
 }
 

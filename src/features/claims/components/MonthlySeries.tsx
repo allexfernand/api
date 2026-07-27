@@ -16,17 +16,11 @@
 import type { GoldPreview } from "../../../contracts/gold-preview";
 import { agruparTrimestres, type Trimestre } from "../quarterly";
 import styles from "../ClaimsTab.module.css";
-import { ChartCard, ChartLegend, LineChart, SEMANTIC_COLORS, type Series } from "../../sinistralidade/components/charts";
+import { ChartCard, ChartLegend, LineChart, monthTick, SEMANTIC_COLORS, type Series } from "../../sinistralidade/components/charts";
 
 const moedaCompacta = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", notation: "compact", maximumFractionDigits: 1 });
 const moedaCheia = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
 const inteiro = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 });
-
-// "YYYY-MM" -> "MM/AA", mesma técnica de `monthTick` em charts.tsx, para a
-// coluna de mês da tabela acessível ficar legível.
-function mesLabel(mes: string): string {
-  return `${mes.slice(5)}/${mes.slice(2, 4)}`;
-}
 
 export function MonthlySeries({
   mensal,
@@ -87,7 +81,7 @@ function SerieMensalTable({ mensal }: { mensal: GoldPreview["mensal"] }) {
       <tbody>
         {mensal.map((linha) => (
           <tr key={linha.mes}>
-            <td>{mesLabel(linha.mes)}</td>
+            <td>{monthTick(linha.mes)}</td>
             <td className={styles.num}>{moedaCheia.format(linha.sinistro)}</td>
             <td className={styles.num}>{inteiro.format(linha.itens)}</td>
             <td className={styles.num}>{inteiro.format(linha.utilizantes)}</td>
@@ -137,7 +131,7 @@ function SerieCompetenciaTable({ competencia }: { competencia: GoldPreview["comp
       <tbody>
         {competencia.map((linha) => (
           <tr key={linha.mes}>
-            <td>{mesLabel(linha.mes)}</td>
+            <td>{monthTick(linha.mes)}</td>
             <td className={styles.num}>{moedaCheia.format(linha.sinistro)}</td>
             <td className={styles.num}>{inteiro.format(linha.servicos)}</td>
             <td className={styles.num}>{inteiro.format(linha.linhas)}</td>

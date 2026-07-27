@@ -11,7 +11,7 @@
 
 import styles from "../ClaimsTab.module.css";
 import type { GoldPreview } from "../../../contracts/gold-preview";
-import { ChartCard, ChartLegend, SERIES_PALETTE, StackedBarChart } from "../../sinistralidade/components/charts";
+import { ChartCard, ChartLegend, monthTick, SERIES_PALETTE, StackedBarChart } from "../../sinistralidade/components/charts";
 
 const OUTROS = "Outros";
 const MAX_TIPOS = 5;
@@ -19,11 +19,6 @@ const MAX_TIPOS = 5;
 const moedaCompacta = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", notation: "compact", maximumFractionDigits: 1 });
 const moedaCheia = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
 const formatadorPercentual = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-
-// "YYYY-MM" -> "MM/AA", mesma técnica de `monthTick` em charts.tsx.
-function mesLabel(mes: string): string {
-  return `${mes.slice(5)}/${mes.slice(2, 4)}`;
-}
 
 function totalDoMes(porTipo: Record<string, number> | undefined): number {
   return Object.values(porTipo ?? {}).reduce((total, custo) => total + custo, 0);
@@ -117,7 +112,7 @@ function EventMixTable({
           ];
           return linhas.map((linha) => (
             <tr key={`${mes}-${linha.tipo}`}>
-              <td>{mesLabel(mes)}</td>
+              <td>{monthTick(mes)}</td>
               <td className={styles.txt}>{linha.tipo}</td>
               <td className={styles.num}>{moedaCheia.format(linha.custo)}</td>
               <td className={styles.num}>{total ? `${formatadorPercentual.format((100 * linha.custo) / total)}%` : "—"}</td>
