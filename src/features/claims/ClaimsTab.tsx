@@ -94,7 +94,7 @@ function ClaimsContent({
       <Concentration concentracao={data.concentracao} prestadores={data.prestadores} />
       <TopUsers topUtilizantes={data.top_utilizantes} />
       <Hospitalization internacao={data.internacao} saudeMental={data.saude_mental} />
-      <SanusImpact impacto={data.impacto_sanus} comparacao={data.comparacao_madura} />
+      <SanusImpact impacto={data.impacto_sanus} comparacao={data.comparacao_madura} ultimoMesFechado={data.kpis.ultimo_mes_fechado} />
       <SanusJourney jornada={data.jornada_sanus} />
       <Methodology />
     </>

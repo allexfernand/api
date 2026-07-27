@@ -74,17 +74,7 @@ function TopUsersTable({ lista }: { lista: GoldPreview["top_utilizantes"]["lista
         {lista.map((linha, index) => (
           <tr key={linha.codigo_usuario}>
             <td>{index + 1}</td>
-            <td className={styles.txt}>
-              {linha.codigo_usuario}
-              {linha.id_corrompido ? (
-                <span
-                  className={styles.corruptedFlag}
-                  title="ID corrompido na origem — pode agregar mais de uma pessoa; levar à CNU"
-                >
-                  {" "}⚠
-                </span>
-              ) : null}
-            </td>
+            <td className={styles.txt}>{linha.codigo_usuario}</td>
             <td className={styles.txt}>{linha.faixa_etaria}</td>
             <td className={styles.txt}>{linha.parentesco}</td>
             <td className={styles.txt}>{linha.lotacao}</td>

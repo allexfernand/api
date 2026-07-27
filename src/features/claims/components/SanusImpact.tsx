@@ -74,6 +74,23 @@ function intervaloMeses(meses: string[]): string {
   return inicio === fim ? inicio : `${inicio}–${fim}`;
 }
 
+// Um trimestre só é "completo" se o seu último mês calendário já é <= o
+// último mês FECHADO da série mensal (kpis.ultimo_mes_fechado) — o mesmo
+// sinal de fechamento que o resto da aba usa, não a posição do item no
+// array. trimestre chega como "T{1-4}/{aa}" (ver gold-preview.ts); sem essa
+// referência (ultimoMesFechado nulo) não há como afirmar que um trimestre
+// fechou, então nenhum é tratado como completo.
+const ULTIMO_MES_DO_TRIMESTRE: Record<string, string> = { "1": "03", "2": "06", "3": "09", "4": "12" };
+
+function trimestreCompleto(trimestre: string, ultimoMesFechado: string | null): boolean {
+  if (!ultimoMesFechado) return false;
+  const match = /^T([1-4])\/(\d{2})$/.exec(trimestre);
+  if (!match) return false;
+  const [, numero, aa] = match;
+  const ultimoMes = `20${aa}-${ULTIMO_MES_DO_TRIMESTRE[numero]}`;
+  return ultimoMes <= ultimoMesFechado;
+}
+
 function janelaMediaOrNull(value: unknown): JanelaMedia | null {
   if (!value || typeof value !== "object") return null;
   const bruto = value as Record<string, unknown>;
@@ -120,7 +137,13 @@ function DeltaChip({ value }: { value: number | null }) {
   return <span className={`${styles.deltaChip} ${classe}`}>{texto}</span>;
 }
 
-function SanusImpactBlock({ impacto }: { impacto: GoldPreview["impacto_sanus"] }) {
+function SanusImpactBlock({
+  impacto,
+  ultimoMesFechado,
+}: {
+  impacto: GoldPreview["impacto_sanus"];
+  ultimoMesFechado: string | null;
+}) {
   const dados = parseImpactoSanus(impacto);
   const deltaItens = deltaClientSide(dados.pre?.itens_media_mensal ?? null, dados.pos?.itens_media_mensal ?? null);
   const deltaSinistro = deltaClientSide(dados.pre?.sinistro_media_mensal ?? null, dados.pos?.sinistro_media_mensal ?? null);
@@ -143,17 +166,17 @@ function SanusImpactBlock({ impacto }: { impacto: GoldPreview["impacto_sanus"] }
         {dados.trimestres_utilizantes.length ? (
           <div className={styles.chipRow}>
             <span className={styles.chipRowLabel}>Utilizantes únicos/trimestre (data do atendimento):</span>
-            {dados.trimestres_utilizantes.map((t, index) => {
-              // O último trimestre da série é o mais recente e pode estar
-              // incompleto — mesma convenção visual do fragmento legado
-              // (gold-preview.js, renderJornada/aplicarDadosReais tratam o
-              // último item da janela corrente como parcial por posição, não
-              // por uma flag do servidor).
-              const ultimo = index === dados.trimestres_utilizantes.length - 1;
+            {dados.trimestres_utilizantes.map((t) => {
+              // Completo/parcial vem do MESMO sinal de fechamento que o resto
+              // da aba (kpis.ultimo_mes_fechado) — não da posição do item no
+              // array. Um trimestre no fim da lista que já fechou (ex.: dado
+              // atrasado que só preenche depois) não pode ser rotulado
+              // "parcial" só por ser o último a aparecer.
+              const completo = trimestreCompleto(t.trimestre, ultimoMesFechado);
               return (
-                <span key={t.trimestre} className={`${styles.quarterChip} ${ultimo ? styles.quarterChipPartial : ""}`}>
+                <span key={t.trimestre} className={`${styles.quarterChip} ${completo ? "" : styles.quarterChipPartial}`}>
                   {t.trimestre} · {t.utilizantes === null ? "—" : formatadorInteiro.format(t.utilizantes)}
-                  {ultimo ? " (parcial)" : ""}
+                  {completo ? "" : " (parcial)"}
                 </span>
               );
             })}
@@ -409,13 +432,15 @@ function StatCompare({
 export function SanusImpact({
   impacto,
   comparacao,
+  ultimoMesFechado,
 }: {
   impacto: GoldPreview["impacto_sanus"];
   comparacao: GoldPreview["comparacao_madura"];
+  ultimoMesFechado: string | null;
 }) {
   return (
     <div className={styles.chartStack}>
-      <SanusImpactBlock impacto={impacto} />
+      <SanusImpactBlock impacto={impacto} ultimoMesFechado={ultimoMesFechado} />
       <MatureComparisonBlock comparacao={comparacao} />
     </div>
   );

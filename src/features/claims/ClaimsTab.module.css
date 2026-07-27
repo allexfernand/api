@@ -1221,11 +1221,6 @@
   background: #f8fafc;
 }
 
-.corruptedFlag {
-  color: #b45309;
-  cursor: help;
-}
-
 /* Metodologia (rodapé) */
 .methodologyCard {
   background: var(--bg);
