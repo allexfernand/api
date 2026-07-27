@@ -65,8 +65,11 @@ export function LineageDrawer() {
 
             <h4>Origem no Databricks</h4>
             <ul className={styles.drawerList}>
-              {entry.sources.map((source) => (
-                <li key={source.object}>
+              {/* Um mesmo objeto pode aparecer mais de uma vez com papéis
+                  diferentes (ex.: claims.kpis lê a Gold duas vezes), então a
+                  chave inclui a posição — só o object colide. */}
+              {entry.sources.map((source, index) => (
+                <li key={`${source.object}::${index}`}>
                   <span><code>{source.object}</code></span>
                   <small>{source.role}</small>
                   <div className={styles.lineageColumns}>

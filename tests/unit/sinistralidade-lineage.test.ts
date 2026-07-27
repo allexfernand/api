@@ -138,6 +138,21 @@ describe("registro de linhagem", () => {
     expect(desconhecidos).toEqual([]);
   });
 
+  // O mesmo objeto pode aparecer mais de uma vez em `sources` (claims.kpis lê
+  // a Gold duas vezes, com papéis diferentes) — o LineageDrawer keya por
+  // object+índice justamente por isso. O que não deve existir é a MESMA fonte
+  // repetida: (object, role) idênticos são fonte duplicada por copiar-colar.
+  it("não repete a mesma fonte (object + role) dentro de uma entrada", () => {
+    const repetidas = registro.entries.flatMap((entry) => {
+      const vistas = new Set<string>();
+      return entry.sources
+        .map((source) => `${source.object}::${source.role}`)
+        .filter((chave) => (vistas.has(chave) ? true : (vistas.add(chave), false)))
+        .map((chave) => `${entry.id} -> ${chave}`);
+    });
+    expect(repetidas).toEqual([]);
+  });
+
   it("tem entradas para os blocos de custo e uso", () => {
     const ids = registro.entries.map((entry) => entry.id);
     expect(ids).toEqual(
