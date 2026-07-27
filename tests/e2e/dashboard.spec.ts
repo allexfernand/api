@@ -1,19 +1,26 @@
 import { expect, test } from "@playwright/test";
 
+// As onze abas atuais (navSections em DashboardShell.tsx), na mesma ordem de
+// seção. `preview-gold` foi removida nesta consolidação (a Análise Sinistro
+// passou a renderizar, sobre a Gold, o mesmo conteúdo que a Preview Gold
+// usava) — navegação foi de 12 para 11 abas. Os rótulos batem com o texto
+// acessível real dos botões (sem o prefixo "Qualidade ·": esse é só o
+// cabeçalho da seção na sidebar, não faz parte do nome do botão).
 const tabs = [
   ["Análise Demográfica", "demografica"],
+  ["Visão Parceiros", "visao-parceiros"],
   ["Agendamentos", "agendamentos"],
-  ["Coordenação de Cuidado", "coordenacao-cuidado"],
   ["Sessões", "sessoes"],
   ["Petit Comitê", "petit-comite"],
   ["Petit Comitê MDS", "petit-comite-mds"],
+  ["Coordenação de Cuidado", "coordenacao-cuidado"],
   ["Análise Sinistro", "analise-sinistro"],
-  ["PREVIEW-gold", "preview-gold"],
-  ["Qualidade · Estratégica", "qualidade-estrategica"],
-  ["Qualidade · Operacional", "qualidade-operacional"],
+  ["Visão 360", "sinistralidade-v2"],
+  ["Estratégica", "qualidade-estrategica"],
+  ["Operacional", "qualidade-operacional"],
 ] as const;
 
-test("autentica com cookie HttpOnly e navega pelas dez áreas", async ({ page }) => {
+test("autentica com cookie HttpOnly e navega pelas onze áreas", async ({ page }) => {
   await page.goto("/");
   await page.getByLabel("Usuário", { exact: true }).fill(process.env.DASHBOARD_AUTH_USER || "");
   await page.getByLabel("Senha", { exact: true }).fill(process.env.DASHBOARD_AUTH_PASSWORD || "");
@@ -26,6 +33,12 @@ test("autentica com cookie HttpOnly e navega pelas dez áreas", async ({ page })
     await expect(page.locator(`.tab[data-tab="${id}"]`)).toHaveClass(/active/);
     await expect(page.locator(`#tab-${id}`)).toHaveClass(/active/);
   }
+
+  // A seção "Sinistralidade" tem exatamente estas duas abas, e a antiga
+  // Preview Gold não existe mais em lugar nenhum da navegação.
+  await expect(page.locator('[data-tab="analise-sinistro"]')).toHaveCount(1);
+  await expect(page.locator('[data-tab="sinistralidade-v2"]')).toHaveCount(1);
+  await expect(page.locator('[data-tab="preview-gold"]')).toHaveCount(0);
 });
 
 test("modo Análise Databricks revela a linhagem de um bloco e troca de alvo sem fechar a gaveta", async ({ page }) => {
@@ -113,4 +126,75 @@ test("modo Análise Databricks revela a linhagem de um bloco e troca de alvo sem
 
   await page.keyboard.press("Escape");
   await expect(gaveta).toBeHidden();
+});
+
+test("Análise Sinistro carrega da Gold, filtra e abre linhagem", async ({ page }) => {
+  // Mesmo motivo do teste acima: a consulta bate no warehouse Databricks e o
+  // filtro de faceta dispara uma segunda consulta — 30s de padrão não sobra.
+  test.setTimeout(120_000);
+
+  await page.goto("/");
+  await page.getByLabel("Usuário", { exact: true }).fill(process.env.DASHBOARD_AUTH_USER || "");
+  await page.getByLabel("Senha", { exact: true }).fill(process.env.DASHBOARD_AUTH_PASSWORD || "");
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
+  await expect(page.locator("body")).not.toHaveClass(/auth-locked/);
+  await expect(page.locator("#status")).toContainText("Dados ao vivo", { timeout: 20_000 });
+
+  const abaSinistro = page.locator("#tab-analise-sinistro");
+
+  await page.click('[data-tab="analise-sinistro"]');
+
+  // KPIs vêm da API; timeout largo porque a consulta bate no Databricks.
+  const kpis = abaSinistro.getByText(/Sinistro · último mês fechado/);
+  await expect(kpis).toBeVisible({ timeout: 60_000 });
+
+  // Bug de transcrição real desta consolidação (ver Concentration.tsx):
+  // "Top 10 juntos" chegou a mostrar 12,9% (razão recalculada a partir do
+  // sinistro bruto) contra 13,0% na aba de referência (soma do share que já
+  // vem pronto por linha, igual ao script legado). Cravar o número certo
+  // aqui pega qualquer regressão que volte a recalcular em vez de somar —
+  // uma asserção genérica de "tem uma porcentagem" não pegaria essa conta.
+  await expect(abaSinistro).toContainText("Top 10 juntos = 13,0%");
+
+  // Bug de cascata do CSS desta consolidação: `ClaimsTab.module.css .root`
+  // chegou a forçar display:flex incondicionalmente e vencia a regra global
+  // `.tab-content{display:none}` — a aba ficava sempre visível, empilhada
+  // sobre qualquer aba ativa. Neste ponto o conteúdo já carregou de verdade
+  // (o KPI acima está montado), então trocar de aba e checar que ele some é
+  // uma checagem real de que o CSS esconde a aba inativa, não um falso
+  // positivo por a consulta ainda não ter respondido.
+  await page.click('[data-tab="demografica"]');
+  await expect(abaSinistro).toBeHidden();
+  await expect(kpis).toBeHidden();
+
+  await page.click('[data-tab="analise-sinistro"]');
+  await expect(kpis).toBeVisible();
+
+  // A aba não existe mais na navegação.
+  await expect(page.locator('[data-tab="preview-gold"]')).toHaveCount(0);
+
+  // Filtro de faceta: recorta por sexo e confirma que os blocos recalculam
+  // (o total de utilizantes muda de 25.271 para 13.098 na base atual).
+  // "Aplicar recorte" troca o status da aba para "loading" enquanto a nova
+  // consulta roda — igual à carga inicial, o conteúdo inteiro (painel de
+  // facetas incluso) some até a resposta chegar — por isso a asserção que
+  // depende do Databricks vem primeiro, com o timeout largo; o chip do
+  // recorte só reaparece junto quando o conteúdo remonta em "ready".
+  await page.locator("#claims-filter-trigger-sexo").click();
+  await abaSinistro.getByRole("button", { name: "Feminino", exact: true }).click();
+  await abaSinistro.getByRole("button", { name: "Aplicar recorte" }).click();
+  await expect(abaSinistro.getByText("13.098 utilizantes · não é per capita")).toBeVisible({ timeout: 60_000 });
+  await expect(abaSinistro.getByText("Sexo: Feminino")).toBeVisible();
+
+  // Modo de linhagem: o selo aparece e a gaveta abre com a fonte certa.
+  const toggle = page.getByRole("button", { name: "Análise Databricks" });
+  await expect(toggle).toBeVisible();
+  await toggle.click();
+
+  const selo = page.getByRole("button", { name: /Ver linhagem Databricks de/ }).first();
+  await selo.click();
+
+  const gaveta = page.getByRole("complementary", { name: "Linhagem Databricks" });
+  await expect(gaveta).toBeVisible();
+  await expect(gaveta).toContainText("gold_sinistro_evento_v2");
 });
