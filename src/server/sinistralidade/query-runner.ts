@@ -34,6 +34,11 @@ export const TABLES = {
   // Sinistro), sem mart próprio na Visão 360.
   factCoordenacao: "hive_metastore.sanus_prod.fact_coordenacao_evento_gold_v2",
   eligibilitySnapshot: "hive_metastore.sanus_prod.beneficiary_eligibility_snapshot_v2",
+  // Silver base da Gold v2: única consumidora é o DESCRIBE HISTORY que alimenta
+  // o selo de versão/atualização exibido no cabeçalho da Análise Sinistro
+  // (fonte.delta_version/delta_timestamp) — nenhum bloco de conteúdo lê esta
+  // tabela diretamente. Ver claims.freshness em gold-preview-lineage.ts.
+  silverFinal: "hive_metastore.sanus_prod.utilizacao_silver_final",
 } as const;
 
 export async function createQueryRunner(scope: string): Promise<QueryRunner> {

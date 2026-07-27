@@ -55,6 +55,7 @@ const ENTRY_SOURCE_FILES: Record<string, string[]> = {
   "kpi.services_per_utilizer": [`${QUERIES_DIR}/kpis-lineage.ts`, `${QUERIES_DIR}/timeline.ts`],
   "kpi.cost_per_eligible_life": [`${QUERIES_DIR}/kpis-lineage.ts`, `${QUERIES_DIR}/timeline.ts`],
   "kpi.hospitalizations_per_thousand_lives": [`${QUERIES_DIR}/kpis-lineage.ts`, `${QUERIES_DIR}/timeline.ts`],
+  "claims.freshness": [`${QUERIES_DIR}/gold-preview-lineage.ts`, ROUTE_GOLD_PREVIEW],
   "claims.kpis": [`${QUERIES_DIR}/gold-preview-lineage.ts`, ROUTE_GOLD_PREVIEW],
   "claims.monthly": [`${QUERIES_DIR}/gold-preview-lineage.ts`, ROUTE_GOLD_PREVIEW],
   "claims.competency": [`${QUERIES_DIR}/gold-preview-lineage.ts`, ROUTE_GOLD_PREVIEW],
@@ -234,14 +235,15 @@ describe("registro de linhagem", () => {
     ]);
   });
 
-  it("tem 39 entradas no total", () => {
-    expect(registro.entries).toHaveLength(39);
+  it("tem 40 entradas no total", () => {
+    expect(registro.entries).toHaveLength(40);
   });
 
   it("cobre os blocos da aba Análise Sinistro", () => {
     const ids = registro.entries.map((entry) => entry.id);
     expect(ids).toEqual(
       expect.arrayContaining([
+        "claims.freshness",
         "claims.kpis",
         "claims.monthly",
         "claims.competency",
@@ -312,7 +314,7 @@ describe("rota scope=lineage", () => {
       ctx.res,
     );
     expect(ctx.statusCode).toBe(200);
-    expect((ctx.body as { lineage: { entries: unknown[] } }).lineage.entries).toHaveLength(39);
+    expect((ctx.body as { lineage: { entries: unknown[] } }).lineage.entries).toHaveLength(40);
     expect(ctx.headers["Cache-Control"]).toBe("private, max-age=3600");
   });
 

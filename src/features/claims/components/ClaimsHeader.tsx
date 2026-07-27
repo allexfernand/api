@@ -1,22 +1,38 @@
 "use client";
 
 // Cabeçalho da aba Análise Sinistro: identidade da aba, composição da
-// carteira, procedência dos dados (fonte gold + versão Delta + geração) e o
-// toggle "Análise Databricks" — mesmo padrão de
+// carteira, procedência dos dados (fonte gold + versão Delta da Silver +
+// selo de atualização) e o toggle "Análise Databricks" — mesmo padrão de
 // features/sinistralidade/components/AnalyticsHeader.tsx. Nenhum valor aqui é
 // hardcoded: tudo vem de `fonte`/`carteira` do payload; sem eles, o texto diz
 // que falta o dado em vez de inventar um número.
+//
+// delta_version/delta_timestamp vêm de um DESCRIBE HISTORY sobre
+// utilizacao_silver_final (a Silver), não sobre gold_sinistro_evento_v2 —
+// por isso o rótulo diz "da Silver". `gerado_em` é o instante em que o
+// SERVIDOR respondeu (new Date().toISOString() em gold-preview.ts), não
+// quando os dados foram atualizados pela última vez — como a ingestão da
+// Silver é manual e sem agenda, as duas datas podem divergir por dias. Os
+// dois horários ficam rotulados separadamente para que o leitor não confunda
+// "a página respondeu agora" com "o dado mudou agora".
 //
 // O selo "PREVIEW / MOCK" do fragment antigo não é reproduzido: esta aba
 // deixou de ser preview.
 
 import styles from "../ClaimsTab.module.css";
 import type { GoldPreview } from "../../../contracts/gold-preview";
+import { LineageAnchor } from "../../sinistralidade/components/LineageAnchor";
 import { useLineage } from "../../sinistralidade/components/LineageProvider";
 
 const formatadorInteiro = new Intl.NumberFormat("pt-BR");
 const formatadorPercentual = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 const formatadorData = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" });
+
+function parseData(valor: unknown): Date | null {
+  if (typeof valor !== "string" && typeof valor !== "number") return null;
+  const data = new Date(valor);
+  return Number.isNaN(data.getTime()) ? null : data;
+}
 
 function resumoCarteira(carteira: GoldPreview["carteira"]): string {
   if (!carteira.empresas.length) return "Carteira indisponível.";
@@ -43,8 +59,8 @@ export function ClaimsHeader({
   carteira: GoldPreview["carteira"];
 }) {
   const lineage = useLineage();
-  const geradoEm = new Date(fonte.gerado_em);
-  const dataValida = !Number.isNaN(geradoEm.getTime());
+  const geradoEm = parseData(fonte.gerado_em);
+  const atualizadoEm = parseData(fonte.delta_timestamp);
 
   return (
     <header className={styles.hero}>
@@ -55,10 +71,13 @@ export function ClaimsHeader({
         <div>
           <div className={styles.eyebrow}>Sinistralidade</div>
           <div className={styles.heroTitle}>Análise Sinistro</div>
-          <div className={styles.heroSub}>
-            Fonte {fonte.gold} · Delta v{fonte.delta_version}
-            {dataValida ? ` · gerado em ${formatadorData.format(geradoEm)}` : ""}
-          </div>
+          <LineageAnchor lineageId="claims.freshness" label="Selo de atualização da fonte">
+            <div className={styles.heroSub}>
+              Fonte {fonte.gold} · Delta v{fonte.delta_version} da Silver
+              {atualizadoEm ? ` · dado atualizado em ${formatadorData.format(atualizadoEm)}` : ""}
+              {geradoEm ? ` · página respondida em ${formatadorData.format(geradoEm)}` : ""}
+            </div>
+          </LineageAnchor>
         </div>
       </div>
       <div className={styles.heroBadges}>

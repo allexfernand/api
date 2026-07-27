@@ -31,6 +31,27 @@ const FONTE_FILTRO_CIDADE_ESTADO = {
 
 export const GOLD_PREVIEW_LINEAGE: LineageEntry[] = [
   {
+    id: "claims.freshness",
+    kind: "block",
+    label: "Selo de atualização: versão e timestamp da Silver",
+    layer: "silver",
+    sources: [
+      {
+        object: TABLES.silverFinal,
+        role: "DESCRIBE HISTORY da Silver de sinistro — não alimenta nenhum KPI ou gráfico da aba; fornece só a versão e o timestamp Delta exibidos no cabeçalho, ao lado dos blocos que leem a Gold.",
+        columns: ["version", "timestamp"],
+      },
+    ],
+    formula:
+      "delta_version = version mais recente do histórico Delta de utilizacao_silver_final (DESCRIBE HISTORY ... ORDER BY version DESC LIMIT 1); delta_timestamp = timestamp dessa mesma versão.",
+    filters: [],
+    notes: [
+      "Esta entrada existia como lacuna consciente: a Silver não tinha consumidor nenhum na aba até o cabeçalho (Task 4) passar a exibir a versão Delta. TABLES.silverFinal foi adicionada só quando esse consumidor passou a existir.",
+      "delta_version/delta_timestamp descrevem quando a SILVER foi atualizada pela última vez (ingestão manual, sem agenda — ver docs/sinistralidade/ARQUITETURA_DATABRICKS.md), não quando a página foi renderizada nem quando a Gold (view, recalculada a cada consulta) foi lida.",
+    ],
+    related: ["claims.kpis"],
+  },
+  {
     id: "claims.kpis",
     kind: "block",
     label: "KPIs executivos da Análise Sinistro",
