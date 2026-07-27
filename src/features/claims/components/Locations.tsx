@@ -51,7 +51,7 @@ export function Locations({ lotacoes }: { lotacoes: GoldPreview["lotacoes"] }) {
       <ChartCard
         lineageId="claims.locations"
         title="Sinistro por lotação"
-        subtitle="As 12 lotações de maior sinistro desde 2024-01. Barra destacada = “Sem lotação”."
+        subtitle={`As ${ordenadas.length} lotações de maior sinistro desde 2024-01. Barra destacada = “Sem lotação”.`}
         unit="R$ e % acumulado"
         chart={
           <ParetoChart
