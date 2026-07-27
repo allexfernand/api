@@ -15,6 +15,14 @@
 // próprio payload (jornada_sanus.metodologia) e é reproduzida na tela sem
 // paráfrase, a mesma ressalva do bloco de coordenação da Visão 360
 // (care-timeline.matrix).
+//
+// A cláusula final do subtítulo ("atualiza continuamente...") é a única
+// adição nossa ao texto do card: fact_coordenacao_evento_gold_v2 (ver
+// lineage claims.sanus-journey) é alimentada por pipelines DLT contínuos,
+// enquanto o resto da aba lê a Silver de sinistro, que só avança com a
+// ingestão manual. Sem o aviso aqui, um usuário sem acesso ao modo "Análise
+// Databricks" não tem como saber por que só este bloco muda entre dois
+// carregamentos no mesmo dia.
 
 import styles from "../ClaimsTab.module.css";
 import type { GoldPreview } from "../../../contracts/gold-preview";
@@ -116,7 +124,7 @@ export function SanusJourney({ jornada }: { jornada: GoldPreview["jornada_sanus"
       <article className={styles.card}>
         <div className={styles.cardTitle}>
           <h3>Alcance e proximidade da jornada Sanus</h3>
-          <p>Recuperado do BI antigo com regra auditável: cpf_atendido ↔ cpf_titular · janela 12m fechados.</p>
+          <p>Recuperado do BI antigo com regra auditável: cpf_atendido ↔ cpf_titular · janela 12m fechados · atualiza continuamente, diferente do resto da aba.</p>
         </div>
         <div className={styles.journeyGrid}>
           <div className={styles.subpanel}>

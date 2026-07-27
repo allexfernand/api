@@ -398,6 +398,7 @@ export const GOLD_PREVIEW_LINEAGE: LineageEntry[] = [
     notes: [
       "A ponte de coordenação é por family_key (empresa + CPF do titular, sem CPF exposto): contato digital do DEPENDENTE não casa com a família — cobertura parcial, igual à ressalva do bloco de coordenação da Visão 360 (care-timeline.matrix).",
       "Proximidade é associação temporal (até 40 dias), não atribuição causal: um atendimento próximo de um contato digital não prova que o contato causou o atendimento.",
+      "fact_coordenacao_evento_gold_v2 é alimentada pelos pipelines DLT contínuos (atendimento_gold_live, healthcoach_gold_live) e se atualiza o tempo todo. Os demais blocos desta aba leem a Silver de sinistro, que só avança quando a ingestão manual roda — por isso os números deste bloco podem mudar entre dois carregamentos no mesmo dia, mesmo com o resto da aba parado.",
     ],
     related: ["claims.sanus-impact"],
   },
