@@ -1,5 +1,5 @@
 (async function loadSanusDashboard() {
-  const chunks = ["/scripts/features/core.js?v=20260723-partner-vp03-groups","/scripts/features/claims.js?v=20260723-partner-vp03-groups","/scripts/features/period-filters.js?v=20260723-partner-vp03-groups","/scripts/features/executive-committee.js?v=20260723-partner-vp03-groups","/scripts/features/care-coordination.js?v=20260723-partner-vp03-groups","/scripts/features/appointments.js?v=20260723-partner-vp03-groups","/scripts/features/sessions.js?v=20260723-partner-vp03-groups","/scripts/features/demographics.js?v=20260723-partner-vp03-groups","/scripts/features/quality-and-bootstrap.js?v=20260723-partner-vp03-groups"];
+  const chunks = ["/scripts/features/core.js?v=20260723-partner-vp03-groups","/scripts/features/period-filters.js?v=20260723-partner-vp03-groups","/scripts/features/executive-committee.js?v=20260723-partner-vp03-groups","/scripts/features/care-coordination.js?v=20260723-partner-vp03-groups","/scripts/features/appointments.js?v=20260723-partner-vp03-groups","/scripts/features/sessions.js?v=20260723-partner-vp03-groups","/scripts/features/demographics.js?v=20260723-partner-vp03-groups","/scripts/features/quality-and-bootstrap.js?v=20260723-partner-vp03-groups"];
   for (const src of chunks) {
     await new Promise((resolve, reject) => {
       const script = document.createElement('script');

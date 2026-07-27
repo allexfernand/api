@@ -4,7 +4,7 @@
 // eventos e internações — somente com permissão própria e auditoria.
 // Nenhum identificador direto sai daqui.
 
-import type { RankingBy } from "../../../contracts/sinistralidade-v2";
+import type { RankingBy, LineageEntry } from "../../../contracts/sinistralidade-v2";
 import type { ResolvedPeriod } from "../period-gate";
 import { monthSpine, monthsInSql } from "../period-gate";
 import { fetchCoveredMonths, getCell, maskedBeneficiaryLabel, toInt, toNum } from "../serializers";
@@ -17,6 +17,50 @@ export const TOP_USERS_UNITS = {
   participacao: "fração (0–1)",
   recorrencia: "meses com uso",
 };
+
+export const TOP_USERS_LINEAGE: LineageEntry[] = [
+  {
+    id: "top-users-window.table",
+    kind: "block",
+    label: "Maiores utilizantes da janela",
+    layer: "mart",
+    sources: [
+      {
+        object: TABLES.martPessoaMes,
+        role: "fato principal",
+        columns: [
+          "person_key",
+          "month_key",
+          "faixa_etaria",
+          "parentesco",
+          "linhas_cobranca",
+          "quantidade_servicos",
+          "custo_assistencial_bruto",
+          "episodios_internacao",
+          "evento_principal",
+        ],
+      },
+      {
+        object: TABLES.monthStatus,
+        role: "gate de fechamento do período",
+        columns: ["company_key", "month_key", "status", "updated_at"],
+      },
+    ],
+    formula:
+      "Pessoas ordenadas pelo critério escolhido (custo, serviços ou internações) somado na janela. A posição na janela anterior vem da mesma consulta deslocada.",
+    filters: [
+      "company_key do escopo do usuário, aplicado no SQL",
+      "meses aprovados pelo gate de fechamento",
+      "exige permissão de ranking individual",
+    ],
+    notes: [
+      "A identidade é o person_key opaco: nome e CPF nunca saem da camada controlada.",
+      "Todo acesso a este bloco é auditado no servidor.",
+      "A posição anterior — e position_delta e is_new_entrant, que dependem dela — vêm de uma janela anterior (previousSpine) calculada por aritmética de calendário, não verificada pelo gate de fechamento: a comparação pode envolver um mês que não está fechado.",
+    ],
+    related: ["user-detail", "concentration.monthly"],
+  },
+];
 
 const RANKING_COLUMN: Record<Exclude<RankingBy, "growth">, string> = {
   cost: "custo_assistencial_bruto",
@@ -149,6 +193,67 @@ export const USER_DETAIL_UNITS = {
   internacoes: "episódios",
   duracao: "dias",
 };
+
+export const USER_DETAIL_LINEAGE: LineageEntry[] = [
+  {
+    id: "user-detail",
+    kind: "block",
+    label: "Detalhe individual do beneficiário",
+    layer: "gold",
+    sources: [
+      {
+        object: TABLES.martPessoaMes,
+        role: "série mensal da pessoa",
+        columns: [
+          "person_key",
+          "month_key",
+          "linhas_cobranca",
+          "quantidade_servicos",
+          "custo_assistencial_bruto",
+          "episodios_internacao",
+          "evento_principal",
+          "faixa_etaria",
+          "parentesco",
+        ],
+      },
+      {
+        object: TABLES.gold,
+        role: "composição por evento, procedimento, prestador e internação",
+        columns: [
+          "person_key",
+          "month_key",
+          "company_key",
+          "tipo_evento",
+          "quantidade_servicos",
+          "custo_assistencial_bruto",
+          "descricao_procedimento",
+          "macrogroup",
+          "prestador",
+          "numero_conta_medica",
+          "authorization_id",
+          "flag_internacao",
+          "acomodacao_internacao",
+          "duracao_internacao_dias",
+          "flag_saude_mental",
+          "flag_data_suspeita",
+        ],
+      },
+    ],
+    formula:
+      "Recorte da janela para uma única pessoa: série mensal, composição por evento, dez principais procedimentos, dez principais prestadores e internações do período.",
+    filters: [
+      "company_key do escopo do usuário, aplicado no SQL",
+      "NOT flag_data_suspeita",
+      "exige permissão de detalhe individual",
+    ],
+    notes: [
+      "Este bloco não tem botão de linhagem próprio: ele vive dentro da gaveta do beneficiário. Chegue aqui pelo bloco de maiores utilizantes.",
+      "Nenhum CID é exposto: a exposição de diagnóstico aguarda aprovação clínica.",
+      "A resposta é servida com Cache-Control: no-store e todo acesso é auditado, inclusive tentativa sem resultado.",
+    ],
+    related: ["top-users-window.table"],
+  },
+];
 
 export async function userDetailScope(
   q: QueryRunner,

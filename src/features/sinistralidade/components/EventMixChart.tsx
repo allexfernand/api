@@ -39,6 +39,7 @@ export function EventMixChart({ data, periodLabel }: { data: EventMixData; perio
         <p>Custo assistencial bruto por evento comercial, mês a mês.</p>
       </div>
       <ChartCard
+        lineageId="event-mix.cost"
         title="Custo por evento"
         unit="R$"
         periodLabel={periodLabel}

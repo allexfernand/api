@@ -28,6 +28,58 @@
 
 ---
 
+## As DUAS visões de internação (leia antes de comparar números)
+
+Depois da migração para o nativo existem **duas medidas diferentes** de internação. Elas
+**não** são conflitantes — respondem a perguntas diferentes. Quem olhar o dashboard precisa
+saber qual está vendo.
+
+### Visão 1 — `tipo_evento = 'Internacao'` (rubrica de leito) ≈ **R$20M**
+É o **rótulo de evento** de cada linha. Só marca "Internacao" a linha que **é a diária
+hospitalar** (grupo estatístico de diária: DEF, DAP, DUT, DUP, DPE, DSI, DBR, DOT, ISO, THT,
+PDE, PDA). Responde: **"quanto gastamos em diária de leito?"**
+Aparece em: gráfico de **composição por tipo de evento**.
+
+### Visão 2 — `flag_internacao = true` (episódio completo) ≈ **R$40M**
+É uma **flag no nível da conta/senha**: marca **todas as linhas de uma internação**, inclusive
+o que foi consumido dentro dela (honorário médico, taxas de sala/OR, medicamentos, exames,
+materiais). Responde: **"quanto custou o episódio de internação inteiro?"**
+Aparece em: blocos de **uso assistencial / severidade**, contagem de **admissões** e o mart
+`mart_internacao_grupo_mes_v2` (agrupado por acomodação nativa — B5).
+
+### Por que os números diferem (validado em produção)
+Das linhas que o pipeline **antigo (LLM)** chamava de "Internacao" (R$40,8M), o nativo mostra
+o que cada uma **realmente é**:
+
+| Reclassificação nativa | R$ mi | Linhas |
+|---|--:|--:|
+| **Internação** (diária de fato) | 18,0 | 9.593 |
+| Honorário médico | 16,3 | 18.250 |
+| Taxas (sala/OR/equipamento) | 3,8 | 4.872 |
+| Medicamento | 1,5 | 2.003 |
+| Terapia | 0,4 | 3.360 |
+| Material-OPME / Exame / outros | ~1,0 | ~1.900 |
+
+O LLM carimbava **"Internação"** em tudo que era faturado durante a internação (um *total de
+episódio*). O nativo separa cada real na rubrica do que ele é: a diária fica em Internação, o
+honorário do cirurgião em Honorário médico, o remédio em Medicamento, e assim por diante.
+**Ninguém perde dinheiro** — os R$22,8M que "saíram" de Internação reaparecem nas outras
+rubricas. Total geral intacto (~R$165,8M).
+
+### Por que o nativo é o correto para a composição
+1. **Não dupla-conta categoria**: honorário é honorário esteja o paciente internado ou não —
+   antes o mesmo tipo de gasto caía em baldes diferentes só pelo contexto.
+2. **É a classificação da própria operadora** (grupo estatístico do arquivo), auditável linha
+   a linha, sem inferência de IA.
+3. **Responde a pergunta certa** do gráfico de composição: gasto **em diária de leito**, não
+   "faturamento de contas que tiveram internação" (isso é a Visão 2, via flag).
+
+> **Resumo para o negócio:** o rótulo "Internação" (~R$20M) = **leito**; a flag de internação
+> (~R$40M) = **episódio completo**. Ao comparar com relatórios antigos, confira qual visão a
+> outra fonte usa — o número "R$40M" antigo equivale à **flag**, não ao rótulo.
+
+---
+
 ## (rascunho original abaixo — mantido para referência das opções)
 
 

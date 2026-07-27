@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   SINISTRALIDADE_CONTRACT_VERSION,
   legacyScopeSchema,
+  lineageEntrySchema,
+  lineageRegistrySchema,
   longitudinalEnvelopeSchema,
   longitudinalScopeSchema,
   sinistralidadeQuerySchema,
@@ -9,9 +11,9 @@ import {
 
 const COMPANY = "a".repeat(64);
 
-describe("contrato sinistralidade 1.1.0", () => {
+describe("contrato sinistralidade 1.2.0", () => {
   it("é aditivo: mantém todos os escopos 1.0.0", () => {
-    expect(SINISTRALIDADE_CONTRACT_VERSION).toBe("1.1.0");
+    expect(SINISTRALIDADE_CONTRACT_VERSION).toBe("1.2.0");
     for (const scope of ["metadata", "overview", "top10", "bimester", "mental-health", "ps-package", "care-coordination", "family-before-after", "year-over-year"]) {
       expect(legacyScopeSchema.options).toContain(scope);
       expect(sinistralidadeQuerySchema.safeParse({ scope }).success).toBe(true);
@@ -62,7 +64,7 @@ describe("contrato sinistralidade 1.1.0", () => {
 
   it("envelope longitudinal exige estado explícito e período efetivo", () => {
     const envelope = {
-      contract_version: "1.1.0",
+      contract_version: "1.2.0",
       generated_at: new Date().toISOString(),
       company_key: COMPANY,
       scope: "timeline",
@@ -82,5 +84,53 @@ describe("contrato sinistralidade 1.1.0", () => {
     expect(longitudinalEnvelopeSchema.safeParse(envelope).success).toBe(true);
     expect(longitudinalEnvelopeSchema.safeParse({ ...envelope, state: "ok" }).success).toBe(false);
     expect(longitudinalEnvelopeSchema.safeParse({ ...envelope, effective_period: undefined }).success).toBe(false);
+  });
+});
+
+describe("contrato de linhagem 1.2.0", () => {
+  const entradaValida = {
+    id: "timeline.monthly",
+    kind: "block" as const,
+    label: "Evolução mensal",
+    layer: "mart" as const,
+    sources: [
+      {
+        object: "hive_metastore.sanus_prod.mart_sinistro_empresa_mes_v2",
+        role: "fato principal",
+        columns: ["month_key", "custo_assistencial_bruto"],
+      },
+    ],
+    formula: "SUM(custo_assistencial_bruto) por month_key",
+    filters: ["company_key do escopo do usuário"],
+  };
+
+  it("aceita uma entrada completa", () => {
+    expect(lineageEntrySchema.parse(entradaValida).id).toBe("timeline.monthly");
+  });
+
+  it("rejeita entrada sem fontes", () => {
+    expect(lineageEntrySchema.safeParse({ ...entradaValida, sources: [] }).success).toBe(false);
+  });
+
+  it("rejeita fonte sem colunas", () => {
+    const semColunas = { ...entradaValida, sources: [{ ...entradaValida.sources[0], columns: [] }] };
+    expect(lineageEntrySchema.safeParse(semColunas).success).toBe(false);
+  });
+
+  it("rejeita camada desconhecida", () => {
+    expect(lineageEntrySchema.safeParse({ ...entradaValida, layer: "bronze_raw" }).success).toBe(false);
+  });
+
+  it("valida o registro completo", () => {
+    const registro = {
+      contract_version: "1.2.0",
+      generated_at: "2026-07-25T00:00:00.000Z",
+      entries: [entradaValida],
+    };
+    expect(lineageRegistrySchema.parse(registro).entries).toHaveLength(1);
+  });
+
+  it("aceita scope=lineage na querystring", () => {
+    expect(sinistralidadeQuerySchema.parse({ scope: "lineage" }).scope).toBe("lineage");
   });
 });

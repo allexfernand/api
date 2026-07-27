@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const SINISTRALIDADE_CONTRACT_VERSION = "1.1.0";
+export const SINISTRALIDADE_CONTRACT_VERSION = "1.2.0";
 
 export const companyKeySchema = z.string().regex(/^[a-f0-9]{64}$/i);
 export const monthKeySchema = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/);
@@ -36,9 +36,14 @@ export const longitudinalScopeSchema = z.enum([
   "ps-trends",
 ]);
 
+// `lineage` é metadado: não é escopo longitudinal e não passa pelo gate de
+// período. Declarar aqui, e não em longitudinalScopeSchema, é o que impede
+// isLongitudinalScope() de roteá-lo para handleLongitudinal (que exigiria
+// end_month e responderia 400).
 export const sinistralidadeScopeSchema = z.enum([
   ...legacyScopeSchema.options,
   ...longitudinalScopeSchema.options,
+  "lineage",
 ]);
 
 export const windowMonthsSchema = z.union([
@@ -134,3 +139,38 @@ export type MonthStatusEntry = z.infer<typeof monthStatusEntrySchema>;
 export type LongitudinalEnvelope = z.infer<typeof longitudinalEnvelopeSchema>;
 export type WindowMonths = z.infer<typeof windowMonthsSchema>;
 export type RankingBy = z.infer<typeof rankingBySchema>;
+
+// ---- Linhagem Databricks (1.2.0) ----
+// Metadado estático que descreve, por bloco visível e por KPI, de onde o
+// número vem. Declarado no servidor, ao lado do SQL que ele descreve.
+
+export const lineageLayerSchema = z.enum(["silver", "gold", "mart", "control"]);
+
+export const lineageSourceSchema = z.object({
+  object: z.string().min(1),
+  role: z.string().min(1),
+  columns: z.array(z.string().min(1)).min(1),
+});
+
+export const lineageEntrySchema = z.object({
+  id: z.string().min(1),
+  kind: z.enum(["block", "metric"]),
+  label: z.string().min(1),
+  layer: lineageLayerSchema,
+  sources: z.array(lineageSourceSchema).min(1),
+  formula: z.string().min(1),
+  filters: z.array(z.string().min(1)),
+  notes: z.array(z.string().min(1)).optional(),
+  related: z.array(z.string().min(1)).optional(),
+});
+
+export const lineageRegistrySchema = z.object({
+  contract_version: z.string(),
+  generated_at: z.string(),
+  entries: z.array(lineageEntrySchema).min(1),
+});
+
+export type LineageLayer = z.infer<typeof lineageLayerSchema>;
+export type LineageSource = z.infer<typeof lineageSourceSchema>;
+export type LineageEntry = z.infer<typeof lineageEntrySchema>;
+export type LineageRegistry = z.infer<typeof lineageRegistrySchema>;

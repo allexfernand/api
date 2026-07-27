@@ -48,6 +48,7 @@ export function ConcentrationAnalysis({ data, periodLabel }: { data: Concentrati
           <p>Participação dos maiores utilizantes no custo de cada mês.</p>
         </div>
         <ChartCard
+          lineageId="concentration.monthly"
           title="Concentração mensal"
           unit="% do custo do mês"
           periodLabel={periodLabel}

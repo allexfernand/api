@@ -30,6 +30,15 @@ export const TABLES = {
   martPsItemMes: "hive_metastore.sanus_prod.mart_ps_item_mes_v2",
   martFamiliaRelativo: "hive_metastore.sanus_prod.mart_familia_mes_relativo_v2",
   martCoordenacaoMes: "hive_metastore.sanus_prod.mart_coordenacao_empresa_mes_v2",
+  // Tabelas consultadas por src/server/routes/gold-preview.ts (aba Análise
+  // Sinistro), sem mart próprio na Visão 360.
+  factCoordenacao: "hive_metastore.sanus_prod.fact_coordenacao_evento_gold_v2",
+  eligibilitySnapshot: "hive_metastore.sanus_prod.beneficiary_eligibility_snapshot_v2",
+  // Silver base da Gold v2: única consumidora é o DESCRIBE HISTORY que alimenta
+  // o selo de versão/atualização exibido no cabeçalho da Análise Sinistro
+  // (fonte.delta_version/delta_timestamp) — nenhum bloco de conteúdo lê esta
+  // tabela diretamente. Ver claims.freshness em gold-preview-lineage.ts.
+  silverFinal: "hive_metastore.sanus_prod.utilizacao_silver_final",
 } as const;
 
 export async function createQueryRunner(scope: string): Promise<QueryRunner> {

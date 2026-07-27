@@ -7,6 +7,7 @@ import type { ResolvedPeriod } from "../period-gate";
 import { monthsInSql } from "../period-gate";
 import { getCell, suppressSmallGroup, toBool, toInt, toNullableNum, toNum } from "../serializers";
 import { TABLES, type QueryRunner } from "../query-runner";
+import type { LineageEntry } from "../../../contracts/sinistralidade-v2";
 
 export const FAMILY_UNITS = {
   familias: "famílias",
@@ -16,6 +17,47 @@ export const FAMILY_UNITS = {
   internacoes: "episódios",
   mes_relativo: "meses desde a entrada",
 };
+
+export const FAMILY_LINEAGE: LineageEntry[] = [
+  {
+    id: "family-timeline.relative",
+    kind: "block",
+    label: "Custo por mês relativo à entrada da família",
+    layer: "mart",
+    sources: [
+      {
+        object: TABLES.martFamiliaRelativo,
+        role: "fato principal",
+        columns: [
+          "mes_relativo",
+          "familias",
+          "pessoas_utilizantes",
+          "linhas_cobranca",
+          "quantidade_servicos",
+          "episodios_internacao",
+          "custo_assistencial_bruto",
+          "evento_principal",
+          "entry_date_source",
+          "coorte_entrada",
+        ],
+      },
+      {
+        object: TABLES.monthStatus,
+        role: "gate de fechamento do período",
+        columns: ["company_key", "month_key", "status", "updated_at"],
+      },
+    ],
+    formula:
+      "O eixo não é o calendário: é o mês relativo à entrada do titular. Mês 0 é a entrada; negativos são anteriores.",
+    filters: ["company_key do escopo do usuário, aplicado no SQL"],
+    notes: [
+      "A entrada familiar é derivada do snapshot atual de elegibilidade, não de histórico retroativo.",
+      "Dependentes sem ponte com o titular não estão associados: vw_beneficiarios não expõe essa identidade na origem.",
+      "O bloqueio HTTP 409 deste bloco vem do mesmo gate por mês calendário do handler (end_month/window_months): a consulta em si agrupa por mes_relativo e nunca filtra por month_key, mas o gate ainda decide se a tela é bloqueada.",
+    ],
+    related: ["care-timeline.matrix"],
+  },
+];
 
 export async function familyTimelineScope(q: QueryRunner, companyKey: string) {
   const rows = await q(
@@ -50,6 +92,57 @@ export const CARE_UNITS = {
   custo: "R$",
   eventos: "eventos de coordenação",
 };
+
+export const CARE_LINEAGE: LineageEntry[] = [
+  {
+    id: "care-timeline.matrix",
+    kind: "block",
+    label: "Fatura contra coordenação por mês",
+    layer: "mart",
+    sources: [
+      {
+        object: TABLES.martCoordenacaoMes,
+        role: "fato principal",
+        columns: [
+          "month_key",
+          "utilizou_plano",
+          "teve_coordenacao",
+          "pessoas",
+          "familias",
+          "linhas_cobranca",
+          "custo_assistencial_bruto",
+          "eventos_coordenacao",
+          "titulares",
+          "dependentes",
+          "pessoas_sem_ponte_familiar",
+        ],
+      },
+      {
+        object: TABLES.martCare,
+        role: "quebra demográfica da matriz; dimensões demográficas sintetizadas via LATERAL VIEW explode",
+        columns: ["person_key", "company_key", "month_key", "sex", "beneficiary_type", "state", "utilizou_plano", "teve_coordenacao", "custo_assistencial_bruto"],
+      },
+      {
+        object: TABLES.monthStatus,
+        role: "gate de fechamento do período",
+        columns: ["company_key", "month_key", "status", "updated_at"],
+      },
+    ],
+    formula:
+      "Matriz de quatro quadrantes por mês: usou o plano × teve coordenação. Cada célula conta pessoas e famílias.",
+    filters: [
+      "company_key do escopo do usuário, aplicado no SQL",
+      "meses aprovados pelo gate de fechamento",
+      "no perfil MDS, grupos pequenos são suprimidos",
+    ],
+    notes: [
+      "A ponte com coordenação usa empresa e CPF do titular, sem expor CPF: cobre contatos digitais DO TITULAR.",
+      "Dependente atendido digitalmente não casa com o titular e cai fora do quadrante coordenado.",
+      "Dimensões demográficas (sexo, vínculo, estado) são sintetizadas via LATERAL VIEW explode de colunas sex, beneficiary_type, state.",
+    ],
+    related: ["family-timeline.relative"],
+  },
+];
 
 export async function careTimelineScope(
   q: QueryRunner,
@@ -128,6 +221,51 @@ export const PS_UNITS = {
   custo: "R$",
   quantidade_por_episodio: "serviços/episódio",
 };
+
+export const PS_LINEAGE: LineageEntry[] = [
+  {
+    id: "ps-trends.monthly",
+    kind: "block",
+    label: "Pronto-socorro ao longo do tempo",
+    layer: "mart",
+    sources: [
+      {
+        object: TABLES.martPsItemMes,
+        role: "itens consumidos no pacote de PS",
+        columns: [
+          "month_key",
+          "procedimento_key",
+          "descricao_comercial",
+          "grupo_comercial",
+          "quantidade_servicos",
+          "custo_assistencial_bruto",
+          "episodios_ps",
+          "utilizantes",
+        ],
+      },
+      {
+        object: TABLES.martPsEpisode,
+        role: "contagem de episódios de PS",
+        columns: ["month_key", "episode_key"],
+      },
+      {
+        object: TABLES.monthStatus,
+        role: "gate de fechamento do período",
+        columns: ["company_key", "month_key", "status", "updated_at"],
+      },
+    ],
+    formula:
+      "Série mensal de custo e serviços dos itens de PS, e COUNT(DISTINCT episode_key) para o número de episódios.",
+    filters: [
+      "company_key do escopo do usuário, aplicado no SQL",
+      "meses aprovados pelo gate de fechamento",
+    ],
+    notes: [
+      "O episódio canônico associa pessoa, conta, autorização, data e prestador — é o que evita contar o mesmo atendimento várias vezes.",
+    ],
+    related: ["hospitalization-trends.monthly"],
+  },
+];
 
 export async function psTrendsScope(
   q: QueryRunner,

@@ -1,5 +1,8 @@
 // Tipos do contrato 1.1.0 consumidos pela Sinistralidade 360.
 
+export type { LineageEntry, LineageRegistry, LineageSource, LineageLayer } from "../../contracts/sinistralidade-v2";
+export type { DashboardRole } from "../../contracts/common";
+
 export type PeriodStatus = "closed" | "partial" | "unknown";
 export type ScopeState = "valid" | "partial" | "blocked" | "not_comparable";
 

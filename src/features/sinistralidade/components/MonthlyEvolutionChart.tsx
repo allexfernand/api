@@ -53,6 +53,7 @@ export function MonthlyEvolutionChart({ data, periodLabel }: { data: TimelineDat
           <BasisSwitch basis={basis} onChange={setBasis} />
         </div>
         <ChartCard
+          lineageId="timeline.competency"
           title="Custo por competência"
           unit="R$"
           periodLabel={periodLabel}
@@ -116,6 +117,7 @@ export function MonthlyEvolutionChart({ data, periodLabel }: { data: TimelineDat
         </div>
       </div>
       <ChartCard
+        lineageId="timeline.monthly"
         title={metric.label}
         unit={metric.unit}
         periodLabel={periodLabel}

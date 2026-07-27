@@ -5,6 +5,7 @@
 
 import styles from "../SinistralidadeV2Tab.module.css";
 import { ChartCard, ChartLegend, LineChart, SEMANTIC_COLORS } from "./charts";
+import { LineageAnchor } from "./LineageAnchor";
 import type { CareTimelineData, FamilyTimelineData } from "../types";
 import { money, moneyFull, monthLabel, number } from "../types";
 
@@ -17,6 +18,7 @@ export function FamilyTimelineBlock({ data }: { data: FamilyTimelineData }) {
         <p>Custo por mês relativo à entrada do grupo familiar (coortes agregadas). Entrada derivada do snapshot atual.</p>
       </div>
       <ChartCard
+        lineageId="family-timeline.relative"
         title="Custo por mês relativo"
         unit="R$"
         periodLabel="mês -12 a +12 da entrada"
@@ -66,6 +68,7 @@ export function CareTimelineBlock({ data, periodLabel }: { data: CareTimelineDat
     data.monthly.find((entry) => entry.month === month && entry.used_plan === used && entry.had_care_coordination === coordinated);
 
   return (
+    <LineageAnchor lineageId="care-timeline.matrix" label="Fatura × coordenação por mês">
     <article className={styles.card}>
       <div className={styles.cardTitle}>
         <h3>Fatura × coordenação por mês</h3>
@@ -105,6 +108,7 @@ export function CareTimelineBlock({ data, periodLabel }: { data: CareTimelineDat
       </p>
       <DemographicGaps rows={data.demographics} />
     </article>
+    </LineageAnchor>
   );
 }
 

@@ -7,12 +7,11 @@ const fmtCurrency = n => Number(n || 0).toLocaleString('pt-BR', { style: 'curren
 const mN = {'01':'Jan','02':'Fev','03':'Mar','04':'Abr','05':'Mai','06':'Jun','07':'Jul','08':'Ago','09':'Set','10':'Out','11':'Nov','12':'Dez'};
 const SESSIONS_Q3_PRESENTATION_MONTHS = ['2025-09', '2025-10', '2025-11', '2025-12', '2026-01', '2026-02', '2026-03', '2026-04', '2026-05'];
 const SESSIONS_Q3C_MONTHS = ['2026-01', '2026-02', '2026-03', '2026-04', '2026-05'];
-const SINISTRO_AS03_MONTHS = ['2025-07', '2025-08', '2025-09', '2025-10', '2025-11', '2025-12', '2026-01', '2026-02', '2026-03'];
 window.__SANUS_DASHBOARD_BUILD__ = '20260714-tabs';
 let hasAuthenticatedSession = false;
 let currentDashboardUser = '';
 
-let usersData = [], companiesData = [], sessionCompaniesData = [], eChart, agegroupChart, partnerVisionEvolutionChart, appointmentTypesTrendChart, appointmentsDailyChart, appointmentsStatusChart, careCoordinationLinesChart, careLinesEvolutionChart, careComplementChart, careActiveComplementChart, petitCareLinesChart, petitSessionsEvolChart, petitSessionsTotalEvolChart, sessionsEvolChart, sessionsJanMay2026EvolChart, sessionsQ3cChart, sessionsTotalEvolChart, sessionsAttendanceChart, sessionsDailyChart, sessionsTopGroupsChart, sinistroEventsEvolutionChart, sinistroValuesEvolutionChart, sinistroQuarterlyEvolutionChart, sinistroCohortEvolutionChart, qualityVolumeEvolutionChart, qualityDailyVolumeEvolutionChart, qualityEvolutionChart, qualityCriteriaEvolutionChart;
+let usersData = [], companiesData = [], sessionCompaniesData = [], eChart, agegroupChart, partnerVisionEvolutionChart, appointmentTypesTrendChart, appointmentsDailyChart, appointmentsStatusChart, careCoordinationLinesChart, careLinesEvolutionChart, careComplementChart, careActiveComplementChart, petitCareLinesChart, petitSessionsEvolChart, petitSessionsTotalEvolChart, sessionsEvolChart, sessionsJanMay2026EvolChart, sessionsQ3cChart, sessionsTotalEvolChart, sessionsAttendanceChart, sessionsDailyChart, sessionsTopGroupsChart, qualityVolumeEvolutionChart, qualityDailyVolumeEvolutionChart, qualityEvolutionChart, qualityCriteriaEvolutionChart;
 let currentGroup = '', currentType = '', currentCompany = '';
 let currentGroups = [];
 let currentPartnerBrokerId = '';
@@ -38,10 +37,6 @@ let sessionsRequestId = 0;
 let sessionsEvolutionRequestId = 0;
 let sessionsJanMay2026EvolutionRequestId = 0;
 let sessionsQ3cRequestId = 0;
-let sinistroRequestId = 0;
-let sinistroValuesRequestId = 0;
-let sinistroQuarterlyRequestId = 0;
-let sinistroCohortRequestId = 0;
 let petitComiteRequestId = 0;
 let petitMdsInitialized = false;
 let petitRenderVariant = 'default';
@@ -72,7 +67,7 @@ document.addEventListener('click', event => {
 });
 
 function isMdsRestrictedTab(tabName) {
-  return ['petit-comite', 'coordenacao-cuidado', 'analise-sinistro', 'sinistralidade-v2', 'preview-gold', 'qualidade-operacional'].includes(tabName);
+  return ['petit-comite', 'coordenacao-cuidado', 'analise-sinistro', 'sinistralidade-v2', 'qualidade-operacional'].includes(tabName);
 }
 
 function normalizeDashboardUser(user) {
@@ -112,7 +107,7 @@ async function activateTab(tabName) {
   document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
   document.querySelectorAll('.tab-content').forEach(x => x.classList.remove('active'));
   tab.classList.add('active');
-  if (['sinistralidade-v2', 'preview-gold'].includes(tabName)) {
+  if (tabName === 'sinistralidade-v2') {
     const claimsTrigger = document.querySelector('.claims-tab-trigger');
     if (claimsTrigger) {
       claimsTrigger.classList.add('active');
@@ -172,7 +167,7 @@ function updateFilterVisibility() {
   const isSinistro = isSinistroTab(activeTab);
   const isQualityOperational = activeTab === 'qualidade-operacional';
   const isPartnerVision = isPartnerVisionTab(activeTab);
-  if (filterbar) filterbar.style.display = ['sinistralidade-v2', 'preview-gold'].includes(activeTab) ? 'none' : 'flex';
+  if (filterbar) filterbar.style.display = isSinistro ? 'none' : 'flex';
   document.body.dataset.activeTab = activeTab;
   if (activeTab === 'sessoes') {
     currentCompany = '';
@@ -274,7 +269,7 @@ function isPetitMdsTab(tab = getActiveTab()) {
 }
 
 function isSinistroTab(tab = getActiveTab()) {
-  return tab === 'analise-sinistro' || tab === 'sinistralidade-v2' || tab === 'preview-gold';
+  return tab === 'analise-sinistro' || tab === 'sinistralidade-v2';
 }
 
 function selectedGroupsLabel() {
@@ -678,7 +673,6 @@ function updateFilterInfo() {
   if (isSinistroTab(activeTab)) {
     const periodLabel = document.getElementById('periodo-label')?.textContent?.trim() || '(Todos os meses)';
     document.getElementById('filter-info').textContent = `Filtrando: ${periodLabel}`;
-    renderAnaliseSinistro();
     return;
   }
   if (currentGroups.length === 1) parts.push(currentGroups[0]);
@@ -1361,5 +1355,4 @@ function loadPeriodFilteredTab() {
   else if (activeTab === 'petit-comite') renderPetitComite();
   else if (activeTab === 'petit-comite-mds') renderPetitComiteMds();
   else if (activeTab.startsWith('qualidade')) loadQuality();
-  else if (activeTab === 'analise-sinistro') renderAnaliseSinistro();
 }

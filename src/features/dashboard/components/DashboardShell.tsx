@@ -36,7 +36,6 @@ const navSections = [
     items: [
       ["analise-sinistro", "Análise Sinistro", "fa-file-invoice-dollar"],
       ["sinistralidade-v2", "Visão 360", "fa-compass-drafting"],
-      ["preview-gold", "Preview Gold", "fa-layer-group"],
     ],
   },
   {

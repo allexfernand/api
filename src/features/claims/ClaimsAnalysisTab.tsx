@@ -1,1 +1,1 @@
-export { FeatureTab as ClaimsAnalysisTab } from "../dashboard/components/FeatureTab";
+export { ClaimsTab as ClaimsAnalysisTab } from "./ClaimsTab";

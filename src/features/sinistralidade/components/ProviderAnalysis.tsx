@@ -74,6 +74,7 @@ export function ProviderAnalysis({ data, periodLabel }: { data: ProviderTrendsDa
             <p>Custo mensal por prestador dentro da janela.</p>
           </div>
           <ChartCard
+            lineageId="provider-trends.monthly"
             title="Custo mensal por prestador"
             unit="R$"
             periodLabel={periodLabel}
@@ -115,6 +116,7 @@ export function ProviderAnalysis({ data, periodLabel }: { data: ProviderTrendsDa
             <p>Custo mensal por origem do atendimento.</p>
           </div>
           <ChartCard
+            lineageId="provider-trends.network"
             title="Rede × reembolso"
             unit="R$"
             periodLabel={periodLabel}

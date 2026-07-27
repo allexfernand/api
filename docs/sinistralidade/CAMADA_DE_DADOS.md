@@ -1,6 +1,6 @@
 # Sinistralidade · Camada de Dados
 
-Documento de referência da camada de dados que alimenta o dashboard (Sinistralidade 360 e PREVIEW-gold),
+Documento de referência da camada de dados que alimenta o dashboard (Sinistralidade 360 e Análise Sinistro),
 consolidado após a auditoria e as correções de 2026-07-20. Cobre a linhagem completa
 (Silver → Gold v2 → marts → API → UI), o dicionário de cada view, as métricas e agregações,
 e o veredito de coerência com as evidências dos gates executados em produção.
@@ -22,7 +22,7 @@ gold_sinistro_evento_v2 (VIEW · 1 linha = 1 linha de cobrança)
 API /api/sinistralidade/v2 (scopes) e /api/gold-preview
         │  agregações de janela, gate de período, mascaramento, supressão
         ▼
-Dashboard (Sinistralidade 360 · PREVIEW-gold · abas legadas)
+Dashboard (Sinistralidade 360 · Análise Sinistro · abas legadas)
 ```
 
 Governança paralela (tabelas Delta, as únicas com estado):
@@ -37,7 +37,7 @@ Governança paralela (tabelas Delta, as únicas com estado):
 
 A Gold **v1** (`gold_sinistro_evento` + `gold_sinistro_*_mes`) foi aposentada em 2026-07-20:
 4 views removidas (backup em `databricks/sinistralidade/legacy/gold_v1_views_backup.sql`);
-`gold_sinistro_evento` aguarda DROP pelo owner do workspace. A PREVIEW-gold consome a v2.
+`gold_sinistro_evento` aguarda DROP pelo owner do workspace. A aba Análise Sinistro (ex-PREVIEW-gold, consolidada em React sobre a Gold) consome a v2.
 
 ---
 

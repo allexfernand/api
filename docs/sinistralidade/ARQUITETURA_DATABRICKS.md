@@ -28,7 +28,7 @@ utilizacao_silver_stage → utilizacao_silver_final   TABLE  1.571.862
 gold_sinistro_evento_v2    VIEW   (1:1 com a Silver, recalcula na leitura)
    │  + dim_empresa_gold_v2, fact_elegibilidade_mensal_gold_v2, fact_coordenacao_evento_gold_v2 (VIEWS)
    ▼
-13 marts *_v2 (VIEWS)  →  API  →  Sinistralidade 360 / PREVIEW-gold
+13 marts *_v2 (VIEWS)  →  API  →  Sinistralidade 360 / Análise Sinistro
    controle (TABELAS Delta): sinistralidade_month_status_v2, _ingestion_manifest_v2,
                              _quality_run_v2, _company_alias_v2, beneficiary_eligibility_snapshot_v2
 ```

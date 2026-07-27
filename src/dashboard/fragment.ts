@@ -9,8 +9,6 @@ export type DashboardFragmentName =
   | "sessions"
   | "executive-committee"
   | "executive-committee-mds"
-  | "claims-analysis"
-  | "gold-preview"
   | "quality-strategic"
   | "quality-operational"
   | "footer";
@@ -25,8 +23,6 @@ export const dashboardFragmentNames: DashboardFragmentName[] = [
   "sessions",
   "executive-committee",
   "executive-committee-mds",
-  "claims-analysis",
-  "gold-preview",
   "quality-strategic",
   "quality-operational",
   "footer",
