@@ -788,3 +788,393 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Internação/saúde mental (Hospitalization), impacto Sanus/comparação
+   madura (SanusImpact), jornada Sanus (SanusJourney), top utilizantes
+   (TopUsers) e metodologia (Methodology) — blocos B5-B8 + B4+ + rodapé do
+   fragmento legado. Reaproveita .card/.cardTitle/.table/.num/.txt/.note já
+   definidos acima; o que segue é só o que esses cinco componentes
+   precisam e ainda não existia neste módulo. */
+
+.cardHeaderRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.cardHeaderRow .cardTitle {
+  margin-bottom: 0;
+}
+
+/* Fatos empilhados (saúde mental + estatísticas de internação em
+   Hospitalization): rótulo à esquerda, valor em destaque à direita. */
+.factList {
+  display: grid;
+  gap: 9px;
+}
+
+.factRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.factRow span {
+  color: var(--text-faint);
+}
+
+.factRow strong {
+  color: #0f172a;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.factNote {
+  margin: -3px 0 2px;
+  color: var(--text-faint);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.factSubList {
+  display: grid;
+  gap: 6px;
+  padding-left: 4px;
+}
+
+.factListDivided {
+  margin-top: 6px;
+  padding-top: 13px;
+  border-top: 1px solid var(--border-light);
+}
+
+/* Tiles com fluxo pré → pós e badge de variação (impacto Sanus e
+   comparação madura). */
+.statGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.statGrid4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.statTile {
+  padding: 13px 15px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+
+.statLabel {
+  color: var(--text-faint);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
+.flowRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.flowRow i {
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.statHelper {
+  margin-top: 6px;
+  color: var(--text-faint);
+  font-size: 10.5px;
+  font-weight: 700;
+}
+
+.deltaChip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 2px 9px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.deltaUp {
+  color: #b91c1c;
+  background: #fef2f2;
+}
+
+.deltaDown {
+  color: #0f766e;
+  background: #ecfdf5;
+}
+
+/* Chips de trimestre (impacto Sanus) */
+.chipRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.chipRowLabel {
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.quarterChip {
+  border-radius: 999px;
+  background: #f1f5f9;
+  padding: 4px 11px;
+  color: #334155;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.quarterChipPartial {
+  border: 1px solid #fcd34d;
+  background: #fffbeb;
+  color: #b45309;
+}
+
+.chipOk {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid #bbf7d0;
+  border-radius: 999px;
+  background: #f0fdf4;
+  padding: 5px 12px;
+  color: #15803d;
+  font-size: 10px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.methodNote {
+  margin: 14px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-light);
+  color: var(--text-faint);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+/* Comparação madura: tabela por tipo de evento + leitura executiva
+   lado a lado. */
+.splitGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.subpanelTitle {
+  margin: 0 0 10px;
+  color: #0f172a;
+  font-size: 11.5px;
+  font-weight: 800;
+}
+
+.tableSmall {
+  font-size: 11px;
+}
+
+.tableSmall th,
+.tableSmall td {
+  padding: 6px 8px;
+}
+
+.insight {
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.insightLabel {
+  margin: 0 0 8px;
+  color: var(--text-faint);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
+.insightCaveat {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-light);
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+/* Jornada Sanus: dois subpainéis (alcance / proximidade) e o funil de
+   utilizações após contato digital. */
+.journeyGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.subpanel {
+  min-width: 0;
+}
+
+.subpanelHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.journeyValue {
+  color: #7c3aed;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.4px;
+}
+
+.funnelStack {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.funnelRow {
+  display: grid;
+  gap: 4px;
+}
+
+.funnelHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  color: #64748b;
+  font-size: 10.5px;
+}
+
+.funnelHead strong {
+  color: #334155;
+}
+
+.funnelTrack {
+  height: 7px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  overflow: hidden;
+}
+
+.funnelFill {
+  height: 100%;
+  border-radius: 999px;
+  background: #8b5cf6;
+}
+
+/* Top utilizantes: aviso de dado sensível e a lista colapsável. */
+.sensitiveHeaderRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.chipWarn {
+  border: 1px solid #fecaca;
+  border-radius: 999px;
+  background: #fef2f2;
+  padding: 5px 12px;
+  color: #b91c1c;
+  font-size: 10px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.sensitiveBanner {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin: 0 0 14px;
+  padding: 11px 14px;
+  border: 1px solid #fde68a;
+  border-left: 3px solid #f59e0b;
+  border-radius: var(--radius-sm);
+  background: #fffbeb;
+  color: #92400e;
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.sensitiveBanner i {
+  margin-top: 1px;
+}
+
+.collapseToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #fff;
+  padding: 8px 16px;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.collapseToggle:hover {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+}
+
+.corruptedFlag {
+  color: #b45309;
+  cursor: help;
+}
+
+/* Metodologia (rodapé) */
+.methodologyCard {
+  background: var(--bg);
+}
+
+.methodologyText {
+  margin: 0;
+  color: var(--text-faint);
+  font-size: 11.5px;
+  line-height: 1.7;
+}
+
+@media (max-width: 900px) {
+  .statGrid,
+  .statGrid4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .splitGrid,
+  .journeyGrid {
+    grid-template-columns: 1fr;
+  }
+}
