@@ -277,7 +277,7 @@ export const GOLD_PREVIEW_LINEAGE: LineageEntry[] = [
       FONTE_FILTRO_CIDADE_ESTADO,
     ],
     formula:
-      "por_agrupamento: SUM(custo_assistencial_bruto) ÷ 1.000.000 agrupado por acomodacao_internacao (top 8); internacoes_distintas = COUNT(DISTINCT episode_key); custo_medio = SUM(custo_assistencial_bruto) ÷ internacoes_distintas; duracao_mediana_dias = PERCENTILE(duracao_internacao_dias, 0.5); duracao_p90_dias = PERCENTILE(duracao_internacao_dias, 0.9).",
+      "por_agrupamento: SUM(custo_assistencial_bruto) ÷ 1.000.000 agrupado por acomodacao_internacao (top 8); internacoes_distintas = COUNT(DISTINCT episode_key); custo_medio = SUM(custo_assistencial_bruto) ÷ internacoes_distintas; duracao_mediana_dias = PERCENTILE(d, 0.5) e duracao_p90_dias = PERCENTILE(d, 0.9), onde d = MAX(duracao_internacao_dias) POR episode_key — o percentil é sobre a duração de cada EPISÓDIO, não sobre a linha de cobrança bruta.",
     filters: [
       ESCOPO_USUARIO,
       NOT_SUSPEITA,
