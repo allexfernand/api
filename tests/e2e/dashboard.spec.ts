@@ -229,11 +229,15 @@ test("Análise Sinistro carrega da Gold, filtra e abre linhagem", async ({ page 
   expect(utilizantesFiltrado).toBeLessThan(utilizantesInicial);
 
   // Modo de linhagem: o selo aparece e a gaveta abre com a fonte certa.
+  // Não usa `.first()`: o cabeçalho (claims.freshness) tem seu próprio selo
+  // de linhagem, ANTES dos KPIs no DOM, e sua fonte é a Silver, não a Gold —
+  // `.first()` pegaria esse selo e quebraria a asserção abaixo. Mira direto
+  // no selo do primeiro KPI, cuja fonte é gold_sinistro_evento_v2.
   const toggle = page.getByRole("button", { name: "Análise Databricks" });
   await expect(toggle).toBeVisible();
   await toggle.click();
 
-  const selo = page.getByRole("button", { name: /Ver linhagem Databricks de/ }).first();
+  const selo = abaSinistro.getByRole("button", { name: /Ver linhagem Databricks de Sinistro · último mês fechado/ });
   await selo.click();
 
   const gaveta = page.getByRole("complementary", { name: "Linhagem Databricks" });
