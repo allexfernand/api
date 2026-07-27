@@ -35,6 +35,7 @@ import { LineageProvider } from "../sinistralidade/components/LineageProvider";
 export function ClaimsTab() {
   const filtros = useGoldPreviewFilters();
   const { status, data, error, retry } = useGoldPreview(filtros.querystring);
+  const temFiltroAplicado = Object.values(filtros.aplicados).some((valores) => valores.length > 0);
 
   return (
     <section id="tab-analise-sinistro" className={`tab-content ${styles.root}`}>
@@ -56,9 +57,22 @@ export function ClaimsTab() {
           <div className={styles.errorState} role="alert">
             <strong>Não foi possível carregar a análise de sinistro.</strong>
             <span>{error}</span>
-            <button type="button" onClick={retry}>
-              Tentar novamente
-            </button>
+            <div className={styles.errorActions}>
+              <button type="button" onClick={retry}>
+                Tentar novamente
+              </button>
+              {/* "Tentar novamente" sozinho reenvia a MESMA querystring — se a
+                  falha for causada por um recorte de facetas (já escrito na URL
+                  por useGoldPreviewFilters), o usuário fica sem saída a não ser
+                  editar a URL à mão. "Limpar filtros" some com o recorte
+                  aplicado e dispara uma nova busca sem filtros — só aparece
+                  quando há algo para limpar. */}
+              {temFiltroAplicado ? (
+                <button type="button" onClick={filtros.limpar}>
+                  Limpar filtros
+                </button>
+              ) : null}
+            </div>
           </div>
         ) : null}
 

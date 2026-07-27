@@ -65,6 +65,12 @@
   color: #991b1b;
 }
 
+.errorActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .errorState button {
   align-self: flex-start;
   margin-top: 4px;
