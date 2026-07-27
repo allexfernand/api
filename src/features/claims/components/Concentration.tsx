@@ -99,7 +99,13 @@ function ProvidersPanel({ prestadores }: { prestadores: GoldPreview["prestadores
   // a aba Preview Gold) porque o `share` por prestador não necessariamente usa
   // `sinistro_total` como denominador. Somar o campo que já veio do servidor é o
   // que preserva o número idêntico ao da aba de referência.
-  const shareTop = top.reduce((total, linha) => total + (linha.share ?? 0), 0);
+  // Mesma propagação de nulo de `acumulados`: um share ausente numa linha torna
+  // o total indeterminado — nunca tratado como zero (senão o "Top N juntos"
+  // ficaria mais baixo do que realmente é, sem avisar que faltou dado).
+  const shareTop = top.reduce<number | null>(
+    (total, linha) => (total === null || linha.share === null ? null : total + linha.share),
+    0,
+  );
 
   return (
     <LineageAnchor lineageId="claims.providers" label="Top prestadores">
@@ -131,7 +137,7 @@ function ProvidersPanel({ prestadores }: { prestadores: GoldPreview["prestadores
           </tbody>
         </table>
         <p className={styles.panelFooter}>
-          Top {top.length} juntos = <strong>{formatadorPercentual.format(shareTop)}%</strong> ({formatadorInteiro.format(prestadores.total_prestadores)} prestadores) — a alavanca está em categorias e pessoas, não num único player.
+          Top {top.length} juntos = <strong>{shareTop === null ? "—" : `${formatadorPercentual.format(shareTop)}%`}</strong> ({formatadorInteiro.format(prestadores.total_prestadores)} prestadores) — a alavanca está em categorias e pessoas, não num único player.
         </p>
       </article>
     </LineageAnchor>

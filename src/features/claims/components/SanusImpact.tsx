@@ -226,7 +226,7 @@ type ComparacaoMadura = {
   metodologia: string;
   before_meses: string[];
   after_meses: string[];
-  familias_comuns: number;
+  familias_comuns: number | null;
   before: JanelaMadura | null;
   after: JanelaMadura | null;
   deltas_pct: DeltasMadura;
@@ -270,7 +270,7 @@ function parseComparacaoMadura(raw: GoldPreview["comparacao_madura"]): Comparaca
     metodologia: strOrEmpty(bruto.metodologia),
     before_meses: strArray(bruto.before_meses),
     after_meses: strArray(bruto.after_meses),
-    familias_comuns: numOrNull(bruto.familias_comuns) ?? 0,
+    familias_comuns: numOrNull(bruto.familias_comuns),
     before: janelaMaduraOrNull(bruto.before),
     after: janelaMaduraOrNull(bruto.after),
     deltas_pct: {
@@ -328,7 +328,9 @@ function MatureComparisonBlock({ comparacao }: { comparacao: GoldPreview["compar
               {intervaloMeses(dados.before_meses)} × {intervaloMeses(dados.after_meses)} · mesmas famílias presentes nos dois lados · normalizado por mês.
             </p>
           </div>
-          <span className={styles.chipOk}>{formatadorInteiro.format(dados.familias_comuns)} famílias comparáveis</span>
+          <span className={styles.chipOk}>
+            {dados.familias_comuns === null ? "—" : `${formatadorInteiro.format(dados.familias_comuns)} famílias comparáveis`}
+          </span>
         </div>
         <div className={`${styles.statGrid} ${styles.statGrid4}`}>
           <StatCompare label="Sinistro · média mensal" pre={dados.before?.sinistro_medio_mensal ?? null} pos={dados.after?.sinistro_medio_mensal ?? null} delta={dados.deltas_pct.sinistro_medio_mensal} formatar={(v) => moedaCompacta.format(v)} />
