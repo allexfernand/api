@@ -72,7 +72,8 @@ export function useGoldPreviewFilters() {
       if (valores.length) params.set(URL_PARAM[campo], valores.join(","));
       else params.delete(URL_PARAM[campo]);
     }
-    window.history.replaceState(null, "", `${window.location.pathname}?${params}${window.location.hash}`);
+    const query = params.toString();
+    window.history.replaceState(null, "", `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`);
   }, [aplicados]);
 
   const alternar = useCallback((campo: FacetField, valor: string) => {
