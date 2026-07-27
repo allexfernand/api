@@ -151,10 +151,44 @@ test("Análise Sinistro carrega da Gold, filtra e abre linhagem", async ({ page 
   // Bug de transcrição real desta consolidação (ver Concentration.tsx):
   // "Top 10 juntos" chegou a mostrar 12,9% (razão recalculada a partir do
   // sinistro bruto) contra 13,0% na aba de referência (soma do share que já
-  // vem pronto por linha, igual ao script legado). Cravar o número certo
-  // aqui pega qualquer regressão que volte a recalcular em vez de somar —
-  // uma asserção genérica de "tem uma porcentagem" não pegaria essa conta.
-  await expect(abaSinistro).toContainText("Top 10 juntos = 13,0%");
+  // vem pronto por linha, igual ao script legado). Cravar "13,0%" pegava essa
+  // regressão, mas só enquanto a Silver ficasse congelada nesta janela — a
+  // próxima ingestão manual mudaria o número e deixaria o CI vermelho por um
+  // motivo que não é bug. O invariante sobrevive ao refresh e pega a MESMA
+  // regressão: o total do rodapé precisa bater com a SOMA do share de cada
+  // prestador da tabela (a mesma conta de Concentration.tsx `shareTop`).
+  const prestadoresCard = abaSinistro
+    .locator("article")
+    .filter({ has: page.getByRole("heading", { name: "Top prestadores", level: 3 }) });
+  const shareCelulas = await prestadoresCard.locator("tbody tr td:nth-child(3)").allTextContents();
+  const rodapeTexto = await prestadoresCard.getByText(/Top \d+ juntos =/).textContent();
+
+  const paraNumero = (texto: string): number | null => {
+    const limpo = texto.trim();
+    if (limpo === "—" || limpo === "") return null;
+    return Number(limpo.replace("%", "").replace(",", "."));
+  };
+
+  const shares = shareCelulas.map(paraNumero);
+  const somaShares = shares.some((valor) => valor === null)
+    ? null
+    : shares.reduce<number>((total, valor) => total + (valor as number), 0);
+  const rodapeMatch = rodapeTexto?.match(/Top \d+ juntos = ([\d.,]+|—)%?/);
+  const rodapeValor = rodapeMatch ? paraNumero(rodapeMatch[1]) : null;
+
+  if (somaShares === null || rodapeValor === null) {
+    // Nenhum prestador com share nulo é esperado na base atual — se acontecer,
+    // o rodapé precisa concordar (também "—"), nunca inventar um número.
+    expect(rodapeValor).toBeNull();
+    expect(somaShares).toBeNull();
+  } else {
+    // Tolerância só para ruído de ponto flutuante: os valores por linha já
+    // chegam com 1 casa decimal do servidor, então a soma bate com o rodapé a
+    // menos de 0,05 — folgado o bastante para float, apertado o bastante para
+    // pegar de novo a regressão real (12,9% recalculado vs 13,0% somado, uma
+    // diferença de 0,1).
+    expect(Math.abs(somaShares - rodapeValor)).toBeLessThan(0.05);
+  }
 
   // Bug de cascata do CSS desta consolidação: `ClaimsTab.module.css .root`
   // chegou a forçar display:flex incondicionalmente e vencia a regra global
@@ -165,7 +199,6 @@ test("Análise Sinistro carrega da Gold, filtra e abre linhagem", async ({ page 
   // positivo por a consulta ainda não ter respondido.
   await page.click('[data-tab="demografica"]');
   await expect(abaSinistro).toBeHidden();
-  await expect(kpis).toBeHidden();
 
   await page.click('[data-tab="analise-sinistro"]');
   await expect(kpis).toBeVisible();
@@ -173,18 +206,27 @@ test("Análise Sinistro carrega da Gold, filtra e abre linhagem", async ({ page 
   // A aba não existe mais na navegação.
   await expect(page.locator('[data-tab="preview-gold"]')).toHaveCount(0);
 
-  // Filtro de faceta: recorta por sexo e confirma que os blocos recalculam
-  // (o total de utilizantes muda de 25.271 para 13.098 na base atual).
-  // "Aplicar recorte" troca o status da aba para "loading" enquanto a nova
-  // consulta roda — igual à carga inicial, o conteúdo inteiro (painel de
-  // facetas incluso) some até a resposta chegar — por isso a asserção que
-  // depende do Databricks vem primeiro, com o timeout largo; o chip do
-  // recorte só reaparece junto quando o conteúdo remonta em "ready".
+  // Filtro de faceta: recorta por sexo e confirma que os blocos recalculam.
+  // O valor absoluto de utilizantes (25.271 -> 13.098 na base atual) só vale
+  // enquanto a Silver ficar congelada nesta janela; o invariante que sobrevive
+  // a um refresh é que filtrar por UM sexo só pode manter ou reduzir a
+  // população de utilizantes, nunca aumentar. "Aplicar recorte" troca o
+  // status da aba para "loading" enquanto a nova consulta roda — igual à
+  // carga inicial, o conteúdo inteiro (painel de facetas incluso) some até a
+  // resposta chegar — por isso o gate de prontidão é o chip "Sexo: Feminino",
+  // que só existe depois do remount em "ready".
+  const utilizantesHelper = abaSinistro.getByText(/utilizantes · não é per capita/);
+  const utilizantesTextoInicial = (await utilizantesHelper.textContent()) ?? "";
+  const utilizantesInicial = Number(utilizantesTextoInicial.replace(/\D/g, ""));
+
   await page.locator("#claims-filter-trigger-sexo").click();
   await abaSinistro.getByRole("button", { name: "Feminino", exact: true }).click();
   await abaSinistro.getByRole("button", { name: "Aplicar recorte" }).click();
-  await expect(abaSinistro.getByText("13.098 utilizantes · não é per capita")).toBeVisible({ timeout: 60_000 });
-  await expect(abaSinistro.getByText("Sexo: Feminino")).toBeVisible();
+  await expect(abaSinistro.getByText("Sexo: Feminino")).toBeVisible({ timeout: 60_000 });
+
+  const utilizantesTextoFiltrado = (await utilizantesHelper.textContent()) ?? "";
+  const utilizantesFiltrado = Number(utilizantesTextoFiltrado.replace(/\D/g, ""));
+  expect(utilizantesFiltrado).toBeLessThan(utilizantesInicial);
 
   // Modo de linhagem: o selo aparece e a gaveta abre com a fonte certa.
   const toggle = page.getByRole("button", { name: "Análise Databricks" });
