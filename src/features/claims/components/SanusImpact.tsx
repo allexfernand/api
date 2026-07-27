@@ -19,6 +19,14 @@
 // explicitamente e é reproduzido na tela sem paráfrase, não substituído por
 // um aviso genérico escrito aqui. Delta nulo sempre vira travessão — nunca
 // zero (deltaLabel abaixo).
+//
+// Duas anotações do fragmento legado nos tiles "Eventos"/"Sinistro" de B6
+// (gold-preview.html linhas 141 e 151) não foram portadas de propósito:
+// "confere com a aba Análise Sinistro ✓" e o aviso de que a aba antiga
+// mostrava +15,3% (pendência de alinhar eixo/definição de custo). As duas
+// só faziam sentido enquanto esta tela era um preview separado da aba
+// Análise Sinistro antiga — a mesma razão documentada em Methodology.tsx
+// para a frase de pendência que também não foi portada.
 
 import styles from "../ClaimsTab.module.css";
 import type { GoldPreview } from "../../../contracts/gold-preview";

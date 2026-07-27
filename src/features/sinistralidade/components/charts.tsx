@@ -345,6 +345,7 @@ export function ParetoChart({
   ariaLabel,
   height = 240,
   barColor,
+  showCumulative = true,
 }: {
   items: { label: string; value: number; cumulativeShare: number | null }[];
   formatValue?: (value: number) => string;
@@ -354,6 +355,14 @@ export function ParetoChart({
    * Sem esta prop, todas as barras usam SEMANTIC_COLORS.cost — comportamento
    * inalterado para quem já chama ParetoChart sem ela. */
   barColor?: (item: { label: string; value: number; cumulativeShare: number | null }, index: number) => string;
+  /** Quando o chamador não tem como calcular um acumulado honesto (ex.:
+   * claims.hospitalization — o servidor só devolve os maiores grupos, sem
+   * total geral nem bucket "Outros"), esconde a linha acumulada E os rótulos
+   * 0/50/80/100% do eixo direito. Um eixo de % sem linha por trás dele
+   * implicaria uma dimensão que os dados não sustentam. Default `true`
+   * preserva o comportamento de todo chamador existente (ProcedureAnalysis,
+   * Locations) sem mudança alguma. */
+  showCumulative?: boolean;
 }) {
   if (!items.length) return <ChartEmpty />;
   const width = 720;
@@ -388,22 +397,26 @@ export function ParetoChart({
           </g>
         );
       })}
-      <path
-        d={items
-          .map((item, index) =>
-            item.cumulativeShare === null ? null : `${index === 0 ? "M" : "L"}${xFor(index)},${pad.top + innerHeight * (1 - item.cumulativeShare)}`,
-          )
-          .filter(Boolean)
-          .join(" ")}
-        fill="none"
-        stroke={SEMANTIC_COLORS.mentalHealth}
-        strokeWidth={2}
-      />
-      {[0, 0.5, 0.8, 1].map((tick) => (
-        <text key={tick} x={width - pad.right + 6} y={pad.top + innerHeight * (1 - tick) + 3} className={styles.axisText}>
-          {Math.round(tick * 100)}%
-        </text>
-      ))}
+      {showCumulative ? (
+        <path
+          d={items
+            .map((item, index) =>
+              item.cumulativeShare === null ? null : `${index === 0 ? "M" : "L"}${xFor(index)},${pad.top + innerHeight * (1 - item.cumulativeShare)}`,
+            )
+            .filter(Boolean)
+            .join(" ")}
+          fill="none"
+          stroke={SEMANTIC_COLORS.mentalHealth}
+          strokeWidth={2}
+        />
+      ) : null}
+      {showCumulative
+        ? [0, 0.5, 0.8, 1].map((tick) => (
+            <text key={tick} x={width - pad.right + 6} y={pad.top + innerHeight * (1 - tick) + 3} className={styles.axisText}>
+              {Math.round(tick * 100)}%
+            </text>
+          ))
+        : null}
     </svg>
   );
 }

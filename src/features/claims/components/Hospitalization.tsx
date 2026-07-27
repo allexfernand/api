@@ -71,6 +71,12 @@ export function Hospitalization({
             items={itens}
             formatValue={(value) => formatarMilhoes(value)}
             ariaLabel="Custo de internação por agrupamento clínico, em milhões de reais"
+            // showCumulative=false: todo item acima já tem cumulativeShare
+            // null (sem total geral nem bucket "Outros" para sustentar um %
+            // honesto) — sem isto, o gráfico ainda desenharia o eixo de
+            // 0/50/80/100% à direita, sugerindo uma dimensão que os dados
+            // não têm por trás dele.
+            showCumulative={false}
           />
         }
         table={<HospitalizationTable itens={internacao.por_agrupamento} />}
