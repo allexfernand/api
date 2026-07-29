@@ -26,6 +26,7 @@ const MART_PRESTADOR = `hive_metastore.sanus_prod.mart_prestador_mes_v2`;
 const COORDENACAO = `hive_metastore.sanus_prod.fact_coordenacao_evento_gold_v2`;
 const SNAPSHOT = `hive_metastore.sanus_prod.beneficiary_eligibility_snapshot_v2`;
 const SILVER_FINAL = `hive_metastore.sanus_prod.utilizacao_silver_final`;
+const MONTH_STATUS = `hive_metastore.sanus_prod.sinistralidade_month_status_v2`;
 
 const BASE_FILTER = `NOT flag_data_suspeita`;
 const JANELA_2024 = `month_key >= '2024-01'`;
@@ -37,6 +38,7 @@ const IMPACTO_POS = ["2025-10", "2025-11"];
 // Mantemos apenas famílias presentes nas duas janelas para reduzir efeito de entrada/saída da carteira.
 const MADURO_PRE = ["2025-06", "2025-07", "2025-08", "2025-09"];
 const MADURO_POS = ["2025-10", "2025-11", "2025-12", "2026-01"];
+const EVENTOS_COMPARAVEIS = ["Pronto Socorro", "Internacao", "Consulta", "Terapia"];
 const SINISTRO_MES_MINIMO = 100_000; // abaixo disso o mês é só lag residual, não entra na série
 
 const mesValido = (m: string) => /^\d{4}-\d{2}$/.test(m);
@@ -120,9 +122,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const escopoMart = companyScopeSql(auth, "company_key");
     const filtroSql = `${escopo}${filtroUsuario}`;
 
-    // ---- Fase 1: séries mensais + versão da fonte (definem mês fechado e janela 12m)
+    // ---- Fase 1: séries mensais + versão da fonte e gate formal de fechamento.
     // Com filtro ativo, o mart de evento não serve (não tem as colunas de filtro) → gold direto.
-    const [mensalTipoRows, mensalGoldRows, versaoRows] = await Promise.all([
+    const [mensalTipoRows, mensalGoldRows, statusRows, versaoRows] = await Promise.all([
       q(filtroAtivo
         ? `SELECT g.month_key, COALESCE(NULLIF(trim(g.tipo_evento), ''), 'Sem classificação'), round(sum(g.custo_assistencial_bruto), 2)
            FROM ${GOLD} g
@@ -136,6 +138,27 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
          FROM ${GOLD} g
          WHERE NOT g.flag_data_suspeita AND g.month_key >= ${SERIE_INICIO}${filtroSql}
          GROUP BY 1 ORDER BY 1`),
+      q(`WITH observed AS (
+           SELECT g.company_key, g.month_key
+           FROM ${GOLD} g
+           WHERE NOT g.flag_data_suspeita AND g.month_key >= ${SERIE_INICIO}${escopo}
+           GROUP BY 1, 2
+         ), latest_status AS (
+           SELECT s.company_key, s.month_key, s.status
+           FROM ${MONTH_STATUS} s
+           INNER JOIN observed o ON o.company_key = s.company_key AND o.month_key = s.month_key
+           QUALIFY row_number() OVER (PARTITION BY s.company_key, s.month_key ORDER BY s.updated_at DESC) = 1
+         )
+         SELECT o.month_key,
+                CASE
+                  WHEN count(ls.company_key) = count(o.company_key)
+                   AND sum(CASE WHEN ls.status = 'closed' THEN 1 ELSE 0 END) = count(o.company_key) THEN 'closed'
+                  WHEN sum(CASE WHEN ls.status = 'partial' THEN 1 ELSE 0 END) > 0 THEN 'partial'
+                  ELSE 'unknown'
+                END AS status
+         FROM observed o
+         LEFT JOIN latest_status ls ON ls.company_key = o.company_key AND ls.month_key = o.month_key
+         GROUP BY o.month_key ORDER BY o.month_key`),
       q(`SELECT version, timestamp FROM (DESCRIBE HISTORY ${SILVER_FINAL}) ORDER BY version DESC LIMIT 1`),
     ]);
 
@@ -146,13 +169,14 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       sinistro: toNum(r[3]),
     })).filter((m) => mesValido(m.mes)).sort((a, b) => a.mes.localeCompare(b.mes));
 
+    const statusPorMes = new Map(statusRows.map((row) => [String(getCell(row[0])), String(getCell(row[1]) || "unknown")]));
     const relevantes = mensal.filter((m) => m.sinistro >= SINISTRO_MES_MINIMO);
-    const nParciais = Math.min(2, Math.max(relevantes.length - 1, 0));
-    const fechados = relevantes.slice(0, relevantes.length - nParciais);
-    const parciais = relevantes.slice(relevantes.length - nParciais).map((m) => m.mes);
+    const fechados = relevantes.filter((m) => statusPorMes.get(m.mes) === "closed");
+    const observados = fechados.length ? fechados : relevantes;
+    const parciais = relevantes.filter((m) => statusPorMes.get(m.mes) !== "closed").map((m) => m.mes);
     const ultimoFechado = fechados[fechados.length - 1] || null;
     const ultimoFechadoMes = ultimoFechado ? ultimoFechado.mes : null;
-    const janela12 = fechados.slice(-12).map((m) => m.mes).filter(mesValido);
+    const janela12 = observados.slice(-12).map((m) => m.mes).filter(mesValido);
     const janela12Sql = janela12.map((m) => `'${m}'`).join(",") || `'0000-00'`;
     const janelaInicio = janela12[0] || "2025-04";
     const janelaFim = janela12[janela12.length - 1] || "2026-03";
@@ -166,7 +190,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     }
 
     // ---- Fase 2: KPIs, blocos e impacto (dependem da janela 12m)
-    const [kpiRows, total24Rows, lotacaoRows, prestadorRows, concRows, intAgrupRows, intStatsRows, smTemaRows, impactoMesRows, triRows, carteiraRows, topUtiRows, facetRows, cidadeRows, maduroRows, servicoRows, proximidadeRows, competenciaRows] = await Promise.all([
+    const [kpiRows, total24Rows, lotacaoRows, prestadorRows, concRows, intAgrupRows, intStatsRows, smTemaRows, impactoMesRows, impactoEventoRows, triRows, carteiraRows, topUtiRows, facetRows, cidadeRows, maduroRows, servicoRows, proximidadeRows, competenciaRows] = await Promise.all([
       q(`SELECT round(sum(g.custo_assistencial_bruto), 2), count(DISTINCT g.person_key),
                 round(sum(CASE WHEN g.flag_reembolso THEN g.custo_assistencial_bruto END), 2),
                 count(DISTINCT CASE WHEN g.month_key = '${ultimoFechadoMes ?? ""}' THEN g.person_key END)
@@ -225,13 +249,23 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
                 round(sum(g.custo_assistencial_bruto) / 1e6, 2)
          FROM ${GOLD} g WHERE NOT g.flag_data_suspeita AND g.flag_internacao AND g.${JANELA_2024}${filtroSql}
          GROUP BY 1 ORDER BY 2 DESC LIMIT 8`),
-      // Internações por episódio canônico (episode_key), não por conta médica.
+      // Admissão clínica: mesma chave sem data de atendimento usada nos marts
+      // da Visão 360. `episode_key` permanece uma métrica de atendimentos-dia.
       q(`WITH i AS (
-           SELECT g.episode_key, sum(g.custo_assistencial_bruto) AS c, max(g.duracao_internacao_dias) AS d
-           FROM ${GOLD} g WHERE NOT g.flag_data_suspeita AND g.flag_internacao AND g.${JANELA_2024}${filtroSql}
+           SELECT sha2(concat_ws('||', g.company_key, g.person_key,
+                    coalesce(nullif(trim(g.numero_conta_medica), ''), 'SEM_CONTA'),
+                    coalesce(nullif(trim(g.authorization_id), ''), 'SEM_SENHA'),
+                    coalesce(nullif(trim(g.prestador), ''), 'SEM_PRESTADOR')), 256) AS admission_key,
+                  max(g.person_key) AS person_key,
+                  min(g.month_key) AS admission_month,
+                  count(*) AS linhas,
+                  sum(g.custo_assistencial_bruto) AS c,
+                  max(g.duracao_internacao_dias) AS d
+           FROM ${GOLD} g WHERE NOT g.flag_data_suspeita AND g.flag_internacao${filtroSql}
            GROUP BY 1
          )
-         SELECT count(*), round(sum(c) / count(*), 0), percentile(d, 0.5), percentile(d, 0.9) FROM i`),
+         SELECT sum(linhas), count(*), count(DISTINCT person_key), sum(coalesce(d, 0)), round(sum(c) / count(*), 0), percentile(d, 0.5), percentile(d, 0.9)
+         FROM i WHERE admission_month >= '2024-01'`),
       q(`SELECT COALESCE(NULLIF(trim(g.tema_saude_mental), ''), 'Sem tema') AS tema,
                 round(sum(g.custo_assistencial_bruto) / 1e6, 2)
          FROM ${GOLD} g WHERE NOT g.flag_data_suspeita AND g.flag_saude_mental AND g.${JANELA_2024}${filtroSql}
@@ -240,6 +274,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
          FROM ${GOLD} g
          WHERE NOT g.flag_data_suspeita AND g.month_key IN (${[...IMPACTO_PRE, ...IMPACTO_POS].map((m) => `'${m}'`).join(",")})${filtroSql}
          GROUP BY 1`),
+      q(`SELECT CASE WHEN g.month_key IN (${IMPACTO_PRE.map((m) => `'${m}'`).join(",")}) THEN 'before' ELSE 'after' END,
+                g.tipo_evento, count(*)
+         FROM ${GOLD} g
+         WHERE NOT g.flag_data_suspeita
+           AND g.month_key IN (${[...IMPACTO_PRE, ...IMPACTO_POS].map((m) => `'${m}'`).join(",")})
+           AND g.tipo_evento IN (${EVENTOS_COMPARAVEIS.map((tipo) => `'${tipo}'`).join(",")})${filtroSql}
+         GROUP BY 1, 2 ORDER BY 1, 2`),
       q(`SELECT concat('T', quarter(to_date(concat(g.month_key, '-01'))), '/', substr(g.month_key, 3, 2)) AS tri,
                 min(g.month_key) AS m0,
                 count(DISTINCT g.person_key)
@@ -257,7 +298,10 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
                 max(COALESCE(NULLIF(trim(g.nome_lotacao), ''), 'Sem lotação')) AS lot,
                 round(sum(g.custo_assistencial_bruto), 2) AS custo,
                 count(*) AS itens,
-                count(DISTINCT CASE WHEN g.flag_internacao THEN g.episode_key END) AS internacoes,
+                count(DISTINCT CASE WHEN g.flag_internacao THEN sha2(concat_ws('||', g.company_key, g.person_key,
+                  coalesce(nullif(trim(g.numero_conta_medica), ''), 'SEM_CONTA'),
+                  coalesce(nullif(trim(g.authorization_id), ''), 'SEM_SENHA'),
+                  coalesce(nullif(trim(g.prestador), ''), 'SEM_PRESTADOR')), 256) END) AS internacoes,
                 round(100 * sum(g.custo_assistencial_bruto) / sum(sum(g.custo_assistencial_bruto)) OVER (), 2) AS share_pct
          FROM ${GOLD} g
          WHERE NOT g.flag_data_suspeita AND g.month_key IN (${janela12Sql})${filtroSql}
@@ -401,6 +445,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       sinistro: toNum(r[2]),
       utilizantes: toInt(r[3]),
     }));
+    const impactoEventos = EVENTOS_COMPARAVEIS.map((tipo_evento) => {
+      const before = impactoEventoRows.find((r) => String(getCell(r[0])) === "before" && String(getCell(r[1])) === tipo_evento);
+      const after = impactoEventoRows.find((r) => String(getCell(r[0])) === "after" && String(getCell(r[1])) === tipo_evento);
+      return { tipo_evento, before_itens: toInt(before?.[2]), after_itens: toInt(after?.[2]) };
+    });
     const janelaMedia = (meses: string[]) => {
       const sel = impactoMes.filter((m) => meses.includes(m.mes));
       const n = sel.length || 1;
@@ -481,10 +530,14 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         filtro: "NOT flag_data_suspeita",
         role: auth.role,
       },
-      mensal: relevantes.map((m) => ({ ...m, parcial: parciais.includes(m.mes) })),
+      mensal: relevantes.map((m) => {
+        const estado = statusPorMes.get(m.mes) === "closed" ? "closed" : statusPorMes.get(m.mes) === "partial" ? "partial" : "unknown";
+        return { ...m, parcial: estado !== "closed", estado };
+      }),
       competencia,
       composicao_tipo_evento: composicao,
       kpis: {
+        periodo: fechados.length ? "closed" : "observed",
         ultimo_mes_fechado: ultimoFechadoMes,
         sinistro_ultimo_mes_fechado: ultimoFechado?.sinistro ?? null,
         utilizantes_ultimo_mes_fechado: toInt(kpi[3]) || (ultimoFechado?.utilizantes ?? null),
@@ -518,10 +571,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       },
       internacao: {
         por_agrupamento: intAgrupRows.map((r) => ({ agrupamento: String(getCell(r[0])), sinistro_mi: toNum(r[1]) })),
-        internacoes_distintas: toInt(intStats[0]),
-        custo_medio: toNum(intStats[1]),
-        duracao_mediana_dias: toNum(intStats[2]),
-        duracao_p90_dias: toNum(intStats[3]),
+        linhas_assistenciais: toInt(intStats[0]),
+        internacoes_distintas: toInt(intStats[1]),
+        beneficiarios_unicos: toInt(intStats[2]),
+        dias_internados: toInt(intStats[3]),
+        custo_medio: toNum(intStats[4]),
+        duracao_mediana_dias: toNum(intStats[5]),
+        duracao_p90_dias: toNum(intStats[6]),
       },
       saude_mental: {
         share_flag: toNum(total24[0]) ? +(100 * toNum(total24[1]) / toNum(total24[0])).toFixed(2) : null,
@@ -532,6 +588,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         metodologia: "janelas pareadas (mesma da aba Análise Sinistro), eixo data_atendimento, sinistro bruto",
         pre: janelaMedia(IMPACTO_PRE),
         pos: janelaMedia(IMPACTO_POS),
+        eventos: impactoEventos,
         trimestres_utilizantes: triRows.map((r) => ({ trimestre: String(getCell(r[0])), utilizantes: toInt(r[2]) })),
       },
       comparacao_madura: {

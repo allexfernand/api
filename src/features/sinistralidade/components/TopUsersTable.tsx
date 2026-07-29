@@ -67,9 +67,13 @@ export function TopUsersTable({
               <th scope="col">Evento principal</th>
               <th scope="col">Recorrência</th>
               <th scope="col">Curva mensal (custo)</th>
+              <th scope="col" className={styles.num}>Linhas</th>
               <th scope="col" className={styles.num}>Serviços</th>
               <th scope="col" className={styles.num}>Internações</th>
+              <th scope="col" className={styles.num}>Ticket médio</th>
               <th scope="col" className={styles.num}>Custo (R$)</th>
+              <th scope="col" className={styles.num}>Reembolso (R$)</th>
+              <th scope="col" className={styles.num}>% reembolso</th>
               <th scope="col" className={styles.num}>Participação</th>
             </tr>
           </thead>
@@ -108,9 +112,13 @@ export function TopUsersTable({
                     ariaLabel={`Custo mensal de ${row.label}`}
                   />
                 </td>
+                <td className={styles.num}>{number.format(row.billing_lines)}</td>
                 <td className={styles.num}>{number.format(row.service_quantity)}</td>
                 <td className={styles.num}>{number.format(row.hospitalization_episodes)}</td>
+                <td className={styles.num}>{row.average_cost_per_service === null ? "—" : money.format(row.average_cost_per_service)}</td>
                 <td className={styles.num}>{money.format(row.gross_cost)}</td>
+                <td className={styles.num}>{money.format(row.reimbursement_cost)}</td>
+                <td className={styles.num}>{row.reimbursement_share === null ? "—" : `${percent.format(row.reimbursement_share * 100)}%`}</td>
                 <td className={styles.num}>{row.cost_share === null ? "—" : `${percent.format(row.cost_share * 100)}%`}</td>
               </tr>
             ))}

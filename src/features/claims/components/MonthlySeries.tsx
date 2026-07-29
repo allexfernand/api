@@ -1,6 +1,6 @@
 "use client";
 
-// Três séries temporais da aba Análise Sinistro: por data de atendimento
+// Séries temporais da aba Análise Sinistro: por data de atendimento
 // (quanto foi ATENDIDO no mês), por competência de cobrança (quanto foi
 // FATURADO no mês) e a agregação trimestral, derivada no cliente da série
 // mensal por atendimento (ver src/features/claims/quarterly.ts).
@@ -13,6 +13,7 @@
 // do gráfico de custo — misturar as duas escalas num único eixo deturparia
 // os ticks de ambas.
 
+import { useState } from "react";
 import type { GoldPreview } from "../../../contracts/gold-preview";
 import { agruparTrimestres, type Trimestre } from "../quarterly";
 import styles from "../ClaimsTab.module.css";
@@ -21,6 +22,7 @@ import { ChartCard, ChartLegend, LineChart, monthTick, SEMANTIC_COLORS, type Ser
 const moedaCompacta = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", notation: "compact", maximumFractionDigits: 1 });
 const moedaCheia = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
 const inteiro = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 });
+type EixoTemporal = "atendimento" | "competencia";
 
 export function MonthlySeries({
   mensal,
@@ -29,13 +31,20 @@ export function MonthlySeries({
   mensal: GoldPreview["mensal"];
   competencia: GoldPreview["competencia"];
 }) {
+  const [eixo, setEixo] = useState<EixoTemporal>("atendimento");
   const trimestres = agruparTrimestres(mensal);
 
   return (
     <div className={styles.chartStack}>
-      <SerieMensalChart mensal={mensal} />
-      <SerieCompetenciaChart competencia={competencia} />
-      <SerieTrimestralChart trimestres={trimestres} />
+      <div className={styles.seriesSwitch} role="tablist" aria-label="Eixo temporal da evolução">
+        <button type="button" role="tab" aria-selected={eixo === "atendimento"} className={eixo === "atendimento" ? styles.seriesSwitchActive : undefined} onClick={() => setEixo("atendimento")}>
+          Atendimento
+        </button>
+        <button type="button" role="tab" aria-selected={eixo === "competencia"} className={eixo === "competencia" ? styles.seriesSwitchActive : undefined} onClick={() => setEixo("competencia")}>
+          Competência de cobrança
+        </button>
+      </div>
+      {eixo === "atendimento" ? <><SerieMensalChart mensal={mensal} /><SerieTrimestralChart trimestres={trimestres} /></> : <SerieCompetenciaChart competencia={competencia} />}
     </div>
   );
 }
@@ -85,7 +94,7 @@ function SerieMensalTable({ mensal }: { mensal: GoldPreview["mensal"] }) {
             <td className={styles.num}>{moedaCheia.format(linha.sinistro)}</td>
             <td className={styles.num}>{inteiro.format(linha.itens)}</td>
             <td className={styles.num}>{inteiro.format(linha.utilizantes)}</td>
-            <td>{linha.parcial ? "Parcial" : "Fechado"}</td>
+            <td>{linha.estado === "closed" ? "Fechado" : linha.estado === "partial" ? "Parcial" : "Observado — não fechado"}</td>
           </tr>
         ))}
       </tbody>
@@ -173,7 +182,7 @@ function SerieTrimestralChart({ trimestres }: { trimestres: Trimestre[] }) {
               partialMonths={trimestresParciais}
               formatValue={(value) => moedaCompacta.format(value)}
               ariaLabel="Sinistro trimestral (R$)"
-              height={160}
+              height={220}
             />
           </div>
           <div>
@@ -183,7 +192,7 @@ function SerieTrimestralChart({ trimestres }: { trimestres: Trimestre[] }) {
               partialMonths={trimestresParciais}
               formatValue={(value) => inteiro.format(value)}
               ariaLabel="Utilizantes, média mensal por trimestre (pessoas por mês, não soma)"
-              height={160}
+              height={220}
             />
           </div>
         </div>

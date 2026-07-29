@@ -122,6 +122,9 @@ export type TopUserRow = {
   billing_lines: number;
   service_quantity: number;
   gross_cost: number;
+  reimbursement_cost: number;
+  reimbursement_share: number | null;
+  average_cost_per_service: number | null;
   hospitalization_episodes: number;
   months_with_usage: number;
   recurrence: number | null;
@@ -164,6 +167,8 @@ export type ProcedureWindowRow = {
   monthly_utilizers_sum: number;
   hospitalization_episodes: number;
   gross_cost: number;
+  reimbursement_cost: number;
+  reimbursement_share: number | null;
   average_cost_per_service: number | null;
   cost_share: number | null;
   cumulative_cost_share: number | null;

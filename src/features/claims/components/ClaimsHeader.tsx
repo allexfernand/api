@@ -54,9 +54,11 @@ function detalheCarteira(carteira: GoldPreview["carteira"]): string | undefined 
 export function ClaimsHeader({
   fonte,
   carteira,
+  periodo,
 }: {
   fonte: GoldPreview["fonte"];
   carteira: GoldPreview["carteira"];
+  periodo: GoldPreview["kpis"]["periodo"];
 }) {
   const lineage = useLineage();
   const geradoEm = parseData(fonte.gerado_em);
@@ -83,6 +85,9 @@ export function ClaimsHeader({
       <div className={styles.heroBadges}>
         <div className={styles.chipInfo} title={detalheCarteira(carteira)}>
           Carteira: {resumoCarteira(carteira)}
+        </div>
+        <div className={periodo === "closed" ? styles.chipInfo : styles.chipWarning}>
+          {periodo === "closed" ? "Período fechado" : "Dados observados — não fechados"}
         </div>
       </div>
       {lineage.available ? (

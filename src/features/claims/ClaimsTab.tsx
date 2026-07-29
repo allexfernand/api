@@ -25,7 +25,6 @@ import { Methodology } from "./components/Methodology";
 import { MonthlySeries } from "./components/MonthlySeries";
 import { SanusImpact } from "./components/SanusImpact";
 import { SanusJourney } from "./components/SanusJourney";
-import { TopUsers } from "./components/TopUsers";
 import { useGoldPreview } from "./hooks/useGoldPreview";
 import { useGoldPreviewFilters } from "./hooks/useGoldPreviewFilters";
 import type { GoldPreview } from "../../contracts/gold-preview";
@@ -87,7 +86,7 @@ export function ClaimsTab() {
 // Ordem dos blocos de conteúdo: a mesma numeração B1-B8 que os comentários de
 // cada componente usam para citar o fragmento legado (src/dashboard/fragments/gold-preview.html) —
 // KPIs, B1 (mensal/competência/trimestral), B2 (composição por evento), B3
-// (lotações), B4 (concentração + prestadores), B4+ (top utilizantes), B5
+// (lotações), B4 (concentração + prestadores), B5
 // (internação + saúde mental), B6/B7 (impacto Sanus + comparação madura), B8
 // (jornada Sanus) e o card de metodologia no rodapé.
 function ClaimsContent({
@@ -99,14 +98,13 @@ function ClaimsContent({
 }) {
   return (
     <>
-      <ClaimsHeader fonte={data.fonte} carteira={data.carteira} />
+      <ClaimsHeader fonte={data.fonte} carteira={data.carteira} periodo={data.kpis.periodo} />
       <FacetPanel disponiveis={data.filtros.disponiveis} notas={data.filtros.notas} filtros={filtros} />
       <ExecutiveKpis kpis={data.kpis} />
       <MonthlySeries mensal={data.mensal} competencia={data.competencia} />
       <EventMix data={data.composicao_tipo_evento} />
       <Locations lotacoes={data.lotacoes} />
       <Concentration concentracao={data.concentracao} prestadores={data.prestadores} />
-      <TopUsers topUtilizantes={data.top_utilizantes} />
       <Hospitalization internacao={data.internacao} saudeMental={data.saude_mental} />
       <SanusImpact impacto={data.impacto_sanus} comparacao={data.comparacao_madura} ultimoMesFechado={data.kpis.ultimo_mes_fechado} />
       <SanusJourney jornada={data.jornada_sanus} />

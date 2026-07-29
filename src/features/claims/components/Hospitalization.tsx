@@ -63,14 +63,14 @@ export function Hospitalization({
     <div className={styles.chartStack}>
       <ChartCard
         lineageId="claims.hospitalization"
-        title="Custo de internação por agrupamento clínico"
-        subtitle={`Os ${itens.length} agrupamentos de maior custo de internação desde 2024-01.`}
+        title="Custo de internação por acomodação"
+        subtitle={`As ${itens.length} acomodações de maior custo de internação desde 2024-01.`}
         unit="R$ milhões"
         chart={
           <ParetoChart
             items={itens}
             formatValue={(value) => formatarMilhoes(value)}
-            ariaLabel="Custo de internação por agrupamento clínico, em milhões de reais"
+            ariaLabel="Custo de internação por acomodação, em milhões de reais"
             // showCumulative=false: todo item acima já tem cumulativeShare
             // null (sem total geral nem bucket "Outros" para sustentar um %
             // honesto) — sem isto, o gráfico ainda desenharia o eixo de
@@ -91,7 +91,7 @@ function HospitalizationTable({ itens }: { itens: GoldPreview["internacao"]["por
     <table className={styles.table}>
       <thead>
         <tr>
-          <th scope="col" className={styles.txt}>Agrupamento clínico</th>
+          <th scope="col" className={styles.txt}>Acomodação</th>
           <th scope="col" className={styles.num}>Custo (R$ M)</th>
         </tr>
       </thead>
@@ -158,8 +158,20 @@ function MentalHealthPanel({
       <LineageAnchor lineageId="claims.hospitalization" label="Estatísticas de internação">
         <div className={`${styles.factList} ${styles.factListDivided}`}>
           <div className={styles.factRow}>
-            <span>Internações distintas</span>
+            <span>Linhas assistenciais</span>
+            <strong>{formatadorInteiro.format(internacao.linhas_assistenciais)}</strong>
+          </div>
+          <div className={styles.factRow}>
+            <span>Admissões clínicas distintas</span>
             <strong>{formatadorInteiro.format(internacao.internacoes_distintas)}</strong>
+          </div>
+          <div className={styles.factRow}>
+            <span>Beneficiários internados</span>
+            <strong>{formatadorInteiro.format(internacao.beneficiarios_unicos)}</strong>
+          </div>
+          <div className={styles.factRow}>
+            <span>Dias internados</span>
+            <strong>{formatadorInteiro.format(internacao.dias_internados)}</strong>
           </div>
           <div className={styles.factRow}>
             <span>Custo médio por internação</span>

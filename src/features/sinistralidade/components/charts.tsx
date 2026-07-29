@@ -1,10 +1,27 @@
 "use client";
 
-// Primitivas de gráfico em SVG puro (decisão técnica do plano §10.3):
-// sem dependência externa, SSR seguro, tokens visuais do site e alternativa
-// tabular acessível em todos os gráficos. Máximo de cinco séries simultâneas.
+// Primitivas de gráfico compartilhadas pelas abas Análise Sinistro e Visão 360.
+// As tabelas continuam sendo a alternativa acessível e a fonte completa dos dados.
 
-import { createContext, useContext, useId, useState, type ReactNode } from "react";
+import { createContext, useContext, useState, type ReactNode } from "react";
+import {
+  Bar as RechartsBar,
+  BarChart as RechartsBarChart,
+  CartesianGrid,
+  Cell,
+  ComposedChart,
+  Line as RechartsLine,
+  LineChart as RechartsLineChart,
+  ReferenceArea,
+  ResponsiveContainer,
+  Scatter as RechartsScatter,
+  ScatterChart as RechartsScatterChart,
+  Tooltip,
+  XAxis,
+  YAxis,
+  ZAxis,
+} from "recharts";
+import type { TooltipContentProps } from "recharts";
 import styles from "../SinistralidadeV2Tab.module.css";
 import { LineageAnchor } from "./LineageAnchor";
 
@@ -157,6 +174,54 @@ export function ChartLegend({ items }: { items: { name: string; color: string }[
   );
 }
 
+function ChartFrame({ height, ariaLabel, children }: { height: number; ariaLabel: string; children: ReactNode }) {
+  return (
+    <div className={styles.rechartsFrame} style={{ height }} role="img" aria-label={ariaLabel}>
+      <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+        {children}
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function ChartTooltip({
+  active,
+  payload,
+  label,
+  formatLabel,
+  formatValue,
+}: TooltipContentProps & {
+  formatLabel?: (label: string | number) => string;
+  formatValue: (value: number, dataKey?: string) => string;
+}) {
+  if (!active || !payload?.length) return null;
+  const tooltipLabel = formatLabel ? formatLabel(label ?? "") : String(label ?? "");
+
+  return (
+    <div className={styles.chartTooltip}>
+      <p className={styles.chartTooltipLabel}>{tooltipLabel}</p>
+      <ul className={styles.chartTooltipList}>
+        {payload.map((item) => {
+          const value = typeof item.value === "number" ? item.value : Number(item.value);
+          if (!Number.isFinite(value)) return null;
+          const name = String(item.name ?? item.dataKey ?? "Valor");
+          return (
+            <li key={`${name}-${String(item.dataKey)}`} className={styles.chartTooltipItem}>
+              <i style={{ background: item.color ?? item.stroke ?? SEMANTIC_COLORS.cost }} aria-hidden="true" />
+              <span>{name}</span>
+              <strong>{formatValue(value, String(item.dataKey ?? ""))}</strong>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+function tickIndexes(length: number, step: number) {
+  return Array.from({ length }, (_, index) => index).filter((index) => index % step === 0);
+}
+
 export function LineChart({
   series,
   height = 220,
@@ -170,14 +235,11 @@ export function LineChart({
   partialMonths?: string[];
   ariaLabel: string;
 }) {
-  const id = useId();
   const visibility = useContext(ChartVisibilityContext);
   const visible = series.filter((entry) => !visibility?.hidden.includes(entry.name)).slice(0, 5);
   if (!visible.length) return <ChartEmpty message="Selecione uma série na legenda para exibir o gráfico." />;
   const categories = visible[0]?.points.map((point) => point.x) ?? [];
   if (!categories.length) return <ChartEmpty />;
-  const width = 720;
-  const pad = { top: 14, right: 14, bottom: 28, left: 52 };
   const values = visible.flatMap((entry) => entry.points.map((point) => point.y)).filter((value): value is number => value !== null);
   if (!values.length) return <ChartEmpty />;
   const max = Math.max(...values, 0);
@@ -185,71 +247,76 @@ export function LineChart({
   const ticks = niceTicks(min, max);
   const domainMin = Math.min(min, ticks[0]);
   const domainMax = Math.max(max, ticks[ticks.length - 1]);
-  const xFor = (index: number) => scale(index, 0, Math.max(categories.length - 1, 1), pad.left, width - pad.right);
-  const yFor = (value: number) => scale(value, domainMin, domainMax, height - pad.bottom, pad.top);
   const partial = new Set(partialMonths);
   const labelStep = categories.length <= 13 ? 1 : Math.ceil(categories.length / 12);
+  const data = categories.map((category, index) => ({
+    xIndex: index,
+    ...Object.fromEntries(visible.map((entry) => [entry.name, entry.points[index]?.y ?? null])),
+  }));
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className={styles.chartSvg} role="img" aria-label={ariaLabel}>
-      {ticks.map((tick) => (
-        <g key={tick}>
-          <line x1={pad.left} x2={width - pad.right} y1={yFor(tick)} y2={yFor(tick)} className={styles.gridLine} />
-          <text x={pad.left - 8} y={yFor(tick) + 3} textAnchor="end" className={styles.axisText}>
-            {formatValue(tick)}
-          </text>
-        </g>
-      ))}
-      <line x1={pad.left} x2={width - pad.right} y1={height - pad.bottom} y2={height - pad.bottom} className={styles.axisLine} />
-      {categories.map((category, index) => (
-        <g key={category}>
-          {partial.has(category) ? (
-            <rect
-              x={xFor(index) - 6}
-              y={pad.top}
-              width={12}
-              height={height - pad.top - pad.bottom}
-              className={styles.partialBand}
+    <ChartFrame height={height} ariaLabel={ariaLabel}>
+      <RechartsLineChart data={data} margin={{ top: 12, right: 12, left: 4, bottom: 4 }} accessibilityLayer>
+        <CartesianGrid vertical={false} stroke="#e2e8f0" strokeDasharray="2 4" />
+        <XAxis
+          type="number"
+          dataKey="xIndex"
+          domain={[-0.5, Math.max(categories.length - 0.5, 0.5)]}
+          ticks={tickIndexes(categories.length, labelStep)}
+          tickFormatter={(value) => monthTick(categories[Number(value)] ?? "")}
+          tick={{ fill: "#94a3b8", fontSize: 10.5 }}
+          tickLine={false}
+          axisLine={{ stroke: "#cbd5e1" }}
+        />
+        <YAxis
+          domain={[domainMin, domainMax]}
+          ticks={ticks}
+          tickFormatter={formatValue}
+          tick={{ fill: "#94a3b8", fontSize: 10.5 }}
+          tickLine={false}
+          axisLine={false}
+          width={56}
+        />
+        {categories.map((category, index) => partial.has(category) ? (
+          <ReferenceArea
+            key={`partial-${category}`}
+            x1={index - 0.5}
+            x2={index + 0.5}
+            y1={domainMin}
+            y2={domainMax}
+            fill="#fbbf24"
+            fillOpacity={0.14}
+            strokeOpacity={0}
+          />
+        ) : null)}
+        <Tooltip
+          cursor={{ stroke: SEMANTIC_COLORS.cost, strokeDasharray: "4 4", strokeOpacity: 0.35 }}
+          content={(props) => (
+            <ChartTooltip
+              {...props}
+              formatLabel={(label) => monthTick(categories[Number(label)] ?? String(label))}
+              formatValue={(value) => formatValue(value)}
             />
-          ) : null}
-          {index % labelStep === 0 ? (
-            <text x={xFor(index)} y={height - 8} textAnchor="middle" className={styles.axisText}>
-              {monthTick(category)}
-            </text>
-          ) : null}
-        </g>
-      ))}
-      {visible.map((entry) => {
-        const path = entry.points
-          .map((point, index) => (point.y === null ? null : `${index === 0 || entry.points[index - 1]?.y === null ? "M" : "L"}${xFor(index)},${yFor(point.y)}`))
-          .filter(Boolean)
-          .join(" ");
-        return (
-          <g key={`${id}-${entry.name}`}>
-            <path
-              d={path}
-              fill="none"
-              stroke={entry.color}
-              strokeWidth={entry.color === SEMANTIC_COLORS.neutral ? 1.8 : 2.5}
-              strokeDasharray={entry.color === SEMANTIC_COLORS.neutral ? "5 4" : undefined}
-              strokeLinejoin="round"
-              strokeLinecap="round"
-              opacity={entry.color === SEMANTIC_COLORS.neutral ? 0.82 : 1}
-            />
-            {entry.points.map((point, index) =>
-              point.y === null ? null : (
-                <g key={point.x}>
-                  <circle cx={xFor(index)} cy={yFor(point.y)} r={3.2} fill={entry.color} className={styles.chartDot} />
-                  <circle cx={xFor(index)} cy={yFor(point.y)} r={9} className={styles.hitArea}>
-                    <title>{`${entry.name} · ${monthTick(point.x)}: ${formatValue(point.y)}${entry.unit ? ` ${entry.unit}` : ""}`}</title>
-                  </circle>
-                </g>
-              ),
-            )}
-          </g>
-        );
-      })}
-    </svg>
+          )}
+        />
+        {visible.map((entry) => (
+          <RechartsLine
+            key={entry.name}
+            type="monotone"
+            dataKey={entry.name}
+            name={entry.name}
+            stroke={entry.color}
+            strokeWidth={entry.color === SEMANTIC_COLORS.neutral ? 1.8 : 2.5}
+            strokeDasharray={entry.color === SEMANTIC_COLORS.neutral ? "5 4" : undefined}
+            strokeOpacity={entry.color === SEMANTIC_COLORS.neutral ? 0.82 : 1}
+            dot={{ r: 3.2, strokeWidth: 0 }}
+            activeDot={{ r: 5 }}
+            connectNulls={false}
+            isAnimationActive={false}
+          />
+        ))}
+      </RechartsLineChart>
+    </ChartFrame>
   );
 }
 
@@ -270,53 +337,62 @@ export function StackedBarChart({
   const visibleSegments = segments.filter((segment) => !visibility?.hidden.includes(segment.name));
   if (!months.length) return <ChartEmpty />;
   if (!visibleSegments.length) return <ChartEmpty message="Selecione uma série na legenda para exibir o gráfico." />;
-  const width = 720;
-  const pad = { top: 14, right: 14, bottom: 28, left: 52 };
   const totals = months.map((_, index) => visibleSegments.reduce((total, segment) => total + (segment.values[index] ?? 0), 0));
   const dataMax = Math.max(...totals, 1);
   const ticks = niceTicks(0, dataMax);
   const max = Math.max(dataMax, ticks[ticks.length - 1]);
-  const barWidth = Math.min(38, ((width - pad.left - pad.right) / months.length) * 0.7);
-  const xFor = (index: number) => scale(index, 0, Math.max(months.length - 1, 1), pad.left + barWidth / 2, width - pad.right - barWidth / 2);
-  const innerHeight = height - pad.top - pad.bottom;
   const labelStep = months.length <= 13 ? 1 : Math.ceil(months.length / 12);
+  const data = months.map((month, index) => ({
+    xIndex: index,
+    ...Object.fromEntries(visibleSegments.map((segment) => [segment.name, segment.values[index] ?? 0])),
+  }));
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className={styles.chartSvg} role="img" aria-label={ariaLabel}>
-      {ticks.map((tick) => (
-        <g key={tick}>
-          <line x1={pad.left} x2={width - pad.right} y1={pad.top + innerHeight * (1 - tick / max)} y2={pad.top + innerHeight * (1 - tick / max)} className={styles.gridLine} />
-          <text x={pad.left - 8} y={pad.top + innerHeight * (1 - tick / max) + 3} textAnchor="end" className={styles.axisText}>
-            {formatValue(tick)}
-          </text>
-        </g>
-      ))}
-      <line x1={pad.left} x2={width - pad.right} y1={height - pad.bottom} y2={height - pad.bottom} className={styles.axisLine} />
-      {months.map((month, index) => {
-        let cursor = height - pad.bottom;
-        return (
-          <g key={month}>
-            {visibleSegments.map((segment, segmentIndex) => {
-              const value = segment.values[index] ?? 0;
-              const barHeight = (value / max) * innerHeight;
-              cursor -= barHeight;
-              // 1px de respiro entre segmentos empilhados para leitura do stack.
-              const gap = segmentIndex > 0 ? 1 : 0;
-              return value > 0 ? (
-                <rect key={segment.name} x={xFor(index) - barWidth / 2} y={cursor + gap} width={barWidth} height={Math.max(barHeight - gap, 0.5)} fill={segment.color} rx={3} stroke="#ffffff" strokeWidth={0.75}>
-                  <title>{`${segment.name} · ${monthTick(month)}: ${formatValue(value)}`}</title>
-                </rect>
-              ) : null;
-            })}
-            {index % labelStep === 0 ? (
-              <text x={xFor(index)} y={height - 8} textAnchor="middle" className={styles.axisText}>
-                {monthTick(month)}
-              </text>
-            ) : null}
-          </g>
-        );
-      })}
-    </svg>
+    <ChartFrame height={height} ariaLabel={ariaLabel}>
+      <RechartsBarChart data={data} margin={{ top: 12, right: 12, left: 4, bottom: 4 }}>
+        <CartesianGrid vertical={false} stroke="#e2e8f0" strokeDasharray="2 4" />
+        <XAxis
+          type="number"
+          dataKey="xIndex"
+          domain={[-0.5, Math.max(months.length - 0.5, 0.5)]}
+          ticks={tickIndexes(months.length, labelStep)}
+          tickFormatter={(value) => monthTick(months[Number(value)] ?? "")}
+          tick={{ fill: "#94a3b8", fontSize: 10.5 }}
+          tickLine={false}
+          axisLine={{ stroke: "#cbd5e1" }}
+        />
+        <YAxis
+          domain={[0, max]}
+          ticks={ticks}
+          tickFormatter={formatValue}
+          tick={{ fill: "#94a3b8", fontSize: 10.5 }}
+          tickLine={false}
+          axisLine={false}
+          width={56}
+        />
+        <Tooltip
+          cursor={{ fill: "#f1f5f9", fillOpacity: 0.6 }}
+          content={(props) => (
+            <ChartTooltip
+              {...props}
+              formatLabel={(label) => monthTick(months[Number(label)] ?? String(label))}
+              formatValue={(value) => formatValue(value)}
+            />
+          )}
+        />
+        {visibleSegments.map((segment, index) => (
+          <RechartsBar
+            key={segment.name}
+            dataKey={segment.name}
+            name={segment.name}
+            stackId="total"
+            fill={segment.color}
+            radius={index === visibleSegments.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]}
+            isAnimationActive={false}
+          />
+        ))}
+      </RechartsBarChart>
+    </ChartFrame>
   );
 }
 
@@ -369,59 +445,83 @@ export function ParetoChart({
   showCumulative?: boolean;
 }) {
   if (!items.length) return <ChartEmpty />;
-  const width = 720;
-  const pad = { top: 14, right: 46, bottom: 30, left: 52 };
   const max = Math.max(...items.map((item) => item.value), 1);
-  const innerHeight = height - pad.top - pad.bottom;
-  const barWidth = Math.min(34, ((width - pad.left - pad.right) / items.length) * 0.7);
-  const xFor = (index: number) => scale(index, 0, Math.max(items.length - 1, 1), pad.left + barWidth / 2, width - pad.right - barWidth / 2);
+  const ticks = niceTicks(0, max);
+  const data = items.map((item, index) => ({ ...item, xIndex: index }));
   const colorFor = barColor ?? (() => SEMANTIC_COLORS.cost);
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className={styles.chartSvg} role="img" aria-label={ariaLabel}>
-      {niceTicks(0, max).filter((tick) => tick <= max).map((tick) => (
-        <g key={`grid-${tick}`}>
-          <line x1={pad.left} x2={width - pad.right} y1={height - pad.bottom - (tick / max) * innerHeight} y2={height - pad.bottom - (tick / max) * innerHeight} className={styles.gridLine} />
-          <text x={pad.left - 8} y={height - pad.bottom - (tick / max) * innerHeight + 3} textAnchor="end" className={styles.axisText}>
-            {formatValue(tick)}
-          </text>
-        </g>
-      ))}
-      <line x1={pad.left} x2={width - pad.right} y1={height - pad.bottom} y2={height - pad.bottom} className={styles.axisLine} />
-      {items.map((item, index) => {
-        const barHeight = (item.value / max) * innerHeight;
-        return (
-          <g key={item.label + index}>
-            <rect x={xFor(index) - barWidth / 2} y={height - pad.bottom - barHeight} width={barWidth} height={barHeight} fill={colorFor(item, index)} rx={3}>
-              <title>{`${item.label}: ${formatValue(item.value)}${item.cumulativeShare !== null ? ` · acumulado ${(item.cumulativeShare * 100).toFixed(1)}%` : ""}`}</title>
-            </rect>
-            <text x={xFor(index)} y={height - 8} textAnchor="middle" className={styles.axisText}>
-              {index + 1}
-            </text>
-          </g>
-        );
-      })}
-      {showCumulative ? (
-        <path
-          d={items
-            .map((item, index) =>
-              item.cumulativeShare === null ? null : `${index === 0 ? "M" : "L"}${xFor(index)},${pad.top + innerHeight * (1 - item.cumulativeShare)}`,
-            )
-            .filter(Boolean)
-            .join(" ")}
-          fill="none"
-          stroke={SEMANTIC_COLORS.mentalHealth}
-          strokeWidth={2}
+    <ChartFrame height={height} ariaLabel={ariaLabel}>
+      <ComposedChart data={data} margin={{ top: 12, right: showCumulative ? 8 : 12, left: 4, bottom: 4 }}>
+        <CartesianGrid vertical={false} stroke="#e2e8f0" strokeDasharray="2 4" />
+        <XAxis
+          type="number"
+          dataKey="xIndex"
+          domain={[-0.5, Math.max(items.length - 0.5, 0.5)]}
+          ticks={tickIndexes(items.length, 1)}
+          tickFormatter={(value) => String(Number(value) + 1)}
+          tick={{ fill: "#94a3b8", fontSize: 10.5 }}
+          tickLine={false}
+          axisLine={{ stroke: "#cbd5e1" }}
         />
-      ) : null}
-      {showCumulative
-        ? [0, 0.5, 0.8, 1].map((tick) => (
-            <text key={tick} x={width - pad.right + 6} y={pad.top + innerHeight * (1 - tick) + 3} className={styles.axisText}>
-              {Math.round(tick * 100)}%
-            </text>
-          ))
-        : null}
-    </svg>
+        <YAxis
+          yAxisId="value"
+          domain={[0, Math.max(max, ticks[ticks.length - 1])]}
+          ticks={ticks}
+          tickFormatter={formatValue}
+          tick={{ fill: "#94a3b8", fontSize: 10.5 }}
+          tickLine={false}
+          axisLine={false}
+          width={56}
+        />
+        {showCumulative ? (
+          <YAxis
+            yAxisId="share"
+            orientation="right"
+            domain={[0, 1]}
+            ticks={[0, 0.5, 0.8, 1]}
+            tickFormatter={(value) => `${Math.round(Number(value) * 100)}%`}
+            tick={{ fill: "#94a3b8", fontSize: 10.5 }}
+            tickLine={false}
+            axisLine={false}
+            width={42}
+          />
+        ) : null}
+        <Tooltip
+          cursor={{ fill: "#f1f5f9", fillOpacity: 0.6 }}
+          content={(props) => (
+            <ChartTooltip
+              {...props}
+              formatLabel={(label) => `Item ${Number(label) + 1} · ${items[Number(label)]?.label ?? ""}`}
+              formatValue={(value, dataKey) => dataKey === "cumulativeShare" ? `${(value * 100).toFixed(1)}%` : formatValue(value)}
+            />
+          )}
+        />
+        <RechartsBar
+          yAxisId="value"
+          dataKey="value"
+          name="Valor"
+          fill={SEMANTIC_COLORS.cost}
+          radius={[4, 4, 0, 0]}
+          isAnimationActive={false}
+        >
+          {data.map((item, index) => <Cell key={item.label + index} fill={colorFor(item, index)} />)}
+        </RechartsBar>
+        {showCumulative ? (
+          <RechartsLine
+            yAxisId="share"
+            type="monotone"
+            dataKey="cumulativeShare"
+            name="Acumulado"
+            stroke={SEMANTIC_COLORS.mentalHealth}
+            strokeWidth={2}
+            dot={{ r: 3, strokeWidth: 0 }}
+            connectNulls={false}
+            isAnimationActive={false}
+          />
+        ) : null}
+      </ComposedChart>
+    </ChartFrame>
   );
 }
 
@@ -443,46 +543,52 @@ export function ScatterChart({
   height?: number;
 }) {
   if (!points.length) return <ChartEmpty />;
-  const width = 720;
-  const pad = { top: 14, right: 18, bottom: 36, left: 58 };
   const maxX = Math.max(...points.map((point) => point.x), 1);
   const maxY = Math.max(...points.map((point) => point.y), 1);
-  const maxSize = Math.max(...points.map((point) => point.size), 1);
+  const xTicks = niceTicks(0, maxX);
+  const yTicks = niceTicks(0, maxY);
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className={styles.chartSvg} role="img" aria-label={ariaLabel}>
-      {niceTicks(0, maxY).map((tick) => (
-        <g key={`y${tick}`}>
-          <line x1={pad.left} x2={width - pad.right} y1={scale(tick, 0, maxY, height - pad.bottom, pad.top)} y2={scale(tick, 0, maxY, height - pad.bottom, pad.top)} className={styles.gridLine} />
-          <text x={pad.left - 6} y={scale(tick, 0, maxY, height - pad.bottom, pad.top) + 3} textAnchor="end" className={styles.axisText}>
-            {formatY(tick)}
-          </text>
-        </g>
-      ))}
-      {niceTicks(0, maxX).map((tick) => (
-        <text key={`x${tick}`} x={scale(tick, 0, maxX, pad.left, width - pad.right)} y={height - 16} textAnchor="middle" className={styles.axisText}>
-          {formatX(tick)}
-        </text>
-      ))}
-      <text x={width / 2} y={height - 2} textAnchor="middle" className={styles.axisText}>
-        {xLabel}
-      </text>
-      <text x={12} y={height / 2} textAnchor="middle" className={styles.axisText} transform={`rotate(-90 12 ${height / 2})`}>
-        {yLabel}
-      </text>
-      {points.map((point) => (
-        <circle
-          key={point.label}
-          cx={scale(point.x, 0, maxX, pad.left, width - pad.right)}
-          cy={scale(point.y, 0, maxY, height - pad.bottom, pad.top)}
-          r={4 + (point.size / maxSize) * 12}
-          fill={SEMANTIC_COLORS.cost}
-          fillOpacity={0.52}
-          stroke={SEMANTIC_COLORS.cost}
-          strokeWidth={1.25}
-        >
-          <title>{`${point.label} · ${xLabel}: ${formatX(point.x)} · ${yLabel}: ${formatY(point.y)}`}</title>
-        </circle>
-      ))}
-    </svg>
+    <ChartFrame height={height} ariaLabel={ariaLabel}>
+      <RechartsScatterChart margin={{ top: 12, right: 12, left: 8, bottom: 24 }}>
+        <CartesianGrid stroke="#e2e8f0" strokeDasharray="2 4" />
+        <XAxis
+          type="number"
+          dataKey="x"
+          name={xLabel}
+          domain={[0, maxX]}
+          ticks={xTicks}
+          tickFormatter={formatX}
+          tick={{ fill: "#94a3b8", fontSize: 10.5 }}
+          tickLine={false}
+          axisLine={{ stroke: "#cbd5e1" }}
+          label={{ value: xLabel, position: "insideBottom", offset: -16, fill: "#94a3b8", fontSize: 10.5 }}
+        />
+        <YAxis
+          type="number"
+          dataKey="y"
+          name={yLabel}
+          domain={[0, maxY]}
+          ticks={yTicks}
+          tickFormatter={formatY}
+          tick={{ fill: "#94a3b8", fontSize: 10.5 }}
+          tickLine={false}
+          axisLine={false}
+          width={58}
+          label={{ value: yLabel, angle: -90, position: "insideLeft", fill: "#94a3b8", fontSize: 10.5 }}
+        />
+        <ZAxis type="number" dataKey="size" range={[60, 360]} />
+        <Tooltip
+          cursor={{ strokeDasharray: "4 4", stroke: SEMANTIC_COLORS.cost, strokeOpacity: 0.35 }}
+          content={(props) => (
+            <ChartTooltip
+              {...props}
+              formatLabel={(label) => String(points.find((point) => point.label === label)?.label ?? label)}
+              formatValue={(value, dataKey) => dataKey === "x" ? formatX(value) : formatY(value)}
+            />
+          )}
+        />
+        <RechartsScatter name="Pontos" data={points} fill={SEMANTIC_COLORS.cost} fillOpacity={0.62} stroke={SEMANTIC_COLORS.cost} />
+      </RechartsScatterChart>
+    </ChartFrame>
   );
 }

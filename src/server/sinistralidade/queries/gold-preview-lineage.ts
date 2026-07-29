@@ -271,13 +271,13 @@ export const GOLD_PREVIEW_LINEAGE: LineageEntry[] = [
       },
       {
         object: TABLES.gold,
-        role: "estatísticas por episódio de internação (grão: episode_key)",
-        columns: ["episode_key", "custo_assistencial_bruto", "duracao_internacao_dias", "flag_internacao", "month_key", "flag_data_suspeita", "company_key"],
+        role: "estatísticas por admissão clínica derivada na Gold",
+        columns: ["person_key", "numero_conta_medica", "authorization_id", "prestador", "episode_key", "custo_assistencial_bruto", "duracao_internacao_dias", "flag_internacao", "month_key", "flag_data_suspeita", "company_key"],
       },
       FONTE_FILTRO_CIDADE_ESTADO,
     ],
     formula:
-      "por_agrupamento: SUM(custo_assistencial_bruto) ÷ 1.000.000 agrupado por acomodacao_internacao (top 8); internacoes_distintas = COUNT(DISTINCT episode_key); custo_medio = SUM(custo_assistencial_bruto) ÷ internacoes_distintas; duracao_mediana_dias = PERCENTILE(d, 0.5) e duracao_p90_dias = PERCENTILE(d, 0.9), onde d = MAX(duracao_internacao_dias) POR episode_key — o percentil é sobre a duração de cada EPISÓDIO, não sobre a linha de cobrança bruta.",
+      "por_agrupamento: SUM(custo_assistencial_bruto) ÷ 1.000.000 agrupado por acomodacao_internacao (top 8); admissão = SHA2(empresa + pessoa + conta médica + senha + prestador), sem data de atendimento; linhas assistenciais = COUNT(*); admissões = COUNT(DISTINCT admission_key); beneficiários internados = COUNT(DISTINCT person_key); dias internados = SUM(MAX(duracao_internacao_dias) por admissão); custo médio = SUM(custo_assistencial_bruto) ÷ admissões; duração mediana/p90 = PERCENTILE(d, 0.5/0.9), onde d = MAX(duracao_internacao_dias) por admissão.",
     filters: [
       ESCOPO_USUARIO,
       NOT_SUSPEITA,
@@ -286,8 +286,8 @@ export const GOLD_PREVIEW_LINEAGE: LineageEntry[] = [
       "janela fixa desde 2024-01 (JANELA_2024), diferente da janela de 12 meses fechados de claims.kpis",
     ],
     notes: [
-      "Internação aqui é contada por episode_key (grão atendimento-dia), diferente do admission_key usado no mart mart_internacao_mes_v2 da Visão 360 (hospitalization-trends.monthly): os dois podem divergir quando a mesma internação clínica é faturada em datas diferentes.",
-      "Acomodação vazia ou nula aparece como 'Outras diárias'.",
+      "A mesma chave de admissão usada no mart_internacao_mes_v2 da Visão 360 é derivada na Gold para preservar os filtros desta aba. episode_key é mantida apenas como atendimento-dia no SQL de origem.",
+      "Acomodação vazia ou nula aparece como 'Outras diárias'; é uma classificação de acomodação, não um agrupamento clínico homologado.",
     ],
     related: ["claims.mental-health"],
   },
@@ -331,8 +331,8 @@ export const GOLD_PREVIEW_LINEAGE: LineageEntry[] = [
     sources: [
       {
         object: TABLES.gold,
-        role: "itens, sinistro e utilizantes dos quatro meses das janelas pareadas pré/pós",
-        columns: ["month_key", "custo_assistencial_bruto", "person_key", "flag_data_suspeita", "company_key"],
+        role: "itens, sinistro, utilizantes e mudança por tipo de evento nas janelas pareadas pré/pós",
+        columns: ["month_key", "custo_assistencial_bruto", "person_key", "tipo_evento", "flag_data_suspeita", "company_key"],
       },
       {
         object: TABLES.gold,
@@ -342,7 +342,7 @@ export const GOLD_PREVIEW_LINEAGE: LineageEntry[] = [
       FONTE_FILTRO_CIDADE_ESTADO,
     ],
     formula:
-      "pre/pos: médias mensais de itens (COUNT(*)), sinistro (SUM(custo_assistencial_bruto)) e utilizantes (COUNT(DISTINCT person_key)) sobre os meses fixos de cada janela; trimestres_utilizantes = COUNT(DISTINCT person_key) por trimestre.",
+      "pre/pos: médias mensais de itens (COUNT(*)), sinistro (SUM(custo_assistencial_bruto)) e utilizantes (COUNT(DISTINCT person_key)) sobre os meses fixos de cada janela; eventos compara COUNT(*) pré/pós para Pronto Socorro, Internação, Consulta e Terapia; trimestres_utilizantes = COUNT(DISTINCT person_key) por trimestre.",
     filters: [
       ESCOPO_USUARIO,
       NOT_SUSPEITA,

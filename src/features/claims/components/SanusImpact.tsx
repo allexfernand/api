@@ -44,10 +44,12 @@ const formatadorDecimal = new Intl.NumberFormat("pt-BR", { maximumFractionDigits
 
 type JanelaMedia = { meses: string[]; itens_media_mensal: number; sinistro_media_mensal: number; utilizantes_media_mensal: number };
 type TrimestreUtilizantes = { trimestre: string; utilizantes: number | null };
+type EventoImpacto = { tipo_evento: string; before_itens: number | null; after_itens: number | null };
 type ImpactoSanus = {
   metodologia: string;
   pre: JanelaMedia | null;
   pos: JanelaMedia | null;
+  eventos: EventoImpacto[];
   trimestres_utilizantes: TrimestreUtilizantes[];
 };
 
@@ -104,10 +106,19 @@ function janelaMediaOrNull(value: unknown): JanelaMedia | null {
 function parseImpactoSanus(raw: GoldPreview["impacto_sanus"]): ImpactoSanus {
   const bruto = raw as Record<string, unknown>;
   const trimestresBruto = Array.isArray(bruto.trimestres_utilizantes) ? bruto.trimestres_utilizantes : [];
+  const eventosBruto = Array.isArray(bruto.eventos) ? bruto.eventos : [];
   return {
     metodologia: strOrEmpty(bruto.metodologia),
     pre: janelaMediaOrNull(bruto.pre),
     pos: janelaMediaOrNull(bruto.pos),
+    eventos: eventosBruto
+      .filter((item): item is Record<string, unknown> => !!item && typeof item === "object")
+      .map((item) => ({
+        tipo_evento: strOrEmpty(item.tipo_evento),
+        before_itens: numOrNull(item.before_itens),
+        after_itens: numOrNull(item.after_itens),
+      }))
+      .filter((item) => item.tipo_evento),
     trimestres_utilizantes: trimestresBruto
       .filter((item): item is Record<string, unknown> => !!item && typeof item === "object")
       .map((item) => ({ trimestre: strOrEmpty(item.trimestre), utilizantes: numOrNull(item.utilizantes) })),
@@ -137,6 +148,65 @@ function DeltaChip({ value }: { value: number | null }) {
   return <span className={`${styles.deltaChip} ${classe}`}>{texto}</span>;
 }
 
+function custoPorUtilizante(janela: JanelaMedia | null): number | null {
+  if (!janela || janela.utilizantes_media_mensal === 0) return null;
+  return janela.sinistro_media_mensal / janela.utilizantes_media_mensal;
+}
+
+function mediaPorMes(total: number | null, meses: string[]): number | null {
+  return total === null || meses.length === 0 ? null : total / meses.length;
+}
+
+function nomeEvento(tipo: string): string {
+  return tipo === "Internacao" ? "Internação" : tipo;
+}
+
+type EventoComparado = { label: string; before: number | null; after: number | null; delta: number | null };
+
+function EventChangeTable({ eventos }: { eventos: EventoComparado[] }) {
+  return (
+    <table className={`${styles.table} ${styles.tableSmall}`}>
+      <thead>
+        <tr>
+          <th scope="col" className={styles.txt}>Evento</th>
+          <th scope="col" className={styles.num}>Antes</th>
+          <th scope="col" className={styles.num}>Depois</th>
+          <th scope="col" className={styles.num}>Δ</th>
+        </tr>
+      </thead>
+      <tbody>
+        {eventos.map((evento) => {
+          const { texto, classe } = deltaLabel(evento.delta);
+          return (
+            <tr key={evento.label}>
+              <td className={styles.txt}>{evento.label}</td>
+              <td className={styles.num}>{evento.before === null ? "—" : formatadorInteiro.format(evento.before)}</td>
+              <td className={styles.num}>{evento.after === null ? "—" : formatadorInteiro.format(evento.after)}</td>
+              <td className={`${styles.num} ${classe}`}>{texto}</td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+function leituraImpacto(dados: ImpactoSanus, custoPre: number | null, custoPos: number | null): string {
+  const eventos = dados.eventos
+    .map((evento) => ({ label: nomeEvento(evento.tipo_evento), delta: deltaClientSide(evento.before_itens, evento.after_itens) }))
+    .filter((evento): evento is { label: string; delta: number } => evento.delta !== null)
+    .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+  const principal = eventos[0];
+  const custoDelta = deltaClientSide(custoPre, custoPos);
+  const custoTexto = custoDelta === null
+    ? "O custo por utilizante não pôde ser comparado."
+    : `O custo por utilizante ${custoDelta <= 0 ? "caiu" : "subiu"} ${formatadorPercentual.format(Math.abs(custoDelta))}%.`;
+  const eventoTexto = principal
+    ? ` Maior mudança: ${principal.label}, ${principal.delta <= 0 ? "queda" : "alta"} de ${formatadorPercentual.format(Math.abs(principal.delta))}%.`
+    : "";
+  return `${custoTexto}${eventoTexto}`;
+}
+
 function SanusImpactBlock({
   impacto,
   ultimoMesFechado,
@@ -148,6 +218,14 @@ function SanusImpactBlock({
   const deltaItens = deltaClientSide(dados.pre?.itens_media_mensal ?? null, dados.pos?.itens_media_mensal ?? null);
   const deltaSinistro = deltaClientSide(dados.pre?.sinistro_media_mensal ?? null, dados.pos?.sinistro_media_mensal ?? null);
   const deltaUtilizantes = deltaClientSide(dados.pre?.utilizantes_media_mensal ?? null, dados.pos?.utilizantes_media_mensal ?? null);
+  const custoPre = custoPorUtilizante(dados.pre);
+  const custoPos = custoPorUtilizante(dados.pos);
+  const eventos = dados.eventos.map((evento) => ({
+    label: nomeEvento(evento.tipo_evento),
+    before: evento.before_itens,
+    after: evento.after_itens,
+    delta: deltaClientSide(evento.before_itens, evento.after_itens),
+  }));
 
   return (
     <LineageAnchor lineageId="claims.sanus-impact" label="Impacto Sanus — janelas pareadas">
@@ -158,10 +236,11 @@ function SanusImpactBlock({
             Janelas fixas de comparação: {intervaloMeses(dados.pre?.meses ?? [])} × {intervaloMeses(dados.pos?.meses ?? [])} · eixo: data do atendimento.
           </p>
         </div>
-        <div className={styles.statGrid}>
+        <div className={`${styles.statGrid} ${styles.statGrid4}`}>
           <StatFlow label="Eventos · média mensal" pre={dados.pre?.itens_media_mensal ?? null} pos={dados.pos?.itens_media_mensal ?? null} delta={deltaItens} formatar={(v) => formatadorInteiro.format(v)} />
           <StatFlow label="Sinistro · média mensal" pre={dados.pre?.sinistro_media_mensal ?? null} pos={dados.pos?.sinistro_media_mensal ?? null} delta={deltaSinistro} formatar={(v) => moedaCompacta.format(v)} />
           <StatFlow label="Utilizantes · média mensal" pre={dados.pre?.utilizantes_media_mensal ?? null} pos={dados.pos?.utilizantes_media_mensal ?? null} delta={deltaUtilizantes} formatar={(v) => formatadorInteiro.format(v)} />
+          <StatFlow label="Custo por utilizante · média mensal" pre={custoPre} pos={custoPos} delta={deltaClientSide(custoPre, custoPos)} formatar={(v) => moedaCheia.format(v)} />
         </div>
         {dados.trimestres_utilizantes.length ? (
           <div className={styles.chipRow}>
@@ -180,6 +259,19 @@ function SanusImpactBlock({
                 </span>
               );
             })}
+          </div>
+        ) : null}
+        {eventos.length ? (
+          <div className={styles.splitGrid}>
+            <div>
+              <p className={styles.subpanelTitle}>Mudança por tipo de evento</p>
+              <EventChangeTable eventos={eventos} />
+            </div>
+            <div className={styles.insight}>
+              <p className={styles.insightLabel}>Leitura da janela</p>
+              <p>{leituraImpacto(dados, custoPre, custoPos)}</p>
+              <p className={styles.insightCaveat}>Os eventos são contagens nas mesmas janelas fixas dos indicadores acima.</p>
+            </div>
           </div>
         ) : null}
         <p className={styles.methodNote}>
@@ -355,38 +447,25 @@ function MatureComparisonBlock({ comparacao }: { comparacao: GoldPreview["compar
             {dados.familias_comuns === null ? "—" : `${formatadorInteiro.format(dados.familias_comuns)} famílias comparáveis`}
           </span>
         </div>
-        <div className={`${styles.statGrid} ${styles.statGrid4}`}>
+        <div className={styles.statGrid}>
           <StatCompare label="Sinistro · média mensal" pre={dados.before?.sinistro_medio_mensal ?? null} pos={dados.after?.sinistro_medio_mensal ?? null} delta={dados.deltas_pct.sinistro_medio_mensal} formatar={(v) => moedaCompacta.format(v)} />
           <StatCompare label="Itens · média mensal" pre={dados.before?.itens_medio_mensal ?? null} pos={dados.after?.itens_medio_mensal ?? null} delta={dados.deltas_pct.itens_medio_mensal} formatar={(v) => formatadorInteiro.format(v)} />
           <StatCompare label="Sinistro / família / mês" pre={dados.before?.sinistro_por_familia_mes ?? null} pos={dados.after?.sinistro_por_familia_mes ?? null} delta={dados.deltas_pct.sinistro_por_familia_mes} formatar={(v) => moedaCheia.format(v)} />
           <StatCompare label="Itens / família / mês" pre={dados.before?.itens_por_familia_mes ?? null} pos={dados.after?.itens_por_familia_mes ?? null} delta={dados.deltas_pct.itens_por_familia_mes} formatar={(v) => formatadorDecimal.format(v)} />
+          <StatCompare label="Internações · média mensal" pre={mediaPorMes(dados.before?.internacao ?? null, dados.before_meses)} pos={mediaPorMes(dados.after?.internacao ?? null, dados.after_meses)} delta={dados.deltas_pct.internacao} formatar={(v) => formatadorDecimal.format(v)} />
+          <StatCompare label="Pronto Socorro · média mensal" pre={mediaPorMes(dados.before?.pronto_socorro ?? null, dados.before_meses)} pos={mediaPorMes(dados.after?.pronto_socorro ?? null, dados.after_meses)} delta={dados.deltas_pct.pronto_socorro} formatar={(v) => formatadorDecimal.format(v)} />
         </div>
         <div className={styles.splitGrid}>
           <div>
             <p className={styles.subpanelTitle}>Mudança por tipo de evento</p>
-            <table className={`${styles.table} ${styles.tableSmall}`}>
-              <thead>
-                <tr>
-                  <th scope="col" className={styles.txt}>Evento</th>
-                  <th scope="col" className={styles.num}>Before</th>
-                  <th scope="col" className={styles.num}>After</th>
-                  <th scope="col" className={styles.num}>Δ</th>
-                </tr>
-              </thead>
-              <tbody>
-                {TIPOS_EVENTO.map((tipo) => {
-                  const { texto, classe } = deltaLabel(dados.deltas_pct[tipo.deltaCampo]);
-                  return (
-                    <tr key={tipo.campo}>
-                      <td className={styles.txt}>{tipo.label}</td>
-                      <td className={styles.num}>{dados.before ? formatadorInteiro.format(dados.before[tipo.campo]) : "—"}</td>
-                      <td className={styles.num}>{dados.after ? formatadorInteiro.format(dados.after[tipo.campo]) : "—"}</td>
-                      <td className={`${styles.num} ${classe}`}>{texto}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            <EventChangeTable
+              eventos={TIPOS_EVENTO.map((tipo) => ({
+                label: tipo.label,
+                before: dados.before?.[tipo.campo] ?? null,
+                after: dados.after?.[tipo.campo] ?? null,
+                delta: dados.deltas_pct[tipo.deltaCampo],
+              }))}
+            />
           </div>
           <div className={styles.insight}>
             <p className={styles.insightLabel}>Leitura executiva automática</p>
