@@ -7,6 +7,7 @@ const serieMensal = z.object({
   itens: z.number(),
   sinistro: z.number(),
   parcial: z.boolean(),
+  estado: z.enum(["closed", "partial", "unknown"]),
 });
 
 const serieCompetencia = z.object({
@@ -37,6 +38,7 @@ export const goldPreviewSchema = z.object({
   // gold-preview.ts como `Record<string, Record<string, number>>`.
   composicao_tipo_evento: z.record(z.string(), z.record(z.string(), z.number())),
   kpis: z.object({
+    periodo: z.enum(["closed", "observed"]),
     ultimo_mes_fechado: z.string().nullable(),
     sinistro_ultimo_mes_fechado: z.number().nullable(),
     utilizantes_ultimo_mes_fechado: z.number().nullable(),
@@ -62,7 +64,10 @@ export const goldPreviewSchema = z.object({
   }),
   internacao: z.object({
     por_agrupamento: z.array(z.object({ agrupamento: z.string(), sinistro_mi: z.number() })),
+    linhas_assistenciais: z.number(),
     internacoes_distintas: z.number(),
+    beneficiarios_unicos: z.number(),
+    dias_internados: z.number(),
     custo_medio: z.number(),
     duracao_mediana_dias: z.number(),
     duracao_p90_dias: z.number(),

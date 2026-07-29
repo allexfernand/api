@@ -430,7 +430,9 @@ export function DashboardShell() {
   const [activeTab, setActiveTab] = useState("demografica");
   const [dashboardUser, setDashboardUser] = useState("");
   const [dashboardRole, setDashboardRole] = useState("");
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() =>
+    typeof window !== "undefined" && window.matchMedia("(max-width: 760px)").matches,
+  );
   const hidePetitMds = dashboardUser === "sanus";
   const showPartnerVision = dashboardUser === "sanus";
   const isMdsDashboard = dashboardRole === "mds";
@@ -471,17 +473,9 @@ export function DashboardShell() {
   }, [authenticated]);
 
   useEffect(() => {
-    if (window.matchMedia("(max-width: 760px)").matches) setSidebarCollapsed(true);
-  }, []);
-
-  useEffect(() => {
     if (dashboardUser) document.body.dataset.dashboardUser = dashboardUser;
     else delete document.body.dataset.dashboardUser;
   }, [dashboardUser]);
-
-  useEffect(() => {
-    if (!showPartnerVision && activeTab === "visao-parceiros") activate("demografica");
-  }, [activeTab, activate, showPartnerVision]);
 
   useEffect(() => {
     document.body.dataset.sidebar = sidebarCollapsed ? "collapsed" : "expanded";

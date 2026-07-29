@@ -31,6 +31,7 @@ const formatadorMoeda = new Intl.NumberFormat("pt-BR", {
 const formatadorPercentual = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
 export function ExecutiveKpis({ kpis }: { kpis: GoldPreview["kpis"] }) {
+  const periodoFechado = kpis.periodo === "closed";
   const mesFechado = kpis.ultimo_mes_fechado ? monthTick(kpis.ultimo_mes_fechado) : "";
   const inicioJanela = kpis.janela_12m[0] ?? null;
   const fimJanela = kpis.janela_12m[kpis.janela_12m.length - 1] ?? null;
@@ -40,24 +41,24 @@ export function ExecutiveKpis({ kpis }: { kpis: GoldPreview["kpis"] }) {
     <div className={styles.kpiGrid}>
       <Kpi
         lineageId="claims.kpis"
-        label={`Sinistro · último mês fechado${mesFechado ? ` (${mesFechado})` : ""}`}
+        label={periodoFechado ? `Sinistro · último mês fechado${mesFechado ? ` (${mesFechado})` : ""}` : "Sinistro · sem mês fechado"}
         value={kpis.sinistro_ultimo_mes_fechado === null ? "—" : formatadorMoedaCompacta.format(kpis.sinistro_ultimo_mes_fechado)}
-        helper="mês fecha em M+2 (lag ~2 meses)"
-        title="O QUE É: SUM(sinistro) do último mês com faturamento completo (regra: mês M fecha quando M+2 começa — lag de cobrança ~2 meses). POR QUE EXISTE: é o único mês recente comparável com o histórico. SINAL: comparar com a média 12m; acima disso por 2+ meses = pressão de custo. NÃO É sinistralidade (não temos prêmio na base)."
+        helper={periodoFechado ? "mês fechado por gate formal" : "dados observados; sem comparação oficial"}
+        title={periodoFechado ? "O QUE É: SUM(sinistro) do último mês formalmente fechado. NÃO É sinistralidade (não temos prêmio na base)." : "Nenhum mês da janela foi formalmente fechado. Os demais indicadores representam dados observados, não uma comparação oficial."}
       />
       <Kpi
         lineageId="claims.kpis"
-        label={`Custo por utilizante · ${janelaLabel}`}
+        label={`Custo por utilizante · ${janelaLabel}${periodoFechado ? "" : " (observado)"}`}
         value={kpis.custo_por_utilizante_12m === null ? "—" : formatadorMoeda.format(kpis.custo_por_utilizante_12m)}
         helper={`${formatadorInteiro.format(kpis.utilizantes_12m)} utilizantes · não é per capita (falta vidas)`}
-        title="O QUE É: SUM(sinistro) ÷ COUNT(DISTINCT person_key) nos 12 meses fechados. POR QUE EXISTE: normaliza o custo pelo nº de pessoas que USARAM. NÃO é per capita — quem não usou não está na base; per capita real virá do join com beneficiaries (H4). SINAL: alta = severidade/mix piorando; queda = mix mais leve."
+        title={`O QUE É: SUM(sinistro) ÷ COUNT(DISTINCT person_key) na janela ${periodoFechado ? "fechada" : "observada"}. NÃO é per capita — quem não usou não está na base; per capita real exige vidas elegíveis históricas.`}
       />
       <Kpi
         lineageId="claims.kpis"
-        label={`Utilizantes no mês${mesFechado ? ` (${mesFechado})` : ""}`}
+        label={periodoFechado ? `Utilizantes no mês${mesFechado ? ` (${mesFechado})` : ""}` : "Utilizantes · janela observada"}
         value={kpis.utilizantes_ultimo_mes_fechado === null ? "—" : formatadorInteiro.format(kpis.utilizantes_ultimo_mes_fechado)}
         helper="COUNT DISTINCT person_key"
-        title="O QUE É: COUNT(DISTINCT person_key) no último mês fechado — chave de identidade opaca já resolvida na Gold v2 (substitui a reconstrução manual de codigo_usuario, que a base v1 corrompia). POR QUE EXISTE: mede FREQUÊNCIA (quantas pessoas usaram), separando volume de severidade — se o custo sobe com utilizantes estáveis, o problema é severidade, não frequência. ARMADILHA: nunca somar utilizantes de meses (mesma pessoa conta 2x)."
+        title={`O QUE É: COUNT(DISTINCT person_key) na ${periodoFechado ? "última competência fechada" : "janela observada"}. A identidade é opaca e resolvida na Gold v2; nunca some utilizantes de meses.`}
       />
       <Kpi
         lineageId="claims.kpis"

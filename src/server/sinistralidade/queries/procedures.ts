@@ -11,6 +11,8 @@ import type { LineageEntry } from "../../../contracts/sinistralidade-v2";
 
 export const PROCEDURE_UNITS = {
   custo: "R$",
+  reembolso: "R$",
+  share_reembolso: "fração (0–1)",
   custo_medio: "R$/serviço",
   servicos: "serviços",
   linhas: "linhas de cobrança",
@@ -35,6 +37,11 @@ const PROCEDURE_SOURCES = [
       "custo_assistencial_bruto",
     ],
   },
+  {
+    object: TABLES.gold,
+    role: "custo de reembolso por procedimento na janela",
+    columns: ["codigo_procedimento_operadora", "month_key", "flag_reembolso", "custo_assistencial_bruto", "flag_data_suspeita", "company_key"],
+  },
 ];
 
 const PROCEDURE_FILTERS = [
@@ -58,7 +65,7 @@ export const PROCEDURE_LINEAGE: LineageEntry[] = [
       },
     ],
     formula:
-      "Procedimentos ordenados por SUM(custo_assistencial_bruto) na janela, com participação acumulada sobre o custo total.",
+      "Procedimentos ordenados por SUM(custo_assistencial_bruto) na janela, com participação acumulada sobre o custo total. Reembolso = SUM(custo_assistencial_bruto onde flag_reembolso = true) por procedimento.",
     filters: PROCEDURE_FILTERS,
     notes: ["Mostra quantos procedimentos concentram a maior parte do custo."],
     related: ["procedure-trends.scatter", "procedure-trends.monthly"],
@@ -99,7 +106,7 @@ export async function procedureTrendsScope(
   if (!period.usableMonths.length) return { window: [], pareto: [], series: [], growth_ranking: [] };
   const months = monthsInSql(period.usableMonths);
   const eventFilter = options.eventType
-    ? ` AND procedimento_key IN (
+    ? ` AND m.procedimento_key IN (
         SELECT DISTINCT coalesce(nullif(trim(codigo_procedimento_operadora), ''), 'SEM_CODIGO')
         FROM ${TABLES.gold}
         WHERE NOT flag_data_suspeita AND company_key = '${companyKey}'
@@ -107,20 +114,29 @@ export async function procedureTrendsScope(
     : "";
 
   const windowRows = await q(
-    `SELECT procedimento_key,
-      max(descricao_comercial), max(grupo_comercial),
-      sum(linhas_cobranca), sum(quantidade_servicos), sum(utilizantes),
-      sum(episodios_internacao), round(sum(custo_assistencial_bruto), 2),
-      round(sum(custo_assistencial_bruto) / nullif(sum(quantidade_servicos), 0), 2),
-      sum(sum(custo_assistencial_bruto)) OVER () AS custo_total
-    FROM ${TABLES.martProcedimentoMes}
-    WHERE company_key = '${companyKey}' AND month_key IN (${months})${eventFilter}
-    GROUP BY procedimento_key
-    ORDER BY 8 DESC, procedimento_key
+    `WITH reembolso AS (
+      SELECT coalesce(nullif(trim(codigo_procedimento_operadora), ''), 'SEM_CODIGO') AS procedimento_key,
+        round(sum(CASE WHEN flag_reembolso THEN custo_assistencial_bruto ELSE 0 END), 2) AS custo_reembolso
+      FROM ${TABLES.gold}
+      WHERE NOT flag_data_suspeita AND company_key = '${companyKey}' AND month_key IN (${months})
+      GROUP BY 1
+    )
+    SELECT m.procedimento_key,
+      max(m.descricao_comercial), max(m.grupo_comercial),
+      sum(m.linhas_cobranca), sum(m.quantidade_servicos), sum(m.utilizantes),
+      sum(m.episodios_internacao), round(sum(m.custo_assistencial_bruto), 2),
+      round(sum(m.custo_assistencial_bruto) / nullif(sum(m.quantidade_servicos), 0), 2),
+      coalesce(max(r.custo_reembolso), 0),
+      sum(sum(m.custo_assistencial_bruto)) OVER () AS custo_total
+    FROM ${TABLES.martProcedimentoMes} m
+    LEFT JOIN reembolso r ON r.procedimento_key = m.procedimento_key
+    WHERE m.company_key = '${companyKey}' AND m.month_key IN (${months})${eventFilter}
+    GROUP BY m.procedimento_key
+    ORDER BY 8 DESC, m.procedimento_key
     LIMIT 100`,
   );
 
-  const totalCost = windowRows[0] ? toNum(windowRows[0][9]) : 0;
+  const totalCost = windowRows[0] ? toNum(windowRows[0][10]) : 0;
   let cumulative = 0;
   const window = windowRows.map((row, index) => {
     const grossCost = toNum(row[7]);
@@ -136,6 +152,8 @@ export async function procedureTrendsScope(
       hospitalization_episodes: toInt(row[6]),
       gross_cost: grossCost,
       average_cost_per_service: getCell(row[8]) === null ? null : toNum(row[8]),
+      reimbursement_cost: toNum(row[9]),
+      reimbursement_share: grossCost ? toNum(row[9]) / grossCost : null,
       cost_share: totalCost ? grossCost / totalCost : null,
       cumulative_cost_share: totalCost ? cumulative / totalCost : null,
       position: index + 1,

@@ -12,6 +12,9 @@ import { TABLES, type QueryRunner } from "../query-runner";
 
 export const TOP_USERS_UNITS = {
   custo: "R$",
+  reembolso: "R$",
+  share_reembolso: "fração (0–1)",
+  ticket_medio: "R$/serviço",
   servicos: "serviços",
   internacoes: "episódios",
   participacao: "fração (0–1)",
@@ -45,9 +48,14 @@ export const TOP_USERS_LINEAGE: LineageEntry[] = [
         role: "gate de fechamento do período",
         columns: ["company_key", "month_key", "status", "updated_at"],
       },
+      {
+        object: TABLES.gold,
+        role: "custo de reembolso por beneficiário na janela",
+        columns: ["person_key", "month_key", "flag_reembolso", "custo_assistencial_bruto", "flag_data_suspeita", "company_key"],
+      },
     ],
     formula:
-      "Pessoas ordenadas pelo critério escolhido (custo, serviços ou internações) somado na janela. A posição na janela anterior vem da mesma consulta deslocada.",
+      "Pessoas ordenadas pelo critério escolhido (custo, serviços ou internações) somado na janela. Reembolso = SUM(custo_assistencial_bruto onde flag_reembolso = true) por pessoa. A posição na janela anterior vem da mesma consulta deslocada.",
     filters: [
       "company_key do escopo do usuário, aplicado no SQL",
       "meses aprovados pelo gate de fechamento",
@@ -115,7 +123,7 @@ export async function topUsersWindowScope(
   const windowMonths = period.requested.windowMonths ?? period.usableMonths.length;
   const firstMonth = period.usableMonths[0];
   const previousSpine = monthSpine(firstMonth, windowMonths + 1).slice(0, windowMonths);
-  const [coveredMonths, previousRows, sparkRows] = await Promise.all([
+  const [coveredMonths, previousRows, sparkRows, reimbursementRows] = await Promise.all([
     fetchCoveredMonths(q, companyKey, period.usableMonths),
     q(
       `SELECT person_key, row_number() OVER (ORDER BY sum(${orderColumn}) DESC, person_key) AS posicao
@@ -130,9 +138,17 @@ export async function topUsersWindowScope(
         AND person_key IN (${personKeys.map((key) => `'${key}'`).join(",")})
       ORDER BY month_key`,
     ),
+    q(
+      `SELECT person_key, round(sum(CASE WHEN flag_reembolso THEN custo_assistencial_bruto ELSE 0 END), 2)
+      FROM ${TABLES.gold}
+      WHERE NOT flag_data_suspeita AND company_key = '${companyKey}' AND month_key IN (${months})
+        AND person_key IN (${personKeys.map((key) => `'${key}'`).join(",")})
+      GROUP BY person_key`,
+    ),
   ]);
 
   const previousRank = new Map(previousRows.map((row) => [String(getCell(row[0])), toInt(row[1])]));
+  const reimbursementByPerson = new Map(reimbursementRows.map((row) => [String(getCell(row[0])), toNum(row[1])]));
   const sparkByPerson = new Map<string, { month: string; gross_cost: number; service_quantity: number; hospitalization_episodes: number }[]>();
   for (const row of sparkRows) {
     const key = String(getCell(row[0]));
@@ -175,6 +191,9 @@ export async function topUsersWindowScope(
       billing_lines: toInt(row[3]),
       service_quantity: toNum(row[4]),
       gross_cost: grossCost,
+      reimbursement_cost: reimbursementByPerson.get(personKey) ?? 0,
+      reimbursement_share: grossCost ? (reimbursementByPerson.get(personKey) ?? 0) / grossCost : null,
+      average_cost_per_service: toNum(row[4]) ? grossCost / toNum(row[4]) : null,
       hospitalization_episodes: toInt(row[6]),
       months_with_usage: toInt(row[7]),
       recurrence: period.usableMonths.length ? toInt(row[7]) / period.usableMonths.length : null,

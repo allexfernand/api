@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { agruparTrimestres } from "../../src/features/claims/quarterly";
 
 const mes = (mes: string, sinistro: number, itens: number, utilizantes: number) => ({
-  mes, sinistro, itens, utilizantes, parcial: false,
+  mes, sinistro, itens, utilizantes, parcial: false, estado: "closed" as const,
 });
 
 describe("agregação trimestral", () => {
@@ -26,7 +26,7 @@ describe("agregação trimestral", () => {
     const incompleto = agruparTrimestres([mes("2026-01", 100, 10, 5)]);
     expect(incompleto[0].parcial).toBe(true);
     const comParcial = agruparTrimestres([
-      mes("2026-01", 100, 10, 5), mes("2026-02", 100, 10, 5), { ...mes("2026-03", 100, 10, 5), parcial: true },
+      mes("2026-01", 100, 10, 5), mes("2026-02", 100, 10, 5), { ...mes("2026-03", 100, 10, 5), parcial: true, estado: "partial" as const },
     ]);
     expect(comParcial[0].parcial).toBe(true);
   });
