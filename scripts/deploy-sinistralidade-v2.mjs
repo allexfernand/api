@@ -49,6 +49,7 @@ const targetObjects = [
   "mart_evento_empresa_mes_v2",
   "mart_pessoa_mes_v2",
   "mart_procedimento_mes_v2",
+  "mart_internacao_episodio_v2",
   "mart_internacao_mes_v2",
   "mart_internacao_grupo_mes_v2",
   "mart_prestador_mes_v2",

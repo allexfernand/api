@@ -162,7 +162,7 @@ function MentalHealthPanel({
             <strong>{formatadorInteiro.format(internacao.linhas_assistenciais)}</strong>
           </div>
           <div className={styles.factRow}>
-            <span>Admissões clínicas distintas</span>
+            <span>Episódios contínuos distintos</span>
             <strong>{formatadorInteiro.format(internacao.internacoes_distintas)}</strong>
           </div>
           <div className={styles.factRow}>

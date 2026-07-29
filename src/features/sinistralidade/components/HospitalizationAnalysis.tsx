@@ -31,7 +31,7 @@ export function HospitalizationAnalysis({ data, periodLabel }: { data: Hospitali
         <article className={styles.card}>
           <div className={styles.cardTitle}>
             <h3>Episódios por mês</h3>
-            <p>Episódios distintos por episode_key. Critério de saúde mental: flag clínica da Gold (flag_saude_mental).</p>
+            <p>Episódios contínuos por pessoa; períodos sobrepostos ou com alta e início na mesma data contam uma vez. Critério de saúde mental: flag clínica da Gold (flag_saude_mental).</p>
           </div>
           <ChartCard
             lineageId="hospitalization-trends.monthly"

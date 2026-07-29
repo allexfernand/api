@@ -44,6 +44,62 @@ const SINISTRO_MES_MINIMO = 100_000; // abaixo disso o mês é só lag residual,
 const mesValido = (m: string) => /^\d{4}-\d{2}$/.test(m);
 const maskPerson = (key: string) => `Beneficiário ${key.slice(0, 8)}`;
 
+function continuousHospitalizationCte(filtroSql: string) {
+  return `WITH hospitalization_rows AS (
+    SELECT g.company_key, g.person_key, g.month_key, g.episode_key,
+      g.data_inicio_internacao, g.data_alta, g.custo_assistencial_bruto,
+      g.duracao_internacao_dias,
+      sha2(concat_ws('||', g.company_key, g.person_key,
+        coalesce(nullif(trim(g.numero_conta_medica), ''), 'SEM_CONTA'),
+        coalesce(nullif(trim(g.authorization_id), ''), 'SEM_SENHA'),
+        coalesce(nullif(trim(g.prestador), ''), 'SEM_PRESTADOR')), 256) AS fallback_admission_key
+    FROM ${GOLD} g
+    WHERE NOT g.flag_data_suspeita AND g.flag_internacao${filtroSql}
+  ), dated_intervals AS (
+    SELECT DISTINCT company_key, person_key, data_inicio_internacao, data_alta
+    FROM hospitalization_rows
+    WHERE data_inicio_internacao IS NOT NULL
+      AND data_alta IS NOT NULL
+      AND data_alta >= data_inicio_internacao
+  ), interval_history AS (
+    SELECT *, max(data_alta) OVER (
+      PARTITION BY company_key, person_key
+      ORDER BY data_inicio_internacao, data_alta
+      ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+    ) AS maior_alta_anterior
+    FROM dated_intervals
+  ), numbered_intervals AS (
+    SELECT *, sum(CASE WHEN maior_alta_anterior IS NULL OR data_inicio_internacao > maior_alta_anterior THEN 1 ELSE 0 END) OVER (
+      PARTITION BY company_key, person_key
+      ORDER BY data_inicio_internacao, data_alta
+      ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ) AS sequencia_episodio
+    FROM interval_history
+  ), episode_rows AS (
+    SELECT r.*, sha2(concat_ws('||', r.company_key, r.person_key, 'INTERVALO_CONTINUO', cast(i.sequencia_episodio AS STRING)), 256) AS episodio_key
+    FROM hospitalization_rows r
+    INNER JOIN numbered_intervals i
+      ON r.company_key = i.company_key
+     AND r.person_key = i.person_key
+     AND r.data_inicio_internacao = i.data_inicio_internacao
+     AND r.data_alta = i.data_alta
+    UNION ALL
+    SELECT r.*, r.fallback_admission_key AS episodio_key
+    FROM hospitalization_rows r
+    WHERE r.data_inicio_internacao IS NULL
+       OR r.data_alta IS NULL
+       OR r.data_alta < r.data_inicio_internacao
+  ), episodes AS (
+    SELECT company_key, person_key, episodio_key,
+      coalesce(date_format(min(data_inicio_internacao), 'yyyy-MM'), min(month_key)) AS admission_month,
+      count(*) AS linhas,
+      sum(custo_assistencial_bruto) AS custo,
+      coalesce(datediff(max(data_alta), min(data_inicio_internacao)), max(duracao_internacao_dias)) AS duracao_dias
+    FROM episode_rows
+    GROUP BY 1, 2, 3
+  )`;
+}
+
 // Serviços Sanus por família (family_key), via ponte já resolvida na
 // fact_coordenacao_evento_gold_v2 (empresa + CPF do titular, sem CPF exposto).
 // Cobertura: contatos digitais DO TITULAR; dependente atendido digitalmente não casa.
@@ -249,23 +305,10 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
                 round(sum(g.custo_assistencial_bruto) / 1e6, 2)
          FROM ${GOLD} g WHERE NOT g.flag_data_suspeita AND g.flag_internacao AND g.${JANELA_2024}${filtroSql}
          GROUP BY 1 ORDER BY 2 DESC LIMIT 8`),
-      // Admissão clínica: mesma chave sem data de atendimento usada nos marts
-      // da Visão 360. `episode_key` permanece uma métrica de atendimentos-dia.
-      q(`WITH i AS (
-           SELECT sha2(concat_ws('||', g.company_key, g.person_key,
-                    coalesce(nullif(trim(g.numero_conta_medica), ''), 'SEM_CONTA'),
-                    coalesce(nullif(trim(g.authorization_id), ''), 'SEM_SENHA'),
-                    coalesce(nullif(trim(g.prestador), ''), 'SEM_PRESTADOR')), 256) AS admission_key,
-                  max(g.person_key) AS person_key,
-                  min(g.month_key) AS admission_month,
-                  count(*) AS linhas,
-                  sum(g.custo_assistencial_bruto) AS c,
-                  max(g.duracao_internacao_dias) AS d
-           FROM ${GOLD} g WHERE NOT g.flag_data_suspeita AND g.flag_internacao${filtroSql}
-           GROUP BY 1
-         )
-         SELECT sum(linhas), count(*), count(DISTINCT person_key), sum(coalesce(d, 0)), round(sum(c) / count(*), 0), percentile(d, 0.5), percentile(d, 0.9)
-         FROM i WHERE admission_month >= '2024-01'`),
+      q(`${continuousHospitalizationCte(filtroSql)}
+         SELECT sum(linhas), count(*), count(DISTINCT person_key), sum(coalesce(duracao_dias, 0)),
+           round(sum(custo) / count(*), 0), percentile(duracao_dias, 0.5), percentile(duracao_dias, 0.9)
+         FROM episodes WHERE admission_month >= '2024-01'`),
       q(`SELECT COALESCE(NULLIF(trim(g.tema_saude_mental), ''), 'Sem tema') AS tema,
                 round(sum(g.custo_assistencial_bruto) / 1e6, 2)
          FROM ${GOLD} g WHERE NOT g.flag_data_suspeita AND g.flag_saude_mental AND g.${JANELA_2024}${filtroSql}
@@ -293,17 +336,21 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
          GROUP BY 1, 2 ORDER BY sin DESC`),
       // Dado sensível (LGPD): ranking individual mascarado por person_key opaco;
       // sem atributos clínicos individuais; endpoint já recusa credencial MDS.
-      q(`SELECT g.person_key,
+      q(`${continuousHospitalizationCte(filtroSql)}, episode_counts AS (
+           SELECT company_key, person_key, count(*) AS internacoes
+           FROM episodes
+           WHERE admission_month IN (${janela12Sql})
+           GROUP BY 1, 2
+         )
+         SELECT g.person_key,
                 max(g.faixa_etaria_usuario) AS faixa, max(g.parentesco_usuario) AS par,
                 max(COALESCE(NULLIF(trim(g.nome_lotacao), ''), 'Sem lotação')) AS lot,
                 round(sum(g.custo_assistencial_bruto), 2) AS custo,
                 count(*) AS itens,
-                count(DISTINCT CASE WHEN g.flag_internacao THEN sha2(concat_ws('||', g.company_key, g.person_key,
-                  coalesce(nullif(trim(g.numero_conta_medica), ''), 'SEM_CONTA'),
-                  coalesce(nullif(trim(g.authorization_id), ''), 'SEM_SENHA'),
-                  coalesce(nullif(trim(g.prestador), ''), 'SEM_PRESTADOR')), 256) END) AS internacoes,
+                coalesce(max(e.internacoes), 0) AS internacoes,
                 round(100 * sum(g.custo_assistencial_bruto) / sum(sum(g.custo_assistencial_bruto)) OVER (), 2) AS share_pct
          FROM ${GOLD} g
+         LEFT JOIN episode_counts e ON g.company_key = e.company_key AND g.person_key = e.person_key
          WHERE NOT g.flag_data_suspeita AND g.month_key IN (${janela12Sql})${filtroSql}
          GROUP BY 1 ORDER BY custo DESC, g.person_key LIMIT 10`),
       // Facets pros multiselects (universo completo dentro do company scope)
