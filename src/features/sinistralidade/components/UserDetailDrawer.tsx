@@ -1,6 +1,6 @@
 "use client";
 
-// Drawer lateral do beneficiário (nível 3): evolução mensal, composição por
+// Modal central do beneficiário (nível 3): evolução mensal, composição por
 // evento, procedimentos, prestadores e internações. Carregado sob demanda,
 // somente com permissão clínica; todo acesso é auditado no servidor.
 
@@ -38,7 +38,7 @@ export function UserDetailDrawer({
 
   useEffect(() => {
     if (!entityKey) return;
-    // Foco entra no drawer ao abrir e volta ao elemento anterior ao fechar.
+    // Foco entra no modal ao abrir e volta ao elemento anterior ao fechar.
     const previous = document.activeElement as HTMLElement | null;
     closeButton.current?.focus();
     const onKey = (event: KeyboardEvent) => {
