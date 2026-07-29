@@ -164,7 +164,8 @@ async function togglePartnerCompanyDrilldown(partnerId) {
   }));
   if (requestId !== partnerVisionCompanyDrilldownRequestId) return;
 
-  insertPartnerCompanyRows(anchorRow, key, groupRows.map((row) => `<tr class="partner-company-row" data-parent-partner-key="${key}">
+  const orderedGroupRows = [...groupRows].sort((a, b) => (Number(b.lives) || 0) - (Number(a.lives) || 0));
+  insertPartnerCompanyRows(anchorRow, key, orderedGroupRows.map((row) => `<tr class="partner-company-row" data-parent-partner-key="${key}">
     <td class="drilldown-name">${escapeHtml(row.group)}</td>
     <td>${row.lives === null ? '—' : fmt(row.lives)}</td>
     <td>${row.sessions === null ? '—' : fmt(row.sessions)}</td>
