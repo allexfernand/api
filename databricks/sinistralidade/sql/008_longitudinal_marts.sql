@@ -2,9 +2,8 @@
 --
 -- Regras transversais:
 --   * fonte única: gold_sinistro_evento_v2 com NOT flag_data_suspeita;
---   * internações = count(DISTINCT admission_key) com flag_internacao — hash de
---     empresa+pessoa+conta+senha+prestador SEM a data (o episode_key da Gold é
---     grão atendimento-dia e inflaria internações longas), nunca linhas;
+--   * internações = períodos clínicos contínuos por pessoa; intervalos que se
+--     sobrepõem ou se tocam são um único episódio, nunca linhas;
 --   * usuários = count(DISTINCT person_key); famílias = count(DISTINCT family_key) confiável;
 --   * nenhuma linha materializa mês sem cobertura: a densidade da série é resolvida
 --     pela API dentro da janela consultada, sem transformar ausência em zero;
@@ -14,6 +13,82 @@
 --
 -- Estes objetos permanecem em shadow mode até passarem pelos gates de
 -- 009_longitudinal_quality_checks.sql e 010_longitudinal_baseline.sql.
+
+-- ---------------------------------------------------------------------------
+-- mart_internacao_episodio_v2
+-- Grão: company_key + person_key + episódio clínico contínuo.
+-- Períodos sobrepostos ou cuja alta coincide com o próximo início pertencem
+-- ao mesmo episódio. Sem as duas datas, mantém-se a chave de admissão como
+-- fallback, porque não há evidência para inferir continuidade clínica.
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE VIEW hive_metastore.sanus_prod.mart_internacao_episodio_v2 AS
+WITH hospitalization_rows AS (
+  SELECT
+    company_key, person_key, family_key, month_key, episode_key,
+    data_inicio_internacao, data_alta, flag_saude_mental,
+    acomodacao_internacao, prestador, codigo_procedimento_operadora, quantidade_servicos,
+    custo_assistencial_bruto, duracao_internacao_dias, flag_reembolso
+  FROM hive_metastore.sanus_prod.gold_sinistro_evento_v2
+  WHERE NOT flag_data_suspeita AND flag_internacao
+), dated_intervals AS (
+  SELECT DISTINCT company_key, person_key, data_inicio_internacao, data_alta
+  FROM hospitalization_rows
+  WHERE data_inicio_internacao IS NOT NULL
+    AND data_alta IS NOT NULL
+    AND data_alta >= data_inicio_internacao
+), interval_history AS (
+  SELECT *,
+    max(data_alta) OVER (
+      PARTITION BY company_key, person_key
+      ORDER BY data_inicio_internacao, data_alta
+      ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+    ) AS maior_alta_anterior
+  FROM dated_intervals
+), numbered_intervals AS (
+  SELECT *,
+    sum(CASE WHEN maior_alta_anterior IS NULL OR data_inicio_internacao > maior_alta_anterior THEN 1 ELSE 0 END) OVER (
+      PARTITION BY company_key, person_key
+      ORDER BY data_inicio_internacao, data_alta
+      ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ) AS sequencia_episodio
+  FROM interval_history
+), episode_rows AS (
+  SELECT r.*,
+    sha2(concat_ws('||', r.company_key, r.person_key, 'INTERVALO_CONTINUO', cast(i.sequencia_episodio AS STRING)), 256) AS episodio_key
+  FROM hospitalization_rows r
+  INNER JOIN numbered_intervals i
+    ON r.company_key = i.company_key
+   AND r.person_key = i.person_key
+   AND r.data_inicio_internacao = i.data_inicio_internacao
+   AND r.data_alta = i.data_alta
+  UNION ALL
+  SELECT r.*, r.episode_key AS episodio_key
+  FROM hospitalization_rows r
+  WHERE r.data_inicio_internacao IS NULL
+     OR r.data_alta IS NULL
+     OR r.data_alta < r.data_inicio_internacao
+)
+SELECT
+  company_key,
+  person_key,
+  episodio_key,
+  coalesce(date_format(min(data_inicio_internacao), 'yyyy-MM'), min(month_key)) AS month_key,
+  max(family_key) AS family_key,
+  max(coalesce(flag_saude_mental, false)) AS saude_mental,
+  max(coalesce(flag_reembolso, false)) AS reembolso,
+  min(data_inicio_internacao) AS data_inicio_internacao,
+  max(data_alta) AS data_alta,
+  count(DISTINCT episode_key) AS atendimentos_dia,
+  sum(quantidade_servicos) AS quantidade_servicos,
+  round(sum(custo_assistencial_bruto), 2) AS custo_total,
+  coalesce(datediff(max(data_alta), min(data_inicio_internacao)), max(duracao_internacao_dias)) AS duracao_internacao_dias,
+  max_by(coalesce(nullif(trim(acomodacao_internacao), ''), 'Outras diárias'),
+    struct(custo_assistencial_bruto, coalesce(nullif(trim(acomodacao_internacao), ''), 'Outras diárias'))) AS acomodacao_internacao,
+  array_sort(collect_set(coalesce(nullif(trim(prestador), ''), 'Prestador não informado'))) AS prestadores,
+  array_sort(collect_set(coalesce(nullif(trim(codigo_procedimento_operadora), ''), 'SEM_CODIGO'))) AS procedimentos,
+  '1.0.0' AS contract_version
+FROM episode_rows
+GROUP BY 1, 2, 3;
 
 -- ---------------------------------------------------------------------------
 -- mart_evento_empresa_mes_v2
@@ -71,6 +146,10 @@ WITH person_event AS (
     ORDER BY event_cost DESC, event_lines DESC, tipo_evento
   ) AS rn
   FROM person_event
+), episode_person_month AS (
+  SELECT company_key, month_key, person_key, count(DISTINCT episodio_key) AS episodios_internacao
+  FROM hive_metastore.sanus_prod.mart_internacao_episodio_v2
+  GROUP BY 1, 2, 3
 ), person_month AS (
   SELECT
     company_key, month_key, person_key,
@@ -78,12 +157,6 @@ WITH person_event AS (
     count(*) AS linhas_cobranca,
     sum(quantidade_servicos) AS quantidade_servicos,
     round(sum(custo_assistencial_bruto), 2) AS custo_assistencial_bruto,
-    -- Internações no grão de admissão (sem a data no hash) — ver
-    -- mart_internacao_mes_v2; admissão que toca o mês conta uma vez no mês.
-    count(DISTINCT CASE WHEN flag_internacao THEN sha2(concat_ws('||', company_key, person_key,
-      coalesce(nullif(trim(numero_conta_medica), ''), 'SEM_CONTA'),
-      coalesce(nullif(trim(authorization_id), ''), 'SEM_SENHA'),
-      coalesce(nullif(trim(prestador), ''), 'SEM_PRESTADOR')), 256) END) AS episodios_internacao,
     count(DISTINCT coalesce(nullif(trim(tipo_evento), ''), 'Sem classificação')) AS eventos_distintos,
     count(DISTINCT prestador) AS prestadores_distintos,
     round(sum(CASE WHEN coalesce(flag_saude_mental, false) THEN custo_assistencial_bruto ELSE 0 END), 2) AS custo_saude_mental,
@@ -99,12 +172,16 @@ WITH person_event AS (
 )
 SELECT
   p.*,
+  coalesce(i.episodios_internacao, 0) AS episodios_internacao,
   e.tipo_evento AS evento_principal,
   '1.1.0' AS contract_version
 FROM person_month p
 LEFT JOIN primary_event e
   ON p.company_key = e.company_key AND p.month_key = e.month_key
- AND p.person_key = e.person_key AND e.rn = 1;
+ AND p.person_key = e.person_key AND e.rn = 1
+LEFT JOIN episode_person_month i
+  ON p.company_key = i.company_key AND p.month_key = i.month_key
+ AND p.person_key = i.person_key;
 
 -- ---------------------------------------------------------------------------
 -- mart_procedimento_mes_v2
@@ -113,71 +190,63 @@ LEFT JOIN primary_event e
 -- de cobrança, quantidade de serviços e episódios para evitar dupla leitura.
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE VIEW hive_metastore.sanus_prod.mart_procedimento_mes_v2 AS
+WITH procedure_episode AS (
+  SELECT company_key, month_key, episodio_key, procedimento_key
+  FROM hive_metastore.sanus_prod.mart_internacao_episodio_v2
+  LATERAL VIEW explode(procedimentos) procedure AS procedimento_key
+), procedure_episode_count AS (
+  SELECT company_key, month_key, procedimento_key, count(DISTINCT episodio_key) AS episodios_internacao
+  FROM procedure_episode
+  GROUP BY 1, 2, 3
+), procedure_month AS (
+  SELECT
+    company_key,
+    month_key,
+    coalesce(nullif(trim(codigo_procedimento_operadora), ''), 'SEM_CODIGO') AS procedimento_key,
+    max(coalesce(nullif(trim(descricao_procedimento), ''), 'Sem descrição')) AS descricao_comercial,
+    max(coalesce(nullif(trim(macrogroup), ''), 'Sem classificação')) AS grupo_comercial,
+    max(coalesce(nullif(trim(grupo_procedimento), ''), 'Sem classificação')) AS grupo_procedimento,
+    count(*) AS linhas_cobranca,
+    sum(quantidade_servicos) AS quantidade_servicos,
+    count(DISTINCT person_key) AS utilizantes,
+    round(sum(custo_assistencial_bruto), 2) AS custo_assistencial_bruto,
+    round(sum(custo_assistencial_bruto) / nullif(sum(quantidade_servicos), 0), 2) AS custo_medio_por_servico
+  FROM hive_metastore.sanus_prod.gold_sinistro_evento_v2
+  WHERE NOT flag_data_suspeita
+  GROUP BY 1, 2, 3
+)
 SELECT
-  company_key,
-  month_key,
-  coalesce(nullif(trim(codigo_procedimento_operadora), ''), 'SEM_CODIGO') AS procedimento_key,
-  max(coalesce(nullif(trim(descricao_procedimento), ''), 'Sem descrição')) AS descricao_comercial,
-  max(coalesce(nullif(trim(macrogroup), ''), 'Sem classificação')) AS grupo_comercial,
-  max(coalesce(nullif(trim(grupo_procedimento), ''), 'Sem classificação')) AS grupo_procedimento,
-  count(*) AS linhas_cobranca,
-  sum(quantidade_servicos) AS quantidade_servicos,
-  count(DISTINCT person_key) AS utilizantes,
-  count(DISTINCT CASE WHEN flag_internacao THEN sha2(concat_ws('||', company_key, person_key,
-      coalesce(nullif(trim(numero_conta_medica), ''), 'SEM_CONTA'),
-      coalesce(nullif(trim(authorization_id), ''), 'SEM_SENHA'),
-      coalesce(nullif(trim(prestador), ''), 'SEM_PRESTADOR')), 256) END) AS episodios_internacao,
-  round(sum(custo_assistencial_bruto), 2) AS custo_assistencial_bruto,
-  round(sum(custo_assistencial_bruto) / nullif(sum(quantidade_servicos), 0), 2) AS custo_medio_por_servico,
+  p.*,
+  coalesce(e.episodios_internacao, 0) AS episodios_internacao,
   '1.1.0' AS contract_version
-FROM hive_metastore.sanus_prod.gold_sinistro_evento_v2
-WHERE NOT flag_data_suspeita
-GROUP BY 1, 2, 3;
+FROM procedure_month p
+LEFT JOIN procedure_episode_count e
+  ON p.company_key = e.company_key AND p.month_key = e.month_key
+ AND p.procedimento_key = e.procedimento_key;
 
 -- ---------------------------------------------------------------------------
 -- mart_internacao_mes_v2
 -- Grão: company_key + month_key + saude_mental (critério flag_saude_mental).
--- Internações contadas por ADMISSÃO distinta (GOV-02): o episode_key da Gold
--- inclui a data de atendimento, então uma internação faturada em várias datas
--- gerava vários "episódios". A admission_key remove a data (empresa + pessoa
--- + conta + senha + prestador) e colapsa a internação clínica. O mês da
--- admissão é o primeiro mês observado. `atendimentos_dia` preserva a
--- contagem antiga (episode_key) para reconciliação.
+-- Internações contadas por episódios clínicos contínuos: para a mesma pessoa,
+-- intervalos que se sobrepõem ou se tocam formam um único episódio. O mês do
+-- episódio é o mês de início; `atendimentos_dia` preserva a granularidade da
+-- Gold para reconciliação.
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE VIEW hive_metastore.sanus_prod.mart_internacao_mes_v2 AS
-WITH admission_base AS (
-  -- Classificação no grão de admissão: uma admissão com qualquer linha de
-  -- saúde mental é contada uma única vez, como saúde mental.
-  SELECT
-    company_key,
-    sha2(concat_ws('||', company_key, person_key,
-      coalesce(nullif(trim(numero_conta_medica), ''), 'SEM_CONTA'),
-      coalesce(nullif(trim(authorization_id), ''), 'SEM_SENHA'),
-      coalesce(nullif(trim(prestador), ''), 'SEM_PRESTADOR')), 256) AS admission_key,
-    min(month_key) AS month_key,
-    max(coalesce(flag_saude_mental, false)) AS saude_mental,
-    max(person_key) AS person_key,
-    count(DISTINCT episode_key) AS atendimentos_dia,
-    max(duracao_internacao_dias) AS duracao_internacao_dias,
-    sum(custo_assistencial_bruto) AS custo_admissao
-  FROM hive_metastore.sanus_prod.gold_sinistro_evento_v2
-  WHERE NOT flag_data_suspeita AND flag_internacao
-  GROUP BY company_key, 2
-)
 SELECT
   company_key,
   month_key,
   saude_mental,
-  count(DISTINCT admission_key) AS episodios_internacao,
+  count(DISTINCT episodio_key) AS episodios_internacao,
   sum(atendimentos_dia) AS atendimentos_dia,
   count(DISTINCT person_key) AS utilizantes,
-  round(sum(custo_admissao), 2) AS custo_total,
-  round(sum(custo_admissao) / nullif(count(DISTINCT admission_key), 0), 2) AS custo_medio_por_episodio,
+  round(sum(custo_total), 2) AS custo_total,
+  round(sum(custo_total) / nullif(count(DISTINCT episodio_key), 0), 2) AS custo_medio_por_episodio,
   percentile(duracao_internacao_dias, 0.5) AS duracao_mediana_dias,
   percentile(duracao_internacao_dias, 0.9) AS duracao_p90_dias,
   round(avg(CASE WHEN duracao_internacao_dias IS NOT NULL THEN 1.0 ELSE 0.0 END), 4) AS cobertura_duracao,
   '1.1.0' AS contract_version
-FROM admission_base
+FROM hive_metastore.sanus_prod.mart_internacao_episodio_v2
 GROUP BY 1, 2, 3;
 
 -- ---------------------------------------------------------------------------
@@ -188,40 +257,18 @@ GROUP BY 1, 2, 3;
 -- grupo estatístico, substituindo o agrupamento clínico enriquecido por LLM.
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE VIEW hive_metastore.sanus_prod.mart_internacao_grupo_mes_v2 AS
-WITH admission_base AS (
-  -- Agrupamento no grão de ADMISSÃO (ver mart_internacao_mes_v2): usa a
-  -- acomodação dominante por custo para que cada admissão conte uma vez.
-  -- A admissão pertence à mesma conta/senha/prestador, então o prestador é
-  -- único por definição; prestadores_envolvidos conta admissões da linha.
-  SELECT
-    company_key,
-    sha2(concat_ws('||', company_key, person_key,
-      coalesce(nullif(trim(numero_conta_medica), ''), 'SEM_CONTA'),
-      coalesce(nullif(trim(authorization_id), ''), 'SEM_SENHA'),
-      coalesce(nullif(trim(prestador), ''), 'SEM_PRESTADOR')), 256) AS admission_key,
-    min(month_key) AS month_key,
-    max_by(coalesce(nullif(trim(acomodacao_internacao), ''), 'Outras diárias'),
-      struct(custo_assistencial_bruto, coalesce(nullif(trim(acomodacao_internacao), ''), 'Outras diárias'))) AS acomodacao_internacao,
-    max(person_key) AS person_key,
-    max(duracao_internacao_dias) AS duracao_internacao_dias,
-    count(DISTINCT prestador) AS prestadores_no_episodio,
-    sum(custo_assistencial_bruto) AS custo_admissao
-  FROM hive_metastore.sanus_prod.gold_sinistro_evento_v2
-  WHERE NOT flag_data_suspeita AND flag_internacao
-  GROUP BY company_key, 2
-)
 SELECT
   company_key,
   month_key,
   acomodacao_internacao,
-  count(DISTINCT admission_key) AS episodios_internacao,
+  count(DISTINCT episodio_key) AS episodios_internacao,
   count(DISTINCT person_key) AS utilizantes,
-  round(sum(custo_admissao), 2) AS custo_total,
-  round(sum(custo_admissao) / nullif(count(DISTINCT admission_key), 0), 2) AS custo_medio_por_episodio,
+  round(sum(custo_total), 2) AS custo_total,
+  round(sum(custo_total) / nullif(count(DISTINCT episodio_key), 0), 2) AS custo_medio_por_episodio,
   percentile(duracao_internacao_dias, 0.5) AS duracao_mediana_dias,
-  sum(prestadores_no_episodio) AS prestadores_envolvidos,
+  sum(size(prestadores)) AS prestadores_envolvidos,
   '1.2.0' AS contract_version
-FROM admission_base
+FROM hive_metastore.sanus_prod.mart_internacao_episodio_v2
 GROUP BY 1, 2, 3;
 
 -- ---------------------------------------------------------------------------
@@ -238,28 +285,46 @@ WITH provider_base AS (
     coalesce(flag_reembolso, false) AS reembolso
   FROM hive_metastore.sanus_prod.gold_sinistro_evento_v2
   WHERE NOT flag_data_suspeita
+), provider_episode AS (
+  SELECT
+    company_key,
+    month_key,
+    reembolso,
+    sha2(concat_ws('||', company_key, upper(trim(prestador))), 256) AS prestador_key,
+    episodio_key
+  FROM hive_metastore.sanus_prod.mart_internacao_episodio_v2
+  LATERAL VIEW explode(prestadores) provider AS prestador
+), provider_episode_count AS (
+  SELECT company_key, month_key, reembolso, prestador_key,
+    count(DISTINCT episodio_key) AS episodios_internacao
+  FROM provider_episode
+  GROUP BY 1, 2, 3, 4
+), provider_month AS (
+  SELECT
+    company_key,
+    month_key,
+    prestador_key,
+    reembolso,
+    max(coalesce(nullif(trim(prestador), ''), 'Prestador não informado')) AS prestador_label,
+    max(coalesce(nullif(trim(tipo_prestador), ''), 'Sem classificação')) AS tipo_prestador,
+    max(coalesce(nullif(trim(especialidade), ''), 'Sem especialidade')) AS especialidade_principal,
+    count(*) AS linhas_cobranca,
+    sum(quantidade_servicos) AS quantidade_servicos,
+    count(DISTINCT person_key) AS utilizantes,
+    round(sum(custo_assistencial_bruto), 2) AS custo_assistencial_bruto,
+    round(sum(custo_assistencial_bruto) / nullif(sum(quantidade_servicos), 0), 2) AS ticket_medio_por_servico,
+    round(sum(custo_assistencial_bruto) / nullif(count(DISTINCT person_key), 0), 2) AS custo_medio_por_utilizante
+  FROM provider_base
+  GROUP BY 1, 2, 3, 4
 )
 SELECT
-  company_key,
-  month_key,
-  prestador_key,
-  max(coalesce(nullif(trim(prestador), ''), 'Prestador não informado')) AS prestador_label,
-  reembolso,
-  max(coalesce(nullif(trim(tipo_prestador), ''), 'Sem classificação')) AS tipo_prestador,
-  max(coalesce(nullif(trim(especialidade), ''), 'Sem especialidade')) AS especialidade_principal,
-  count(*) AS linhas_cobranca,
-  sum(quantidade_servicos) AS quantidade_servicos,
-  count(DISTINCT person_key) AS utilizantes,
-  count(DISTINCT CASE WHEN flag_internacao THEN sha2(concat_ws('||', company_key, person_key,
-      coalesce(nullif(trim(numero_conta_medica), ''), 'SEM_CONTA'),
-      coalesce(nullif(trim(authorization_id), ''), 'SEM_SENHA'),
-      coalesce(nullif(trim(prestador), ''), 'SEM_PRESTADOR')), 256) END) AS episodios_internacao,
-  round(sum(custo_assistencial_bruto), 2) AS custo_assistencial_bruto,
-  round(sum(custo_assistencial_bruto) / nullif(sum(quantidade_servicos), 0), 2) AS ticket_medio_por_servico,
-  round(sum(custo_assistencial_bruto) / nullif(count(DISTINCT person_key), 0), 2) AS custo_medio_por_utilizante,
+  p.*,
+  coalesce(e.episodios_internacao, 0) AS episodios_internacao,
   '1.1.0' AS contract_version
-FROM provider_base
-GROUP BY company_key, month_key, prestador_key, reembolso;
+FROM provider_month p
+LEFT JOIN provider_episode_count e
+  ON p.company_key = e.company_key AND p.month_key = e.month_key
+ AND p.reembolso = e.reembolso AND p.prestador_key = e.prestador_key;
 
 -- ---------------------------------------------------------------------------
 -- mart_concentracao_mes_v2
@@ -373,6 +438,11 @@ WITH entry AS (
   FROM hive_metastore.sanus_prod.beneficiary_eligibility_snapshot_v2
   WHERE family_key IS NOT NULL AND coverage_start_date IS NOT NULL
   GROUP BY 1, 2
+), family_episode_month AS (
+  SELECT company_key, month_key, family_key, count(DISTINCT episodio_key) AS episodios_internacao
+  FROM hive_metastore.sanus_prod.mart_internacao_episodio_v2
+  WHERE family_key IS NOT NULL
+  GROUP BY 1, 2, 3
 ), family_month AS (
   SELECT
     g.company_key,
@@ -381,10 +451,6 @@ WITH entry AS (
     count(*) AS linhas_cobranca,
     sum(g.quantidade_servicos) AS quantidade_servicos,
     count(DISTINCT g.person_key) AS pessoas,
-    count(DISTINCT CASE WHEN g.flag_internacao THEN sha2(concat_ws('||', g.company_key, g.person_key,
-      coalesce(nullif(trim(g.numero_conta_medica), ''), 'SEM_CONTA'),
-      coalesce(nullif(trim(g.authorization_id), ''), 'SEM_SENHA'),
-      coalesce(nullif(trim(g.prestador), ''), 'SEM_PRESTADOR')), 256) END) AS episodios_internacao,
     sum(g.custo_assistencial_bruto) AS custo_assistencial_bruto,
     max_by(coalesce(nullif(trim(g.tipo_evento), ''), 'Sem classificação'), g.custo_assistencial_bruto) AS evento_principal
   FROM hive_metastore.sanus_prod.gold_sinistro_evento_v2 g
@@ -393,11 +459,15 @@ WITH entry AS (
 ), joined AS (
   SELECT
     f.*,
+    coalesce(i.episodios_internacao, 0) AS episodios_internacao,
     date_format(e.entry_date, 'yyyy-MM') AS coorte_entrada,
     cast(months_between(to_date(concat(f.month_key, '-01')), trunc(e.entry_date, 'MM')) AS INT) AS mes_relativo
   FROM family_month f
   INNER JOIN entry e
     ON f.company_key = e.company_key AND f.family_key = e.family_key
+  LEFT JOIN family_episode_month i
+    ON f.company_key = i.company_key AND f.month_key = i.month_key
+   AND f.family_key = i.family_key
 )
 SELECT
   company_key,

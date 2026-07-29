@@ -84,26 +84,15 @@ WHERE abs(coalesce(e.mart_cost, 0) - g.gold_cost) > 0.05
    OR abs(coalesce(pr.mart_cost, 0) - g.gold_cost) > 0.05
    OR abs(coalesce(ps.mart_cost, 0) - g.gold_cost) > 0.05;
 
--- 3. Reconciliação de pessoas e ADMISSÕES contra cálculo direto na Gold.
---    A admissão (hash sem data) é atribuída ao primeiro mês observado — a
---    mesma regra do mart_internacao_mes_v2.
+-- 3. Reconciliação de pessoas e episódios contínuos contra cálculo da Gold.
 WITH gold_people AS (
   SELECT company_key, month_key, count(DISTINCT person_key) AS gold_people
   FROM hive_metastore.sanus_prod.gold_sinistro_evento_v2
   WHERE NOT flag_data_suspeita
   GROUP BY 1, 2
-), gold_admissions AS (
-  SELECT company_key, min(month_key) AS month_key,
-    sha2(concat_ws('||', company_key, person_key,
-      coalesce(nullif(trim(numero_conta_medica), ''), 'SEM_CONTA'),
-      coalesce(nullif(trim(authorization_id), ''), 'SEM_SENHA'),
-      coalesce(nullif(trim(prestador), ''), 'SEM_PRESTADOR')), 256) AS admission_key
-  FROM hive_metastore.sanus_prod.gold_sinistro_evento_v2
-  WHERE NOT flag_data_suspeita AND flag_internacao
-  GROUP BY company_key, 3
 ), gold_episodes AS (
-  SELECT company_key, month_key, count(DISTINCT admission_key) AS gold_episodes
-  FROM gold_admissions
+  SELECT company_key, month_key, count(DISTINCT episodio_key) AS gold_episodes
+  FROM hive_metastore.sanus_prod.mart_internacao_episodio_v2
   GROUP BY 1, 2
 ), pessoa AS (
   SELECT company_key, month_key, count(DISTINCT person_key) AS mart_people
@@ -125,15 +114,9 @@ WHERE coalesce(p.mart_people, 0) <> g.gold_people
 
 -- 3b. Reconciliação de CUSTO de internação e de itens de PS contra a Gold.
 WITH gold_internacao AS (
-  SELECT company_key, min(month_key) AS month_key,
-    sha2(concat_ws('||', company_key, person_key,
-      coalesce(nullif(trim(numero_conta_medica), ''), 'SEM_CONTA'),
-      coalesce(nullif(trim(authorization_id), ''), 'SEM_SENHA'),
-      coalesce(nullif(trim(prestador), ''), 'SEM_PRESTADOR')), 256) AS admission_key,
-    sum(custo_assistencial_bruto) AS custo
-  FROM hive_metastore.sanus_prod.gold_sinistro_evento_v2
-  WHERE NOT flag_data_suspeita AND flag_internacao
-  GROUP BY company_key, 3
+  SELECT company_key, month_key, sum(custo_total) AS custo
+  FROM hive_metastore.sanus_prod.mart_internacao_episodio_v2
+  GROUP BY 1, 2
 ), gold_internacao_mes AS (
   SELECT company_key, month_key, round(sum(custo), 2) AS gold_cost
   FROM gold_internacao GROUP BY 1, 2
@@ -159,11 +142,10 @@ FULL OUTER JOIN mart_ps mp ON gp.company_key = mp.company_key AND gp.month_key =
 WHERE abs(coalesce(gi.gold_cost, 0) - coalesce(mi.mart_cost, 0)) > 0.05
    OR abs(coalesce(gp.gold_cost, 0) - coalesce(mp.mart_cost, 0)) > 0.05;
 
--- 3c. Razão admissões × atendimentos-dia: acompanha o efeito da migração de
---     grão; razão média muito próxima de 1 com internações longas indica
---     conta/senha ausentes na origem (chave degradada).
+-- 3c. Razão episódios contínuos × atendimentos-dia: acompanha o efeito da
+--     consolidação dos intervalos clínicos em relação ao grão da Gold.
 SELECT 'admission_vs_day_ratio' AS check_name, company_key, month_key,
-  sum(episodios_internacao) AS admissoes,
+  sum(episodios_internacao) AS episodios_continuos,
   sum(atendimentos_dia) AS atendimentos_dia,
   round(sum(atendimentos_dia) / nullif(sum(episodios_internacao), 0), 4) AS razao
 FROM hive_metastore.sanus_prod.mart_internacao_mes_v2

@@ -271,13 +271,13 @@ export const GOLD_PREVIEW_LINEAGE: LineageEntry[] = [
       },
       {
         object: TABLES.gold,
-        role: "estatísticas por admissão clínica derivada na Gold",
-        columns: ["person_key", "numero_conta_medica", "authorization_id", "prestador", "episode_key", "custo_assistencial_bruto", "duracao_internacao_dias", "flag_internacao", "month_key", "flag_data_suspeita", "company_key"],
+        role: "estatísticas por episódio contínuo derivado na Gold",
+        columns: ["person_key", "data_inicio_internacao", "data_alta", "episode_key", "custo_assistencial_bruto", "duracao_internacao_dias", "flag_internacao", "month_key", "flag_data_suspeita", "company_key"],
       },
       FONTE_FILTRO_CIDADE_ESTADO,
     ],
     formula:
-      "por_agrupamento: SUM(custo_assistencial_bruto) ÷ 1.000.000 agrupado por acomodacao_internacao (top 8); admissão = SHA2(empresa + pessoa + conta médica + senha + prestador), sem data de atendimento; linhas assistenciais = COUNT(*); admissões = COUNT(DISTINCT admission_key); beneficiários internados = COUNT(DISTINCT person_key); dias internados = SUM(MAX(duracao_internacao_dias) por admissão); custo médio = SUM(custo_assistencial_bruto) ÷ admissões; duração mediana/p90 = PERCENTILE(d, 0.5/0.9), onde d = MAX(duracao_internacao_dias) por admissão.",
+      "por_agrupamento: SUM(custo_assistencial_bruto) ÷ 1.000.000 agrupado por acomodacao_internacao (top 8); episódio = período contínuo por empresa e pessoa: intervalos sobrepostos ou com alta e novo início na mesma data são unidos; linhas assistenciais = COUNT(*); episódios = COUNT(DISTINCT episodio_key); beneficiários internados = COUNT(DISTINCT person_key); dias internados = SUM(duração do episódio); custo médio = SUM(custo_assistencial_bruto) ÷ episódios; duração mediana/p90 = PERCENTILE(duração, 0.5/0.9).",
     filters: [
       ESCOPO_USUARIO,
       NOT_SUSPEITA,
@@ -286,7 +286,7 @@ export const GOLD_PREVIEW_LINEAGE: LineageEntry[] = [
       "janela fixa desde 2024-01 (JANELA_2024), diferente da janela de 12 meses fechados de claims.kpis",
     ],
     notes: [
-      "A mesma chave de admissão usada no mart_internacao_mes_v2 da Visão 360 é derivada na Gold para preservar os filtros desta aba. episode_key é mantida apenas como atendimento-dia no SQL de origem.",
+      "A mesma consolidação por período contínuo do mart_internacao_mes_v2 é derivada na Gold para preservar os filtros desta aba. Linhas sem as duas datas usam a chave de admissão como fallback.",
       "Acomodação vazia ou nula aparece como 'Outras diárias'; é uma classificação de acomodação, não um agrupamento clínico homologado.",
     ],
     related: ["claims.mental-health"],

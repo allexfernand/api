@@ -1,7 +1,6 @@
 // Escopo `hospitalization-trends`: internações gerais, saúde mental e
-// agrupamentos. Episódios sempre por count(distinct admission_key) (GOV-02):
-// episode_key inclui a data de atendimento e superconta internações
-// faturadas em datas diferentes; admission_key colapsa a admissão clínica.
+// agrupamentos. Episódios são períodos contínuos por pessoa: intervalos que
+// se sobrepõem ou se tocam são consolidados no mart antes da consulta.
 
 import type { ResolvedPeriod } from "../period-gate";
 import { monthsInSql } from "../period-gate";
@@ -57,15 +56,15 @@ export const HOSPITALIZATION_LINEAGE: LineageEntry[] = [
       },
     ],
     formula:
-      "Episódios = COUNT(DISTINCT admission_key) já consolidado no mart: admission_key colapsa empresa + pessoa + conta + senha + prestador, sem a data de atendimento. Custo médio por episódio = custo_total ÷ episodios_internacao.",
+      "Episódios = COUNT(DISTINCT episodio_key) já consolidado no mart: para a mesma empresa e pessoa, períodos de internação que se sobrepõem ou têm alta e novo início na mesma data formam um episódio. Custo médio por episódio = custo_total ÷ episodios_internacao.",
     filters: [
       "company_key do escopo do usuário, aplicado no SQL",
       "meses aprovados pelo gate de fechamento",
       "mentalHealth informado restringe por saude_mental (true = só saúde mental; false = só não-saúde-mental); ausente traz todos",
     ],
     notes: [
-      "Internação conta ADMISSÕES, não diárias: o episode_key da Gold inclui a data de atendimento e superconta internações faturadas em datas diferentes; admission_key remove a data e colapsa a admissão clínica, atribuída ao mês inicial (o primeiro mês observado). O antigo episode_key sobrevive só como atendimentos_dia, para reconciliação.",
-      "A classificação de saúde mental é aplicada no grão da admissão, não da linha de cobrança: uma admissão com qualquer linha de saúde mental conta inteira como saúde mental.",
+      "Internação conta períodos clínicos contínuos, não diárias: o mart une os intervalos da mesma pessoa quando se sobrepõem ou se tocam e atribui o episódio ao mês de início. Sem as duas datas, mantém a chave de admissão como fallback.",
+      "A classificação de saúde mental é aplicada no grão do episódio, não da linha de cobrança: um episódio com qualquer linha de saúde mental conta inteiro como saúde mental.",
     ],
     related: ["timeline.monthly"],
   },

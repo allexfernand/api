@@ -15,20 +15,9 @@ USING (
     FROM hive_metastore.sanus_prod.gold_sinistro_evento_v2
     WHERE NOT flag_data_suspeita
     GROUP BY 1, 2
-  ), gold_admissions AS (
-    -- Admissão (hash sem a data), atribuída ao primeiro mês observado —
-    -- mesma regra do mart_internacao_mes_v2.
-    SELECT company_key, min(month_key) AS month_key,
-      sha2(concat_ws('||', company_key, person_key,
-        coalesce(nullif(trim(numero_conta_medica), ''), 'SEM_CONTA'),
-        coalesce(nullif(trim(authorization_id), ''), 'SEM_SENHA'),
-        coalesce(nullif(trim(prestador), ''), 'SEM_PRESTADOR')), 256) AS admission_key
-    FROM hive_metastore.sanus_prod.gold_sinistro_evento_v2
-    WHERE NOT flag_data_suspeita AND flag_internacao
-    GROUP BY company_key, 3
   ), gold_episodes AS (
-    SELECT company_key, month_key, count(DISTINCT admission_key) AS gold_episodes
-    FROM gold_admissions
+    SELECT company_key, month_key, count(DISTINCT episodio_key) AS gold_episodes
+    FROM hive_metastore.sanus_prod.mart_internacao_episodio_v2
     GROUP BY 1, 2
   ), metrics AS (
     SELECT
@@ -123,7 +112,7 @@ USING (
     'longitudinal_episode_reconciliation',
       CASE WHEN episode_divergences = 0 THEN 'passed' ELSE 'failed' END,
       cast(episode_divergences AS DOUBLE), cast(0 AS DOUBLE), cast(0 AS DOUBLE),
-      'Admissões de internação (hash sem data, mês inicial) idênticas à Gold',
+      'Episódios contínuos de internação (mês inicial) idênticos à Gold',
     'longitudinal_cost_reconciliation_procedimento',
       CASE WHEN procedimento_cost_divergences = 0 THEN 'passed' ELSE 'failed' END,
       cast(procedimento_cost_divergences AS DOUBLE), cast(0 AS DOUBLE), cast(0.05 AS DOUBLE),
