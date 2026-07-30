@@ -22,7 +22,7 @@
     "node": ">=20.9.0"
   },
   "dependencies": {
-    "next": "16.2.10",
+    "next": "16.2.12",
     "react": "19.2.7",
     "react-dom": "19.2.7",
     "react-is": "^19.2.8",
@@ -44,6 +44,7 @@
     "vitest": "^4.1.10"
   },
   "overrides": {
-    "postcss": "8.5.10"
+    "postcss": "8.5.25",
+    "sharp": "0.35.3"
   }
 }
