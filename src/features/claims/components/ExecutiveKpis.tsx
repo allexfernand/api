@@ -36,15 +36,17 @@ export function ExecutiveKpis({ kpis }: { kpis: GoldPreview["kpis"] }) {
   const inicioJanela = kpis.janela_12m[0] ?? null;
   const fimJanela = kpis.janela_12m[kpis.janela_12m.length - 1] ?? null;
   const janelaLabel = inicioJanela && fimJanela ? `${monthTick(inicioJanela)}–${monthTick(fimJanela)}` : "janela 12m";
+  const mesObservado = fimJanela ? monthTick(fimJanela) : "";
+  const utilizantesExibidos = periodoFechado ? kpis.utilizantes_ultimo_mes_fechado : kpis.utilizantes_12m;
 
   return (
     <div className={styles.kpiGrid}>
       <Kpi
         lineageId="claims.kpis"
-        label={periodoFechado ? `Sinistro · último mês fechado${mesFechado ? ` (${mesFechado})` : ""}` : "Sinistro · sem mês fechado"}
+        label={periodoFechado ? `Sinistro · último mês fechado${mesFechado ? ` (${mesFechado})` : ""}` : `Sinistro · último mês observado${mesObservado ? ` (${mesObservado})` : ""}`}
         value={kpis.sinistro_ultimo_mes_fechado === null ? "—" : formatadorMoedaCompacta.format(kpis.sinistro_ultimo_mes_fechado)}
         helper={periodoFechado ? "mês fechado por gate formal" : "dados observados; sem comparação oficial"}
-        title={periodoFechado ? "O QUE É: SUM(sinistro) do último mês formalmente fechado. NÃO É sinistralidade (não temos prêmio na base)." : "Nenhum mês da janela foi formalmente fechado. Os demais indicadores representam dados observados, não uma comparação oficial."}
+        title={periodoFechado ? "O QUE É: SUM(sinistro) do último mês formalmente fechado. NÃO É sinistralidade (não temos prêmio na base)." : "O QUE É: SUM(sinistro) do último mês observado. Nenhum mês da janela foi formalmente fechado, portanto o valor não deve ser usado em comparação oficial."}
       />
       <Kpi
         lineageId="claims.kpis"
@@ -56,8 +58,8 @@ export function ExecutiveKpis({ kpis }: { kpis: GoldPreview["kpis"] }) {
       <Kpi
         lineageId="claims.kpis"
         label={periodoFechado ? `Utilizantes no mês${mesFechado ? ` (${mesFechado})` : ""}` : "Utilizantes · janela observada"}
-        value={kpis.utilizantes_ultimo_mes_fechado === null ? "—" : formatadorInteiro.format(kpis.utilizantes_ultimo_mes_fechado)}
-        helper="COUNT DISTINCT person_key"
+        value={utilizantesExibidos === null ? "—" : formatadorInteiro.format(utilizantesExibidos)}
+        helper={periodoFechado ? "COUNT DISTINCT person_key no mês" : "COUNT DISTINCT person_key na janela"}
         title={`O QUE É: COUNT(DISTINCT person_key) na ${periodoFechado ? "última competência fechada" : "janela observada"}. A identidade é opaca e resolvida na Gold v2; nunca some utilizantes de meses.`}
       />
       <Kpi
@@ -65,7 +67,7 @@ export function ExecutiveKpis({ kpis }: { kpis: GoldPreview["kpis"] }) {
         label="Reembolso · share do custo"
         value={kpis.reembolso_share_12m === null ? "—" : `${formatadorPercentual.format(kpis.reembolso_share_12m)}%`}
         helper="proxy de vazamento de rede"
-        title="O QUE É: share do custo com flag_reembolso = true nos 12m fechados. POR QUE EXISTE: proxy de vazamento de rede — gasto fora da rede credenciada. SINAL: tendência de alta = rede insuficiente em alguma praça/especialidade (reembolso costuma custar mais que rede)."
+        title={`O QUE É: share do custo com flag_reembolso = true na janela ${periodoFechado ? "fechada" : "observada"}. POR QUE EXISTE: proxy de vazamento de rede — gasto fora da rede credenciada. SINAL: tendência de alta = rede insuficiente em alguma praça/especialidade (reembolso costuma custar mais que rede).`}
       />
     </div>
   );

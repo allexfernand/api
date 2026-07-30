@@ -28,6 +28,7 @@
 // Análise Sinistro antiga — a mesma razão documentada em Methodology.tsx
 // para a frase de pendência que também não foi portada.
 
+import { useState } from "react";
 import styles from "../ClaimsTab.module.css";
 import type { GoldPreview } from "../../../contracts/gold-preview";
 import { monthTick } from "../../sinistralidade/components/charts";
@@ -45,13 +46,18 @@ const formatadorDecimal = new Intl.NumberFormat("pt-BR", { maximumFractionDigits
 type JanelaMedia = { meses: string[]; itens_media_mensal: number; sinistro_media_mensal: number; utilizantes_media_mensal: number };
 type TrimestreUtilizantes = { trimestre: string; utilizantes: number | null };
 type EventoImpacto = { tipo_evento: string; before_itens: number | null; after_itens: number | null };
+type TamanhoComparacao = 2 | 4 | 6;
+type ComparacaoImpacto = { pre: JanelaMedia | null; pos: JanelaMedia | null; eventos: EventoImpacto[] };
 type ImpactoSanus = {
   metodologia: string;
   pre: JanelaMedia | null;
   pos: JanelaMedia | null;
   eventos: EventoImpacto[];
+  comparacoes: Partial<Record<TamanhoComparacao, ComparacaoImpacto>>;
   trimestres_utilizantes: TrimestreUtilizantes[];
 };
+
+const TAMANHOS_COMPARACAO: TamanhoComparacao[] = [2, 4, 6];
 
 function numOrNull(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
@@ -103,12 +109,10 @@ function janelaMediaOrNull(value: unknown): JanelaMedia | null {
   return { meses: strArray(bruto.meses), itens_media_mensal: itens, sinistro_media_mensal: sinistro, utilizantes_media_mensal: utilizantes };
 }
 
-function parseImpactoSanus(raw: GoldPreview["impacto_sanus"]): ImpactoSanus {
-  const bruto = raw as Record<string, unknown>;
-  const trimestresBruto = Array.isArray(bruto.trimestres_utilizantes) ? bruto.trimestres_utilizantes : [];
+function parseImpactoComparacao(raw: unknown): ComparacaoImpacto {
+  const bruto = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
   const eventosBruto = Array.isArray(bruto.eventos) ? bruto.eventos : [];
   return {
-    metodologia: strOrEmpty(bruto.metodologia),
     pre: janelaMediaOrNull(bruto.pre),
     pos: janelaMediaOrNull(bruto.pos),
     eventos: eventosBruto
@@ -119,6 +123,22 @@ function parseImpactoSanus(raw: GoldPreview["impacto_sanus"]): ImpactoSanus {
         after_itens: numOrNull(item.after_itens),
       }))
       .filter((item) => item.tipo_evento),
+  };
+}
+
+function parseImpactoSanus(raw: GoldPreview["impacto_sanus"]): ImpactoSanus {
+  const bruto = raw as Record<string, unknown>;
+  const trimestresBruto = Array.isArray(bruto.trimestres_utilizantes) ? bruto.trimestres_utilizantes : [];
+  const comparacoesBruto = bruto.comparacoes && typeof bruto.comparacoes === "object" ? bruto.comparacoes as Record<string, unknown> : {};
+  const principal = parseImpactoComparacao(bruto);
+  return {
+    metodologia: strOrEmpty(bruto.metodologia),
+    ...principal,
+    comparacoes: Object.fromEntries(
+      TAMANHOS_COMPARACAO
+        .filter((tamanho) => comparacoesBruto[String(tamanho)] !== undefined)
+        .map((tamanho) => [tamanho, parseImpactoComparacao(comparacoesBruto[String(tamanho)])]),
+    ) as Partial<Record<TamanhoComparacao, ComparacaoImpacto>>,
     trimestres_utilizantes: trimestresBruto
       .filter((item): item is Record<string, unknown> => !!item && typeof item === "object")
       .map((item) => ({ trimestre: strOrEmpty(item.trimestre), utilizantes: numOrNull(item.utilizantes) })),
@@ -191,8 +211,8 @@ function EventChangeTable({ eventos }: { eventos: EventoComparado[] }) {
   );
 }
 
-function leituraImpacto(dados: ImpactoSanus, custoPre: number | null, custoPos: number | null): string {
-  const eventos = dados.eventos
+function leituraImpacto(eventosImpacto: EventoImpacto[], custoPre: number | null, custoPos: number | null): string {
+  const eventos = eventosImpacto
     .map((evento) => ({ label: nomeEvento(evento.tipo_evento), delta: deltaClientSide(evento.before_itens, evento.after_itens) }))
     .filter((evento): evento is { label: string; delta: number } => evento.delta !== null)
     .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
@@ -215,12 +235,14 @@ function SanusImpactBlock({
   ultimoMesFechado: string | null;
 }) {
   const dados = parseImpactoSanus(impacto);
-  const deltaItens = deltaClientSide(dados.pre?.itens_media_mensal ?? null, dados.pos?.itens_media_mensal ?? null);
-  const deltaSinistro = deltaClientSide(dados.pre?.sinistro_media_mensal ?? null, dados.pos?.sinistro_media_mensal ?? null);
-  const deltaUtilizantes = deltaClientSide(dados.pre?.utilizantes_media_mensal ?? null, dados.pos?.utilizantes_media_mensal ?? null);
-  const custoPre = custoPorUtilizante(dados.pre);
-  const custoPos = custoPorUtilizante(dados.pos);
-  const eventos = dados.eventos.map((evento) => ({
+  const [tamanho, setTamanho] = useState<TamanhoComparacao>(2);
+  const comparacao = dados.comparacoes[tamanho] ?? dados;
+  const deltaItens = deltaClientSide(comparacao.pre?.itens_media_mensal ?? null, comparacao.pos?.itens_media_mensal ?? null);
+  const deltaSinistro = deltaClientSide(comparacao.pre?.sinistro_media_mensal ?? null, comparacao.pos?.sinistro_media_mensal ?? null);
+  const deltaUtilizantes = deltaClientSide(comparacao.pre?.utilizantes_media_mensal ?? null, comparacao.pos?.utilizantes_media_mensal ?? null);
+  const custoPre = custoPorUtilizante(comparacao.pre);
+  const custoPos = custoPorUtilizante(comparacao.pos);
+  const eventos = comparacao.eventos.map((evento) => ({
     label: nomeEvento(evento.tipo_evento),
     before: evento.before_itens,
     after: evento.after_itens,
@@ -230,16 +252,19 @@ function SanusImpactBlock({
   return (
     <LineageAnchor lineageId="claims.sanus-impact" label="Impacto Sanus — janelas pareadas">
       <article className={styles.card}>
-        <div className={styles.cardTitle}>
-          <h3>Impacto Sanus — janelas pareadas</h3>
-          <p>
-            Janelas fixas de comparação: {intervaloMeses(dados.pre?.meses ?? [])} × {intervaloMeses(dados.pos?.meses ?? [])} · eixo: data do atendimento.
-          </p>
+        <div className={styles.cardHeaderRow}>
+          <div className={styles.cardTitle}>
+            <h3>Impacto Sanus — {tamanho}×{tamanho} meses</h3>
+            <p>
+              {intervaloMeses(comparacao.pre?.meses ?? [])} × {intervaloMeses(comparacao.pos?.meses ?? [])} · eixo: data do atendimento.
+            </p>
+          </div>
+          <ComparisonWindowPicker value={tamanho} onChange={setTamanho} />
         </div>
         <div className={`${styles.statGrid} ${styles.statGrid4}`}>
-          <StatFlow label="Eventos · média mensal" pre={dados.pre?.itens_media_mensal ?? null} pos={dados.pos?.itens_media_mensal ?? null} delta={deltaItens} formatar={(v) => formatadorInteiro.format(v)} />
-          <StatFlow label="Sinistro · média mensal" pre={dados.pre?.sinistro_media_mensal ?? null} pos={dados.pos?.sinistro_media_mensal ?? null} delta={deltaSinistro} formatar={(v) => moedaCompacta.format(v)} />
-          <StatFlow label="Utilizantes · média mensal" pre={dados.pre?.utilizantes_media_mensal ?? null} pos={dados.pos?.utilizantes_media_mensal ?? null} delta={deltaUtilizantes} formatar={(v) => formatadorInteiro.format(v)} />
+          <StatFlow label="Eventos · média mensal" pre={comparacao.pre?.itens_media_mensal ?? null} pos={comparacao.pos?.itens_media_mensal ?? null} delta={deltaItens} formatar={(v) => formatadorInteiro.format(v)} />
+          <StatFlow label="Sinistro · média mensal" pre={comparacao.pre?.sinistro_media_mensal ?? null} pos={comparacao.pos?.sinistro_media_mensal ?? null} delta={deltaSinistro} formatar={(v) => moedaCompacta.format(v)} />
+          <StatFlow label="Utilizantes · média mensal" pre={comparacao.pre?.utilizantes_media_mensal ?? null} pos={comparacao.pos?.utilizantes_media_mensal ?? null} delta={deltaUtilizantes} formatar={(v) => formatadorInteiro.format(v)} />
           <StatFlow label="Custo por utilizante · média mensal" pre={custoPre} pos={custoPos} delta={deltaClientSide(custoPre, custoPos)} formatar={(v) => moedaCheia.format(v)} />
         </div>
         {dados.trimestres_utilizantes.length ? (
@@ -269,8 +294,8 @@ function SanusImpactBlock({
             </div>
             <div className={styles.insight}>
               <p className={styles.insightLabel}>Leitura da janela</p>
-              <p>{leituraImpacto(dados, custoPre, custoPos)}</p>
-              <p className={styles.insightCaveat}>Os eventos são contagens nas mesmas janelas fixas dos indicadores acima.</p>
+              <p>{leituraImpacto(comparacao.eventos, custoPre, custoPos)}</p>
+              <p className={styles.insightCaveat}>Os eventos são contagens nas mesmas janelas selecionadas acima.</p>
             </div>
           </div>
         ) : null}
@@ -337,14 +362,17 @@ type DeltasMadura = {
   terapia: number | null;
 };
 
-type ComparacaoMadura = {
-  metodologia: string;
+type ComparacaoMaduraDados = {
   before_meses: string[];
   after_meses: string[];
   familias_comuns: number | null;
   before: JanelaMadura | null;
   after: JanelaMadura | null;
   deltas_pct: DeltasMadura;
+};
+type ComparacaoMadura = ComparacaoMaduraDados & {
+  metodologia: string;
+  comparacoes: Partial<Record<TamanhoComparacao, ComparacaoMaduraDados>>;
 };
 
 function janelaMaduraOrNull(value: unknown): JanelaMadura | null {
@@ -378,11 +406,10 @@ function janelaMaduraOrNull(value: unknown): JanelaMadura | null {
   };
 }
 
-function parseComparacaoMadura(raw: GoldPreview["comparacao_madura"]): ComparacaoMadura {
-  const bruto = raw as Record<string, unknown>;
+function parseComparacaoMaduraDados(raw: unknown): ComparacaoMaduraDados {
+  const bruto = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
   const deltasBruto = (bruto.deltas_pct && typeof bruto.deltas_pct === "object" ? bruto.deltas_pct : {}) as Record<string, unknown>;
   return {
-    metodologia: strOrEmpty(bruto.metodologia),
     before_meses: strArray(bruto.before_meses),
     after_meses: strArray(bruto.after_meses),
     familias_comuns: numOrNull(bruto.familias_comuns),
@@ -398,6 +425,20 @@ function parseComparacaoMadura(raw: GoldPreview["comparacao_madura"]): Comparaca
       consulta: numOrNull(deltasBruto.consulta),
       terapia: numOrNull(deltasBruto.terapia),
     },
+  };
+}
+
+function parseComparacaoMadura(raw: GoldPreview["comparacao_madura"]): ComparacaoMadura {
+  const bruto = raw as Record<string, unknown>;
+  const comparacoesBruto = bruto.comparacoes && typeof bruto.comparacoes === "object" ? bruto.comparacoes as Record<string, unknown> : {};
+  return {
+    metodologia: strOrEmpty(bruto.metodologia),
+    ...parseComparacaoMaduraDados(bruto),
+    comparacoes: Object.fromEntries(
+      TAMANHOS_COMPARACAO
+        .filter((tamanho) => comparacoesBruto[String(tamanho)] !== undefined)
+        .map((tamanho) => [tamanho, parseComparacaoMaduraDados(comparacoesBruto[String(tamanho)])]),
+    ) as Partial<Record<TamanhoComparacao, ComparacaoMaduraDados>>,
   };
 }
 
@@ -427,25 +468,50 @@ function leituraExecutiva(dados: ComparacaoMadura): string {
     ? ` O maior movimento entre os eventos monitorados foi ${maior.label}: ${maior.valor <= 0 ? "queda" : "alta"} de ${formatadorPercentual.format(Math.abs(maior.valor))}%.`
     : "";
 
-  return `No cohort estável, ${freqTexto} e ${sevTexto}.${maiorTexto}`;
+  return `Na coorte familiar estável (titular e dependentes vinculados), ${freqTexto} e ${sevTexto}.${maiorTexto}`;
+}
+
+function ComparisonWindowPicker({ value, onChange }: { value: TamanhoComparacao; onChange: (value: TamanhoComparacao) => void }) {
+  return (
+    <div className={styles.comparisonWindowPicker} role="tablist" aria-label="Tamanho das janelas de comparação">
+      {TAMANHOS_COMPARACAO.map((tamanho) => (
+        <button
+          key={tamanho}
+          type="button"
+          role="tab"
+          aria-selected={value === tamanho}
+          className={value === tamanho ? styles.comparisonWindowActive : undefined}
+          onClick={() => onChange(tamanho)}
+        >
+          {tamanho}×{tamanho} meses
+        </button>
+      ))}
+    </div>
+  );
 }
 
 function MatureComparisonBlock({ comparacao }: { comparacao: GoldPreview["comparacao_madura"] }) {
-  const dados = parseComparacaoMadura(comparacao);
+  const dadosBase = parseComparacaoMadura(comparacao);
+  const [tamanho, setTamanho] = useState<TamanhoComparacao>(4);
+  const dados = { ...dadosBase, ...(dadosBase.comparacoes[tamanho] ?? dadosBase) };
 
   return (
-    <LineageAnchor lineageId="claims.mature-comparison" label="Comparação madura 4+4 meses">
+    <LineageAnchor lineageId="claims.mature-comparison" label={`Comparação madura ${tamanho}×${tamanho} meses`}>
       <article className={styles.card}>
         <div className={styles.cardHeaderRow}>
           <div className={styles.cardTitle}>
-            <h3>Comparação madura 4+4 meses</h3>
+            <h3>Comparação madura {tamanho}×{tamanho} meses</h3>
             <p>
               {intervaloMeses(dados.before_meses)} × {intervaloMeses(dados.after_meses)} · mesmas famílias presentes nos dois lados · normalizado por mês.
             </p>
+            <p className={styles.familyLegend}>Família = titular e dependentes ligados ao mesmo <code>family_key</code>. Dependentes sem ponte familiar na origem não entram na coorte.</p>
           </div>
-          <span className={styles.chipOk}>
-            {dados.familias_comuns === null ? "—" : `${formatadorInteiro.format(dados.familias_comuns)} famílias comparáveis`}
-          </span>
+          <div className={styles.comparisonActions}>
+            <ComparisonWindowPicker value={tamanho} onChange={setTamanho} />
+            <span className={styles.chipOk}>
+              {dados.familias_comuns === null ? "—" : `${formatadorInteiro.format(dados.familias_comuns)} famílias comparáveis`}
+            </span>
+          </div>
         </div>
         <div className={styles.statGrid}>
           <StatCompare label="Sinistro · média mensal" pre={dados.before?.sinistro_medio_mensal ?? null} pos={dados.after?.sinistro_medio_mensal ?? null} delta={dados.deltas_pct.sinistro_medio_mensal} formatar={(v) => moedaCompacta.format(v)} />

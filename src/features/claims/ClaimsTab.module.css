@@ -938,6 +938,55 @@
   margin-bottom: 0;
 }
 
+.comparisonActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.comparisonWindowPicker {
+  display: inline-flex;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+}
+
+.comparisonWindowPicker button {
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  padding: 5px 9px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.comparisonWindowPicker button:hover,
+.comparisonWindowPicker button:focus-visible {
+  color: var(--brand);
+  outline: none;
+}
+
+.comparisonWindowPicker .comparisonWindowActive {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.familyLegend {
+  margin: 7px 0 0;
+  color: var(--text-faint);
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+
+.familyLegend code {
+  color: var(--text-muted);
+}
+
 /* Fatos empilhados (saúde mental + estatísticas de internação em
    Hospitalization): rótulo à esquerda, valor em destaque à direita. */
 .factList {

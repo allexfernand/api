@@ -59,7 +59,7 @@ export const GOLD_PREVIEW_LINEAGE: LineageEntry[] = [
     sources: [
       {
         object: TABLES.gold,
-        role: "custo, utilizantes e reembolso agregados na janela de 12 meses fechados",
+        role: "custo, utilizantes e reembolso agregados na janela de até 12 meses fechados ou observados",
         columns: ["month_key", "person_key", "custo_assistencial_bruto", "flag_reembolso", "flag_data_suspeita", "company_key"],
       },
       {
@@ -70,16 +70,16 @@ export const GOLD_PREVIEW_LINEAGE: LineageEntry[] = [
       FONTE_FILTRO_CIDADE_ESTADO,
     ],
     formula:
-      "sinistro_12m = SUM(custo_assistencial_bruto) na janela de 12 meses fechados; utilizantes_12m = COUNT(DISTINCT person_key) na mesma janela; custo_por_utilizante_12m = sinistro_12m ÷ utilizantes_12m; reembolso_share_12m = SUM(custo com flag_reembolso) ÷ sinistro_12m × 100.",
+      "sinistro_12m = SUM(custo_assistencial_bruto) na janela de até 12 meses; utilizantes_12m = COUNT(DISTINCT person_key) na mesma janela; custo_por_utilizante_12m = sinistro_12m ÷ utilizantes_12m; reembolso_share_12m = SUM(custo com flag_reembolso) ÷ sinistro_12m × 100. Sem mês fechado, o card de sinistro usa o último mês observado e o de utilizantes usa a janela observada.",
     filters: [
       ESCOPO_USUARIO,
       NOT_SUSPEITA,
       FILTROS_OPCIONAIS,
-      "mês é considerado 'fechado' por uma regra de negócio local desta rota (sinistro mensal acima de R$ 100.000; os dois meses mais recentes acima do piso ficam parciais) — não é o gate sinistralidade_month_status_v2 usado na Visão 360",
+      "mês é considerado fechado pelo status mais recente em sinistralidade_month_status_v2 para todas as empresas observadas no escopo; sem mês fechado, a rota usa a janela observada e a marca como não oficial",
     ],
     notes: [
-      "Esta rota não consulta o gate de fechamento por mês (monthStatus) da Visão 360: aqui o fechamento é decidido comparando o sinistro do próprio mês com um piso fixo (SINISTRO_MES_MINIMO), não com um status gravado por empresa/mês.",
-      "utilizantes_ultimo_mes_fechado usa a contagem direta da janela e só cai para o valor da série mensal quando essa contagem é zero/falsy.",
+      "O fechamento é conservador para o escopo: um mês só é fechado quando todas as empresas observadas nele têm status closed. Caso contrário, a interface mostra valores observados com sinalização explícita.",
+      "Em período observado, utilizantes_12m é o COUNT DISTINCT person_key de toda a janela; no período fechado, o card de utilizantes usa a última competência fechada.",
     ],
     related: ["claims.monthly"],
   },
@@ -271,13 +271,13 @@ export const GOLD_PREVIEW_LINEAGE: LineageEntry[] = [
       },
       {
         object: TABLES.gold,
-        role: "estatísticas por episódio contínuo derivado na Gold",
-        columns: ["person_key", "data_inicio_internacao", "data_alta", "episode_key", "custo_assistencial_bruto", "duracao_internacao_dias", "flag_internacao", "month_key", "flag_data_suspeita", "company_key"],
+        role: "estatísticas por episódio contínuo, inclusive comparação por sinal de saúde mental e reembolso",
+        columns: ["person_key", "data_inicio_internacao", "data_alta", "episode_key", "custo_assistencial_bruto", "duracao_internacao_dias", "flag_internacao", "flag_saude_mental", "flag_reembolso", "month_key", "flag_data_suspeita", "company_key"],
       },
       FONTE_FILTRO_CIDADE_ESTADO,
     ],
     formula:
-      "por_agrupamento: SUM(custo_assistencial_bruto) ÷ 1.000.000 agrupado por acomodacao_internacao (top 8); episódio = período contínuo por empresa e pessoa: intervalos sobrepostos ou com alta e novo início na mesma data são unidos; linhas assistenciais = COUNT(*); episódios = COUNT(DISTINCT episodio_key); beneficiários internados = COUNT(DISTINCT person_key); dias internados = SUM(duração do episódio); custo médio = SUM(custo_assistencial_bruto) ÷ episódios; duração mediana/p90 = PERCENTILE(duração, 0.5/0.9).",
+      "por_agrupamento: SUM(custo_assistencial_bruto) ÷ 1.000.000 agrupado por acomodacao_internacao (top 8); episódio = período contínuo por empresa e pessoa: intervalos sobrepostos ou com alta e novo início na mesma data são unidos; a comparação com sinal de saúde mental classifica o episódio inteiro quando qualquer linha dele tem flag_saude_mental=true. Mostra episódios, beneficiários, custo, ticket, duração mediana/p90, cobertura de duração e custo de reembolso por grupo.",
     filters: [
       ESCOPO_USUARIO,
       NOT_SUSPEITA,
@@ -287,6 +287,7 @@ export const GOLD_PREVIEW_LINEAGE: LineageEntry[] = [
     ],
     notes: [
       "A mesma consolidação por período contínuo do mart_internacao_mes_v2 é derivada na Gold para preservar os filtros desta aba. Linhas sem as duas datas usam a chave de admissão como fallback.",
+      "Reembolso é somado nas linhas marcadas dentro de cada episódio; não transforma todo o episódio em reembolso quando ele mistura rede e reembolso.",
       "Acomodação vazia ou nula aparece como 'Outras diárias'; é uma classificação de acomodação, não um agrupamento clínico homologado.",
     ],
     related: ["claims.mental-health"],
@@ -299,18 +300,18 @@ export const GOLD_PREVIEW_LINEAGE: LineageEntry[] = [
     sources: [
       {
         object: TABLES.gold,
-        role: "custo total da janela ampla e a fração sinalizada/não classificada como saúde mental",
-        columns: ["custo_assistencial_bruto", "flag_saude_mental", "month_key", "flag_data_suspeita", "company_key"],
+        role: "custo, beneficiários, serviços e reembolso de eventos sinalizados como saúde mental",
+        columns: ["custo_assistencial_bruto", "quantidade_servicos", "person_key", "flag_saude_mental", "flag_reembolso", "month_key", "flag_data_suspeita", "company_key"],
       },
       {
         object: TABLES.gold,
-        role: "sinistro por tema de saúde mental, em milhões",
-        columns: ["tema_saude_mental", "custo_assistencial_bruto", "flag_saude_mental", "month_key", "flag_data_suspeita", "company_key"],
+        role: "temas de saúde mental por custo, participação, beneficiários e serviços",
+        columns: ["tema_saude_mental", "custo_assistencial_bruto", "quantidade_servicos", "person_key", "flag_saude_mental", "month_key", "flag_data_suspeita", "company_key"],
       },
       FONTE_FILTRO_CIDADE_ESTADO,
     ],
     formula:
-      "share_flag = SUM(custo com flag_saude_mental = true) ÷ SUM(custo total) × 100; share_sem_classificacao = SUM(custo com flag_saude_mental NULL) ÷ SUM(custo total) × 100; por_tema_mi = SUM(custo_assistencial_bruto) ÷ 1.000.000 agrupado por tema_saude_mental, só entre eventos com flag_saude_mental = true (top 5).",
+      "share_flag = SUM(custo com flag_saude_mental = true) ÷ SUM(custo total) × 100; custo, beneficiários e serviços usam somente eventos sinalizados; reembolso_share = custo de linhas sinalizadas e marcadas como reembolso ÷ custo sinalizado; por_tema traz os 5 maiores temas por custo, com participação dentro do custo sinalizado.",
     filters: [
       ESCOPO_USUARIO,
       NOT_SUSPEITA,
@@ -318,7 +319,8 @@ export const GOLD_PREVIEW_LINEAGE: LineageEntry[] = [
       "janela fixa desde 2024-01 (JANELA_2024), mais ampla que a janela de 12 meses fechados de claims.kpis",
     ],
     notes: [
-      "share_sem_classificacao mede custo cuja flag_saude_mental é NULL (nem confirmado nem descartado) — não é zero, e por isso o bloco mostra os dois shares como intervalo, não um número único.",
+      "Na Gold v2 a flag é booleana: o card mostra participação exata, não um intervalo de incerteza.",
+      "A flag usa critérios determinísticos e códigos nativos; é um sinal analítico de saúde mental, não diagnóstico clínico.",
       "Tema vazio ou nulo aparece como 'Sem tema'.",
     ],
     related: ["claims.hospitalization"],
@@ -331,7 +333,7 @@ export const GOLD_PREVIEW_LINEAGE: LineageEntry[] = [
     sources: [
       {
         object: TABLES.gold,
-        role: "itens, sinistro, utilizantes e mudança por tipo de evento nas janelas pareadas pré/pós",
+        role: "itens, sinistro, utilizantes e mudança por tipo de evento nas janelas pareadas 2×2, 4×4 e 6×6",
         columns: ["month_key", "custo_assistencial_bruto", "person_key", "tipo_evento", "flag_data_suspeita", "company_key"],
       },
       {
@@ -342,7 +344,7 @@ export const GOLD_PREVIEW_LINEAGE: LineageEntry[] = [
       FONTE_FILTRO_CIDADE_ESTADO,
     ],
     formula:
-      "pre/pos: médias mensais de itens (COUNT(*)), sinistro (SUM(custo_assistencial_bruto)) e utilizantes (COUNT(DISTINCT person_key)) sobre os meses fixos de cada janela; eventos compara COUNT(*) pré/pós para Pronto Socorro, Internação, Consulta e Terapia; trimestres_utilizantes = COUNT(DISTINCT person_key) por trimestre.",
+      "Cada seletor compara 2, 4 ou 6 meses antes contra o mesmo número depois, com corte em out/2025. Em cada lado: itens = COUNT(*), sinistro = SUM(custo_assistencial_bruto), utilizantes = COUNT(DISTINCT person_key); eventos compara COUNT(*) para Pronto Socorro, Internação, Consulta e Terapia; trimestres_utilizantes = COUNT(DISTINCT person_key) por trimestre.",
     filters: [
       ESCOPO_USUARIO,
       NOT_SUSPEITA,
@@ -350,7 +352,7 @@ export const GOLD_PREVIEW_LINEAGE: LineageEntry[] = [
       "janelas de calendário fixas no código: pré = 2025-08 e 2025-09; pós = 2025-10 e 2025-11 — não acompanham o seletor de período da tela",
     ],
     notes: [
-      "As janelas pré/pós são meses fixos (IMPACTO_PRE/IMPACTO_POS), não a janela de 12 meses usada em outros blocos: mudar o período da tela não move esta comparação.",
+      "As janelas são fixas e compartilham o mesmo corte: 2×2 = ago–set/25 × out–nov/25; 4×4 = jun–set/25 × out/25–jan/26; 6×6 = abr–set/25 × out/25–mar/26. Mudar o período da tela não move esta comparação.",
       "trimestres_utilizantes cobre um recorte de tempo diferente (desde 2025-07, em diante) das janelas pré/pós.",
       "Metodologia idêntica à do fragmento legado: eixo é data de atendimento, sinistro é bruto.",
     ],
@@ -364,22 +366,23 @@ export const GOLD_PREVIEW_LINEAGE: LineageEntry[] = [
     sources: [
       {
         object: TABLES.gold,
-        role: "famílias e sinistro por tipo de evento nas janelas de 4+4 meses, restrito a famílias presentes nas duas janelas",
+        role: "famílias e sinistro por tipo de evento nas janelas de 2×2, 4×4 e 6×6 meses, restrito a famílias presentes nos dois lados",
         columns: ["family_key", "month_key", "custo_assistencial_bruto", "tipo_evento", "flag_data_suspeita", "company_key"],
       },
       FONTE_FILTRO_CIDADE_ESTADO,
     ],
     formula:
-      "before/after: familias = COUNT(DISTINCT family_key); itens = COUNT(*); sinistro = SUM(custo_assistencial_bruto); pronto_socorro/internacao/consulta/terapia = COUNT(*) filtrado por tipo_evento; deltas_pct compara before × after.",
+      "Cada seletor forma uma coorte própria: family_key é o titular normalizado dentro da empresa e seus dependentes vinculados. A coorte inclui somente family_key não nulo presente nos dois lados; itens = COUNT(*), sinistro = SUM(custo_assistencial_bruto), pronto_socorro/internacao/consulta/terapia = COUNT(*) filtrado por tipo_evento; deltas_pct compara before × after.",
     filters: [
       ESCOPO_USUARIO,
       NOT_SUSPEITA,
       FILTROS_OPCIONAIS,
-      "janelas fixas de 4 meses: antes = 2025-06 a 2025-09; depois = 2025-10 a 2026-01",
-      "restrito às famílias com uso registrado nas DUAS janelas (INNER JOIN das famílias de cada lado)",
+      "janelas fixas: 2×2 = ago–set/25 × out–nov/25; 4×4 = jun–set/25 × out/25–jan/26; 6×6 = abr–set/25 × out/25–mar/26",
+      "restrito às famílias com uso registrado nas DUAS janelas (INNER JOIN de family_key não nulo em cada seletor)",
     ],
     notes: [
       "Herdado do BI antigo: mede associação temporal entre duas janelas, não causalidade.",
+      "Dependente sem ponte familiar na origem não recebe family_key e fica fora da coorte; nunca é contado como família separada.",
       "familias_comuns é o MÍNIMO entre before.familias e after.familias, não uma contagem de interseção própria: como a query já restringe a base às famílias presentes nas duas janelas, os dois números tendem a ser iguais — o mínimo é só uma salvaguarda defensiva, não um terceiro cálculo.",
     ],
     related: ["claims.sanus-impact"],
