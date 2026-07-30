@@ -2,6 +2,7 @@ import "server-only";
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { logger } from "../observability/logger";
+import { allowedOrigins } from "../../../lib/http";
 
 type LegacyHandler = (req: unknown, res: unknown) => unknown | Promise<unknown>;
 
@@ -12,6 +13,21 @@ function queryObject(request: NextRequest) {
     query[key] = values.length > 1 ? values : values[0];
   }
   return query;
+}
+
+// CORS resolvido de forma central: só ecoamos a origem quando ela está na
+// allowlist. Sem allowlist configurada, nenhum Access-Control-Allow-Origin é
+// enviado — o dashboard funciona por ser same-origin e origens externas ficam
+// bloqueadas pelo navegador.
+function applyCors(request: NextRequest, headers: Headers) {
+  headers.delete("Access-Control-Allow-Origin");
+  const origin = request.headers.get("origin");
+  const allowed = allowedOrigins();
+  if (origin && allowed.includes(origin)) {
+    headers.set("Access-Control-Allow-Origin", origin);
+  } else if (!origin && allowed.length === 1) {
+    headers.set("Access-Control-Allow-Origin", allowed[0]);
+  }
 }
 
 export function adaptLegacyRoute(handler: LegacyHandler) {
@@ -48,6 +64,25 @@ export function adaptLegacyRoute(handler: LegacyHandler) {
       statusCode = 500;
       responseBody = { error: { code: "INTERNAL_ERROR", message, requestId } };
     }
+    // Nunca vaza detalhe interno (mensagem de SQL/Databricks, stack) para o
+    // cliente em erros 5xx. O detalhe fica só no log, correlacionado por
+    // requestId; o cliente recebe uma mensagem genérica.
+    if (statusCode >= 500) {
+      logger.error("api.error_response", {
+        requestId,
+        path: request.nextUrl.pathname,
+        statusCode,
+        detail: responseBody,
+      });
+      responseBody = {
+        error: {
+          code: "INTERNAL_ERROR",
+          message: "Erro interno ao processar a requisição.",
+          requestId,
+        },
+      };
+    }
+    applyCors(request, headers);
     if (responseBody === null) return new NextResponse(null, { status: statusCode, headers });
     headers.set("Content-Type", "application/json; charset=utf-8");
     return new NextResponse(JSON.stringify(responseBody), { status: statusCode, headers });

@@ -12,8 +12,8 @@ type SessionPayload = {
 };
 
 function secret() {
-  const value = process.env.DASHBOARD_SESSION_SECRET || process.env.DASHBOARD_AUTH_PASSWORD;
-  if (!value) throw new Error("Segredo de sessão não configurado.");
+  const value = process.env.DASHBOARD_SESSION_SECRET;
+  if (!value) throw new Error("DASHBOARD_SESSION_SECRET não configurado.");
   return value;
 }
 
