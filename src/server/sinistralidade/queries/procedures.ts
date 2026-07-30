@@ -4,7 +4,7 @@
 
 import type { ResolvedPeriod } from "../period-gate";
 import { monthsInSql } from "../period-gate";
-import { escape } from "../../databricks/client";
+import { createSqlParams } from "../../databricks/client";
 import { fetchCoveredMonths, getCell, growth, toInt, toNum } from "../serializers";
 import { TABLES, type QueryRunner } from "../query-runner";
 import type { LineageEntry } from "../../../contracts/sinistralidade-v2";
@@ -105,12 +105,14 @@ export async function procedureTrendsScope(
 ) {
   if (!period.usableMonths.length) return { window: [], pareto: [], series: [], growth_ranking: [] };
   const months = monthsInSql(period.usableMonths);
+  const params = createSqlParams();
+  const companyParam = params.add(companyKey);
   const eventFilter = options.eventType
     ? ` AND m.procedimento_key IN (
         SELECT DISTINCT coalesce(nullif(trim(codigo_procedimento_operadora), ''), 'SEM_CODIGO')
         FROM ${TABLES.gold}
-        WHERE NOT flag_data_suspeita AND company_key = '${companyKey}'
-          AND coalesce(nullif(trim(tipo_evento), ''), 'Sem classificação') = '${escape(options.eventType)}')`
+        WHERE NOT flag_data_suspeita AND company_key = ${companyParam}
+          AND coalesce(nullif(trim(tipo_evento), ''), 'Sem classificação') = ${params.add(options.eventType)})`
     : "";
 
   const windowRows = await q(
@@ -118,7 +120,7 @@ export async function procedureTrendsScope(
       SELECT coalesce(nullif(trim(codigo_procedimento_operadora), ''), 'SEM_CODIGO') AS procedimento_key,
         round(sum(CASE WHEN flag_reembolso THEN custo_assistencial_bruto ELSE 0 END), 2) AS custo_reembolso
       FROM ${TABLES.gold}
-      WHERE NOT flag_data_suspeita AND company_key = '${companyKey}' AND month_key IN (${months})
+      WHERE NOT flag_data_suspeita AND company_key = ${companyParam} AND month_key IN (${months})
       GROUP BY 1
     )
     SELECT m.procedimento_key,
@@ -130,10 +132,11 @@ export async function procedureTrendsScope(
       sum(sum(m.custo_assistencial_bruto)) OVER () AS custo_total
     FROM ${TABLES.martProcedimentoMes} m
     LEFT JOIN reembolso r ON r.procedimento_key = m.procedimento_key
-    WHERE m.company_key = '${companyKey}' AND m.month_key IN (${months})${eventFilter}
+    WHERE m.company_key = ${companyParam} AND m.month_key IN (${months})${eventFilter}
     GROUP BY m.procedimento_key
     ORDER BY 8 DESC, m.procedimento_key
     LIMIT 100`,
+    params.list,
   );
 
   const totalCost = windowRows[0] ? toNum(windowRows[0][10]) : 0;
@@ -166,10 +169,11 @@ export async function procedureTrendsScope(
     ? await q(
         `SELECT procedimento_key, month_key, sum(quantidade_servicos), round(sum(custo_assistencial_bruto), 2)
         FROM ${TABLES.martProcedimentoMes}
-        WHERE company_key = '${companyKey}' AND month_key IN (${months})
-          AND procedimento_key IN (${topKeys.map((key) => `'${escape(key)}'`).join(",")})
+        WHERE company_key = ${companyParam} AND month_key IN (${months})
+          AND procedimento_key IN (${params.addAll(topKeys)})
         GROUP BY procedimento_key, month_key
         ORDER BY month_key`,
+        params.list,
       )
     : [];
 

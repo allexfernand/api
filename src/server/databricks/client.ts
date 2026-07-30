@@ -8,6 +8,25 @@ const HEADERS = { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application
 export type DatabricksCell = null | undefined | string | number | boolean | { string_value?: string };
 export type DatabricksRow = DatabricksCell[];
 
+export type SqlParameter = { name: string; value: string; type?: string };
+
+// Coletor de parâmetros nomeados para a Statement Execution API: cada valor
+// vira um marcador ":pN" no SQL e é enviado como parâmetro tipado, nunca
+// concatenado como literal — elimina SQL injection por construção. A API
+// aceita parâmetros declarados que não aparecem no statement, então a mesma
+// lista pode ser compartilhada por várias queries de um mesmo handler.
+export function createSqlParams() {
+  const list: SqlParameter[] = [];
+  const add = (value: unknown): string => {
+    const name = `p${list.length}`;
+    list.push({ name, value: String(value) });
+    return `:${name}`;
+  };
+  const addAll = (values: unknown[]): string => values.map((value) => add(value)).join(", ");
+  return { list, add, addAll };
+}
+export type SqlParams = ReturnType<typeof createSqlParams>;
+
 type DbOptions = RequestInit & { headers?: Record<string, string> };
 
 let warehouseIdCache: string | null = null;
@@ -22,7 +41,11 @@ export async function dbFetch(path: string, options: DbOptions = {}) {
   return res.json();
 }
 
-export async function runQuery(warehouseId: string, sql: string): Promise<DatabricksRow[]> {
+export async function runQuery(
+  warehouseId: string,
+  sql: string,
+  parameters?: SqlParameter[],
+): Promise<DatabricksRow[]> {
   const startedAt = Date.now();
   const deadline = startedAt + 55_000;
   let data = await dbFetch("/api/2.0/sql/statements", {
@@ -30,6 +53,7 @@ export async function runQuery(warehouseId: string, sql: string): Promise<Databr
     body: JSON.stringify({
       warehouse_id: warehouseId,
       statement: sql,
+      ...(parameters?.length ? { parameters } : {}),
       wait_timeout: "50s",
       on_wait_timeout: "CONTINUE",
     }),

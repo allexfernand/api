@@ -2,7 +2,7 @@
 import { MDS_PARTNER_SCOPE, getDashboardAuth, rejectMdsAuth, requireBasicAuth, scopedPartnerBrokerId } from "../../../lib/basic-auth";
 import {
   DatabricksRow,
-  escape,
+  createSqlParams,
   getCell,
   getColumns,
   quoteIdent,
@@ -10,6 +10,7 @@ import {
   runQuery,
   toInt,
   toNum,
+  type SqlParams,
 } from "../../../lib/databricks";
 import { setApiCors, setStableCache } from "../../../lib/http";
 
@@ -50,7 +51,7 @@ const CLAIMS_EVENT_DATE_CANDIDATES = [
   'competencia',
 ];
 
-function partnerBrokerCondition(partnerBrokerId: unknown) {
+function partnerBrokerCondition(partnerBrokerId: unknown, p: SqlParams) {
   if (String(partnerBrokerId) === MDS_PARTNER_SCOPE) {
     return `CAST(opb.partner_broker_id AS STRING) IN (
       SELECT CAST(pb.id AS STRING)
@@ -59,11 +60,11 @@ function partnerBrokerCondition(partnerBrokerId: unknown) {
         OR UPPER(TRIM(COALESCE(CAST(pb.name_secondary AS STRING), ''))) = 'MDS'
     )`;
   }
-  return `CAST(opb.partner_broker_id AS STRING) = '${escape(partnerBrokerId)}'`;
+  return `CAST(opb.partner_broker_id AS STRING) = ${p.add(partnerBrokerId)}`;
 }
 
-function partnerOrgIdsSubquery(partnerBrokerId: unknown) {
-  const partnerCondition = partnerBrokerCondition(partnerBrokerId);
+function partnerOrgIdsSubquery(partnerBrokerId: unknown, p: SqlParams) {
+  const partnerCondition = partnerBrokerCondition(partnerBrokerId, p);
   return `(
     SELECT CAST(opb.organization_id AS STRING)
     FROM ${ORGANIZATION_PARTNER_BROKERS_TABLE} opb
@@ -120,19 +121,19 @@ function cpfNormExpr(rawExpr: string): string {
   return `LPAD(REGEXP_REPLACE(CAST(${rawExpr} AS STRING), '[^0-9]', ''), 11, '0')`;
 }
 
-function buildFilters(groupNames: string[], typeFilter: unknown, partnerBrokerId: unknown) {
+function buildFilters(groupNames: string[], typeFilter: unknown, partnerBrokerId: unknown, p: SqlParams) {
   const conditions = [`b.created_at IS NOT NULL`];
   if (groupNames.length) {
-    const groupList = groupNames.map((group) => `'${escape(group)}'`).join(",");
+    const groupList = p.addAll(groupNames);
     conditions.push(`b.organization_id IN (
-      SELECT id FROM hive_metastore.sanus_prod.organizations WHERE name IN (${groupList})
+      SELECT id FROM hive_metastore.sanus_prod.organizations WHERE TRIM(name) IN (${groupList})
       UNION
       SELECT id FROM hive_metastore.sanus_prod.organizations
-      WHERE matriz_id IN (SELECT id FROM hive_metastore.sanus_prod.organizations WHERE name IN (${groupList}))
+      WHERE matriz_id IN (SELECT id FROM hive_metastore.sanus_prod.organizations WHERE TRIM(name) IN (${groupList}))
     )`);
   }
   if (partnerBrokerId) {
-    conditions.push(`CAST(b.organization_id AS STRING) IN ${partnerOrgIdsSubquery(partnerBrokerId)}`);
+    conditions.push(`CAST(b.organization_id AS STRING) IN ${partnerOrgIdsSubquery(partnerBrokerId, p)}`);
   }
   if (typeFilter === 'TITULAR') {
     conditions.push(`UPPER(TRIM(COALESCE(b.type_kinship,''))) = 'TITULAR'`);
@@ -142,7 +143,7 @@ function buildFilters(groupNames: string[], typeFilter: unknown, partnerBrokerId
   return `WHERE ${conditions.join(' AND ')}`;
 }
 
-function buildBeneficiaryOrgFilter(beneficiaryColumns: string[], groupNames: string[], company: unknown, partnerBrokerId: unknown, typeFilter: unknown = null) {
+function buildBeneficiaryOrgFilter(beneficiaryColumns: string[], groupNames: string[], company: unknown, partnerBrokerId: unknown, typeFilter: unknown, p: SqlParams) {
   const conditions = [];
   const cpfColumn = pickBeneficiaryCpfColumn(beneficiaryColumns);
   const orgIdColumn = pickColumn(beneficiaryColumns, ['organization_id', 'id_organizacao', 'id_empresa', 'empresa_id']);
@@ -151,20 +152,20 @@ function buildBeneficiaryOrgFilter(beneficiaryColumns: string[], groupNames: str
   const hasTypeFilter = normalizedType === 'TITULAR' || normalizedType === 'DEPENDENTE';
   if (!cpfColumn) return hasTypeFilter ? '1 = 0' : '';
   if (groupNames.length && orgIdColumn) {
-    const groupList = groupNames.map((group) => `'${escape(group)}'`).join(',');
+    const groupList = p.addAll(groupNames);
     conditions.push(`CAST(b.${quoteIdent(orgIdColumn)} AS STRING) IN (
-      SELECT CAST(id AS STRING) FROM ${ORGANIZATIONS_TABLE} WHERE name IN (${groupList})
+      SELECT CAST(id AS STRING) FROM ${ORGANIZATIONS_TABLE} WHERE TRIM(name) IN (${groupList})
       UNION
       SELECT CAST(id AS STRING) FROM ${ORGANIZATIONS_TABLE}
-      WHERE matriz_id IN (SELECT id FROM ${ORGANIZATIONS_TABLE} WHERE name IN (${groupList}))
+      WHERE matriz_id IN (SELECT id FROM ${ORGANIZATIONS_TABLE} WHERE TRIM(name) IN (${groupList}))
     )`);
   }
   if (company) {
     const companyColumn = pickColumn(beneficiaryColumns, ['organization_name', 'nome_empresa', 'empresa', 'NOME_CLIENTE', 'nome_cliente']);
-    if (companyColumn) conditions.push(`UPPER(TRIM(CAST(b.${quoteIdent(companyColumn)} AS STRING))) = UPPER(TRIM('${escape(company)}'))`);
+    if (companyColumn) conditions.push(`UPPER(TRIM(CAST(b.${quoteIdent(companyColumn)} AS STRING))) = UPPER(TRIM(${p.add(company)}))`);
   }
   if (partnerBrokerId && orgIdColumn) {
-    conditions.push(`CAST(b.${quoteIdent(orgIdColumn)} AS STRING) IN ${partnerOrgIdsSubquery(partnerBrokerId)}`);
+    conditions.push(`CAST(b.${quoteIdent(orgIdColumn)} AS STRING) IN ${partnerOrgIdsSubquery(partnerBrokerId, p)}`);
   }
   if (hasTypeFilter) {
     if (!kinshipColumn) return '1 = 0';
@@ -263,7 +264,7 @@ function openLatestStatusCondition(columnAlias = 'status_norm') {
   return `COALESCE(${columnAlias}, '') NOT IN ('fechado', 'fechada', 'closed', 'encerrado', 'encerrada', 'finalizado', 'finalizada')`;
 }
 
-function buildCareLineFilters(columns: string[], beneficiaryColumns: string[], query: Record<string, any>, groupNames: string[], company: unknown, partnerBrokerId: unknown, includeDateFilter = true) {
+function buildCareLineFilters(columns: string[], beneficiaryColumns: string[], query: Record<string, any>, groupNames: string[], company: unknown, partnerBrokerId: unknown, p: SqlParams, includeDateFilter = true) {
   const conditions = [
     `cpf_atendido IS NOT NULL`,
     `TRIM(CAST(cpf_atendido AS STRING)) != ''`,
@@ -274,7 +275,7 @@ function buildCareLineFilters(columns: string[], beneficiaryColumns: string[], q
   const meses = query.meses ? String(query.meses).split(',').filter((m) => /^\d{4}-\d{2}$/.test(m)) : [];
   const dateColumn = pickCareDateColumn(columns);
   if (includeDateFilter && dateColumn && meses.length) {
-    conditions.push(`DATE_FORMAT(try_cast(${quoteIdent(dateColumn)} AS TIMESTAMP), 'yyyy-MM') IN (${meses.map((month) => `'${escape(month)}'`).join(',')})`);
+    conditions.push(`DATE_FORMAT(try_cast(${quoteIdent(dateColumn)} AS TIMESTAMP), 'yyyy-MM') IN (${p.addAll(meses)})`);
   }
 
   const orgIdColumn = pickColumn(columns, ['organization_id', 'id_organizacao', 'id_empresa', 'empresa_id']);
@@ -287,36 +288,36 @@ function buildCareLineFilters(columns: string[], beneficiaryColumns: string[], q
   const hasTypeFilter = typeFilter === 'TITULAR' || typeFilter === 'DEPENDENTE';
 
   if (company && companyColumn) {
-    conditions.push(`UPPER(TRIM(CAST(${quoteIdent(companyColumn)} AS STRING))) = UPPER(TRIM('${escape(company)}'))`);
+    conditions.push(`UPPER(TRIM(CAST(${quoteIdent(companyColumn)} AS STRING))) = UPPER(TRIM(${p.add(company)}))`);
     companyApplied = true;
   }
 
   if (groupNames.length) {
-    const groupList = groupNames.map((group) => `'${escape(group)}'`).join(',');
+    const groupList = p.addAll(groupNames);
     if (orgIdColumn) {
       groupApplied = true;
       conditions.push(`CAST(${quoteIdent(orgIdColumn)} AS STRING) IN (
-        SELECT CAST(id AS STRING) FROM ${ORGANIZATIONS_TABLE} WHERE name IN (${groupList})
+        SELECT CAST(id AS STRING) FROM ${ORGANIZATIONS_TABLE} WHERE TRIM(name) IN (${groupList})
         UNION
         SELECT CAST(id AS STRING) FROM ${ORGANIZATIONS_TABLE}
-        WHERE matriz_id IN (SELECT id FROM ${ORGANIZATIONS_TABLE} WHERE name IN (${groupList}))
+        WHERE matriz_id IN (SELECT id FROM ${ORGANIZATIONS_TABLE} WHERE TRIM(name) IN (${groupList}))
       )`);
     } else if (groupColumn) {
       groupApplied = true;
-      conditions.push(`UPPER(TRIM(CAST(${quoteIdent(groupColumn)} AS STRING))) IN (${groupNames.map((group) => `UPPER(TRIM('${escape(group)}'))`).join(',')})`);
+      conditions.push(`UPPER(TRIM(CAST(${quoteIdent(groupColumn)} AS STRING))) IN (${groupNames.map((group) => `UPPER(TRIM(${p.add(group)}))`).join(',')})`);
     }
   }
 
   if (partnerBrokerId) {
     if (orgIdColumn) {
       partnerApplied = true;
-      conditions.push(`CAST(${quoteIdent(orgIdColumn)} AS STRING) IN ${partnerOrgIdsSubquery(partnerBrokerId)}`);
+      conditions.push(`CAST(${quoteIdent(orgIdColumn)} AS STRING) IN ${partnerOrgIdsSubquery(partnerBrokerId, p)}`);
     } else if (companyColumn) {
       partnerApplied = true;
       conditions.push(`UPPER(TRIM(CAST(${quoteIdent(companyColumn)} AS STRING))) IN (
         SELECT UPPER(TRIM(CAST(o.name AS STRING)))
         FROM ${ORGANIZATIONS_TABLE} o
-        WHERE CAST(o.id AS STRING) IN ${partnerOrgIdsSubquery(partnerBrokerId)}
+        WHERE CAST(o.id AS STRING) IN ${partnerOrgIdsSubquery(partnerBrokerId, p)}
       )`);
     }
   }
@@ -333,6 +334,7 @@ function buildCareLineFilters(columns: string[], beneficiaryColumns: string[], q
       companyApplied ? null : company,
       partnerApplied ? null : partnerBrokerId,
       hasTypeFilter ? typeFilter : null,
+      p,
     );
     if (beneficiaryFilter) conditions.push(beneficiaryFilter);
   }
@@ -368,9 +370,9 @@ function parseClassNames(query: Record<string, any>) {
   return String(raw).split(',').map((value) => value.trim()).filter(Boolean);
 }
 
-function literalRows(values: string[], columnName: string) {
+function literalRows(values: string[], columnName: string, p: SqlParams) {
   if (!values.length) return `SELECT '' AS ${columnName} WHERE false`;
-  return values.map((value) => `SELECT '${escape(value)}' AS ${columnName}`).join('\nUNION ALL\n');
+  return values.map((value) => `SELECT ${p.add(value)} AS ${columnName}`).join('\nUNION ALL\n');
 }
 
 function lastNMonthsList(n: number) {
@@ -410,7 +412,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     res.setHeader("Cache-Control", "no-store, max-age=0");
     return res.status(200).json({ ok: true, role: dashboardAuth?.role || 'full', user: dashboardAuth?.user || '' });
   }
-  const groupFilter = buildFilters(groupNames, typeFilter, partnerBrokerId);
+  const params = createSqlParams();
+  const groupFilter = buildFilters(groupNames, typeFilter, partnerBrokerId, params);
 
   try {
     const warehouseId = await resolveWarehouseId();
@@ -726,7 +729,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         getColumns(warehouseId, BENEFICIARIES_TABLE).catch(() => []),
       ]);
       const company = req.query.company || null;
-      const where = buildCareLineFilters(columns, beneficiaryColumns, req.query, groupNames, company, partnerBrokerId);
+      const where = buildCareLineFilters(columns, beneficiaryColumns, req.query, groupNames, company, partnerBrokerId, params);
       const classification = careClassificationExpr();
       const category = careCategoryExpr();
       const caseIdExpr = careCaseIdExpr(columns);
@@ -782,13 +785,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         GROUP BY ${classification}
         ORDER BY total_cpfs DESC
         LIMIT 30
-      `);
+      `, params.list);
       const mappedRows = await runQuery(warehouseId, `
         SELECT
           COUNT(DISTINCT LPAD(REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', ''), 11, '0')) AS mapped_cpfs
         FROM ${HEALTHCOACH_TABLE}
         WHERE ${where}
-      `);
+      `, params.list);
       const dateColumn = includeActiveMapped ? pickCareDateColumn(columns) : null;
       const statusColumn = includeActiveMapped ? pickCareStatusColumn(columns) : null;
       const activeMappedRows = includeActiveMapped && dateColumn && statusColumn ? await runQuery(warehouseId, `
@@ -817,7 +820,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         FROM latest_per_case
         WHERE rn = 1
           AND ${openLatestStatusCondition()}
-      `) : [];
+      `, params.list) : [];
       const beneficiaryCpfColumn = pickBeneficiaryCpfColumn(beneficiaryColumns);
       const beneficiaryKinshipColumn = pickBeneficiaryKinshipColumn(beneficiaryColumns);
       const typeBreakdownRows = beneficiaryCpfColumn && beneficiaryKinshipColumn ? await runQuery(warehouseId, activeOnly ? `
@@ -886,7 +889,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         FROM scoped s
         LEFT JOIN beneficiary_types bt ON bt.cpf_norm = s.cpf_norm
         GROUP BY COALESCE(bt.tipo, 'SEM CADASTRO')
-      `) : [];
+      `, params.list) : [];
       const items = rows.map((row) => ({
         classificacoes: String(getCell(row[0]) || '').trim(),
         total_cpfs: toInt(row[1]),
@@ -925,11 +928,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         getColumns(warehouseId, BENEFICIARIES_TABLE).catch(() => []),
       ]);
       const company = req.query.company || null;
-      const baseWhere = buildCareLineFilters(columns, beneficiaryColumns, req.query, groupNames, company, partnerBrokerId);
+      const baseWhere = buildCareLineFilters(columns, beneficiaryColumns, req.query, groupNames, company, partnerBrokerId, params);
       const category = careCategoryExpr();
       const classification = careClassificationExpr();
       const caseIdExpr = careCaseIdExpr(columns);
-      const detailClassList = detailClasses.map((name) => `'${escape(name)}'`).join(',');
+      const detailClassList = params.addAll(detailClasses);
       const dateColumn = pickCareDateColumn(columns);
       const statusColumn = activeOnly ? pickCareStatusColumn(columns) : null;
       const idColumn = pickCareIdColumn(columns);
@@ -1000,7 +1003,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         GROUP BY ${classification}, ${category}
         ORDER BY total_cpfs DESC
         LIMIT 50
-      `);
+      `, params.list);
       const exampleRows = await runQuery(warehouseId, activeOnly ? `
         WITH raw AS (
           SELECT
@@ -1124,7 +1127,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         FROM ranked
         WHERE sample_rn <= 5
         ORDER BY classificacao ASC, categoria_atendimento ASC, sample_rn ASC
-      `);
+      `, params.list);
       const beneficiaryCpfColumn = pickBeneficiaryCpfColumn(beneficiaryColumns);
       const beneficiaryKinshipColumn = pickBeneficiaryKinshipColumn(beneficiaryColumns);
       const typeBreakdownRows = beneficiaryCpfColumn && beneficiaryKinshipColumn ? await runQuery(warehouseId, activeOnly ? `
@@ -1199,7 +1202,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         FROM scoped s
         LEFT JOIN beneficiary_types bt ON bt.cpf_norm = s.cpf_norm
         GROUP BY COALESCE(bt.tipo, 'SEM CADASTRO')
-      `) : [];
+      `, params.list) : [];
       const examplesByCondition = new Map<string, Array<Record<string, string>>>();
       exampleRows.forEach((row) => {
         const classificacao = String(getCell(row[0]) || '').trim();
@@ -1256,7 +1259,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const statusColumn = activeOnly ? pickCareStatusColumn(columns) : null;
       if (activeOnly && !statusColumn) return res.status(400).json({ error: "Coluna de status não encontrada em healthcoach_gold_live." });
       const company = req.query.company || null;
-      const baseWhere = buildCareLineFilters(columns, beneficiaryColumns, req.query, groupNames, company, partnerBrokerId);
+      const baseWhere = buildCareLineFilters(columns, beneficiaryColumns, req.query, groupNames, company, partnerBrokerId, params);
       const category = careCategoryExpr();
       const classification = careClassificationExpr();
       const caseIdExpr = careCaseIdExpr(columns);
@@ -1273,8 +1276,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
             try_cast(${quoteIdent(dateColumn)} AS TIMESTAMP) AS data_criacao
           FROM ${HEALTHCOACH_TABLE}
           WHERE ${baseWhere}
-            ${activeOnly ? "" : `AND ${classification} = '${escape(classificacao)}'`}
-            ${activeOnly ? "" : `AND ${category} = '${escape(categoria)}'`}
+            ${activeOnly ? "" : `AND ${classification} = ${params.add(classificacao)}`}
+            ${activeOnly ? "" : `AND ${category} = ${params.add(categoria)}`}
         ),
         latest_per_case AS (
           SELECT
@@ -1312,7 +1315,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
             END AS ordem
           FROM latest_per_case
           WHERE rn = 1
-            ${activeOnly ? `AND classificacao = '${escape(classificacao)}' AND categoria_atendimento = '${escape(categoria)}' AND ${openLatestStatusCondition()}` : ""}
+            ${activeOnly ? `AND classificacao = ${params.add(classificacao)} AND categoria_atendimento = ${params.add(categoria)} AND ${openLatestStatusCondition()}` : ""}
         )
         SELECT
           faixa_imc,
@@ -1324,7 +1327,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         FROM bucketed
         GROUP BY faixa_imc, ordem
         ORDER BY ordem ASC
-      `);
+      `, params.list);
       const items = rows.map((row) => ({
         faixa_imc: String(getCell(row[0]) || '').trim(),
         total_cpfs: toInt(row[1]),
@@ -1370,7 +1373,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const statusColumn = activeOnly ? pickCareStatusColumn(columns) : null;
       if (activeOnly && !statusColumn) return res.status(400).json({ error: "Coluna de status não encontrada em healthcoach_gold_live." });
       const company = req.query.company || null;
-      const baseWhere = buildCareLineFilters(columns, beneficiaryColumns, req.query, groupNames, company, partnerBrokerId);
+      const baseWhere = buildCareLineFilters(columns, beneficiaryColumns, req.query, groupNames, company, partnerBrokerId, params);
       const category = careCategoryExpr();
       const classification = careClassificationExpr();
       const caseIdExpr = careCaseIdExpr(columns);
@@ -1387,8 +1390,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
             try_cast(${quoteIdent(dateColumn)} AS TIMESTAMP) AS data_criacao
           FROM ${HEALTHCOACH_TABLE}
           WHERE ${baseWhere}
-            ${activeOnly ? "" : `AND ${classification} = '${escape(classificacao)}'`}
-            ${activeOnly ? "" : `AND ${category} = '${escape(categoria)}'`}
+            ${activeOnly ? "" : `AND ${classification} = ${params.add(classificacao)}`}
+            ${activeOnly ? "" : `AND ${category} = ${params.add(categoria)}`}
         ),
         latest_per_case AS (
           SELECT
@@ -1423,7 +1426,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
             END AS ordem
           FROM latest_per_case
           WHERE rn = 1
-            ${activeOnly ? `AND classificacao = '${escape(classificacao)}' AND categoria_atendimento = '${escape(categoria)}' AND ${openLatestStatusCondition()}` : ""}
+            ${activeOnly ? `AND classificacao = ${params.add(classificacao)} AND categoria_atendimento = ${params.add(categoria)} AND ${openLatestStatusCondition()}` : ""}
         )
         SELECT
           risco,
@@ -1432,7 +1435,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         FROM bucketed
         GROUP BY risco, ordem
         ORDER BY ordem ASC
-      `);
+      `, params.list);
       const items = rows.map((row) => ({
         risco: String(getCell(row[0]) || '').trim(),
         total_cpfs: toInt(row[1]),
@@ -1473,7 +1476,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const statusColumn = activeOnly ? pickCareStatusColumn(columns) : null;
       if (activeOnly && !statusColumn) return res.status(400).json({ error: "Coluna de status não encontrada em healthcoach_gold_live." });
       const company = req.query.company || null;
-      const baseWhere = buildCareLineFilters(columns, beneficiaryColumns, req.query, groupNames, company, partnerBrokerId);
+      const baseWhere = buildCareLineFilters(columns, beneficiaryColumns, req.query, groupNames, company, partnerBrokerId, params);
       const category = careCategoryExpr();
       const classification = careClassificationExpr();
       const caseIdExpr = careCaseIdExpr(columns);
@@ -1522,8 +1525,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
             END AS semanas_passadas
           FROM latest_per_case
           WHERE rn = 1
-            AND classificacao = '${escape(classificacao)}'
-            AND categoria_atendimento = '${escape(categoria)}'
+            AND classificacao = ${params.add(classificacao)}
+            AND categoria_atendimento = ${params.add(categoria)}
             ${activeOnly ? `AND ${openLatestStatusCondition()}` : ""}
         ),
         adjusted AS (
@@ -1577,7 +1580,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         FROM bucketed
         GROUP BY faixa, ordem
         ORDER BY ordem ASC
-      `);
+      `, params.list);
       const items = rows.map((row) => ({
         faixa: String(getCell(row[0]) || '').trim(),
         ordem: toInt(row[1]),
@@ -1619,7 +1622,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const statusColumn = pickCareStatusColumn(columns);
       if (!statusColumn) return res.status(400).json({ error: "Coluna de status não encontrada em healthcoach_gold_live." });
       const company = req.query.company || null;
-      const baseWhere = buildCareLineFilters(columns, beneficiaryColumns, req.query, groupNames, company, partnerBrokerId, false);
+      const baseWhere = buildCareLineFilters(columns, beneficiaryColumns, req.query, groupNames, company, partnerBrokerId, params, false);
       const category = careCategoryExpr();
       const classification = careClassificationExpr();
       const caseIdExpr = careCaseIdExpr(columns);
@@ -1705,7 +1708,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         FROM bucketed
         GROUP BY faixa, ordem
         ORDER BY ordem ASC
-      `);
+      `, params.list);
       const items = rows.map((row) => ({
         faixa: String(getCell(row[0]) || '').trim(),
         ordem: toInt(row[1]),
@@ -1747,11 +1750,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const statusColumn = activeOnly ? pickCareStatusColumn(columns) : null;
       if (activeOnly && !statusColumn) return res.status(400).json({ error: "Coluna de status não encontrada em healthcoach_gold_live." });
       const company = req.query.company || null;
-      const baseWhere = buildCareLineFilters(columns, beneficiaryColumns, req.query, groupNames, company, partnerBrokerId, false);
+      const baseWhere = buildCareLineFilters(columns, beneficiaryColumns, req.query, groupNames, company, partnerBrokerId, params, false);
       const classification = careClassificationExpr();
       const category = careCategoryExpr();
       const caseIdExpr = careCaseIdExpr(columns);
-      const classList = classNames.map((name) => `'${escape(name)}'`).join(',');
+      const classList = params.addAll(classNames);
       const rows = await runQuery(warehouseId, `
         WITH base AS (
           SELECT
@@ -1777,7 +1780,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           SELECT mes FROM latest_month
         ),
         classes AS (
-          ${literalRows(visibleClasses, 'classificacao')}
+          ${literalRows(visibleClasses, 'classificacao', params)}
         ),
         active_base AS (
           SELECT competencia_mes AS mes, classificacao, categoria_atendimento, cpf_norm
@@ -1822,7 +1825,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         WHERE m.mes IS NOT NULL
         GROUP BY m.mes, c.classificacao
         ORDER BY m.mes ASC, c.classificacao ASC
-      `);
+      `, params.list);
       const months = [...new Set(rows.map((row) => String(getCell(row[0]) || '').trim()).filter(Boolean))];
       const seriesByClass = new Map<string, Record<string, number>>();
       rows.forEach((row) => {
@@ -1856,10 +1859,10 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const dateColumn = pickCareDateColumn(columns);
       if (!dateColumn) return res.status(400).json({ error: "Coluna de data não encontrada em healthcoach_gold_live." });
       const company = req.query.company || null;
-      const baseWhere = buildCareLineFilters(columns, beneficiaryColumns, req.query, groupNames, company, partnerBrokerId, false);
+      const baseWhere = buildCareLineFilters(columns, beneficiaryColumns, req.query, groupNames, company, partnerBrokerId, params, false);
       const meses = req.query.meses ? String(req.query.meses).split(',').filter((m) => /^\d{4}-\d{2}$/.test(m)) : [];
       const firstDateFilter = meses.length
-        ? `WHERE DATE_FORMAT(primeira_data, 'yyyy-MM') IN (${meses.map((month) => `'${escape(month)}'`).join(',')})`
+        ? `WHERE DATE_FORMAT(primeira_data, 'yyyy-MM') IN (${params.addAll(meses)})`
         : '';
       const rows = await runQuery(warehouseId, `
         WITH primeiro_atendimento AS (
@@ -1886,7 +1889,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         )
         SELECT COUNT(DISTINCT cpf_norm) AS novos_cpfs
         FROM novos
-      `);
+      `, params.list);
       return res.status(200).json({
         scope: 'care_new_beneficiaries',
         total_new_beneficiaries: toInt(rows[0]?.[0]),
@@ -1908,19 +1911,19 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         FROM hive_metastore.sanus_prod.beneficiaries b
         ${groupFilter}
         GROUP BY 1 ORDER BY 1
-      `),
+      `, params.list),
       !groupNames.length ? runQuery(warehouseId, partnerBrokerId ? `
         WITH partner_orgs AS (
           SELECT CAST(opb.organization_id AS STRING) AS organization_id
           FROM ${ORGANIZATION_PARTNER_BROKERS_TABLE} opb
-          WHERE ${partnerBrokerCondition(partnerBrokerId)}
+          WHERE ${partnerBrokerCondition(partnerBrokerId, params)}
             AND opb.deleted_at IS NULL
           UNION ALL
           SELECT CAST(child.id AS STRING) AS organization_id
           FROM ${ORGANIZATION_PARTNER_BROKERS_TABLE} opb
           INNER JOIN ${ORGANIZATIONS_TABLE} child
             ON CAST(child.matriz_id AS STRING) = CAST(opb.organization_id AS STRING)
-          WHERE ${partnerBrokerCondition(partnerBrokerId)}
+          WHERE ${partnerBrokerCondition(partnerBrokerId, params)}
             AND opb.deleted_at IS NULL
         )
         SELECT
@@ -1952,7 +1955,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           AND TRIM(CAST(o.name AS STRING)) != ''
           AND (o.is_matriz = true OR o.matriz_id IS NULL)
         ORDER BY o.name ASC
-      `) : Promise.resolve(null),
+      `, params.list) : Promise.resolve(null),
       !groupNames.length ? runQuery(warehouseId, `
         SELECT economic_group_canonical AS grupo, COUNT(*) AS total_sessions
         FROM hive_metastore.sanus_prod.dashboard_sessions_base_gold

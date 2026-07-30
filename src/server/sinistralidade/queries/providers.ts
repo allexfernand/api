@@ -3,7 +3,7 @@
 
 import type { ResolvedPeriod } from "../period-gate";
 import { monthsInSql } from "../period-gate";
-import { escape } from "../../databricks/client";
+import { createSqlParams } from "../../databricks/client";
 import { fetchCoveredMonths, getCell, toInt, toNullableNum, toNum } from "../serializers";
 import { TABLES, type QueryRunner } from "../query-runner";
 import type { LineageEntry } from "../../../contracts/sinistralidade-v2";
@@ -87,9 +87,11 @@ export async function providerTrendsScope(
 ) {
   if (!period.usableMonths.length) return { window: [], series: [], network_split: [] };
   const months = monthsInSql(period.usableMonths);
+  const params = createSqlParams();
+  const companyParam = params.add(companyKey);
   const networkFilter = options.network ? ` AND reembolso = ${options.network === "reembolso"}` : "";
   const specialtyFilter = options.specialty
-    ? ` AND upper(especialidade_principal) LIKE upper('%${escape(options.specialty)}%')`
+    ? ` AND upper(especialidade_principal) LIKE upper(concat('%', ${params.add(options.specialty)}, '%'))`
     : "";
 
   const windowRows = await q(
@@ -100,10 +102,11 @@ export async function providerTrendsScope(
       round(sum(CASE WHEN reembolso THEN custo_assistencial_bruto ELSE 0 END), 2),
       sum(sum(custo_assistencial_bruto)) OVER () AS custo_total
     FROM ${TABLES.martPrestadorMes}
-    WHERE company_key = '${companyKey}' AND month_key IN (${months})${networkFilter}${specialtyFilter}
+    WHERE company_key = ${companyParam} AND month_key IN (${months})${networkFilter}${specialtyFilter}
     GROUP BY prestador_key
     ORDER BY 9 DESC, prestador_key
     LIMIT ${options.limit * 2}`,
+    params.list,
   );
 
   const totalCost = windowRows[0] ? toNum(windowRows[0][11]) : 0;
@@ -137,16 +140,18 @@ export async function providerTrendsScope(
       ? q(
           `SELECT prestador_key, month_key, sum(quantidade_servicos), round(sum(custo_assistencial_bruto), 2)
           FROM ${TABLES.martPrestadorMes}
-          WHERE company_key = '${companyKey}' AND month_key IN (${months})
-            AND prestador_key IN (${topKeys.map((key) => `'${escape(key)}'`).join(",")})
+          WHERE company_key = ${companyParam} AND month_key IN (${months})
+            AND prestador_key IN (${params.addAll(topKeys)})
           GROUP BY prestador_key, month_key ORDER BY month_key`,
+          params.list,
         )
       : Promise.resolve([]),
     q(
       `SELECT month_key, reembolso, round(sum(custo_assistencial_bruto), 2), sum(quantidade_servicos)
       FROM ${TABLES.martPrestadorMes}
-      WHERE company_key = '${companyKey}' AND month_key IN (${months})
+      WHERE company_key = ${companyParam} AND month_key IN (${months})
       GROUP BY month_key, reembolso ORDER BY month_key`,
+      params.list,
     ),
     ]),
   ]);

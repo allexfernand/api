@@ -1,6 +1,6 @@
 // api/agegroups.ts
 import { MDS_PARTNER_SCOPE, requireBasicAuth, scopedPartnerBrokerId } from "../../../lib/basic-auth";
-import { escape, getCell, resolveWarehouseId, runQuery } from "../../../lib/databricks";
+import { createSqlParams, getCell, resolveWarehouseId, runQuery, type SqlParams } from "../../../lib/databricks";
 import { setApiCors, setStableCache } from "../../../lib/http";
 
 type ApiRequest = {
@@ -34,7 +34,7 @@ const ORGANIZATIONS_TABLE = `hive_metastore.sanus_prod.organizations`;
 const PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.partner_brokers`;
 const ORGANIZATION_PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.organization_partner_brokers`;
 
-function partnerBrokerCondition(partnerBrokerId: unknown) {
+function partnerBrokerCondition(partnerBrokerId: unknown, p: SqlParams) {
   if (String(partnerBrokerId) === MDS_PARTNER_SCOPE) {
     return `CAST(opb.partner_broker_id AS STRING) IN (
       SELECT CAST(pb.id AS STRING)
@@ -43,11 +43,11 @@ function partnerBrokerCondition(partnerBrokerId: unknown) {
         OR UPPER(TRIM(COALESCE(CAST(pb.name_secondary AS STRING), ''))) = 'MDS'
     )`;
   }
-  return `CAST(opb.partner_broker_id AS STRING) = '${escape(partnerBrokerId)}'`;
+  return `CAST(opb.partner_broker_id AS STRING) = ${p.add(partnerBrokerId)}`;
 }
 
-function partnerOrgIdsSubquery(partnerBrokerId: unknown) {
-  const partnerCondition = partnerBrokerCondition(partnerBrokerId);
+function partnerOrgIdsSubquery(partnerBrokerId: unknown, p: SqlParams) {
+  const partnerCondition = partnerBrokerCondition(partnerBrokerId, p);
   return `(
     SELECT CAST(opb.organization_id AS STRING)
     FROM ${ORGANIZATION_PARTNER_BROKERS_TABLE} opb
@@ -63,19 +63,19 @@ function partnerOrgIdsSubquery(partnerBrokerId: unknown) {
   )`;
 }
 
-function buildFilters(groupNames: string[], typeFilter: unknown, partnerBrokerId: unknown) {
+function buildFilters(groupNames: string[], typeFilter: unknown, partnerBrokerId: unknown, p: SqlParams) {
   const conditions = [];
   if (groupNames.length) {
-    const groupList = groupNames.map((group) => `'${escape(group)}'`).join(",");
+    const groupList = p.addAll(groupNames);
     conditions.push(`b.organization_id IN (
-      SELECT id FROM hive_metastore.sanus_prod.organizations WHERE name IN (${groupList})
+      SELECT id FROM hive_metastore.sanus_prod.organizations WHERE TRIM(name) IN (${groupList})
       UNION
       SELECT id FROM hive_metastore.sanus_prod.organizations
-      WHERE matriz_id IN (SELECT id FROM hive_metastore.sanus_prod.organizations WHERE name IN (${groupList}))
+      WHERE matriz_id IN (SELECT id FROM hive_metastore.sanus_prod.organizations WHERE TRIM(name) IN (${groupList}))
     )`);
   }
   if (partnerBrokerId) {
-    conditions.push(`CAST(b.organization_id AS STRING) IN ${partnerOrgIdsSubquery(partnerBrokerId)}`);
+    conditions.push(`CAST(b.organization_id AS STRING) IN ${partnerOrgIdsSubquery(partnerBrokerId, p)}`);
   }
   if (typeFilter === 'TITULAR') {
     conditions.push(`UPPER(TRIM(COALESCE(b.type_kinship,''))) = 'TITULAR'`);
@@ -93,7 +93,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   const groupNames = parseGroupNames(req.query);
   const typeFilter = req.query.type || null;
   const partnerBrokerId = scopedPartnerBrokerId(req, req.query.partner_broker_id || null);
-  const extraFilter = buildFilters(groupNames, typeFilter, partnerBrokerId);
+  const params = createSqlParams();
+  const extraFilter = buildFilters(groupNames, typeFilter, partnerBrokerId, params);
 
   try {
     const warehouseId = await resolveWarehouseId();
@@ -133,7 +134,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           WHEN '44-48' THEN 7 WHEN '49-53' THEN 8 WHEN '54-58' THEN 9
           WHEN '59+'   THEN 10 ELSE 11
         END
-    `);
+    `, params.list);
 
     const faixas = ['0-18','19-23','24-28','29-33','34-38','39-43','44-48','49-53','54-58','59+','Não informado'];
     const result: Record<string, AgeGroupTotals> = {};

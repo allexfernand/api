@@ -9,7 +9,7 @@
 //   * company scope do usuário aplicado em todas as consultas;
 //   * nenhuma regra fixa de empresa (ex.: literal AZUL) — multiempresa.
 import { getDashboardAuth, rejectMdsAuth, requireBasicAuth } from "../../../lib/basic-auth";
-import { escape, getCell, resolveWarehouseId, runQuery, toInt, toNum } from "../../../lib/databricks";
+import { createSqlParams, getCell, resolveWarehouseId, runQuery, toInt, toNum, type SqlParams } from "../../../lib/databricks";
 import { setApiCors, setStableCache } from "../../../lib/http";
 import { SINISTRALIDADE_CONTRACT_VERSION } from "../../contracts/sinistralidade-v2";
 import { companyScopeSql } from "../auth/company-scope";
@@ -123,12 +123,12 @@ function parseMulti(query: Record<string, any>, key: string): string[] {
 }
 
 // Constrói a cláusula extra de WHERE (prefixo `g.`) a partir dos filtros da querystring.
-function buildFiltroSql(query: Record<string, any>) {
+function buildFiltroSql(query: Record<string, any>, params: SqlParams) {
   const aplicados: Record<string, string[]> = {};
   const clauses: string[] = [];
 
   const inClause = (col: string, values: string[]) =>
-    `${col} IN (${values.map((v) => `'${escape(v)}'`).join(",")})`;
+    `${col} IN (${params.addAll(values)})`;
 
   const faixa = parseMulti(query, "faixa_etaria");
   if (faixa.length) { aplicados.faixa_etaria = faixa; clauses.push(inClause("g.faixa_etaria_usuario", faixa)); }
@@ -173,9 +173,10 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
   try {
     const warehouseId = await resolveWarehouseId();
-    const q = (sql: string) => runQuery(warehouseId, sql);
+    const params = createSqlParams();
+    const q = (sql: string) => runQuery(warehouseId, sql, params.list);
 
-    const { aplicados, filtroSql: filtroUsuario } = buildFiltroSql(req.query);
+    const { aplicados, filtroSql: filtroUsuario } = buildFiltroSql(req.query, params);
     const filtroAtivo = filtroUsuario !== "";
     // Company scope do usuário: aplicado no SQL, nunca só na interface.
     const escopo = companyScopeSql(auth, "g.company_key");

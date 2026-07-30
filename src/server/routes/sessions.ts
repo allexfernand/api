@@ -1,6 +1,6 @@
 // api/sessions.ts
 import { MDS_PARTNER_SCOPE, requireBasicAuth, scopedPartnerBrokerId } from "../../../lib/basic-auth";
-import { escape, getCell, quoteIdent, resolveWarehouseId, runQuery, toInt } from "../../../lib/databricks";
+import { createSqlParams, getCell, quoteIdent, resolveWarehouseId, runQuery, toInt, type SqlParams } from "../../../lib/databricks";
 import { setApiCors, setStableCache } from "../../../lib/http";
 
 type ApiRequest = { method?: string; query: Record<string, any> };
@@ -135,26 +135,14 @@ function sessionTypificationExpr(variablesColumn: string, tableAlias = '') {
   END`;
 }
 
-function orgIdsSubquery(groupName: unknown, company: unknown) {
-  if (company) {
-    return `(SELECT CAST(id AS STRING) FROM ${ORGANIZATIONS_TABLE} WHERE name = '${escape(company)}')`;
-  }
-  const g = escape(groupName);
-  return `(
-    SELECT CAST(id AS STRING) FROM ${ORGANIZATIONS_TABLE} WHERE name = '${g}'
-    UNION
-    SELECT CAST(id AS STRING) FROM ${ORGANIZATIONS_TABLE}
-    WHERE matriz_id = (SELECT id FROM ${ORGANIZATIONS_TABLE} WHERE name = '${g}' LIMIT 1)
-  )`;
-}
-
-function economicGroupNamesCondition(groupNames: string[], tableAlias = 's') {
+function economicGroupNamesCondition(groupNames: string[], p: SqlParams, tableAlias = 's') {
   const names = groupNames.map((name) => String(name || '').trim()).filter(Boolean);
   if (!names.length) return null;
   const col = `${tableAlias}.${quoteIdent('economic_group_canonical')}`;
   const orgIdCol = `CAST(${tableAlias}.${quoteIdent('organization_id')} AS STRING)`;
-  const nameList = names.map((name) => `UPPER(TRIM('${escape(name)}'))`).join(',');
-  const literalRows = names.map((name, index) => `${index ? 'UNION ALL ' : ''}SELECT UPPER(TRIM('${escape(name)}')) AS group_name`).join('\n    ');
+  const nameMarkers = names.map((name) => p.add(name));
+  const nameList = nameMarkers.map((marker) => `UPPER(TRIM(${marker}))`).join(',');
+  const literalRows = nameMarkers.map((marker, index) => `${index ? 'UNION ALL ' : ''}SELECT UPPER(TRIM(${marker})) AS group_name`).join('\n    ');
   const matchedOrgs = `
     SELECT CAST(id AS STRING) AS id
     FROM ${ORGANIZATIONS_TABLE}
@@ -179,26 +167,26 @@ function economicGroupNamesCondition(groupNames: string[], tableAlias = 's') {
   )`;
 }
 
-function companySessionCondition(company: unknown, tableAlias = 's') {
+function companySessionCondition(company: unknown, p: SqlParams, tableAlias = 's') {
   const name = String(company || '').trim();
   if (!name) return null;
-  const c = escape(name);
+  const c = p.add(name);
   return `(
-    UPPER(TRIM(CAST(${tableAlias}.${quoteIdent('organization_name')} AS STRING))) = UPPER(TRIM('${c}'))
+    UPPER(TRIM(CAST(${tableAlias}.${quoteIdent('organization_name')} AS STRING))) = UPPER(TRIM(${c}))
     OR CAST(${tableAlias}.${quoteIdent('organization_id')} AS STRING) IN (
       SELECT CAST(id AS STRING)
       FROM ${ORGANIZATIONS_TABLE}
-      WHERE UPPER(TRIM(CAST(name AS STRING))) = UPPER(TRIM('${c}'))
+      WHERE UPPER(TRIM(CAST(name AS STRING))) = UPPER(TRIM(${c}))
     )
     OR CAST(${tableAlias}.${quoteIdent('organization_id')} AS STRING) IN (
       SELECT CAST(ID_EMPRESA AS STRING)
       FROM ${BENEFICIARIES_TABLE}
-      WHERE UPPER(TRIM(CAST(NOME_CLIENTE AS STRING))) = UPPER(TRIM('${c}'))
+      WHERE UPPER(TRIM(CAST(NOME_CLIENTE AS STRING))) = UPPER(TRIM(${c}))
     )
   )`;
 }
 
-function partnerBrokerCondition(partnerBrokerId: unknown, tableAlias = 's') {
+function partnerBrokerCondition(partnerBrokerId: unknown, p: SqlParams, tableAlias = 's') {
   const id = String(partnerBrokerId || '').trim();
   if (!id) return null;
   const partnerCondition = id === MDS_PARTNER_SCOPE
@@ -208,7 +196,7 @@ function partnerBrokerCondition(partnerBrokerId: unknown, tableAlias = 's') {
       WHERE UPPER(TRIM(COALESCE(CAST(pb.name AS STRING), ''))) = 'MDS'
         OR UPPER(TRIM(COALESCE(CAST(pb.name_secondary AS STRING), ''))) = 'MDS'
     )`
-    : `CAST(opb.partner_broker_id AS STRING) = '${escape(id)}'`;
+    : `CAST(opb.partner_broker_id AS STRING) = ${p.add(id)}`;
   return `CAST(${tableAlias}.${quoteIdent('organization_id')} AS STRING) IN (
     SELECT CAST(opb.organization_id AS STRING)
     FROM ${ORGANIZATION_PARTNER_BROKERS_TABLE} opb
@@ -260,13 +248,14 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   try {
     const warehouseId = await resolveWarehouseId();
     const dashboardSessionsTable = await resolveDashboardSessionsTable(warehouseId);
+    const params = createSqlParams();
 
     const companySessionsDateFilter = meses.length > 0
       ? `s.${quoteIdent('mes')} IN (${meses.map((m: string) => `'${m}'`).join(',')})`
       : null;
     const scopeFilters = [
-      company ? companySessionCondition(company, 's') : economicGroupNamesCondition(groupNames, 's'),
-      partnerBrokerCondition(partnerBrokerId, 's'),
+      company ? companySessionCondition(company, params, 's') : economicGroupNamesCondition(groupNames, params, 's'),
+      partnerBrokerCondition(partnerBrokerId, params, 's'),
     ].filter(Boolean);
     const companySessionsScopeFilter = scopeFilters.length ? scopeFilters.join(' AND ') : null;
     const companySessionsWhere = [companySessionsDateFilter, companySessionsScopeFilter].filter(Boolean).join(' AND ');
@@ -284,7 +273,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         SELECT COUNT(*) AS total_sessions
         FROM ${dashboardSessionsTable} s
         ${where ? `WHERE ${where}` : ''}
-      `);
+      `, params.list);
       setStableCache(res);
       return res.status(200).json({
         scope: 'total',
@@ -303,7 +292,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         SELECT COUNT(DISTINCT s.${quoteIdent('beneficiary_key')}) AS unique_users
         FROM ${dashboardSessionsTable} s
         ${where ? `WHERE ${where} AND s.${quoteIdent('beneficiary_key')} IS NOT NULL` : `WHERE s.${quoteIdent('beneficiary_key')} IS NOT NULL`}
-      `);
+      `, params.list);
       setStableCache(res);
       return res.status(200).json({
         scope: 'unique_users',
@@ -326,7 +315,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         ${where ? `WHERE ${where}` : ''}
         GROUP BY s.${quoteIdent('tipo_atendimento_agent')}
         ORDER BY total_sessions DESC
-      `);
+      `, params.list);
       setStableCache(res);
       return res.status(200).json({
         scope: 'human_interaction',
@@ -343,7 +332,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     }
 
     if (scope === 'typification_groups' && typificationValue) {
-      const tipFilter = `s.${quoteIdent('tipificacao')} = '${escape(typificationValue)}'`;
+      const tipFilter = `s.${quoteIdent('tipificacao')} = ${params.add(typificationValue)}`;
       const where = [companySessionsDateFilter, companySessionsScopeFilter, typificationFinisherFilter, tipFilter]
         .filter(Boolean)
         .join(' AND ');
@@ -359,7 +348,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           GROUP BY s.${quoteIdent('economic_group_canonical')}
           ORDER BY total_sessions DESC
           LIMIT 50
-        `);
+        `, params.list);
         const groups = rows.map((r) => ({
           grupo: String(getCell(r[0]) || 'Sem grupo'),
           total: toInt(r[1]),
@@ -409,7 +398,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         ${companySessionsWhere ? `WHERE ${companySessionsWhere}` : ''}
         GROUP BY s.${quoteIdent('tipo_atendimento_agent')}
         ORDER BY total_sessions DESC
-      `)
+      `, params.list)
       : runQuery(warehouseId, `
         SELECT
           s.${quoteIdent('tipo_atendimento_agent')} AS tipo_atendimento,
@@ -429,7 +418,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         ${companySessionsWhere ? `WHERE ${companySessionsWhere}` : ''}
         GROUP BY COALESCE(NULLIF(TRIM(CAST(s.${quoteIdent('organization_name')} AS STRING)), ''), 'Sem empresa')
         ORDER BY total_sessions DESC
-      `)
+      `, params.list)
       : runQuery(warehouseId, `
         SELECT
           s.${quoteIdent('economic_group_canonical')} AS empresa,
@@ -450,7 +439,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         GROUP BY s.${quoteIdent('tipificacao')}
         ORDER BY total_sessions DESC
         LIMIT 30
-      `)
+      `, params.list)
       : runQuery(warehouseId, `
         SELECT
           s.${quoteIdent('tipificacao')} AS tipificacao,
@@ -460,7 +449,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         GROUP BY s.${quoteIdent('tipificacao')}
         ORDER BY total_sessions DESC
         LIMIT 30
-      `);
+      `, params.list);
 
     const topGroupsEvolutionPromise = topGroupByCompany ? runQuery(warehouseId, `
       WITH scoped_sessions AS (
@@ -494,7 +483,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       INNER JOIN top_groups tg ON tg.grupo = ss.grupo
       GROUP BY ss.mes, ss.grupo, tg.current_sessions
       ORDER BY tg.current_sessions DESC, ss.grupo, ss.mes
-    `) : runQuery(warehouseId, `
+    `, params.list) : runQuery(warehouseId, `
       WITH scoped_sessions AS (
         SELECT
           s.${quoteIdent('mes')} AS mes,
@@ -525,7 +514,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       INNER JOIN top_groups tg ON tg.grupo = s.grupo
       GROUP BY s.mes, s.grupo, tg.current_sessions
       ORDER BY tg.current_sessions DESC, s.grupo, s.mes
-    `);
+    `, params.list);
 
     const [typificationsSettled, messageAgentFinishersSettled, companySessionsSettled, topGroupsEvolutionSettled] = await Promise.allSettled([
       typificationsPromise,

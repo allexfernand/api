@@ -1,5 +1,5 @@
 import { MDS_PARTNER_SCOPE, requireBasicAuth, scopedPartnerBrokerId } from "../../../lib/basic-auth";
-import { escape, getCell, resolveWarehouseId, runQuery, toInt } from "../../../lib/databricks";
+import { createSqlParams, getCell, resolveWarehouseId, runQuery, toInt, type SqlParams } from "../../../lib/databricks";
 import { setApiCors } from "../../../lib/http";
 
 type ApiRequest = { method?: string; query: Record<string, any> };
@@ -27,13 +27,12 @@ function parsePartnerBrokerIds(query: Record<string, any>, fallback: unknown) {
   return fallback ? fallback : null;
 }
 
-function partnerBrokerCondition(partnerBrokerId: unknown) {
+function partnerBrokerCondition(partnerBrokerId: unknown, p: SqlParams) {
   const partnerIds = Array.isArray(partnerBrokerId)
     ? partnerBrokerId.map((value) => String(value).trim()).filter(Boolean)
     : [];
   if (partnerIds.length) {
-    const ids = partnerIds.map((id) => `'${escape(id)}'`).join(",");
-    return `CAST(opb.partner_broker_id AS STRING) IN (${ids})`;
+    return `CAST(opb.partner_broker_id AS STRING) IN (${p.addAll(partnerIds)})`;
   }
   if (String(partnerBrokerId) === MDS_PARTNER_SCOPE) {
     return `CAST(opb.partner_broker_id AS STRING) IN (
@@ -43,7 +42,7 @@ function partnerBrokerCondition(partnerBrokerId: unknown) {
         OR UPPER(TRIM(COALESCE(CAST(pb.name_secondary AS STRING), ''))) = 'MDS'
     )`;
   }
-  return `CAST(opb.partner_broker_id AS STRING) = '${escape(partnerBrokerId)}'`;
+  return `CAST(opb.partner_broker_id AS STRING) = ${p.add(partnerBrokerId)}`;
 }
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
@@ -54,7 +53,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   const scopedPartnerBroker = scopedPartnerBrokerId(req, req.query.partner_broker_id || null);
   const partnerBrokerId = parsePartnerBrokerIds(req.query, scopedPartnerBroker);
   const limit = Math.min(Math.max(toInt(req.query.limit) || 8, 1), 12);
-  const partnerFilter = partnerBrokerId ? `WHERE ${partnerBrokerCondition(partnerBrokerId)}` : "";
+  const params = createSqlParams();
+  const partnerFilter = partnerBrokerId ? `WHERE ${partnerBrokerCondition(partnerBrokerId, params)}` : "";
   const selectedPartnersFilter = partnerBrokerId ? "" : `WHERE rp.partner_rank <= ${limit}`;
 
   try {
@@ -131,7 +131,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         ) AS cumulative_total
       FROM scoped_monthly
       ORDER BY partner_rank ASC, mes ASC
-    `);
+    `, params.list);
 
     res.setHeader("Cache-Control", "no-store, max-age=0");
     res.status(200).json({

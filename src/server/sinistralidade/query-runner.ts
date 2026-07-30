@@ -1,10 +1,10 @@
 // Execução de consultas da Sinistralidade 360 com observabilidade por escopo.
 // Nenhum SQL ou dado sensível é propagado ao cliente em caso de erro.
 
-import { resolveWarehouseId, runQuery, type DatabricksRow } from "../databricks/client";
+import { resolveWarehouseId, runQuery, type DatabricksRow, type SqlParameter } from "../databricks/client";
 import { logger } from "../observability/logger";
 
-export type QueryRunner = (sql: string) => Promise<DatabricksRow[]>;
+export type QueryRunner = (sql: string, parameters?: SqlParameter[]) => Promise<DatabricksRow[]>;
 
 export const TABLES = {
   dimCompany: "hive_metastore.sanus_prod.dim_empresa_gold_v2",
@@ -43,10 +43,10 @@ export const TABLES = {
 
 export async function createQueryRunner(scope: string): Promise<QueryRunner> {
   const warehouseId = await resolveWarehouseId();
-  return async (sql: string) => {
+  return async (sql: string, parameters?: SqlParameter[]) => {
     const startedAt = Date.now();
     try {
-      const rows = await runQuery(warehouseId, sql);
+      const rows = await runQuery(warehouseId, sql, parameters);
       logger.info("sinistralidade.query", {
         scope,
         durationMs: Date.now() - startedAt,

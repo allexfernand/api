@@ -4,7 +4,7 @@
 // - Com filtro: JOIN por botmaker_session.organization_id x organizations.id.
 // Aceita ?group_name=, ?company=, ?type=, ?months=12 ou ?meses=2026-01,2026-02.
 import { MDS_PARTNER_SCOPE, requireBasicAuth, scopedPartnerBrokerId } from "../../../lib/basic-auth";
-import { escape, getCell, quoteIdent, resolveWarehouseId, runQuery, toInt } from "../../../lib/databricks";
+import { createSqlParams, getCell, quoteIdent, resolveWarehouseId, runQuery, toInt, type SqlParams } from "../../../lib/databricks";
 import { setApiCors, setStableCache } from "../../../lib/http";
 
 const SESSION_TABLE       = `hive_metastore.sanus_prod.botmaker_session`;
@@ -214,26 +214,14 @@ function uniqueBeneficiaryExpr(columns: string[]) {
   return `COALESCE(CASE WHEN ${idExpr} IS NOT NULL THEN CONCAT('beneficiary:', ${idExpr}) END, CASE WHEN ${cpfExpr} IS NOT NULL THEN CONCAT('cpf:', ${cpfExpr}) END)`;
 }
 
-function orgIdsSubquery(groupName: unknown, company: unknown) {
-  if (company) {
-    return `(SELECT CAST(id AS STRING) FROM ${ORGANIZATIONS_TABLE} WHERE name = '${escape(company)}')`;
-  }
-  const g = escape(groupName);
-  return `(
-    SELECT CAST(id AS STRING) FROM ${ORGANIZATIONS_TABLE} WHERE name = '${g}'
-    UNION
-    SELECT CAST(id AS STRING) FROM ${ORGANIZATIONS_TABLE}
-    WHERE matriz_id = (SELECT id FROM ${ORGANIZATIONS_TABLE} WHERE name = '${g}' LIMIT 1)
-  )`;
-}
-
-function economicGroupNamesCondition(groupNames: string[], tableAlias = 's') {
+function economicGroupNamesCondition(groupNames: string[], p: SqlParams, tableAlias = 's') {
   const names = groupNames.map((name) => String(name || '').trim()).filter(Boolean);
   if (!names.length) return null;
   const col = `${tableAlias}.${quoteIdent('economic_group_canonical')}`;
   const orgIdCol = `CAST(${tableAlias}.${quoteIdent('organization_id')} AS STRING)`;
-  const nameList = names.map((name) => `UPPER(TRIM('${escape(name)}'))`).join(',');
-  const literalRows = names.map((name, index) => `${index ? 'UNION ALL ' : ''}SELECT UPPER(TRIM('${escape(name)}')) AS group_name`).join('\n    ');
+  const nameMarkers = names.map((name) => p.add(name));
+  const nameList = nameMarkers.map((marker) => `UPPER(TRIM(${marker}))`).join(',');
+  const literalRows = nameMarkers.map((marker, index) => `${index ? 'UNION ALL ' : ''}SELECT UPPER(TRIM(${marker})) AS group_name`).join('\n    ');
   const matchedOrgs = `
     SELECT CAST(id AS STRING) AS id
     FROM ${ORGANIZATIONS_TABLE}
@@ -258,26 +246,26 @@ function economicGroupNamesCondition(groupNames: string[], tableAlias = 's') {
   )`;
 }
 
-function companySessionCondition(company: unknown, tableAlias = 's') {
+function companySessionCondition(company: unknown, p: SqlParams, tableAlias = 's') {
   const name = String(company || '').trim();
   if (!name) return null;
-  const c = escape(name);
+  const c = p.add(name);
   return `(
-    UPPER(TRIM(CAST(${tableAlias}.${quoteIdent('organization_name')} AS STRING))) = UPPER(TRIM('${c}'))
+    UPPER(TRIM(CAST(${tableAlias}.${quoteIdent('organization_name')} AS STRING))) = UPPER(TRIM(${c}))
     OR CAST(${tableAlias}.${quoteIdent('organization_id')} AS STRING) IN (
       SELECT CAST(id AS STRING)
       FROM ${ORGANIZATIONS_TABLE}
-      WHERE UPPER(TRIM(CAST(name AS STRING))) = UPPER(TRIM('${c}'))
+      WHERE UPPER(TRIM(CAST(name AS STRING))) = UPPER(TRIM(${c}))
     )
     OR CAST(${tableAlias}.${quoteIdent('organization_id')} AS STRING) IN (
       SELECT CAST(ID_EMPRESA AS STRING)
       FROM ${BENEFICIARIES_VIEW}
-      WHERE UPPER(TRIM(CAST(NOME_CLIENTE AS STRING))) = UPPER(TRIM('${c}'))
+      WHERE UPPER(TRIM(CAST(NOME_CLIENTE AS STRING))) = UPPER(TRIM(${c}))
     )
   )`;
 }
 
-function partnerBrokerCondition(partnerBrokerId: unknown, tableAlias = 's') {
+function partnerBrokerCondition(partnerBrokerId: unknown, p: SqlParams, tableAlias = 's') {
   const id = String(partnerBrokerId || '').trim();
   if (!id) return null;
   const partnerCondition = id === MDS_PARTNER_SCOPE
@@ -287,7 +275,7 @@ function partnerBrokerCondition(partnerBrokerId: unknown, tableAlias = 's') {
       WHERE UPPER(TRIM(COALESCE(CAST(pb.name AS STRING), ''))) = 'MDS'
         OR UPPER(TRIM(COALESCE(CAST(pb.name_secondary AS STRING), ''))) = 'MDS'
     )`
-    : `CAST(opb.partner_broker_id AS STRING) = '${escape(id)}'`;
+    : `CAST(opb.partner_broker_id AS STRING) = ${p.add(id)}`;
   return `CAST(${tableAlias}.${quoteIdent('organization_id')} AS STRING) IN (
     SELECT CAST(opb.organization_id AS STRING)
     FROM ${ORGANIZATION_PARTNER_BROKERS_TABLE} opb
@@ -368,11 +356,12 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   try {
     const warehouseId = await resolveWarehouseId();
     const dashboardSessionsTable = await resolveDashboardSessionsTable(warehouseId);
+    const params = createSqlParams();
 
     const filters = [granularity === 'day' ? daySqlFilter : monthsSqlFilter];
     const orgFilters = [
-      company ? companySessionCondition(company, 's') : economicGroupNamesCondition(groupNames, 's'),
-      partnerBrokerCondition(partnerBrokerId, 's'),
+      company ? companySessionCondition(company, params, 's') : economicGroupNamesCondition(groupNames, params, 's'),
+      partnerBrokerCondition(partnerBrokerId, params, 's'),
     ].filter(Boolean);
     filters.push(...orgFilters);
     const fromSql = `${dashboardSessionsTable} s`;
@@ -392,7 +381,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           s.${quoteIdent('dia')},
           s.${quoteIdent('tipo_atendimento_agent')}
         ORDER BY dia
-      `);
+      `, params.list);
 
       const byDiaTipo = new Map(rows.map((r) => [
         `${String(getCell(r[0]) || '')}|${String(getCell(r[1]) || '').toUpperCase()}`,
@@ -438,7 +427,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         ss.mes,
         ss.tipo_atendimento
       ORDER BY ss.mes
-    `),
+    `, params.list),
       includeBeneficiaries ? runQuery(warehouseId, `
       WITH beneficiary_base AS (
         SELECT
@@ -465,7 +454,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       UNION ALL
       SELECT '__last_12_months', COUNT(DISTINCT beneficiary_key)
       FROM beneficiary_base
-    `) : Promise.resolve([]),
+    `, params.list) : Promise.resolve([]),
     ]);
 
     const byMesTipo = new Map(rows.map((r) => [

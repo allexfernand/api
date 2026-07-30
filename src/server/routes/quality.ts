@@ -2,7 +2,7 @@
 // Visões estratégica e operacional de qualidade a partir das tabelas silver.
 
 import { rejectMdsAuth, requireBasicAuth } from "../../../lib/basic-auth";
-import { getCell, getColumns, quoteIdent, resolveWarehouseId, runQuery } from "../../../lib/databricks";
+import { escape, getCell, getColumns, quoteIdent, resolveWarehouseId, runQuery } from "../../../lib/databricks";
 import { setApiCors } from "../../../lib/http";
 
 const SUMMARY_TABLE = "hive_metastore.sanus_prod.quality_analysis_silver_summary";
@@ -112,7 +112,10 @@ const toNumber = (value) => {
   const number = Number(String(raw).replace(",", "."));
   return Number.isFinite(number) ? number : null;
 };
-const escapeSql = (value) => String(value).replace(/'/g, "''");
+// Usa o escape endurecido do client (trata backslash além de aspas): o Spark
+// interpreta \ como caractere de escape em literais, então dobrar apenas
+// aspas simples não é suficiente contra injeção.
+const escapeSql = escape;
 const qcol = (alias, column) => `${alias}.${quoteIdent(column)}`;
 
 const DEFAULT_COLLABORATOR_DEPARTMENTS = [

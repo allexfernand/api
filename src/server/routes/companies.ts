@@ -1,6 +1,6 @@
 // api/companies.ts
 import { MDS_PARTNER_SCOPE, requireBasicAuth, scopedPartnerBrokerId } from "../../../lib/basic-auth";
-import { escape, getCell, resolveWarehouseId, runQuery } from "../../../lib/databricks";
+import { createSqlParams, getCell, resolveWarehouseId, runQuery, type SqlParams } from "../../../lib/databricks";
 import { setApiCors, setStableCache } from "../../../lib/http";
 
 type ApiRequest = { method?: string; query: Record<string, any> };
@@ -23,7 +23,7 @@ const ORGANIZATIONS_TABLE = `hive_metastore.sanus_prod.organizations`;
 const PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.partner_brokers`;
 const ORGANIZATION_PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.organization_partner_brokers`;
 
-function partnerBrokerCondition(partnerBrokerId: unknown) {
+function partnerBrokerCondition(partnerBrokerId: unknown, p: SqlParams) {
   if (String(partnerBrokerId) === MDS_PARTNER_SCOPE) {
     return `CAST(opb.partner_broker_id AS STRING) IN (
       SELECT CAST(pb.id AS STRING)
@@ -32,11 +32,11 @@ function partnerBrokerCondition(partnerBrokerId: unknown) {
         OR UPPER(TRIM(COALESCE(CAST(pb.name_secondary AS STRING), ''))) = 'MDS'
     )`;
   }
-  return `CAST(opb.partner_broker_id AS STRING) = '${escape(partnerBrokerId)}'`;
+  return `CAST(opb.partner_broker_id AS STRING) = ${p.add(partnerBrokerId)}`;
 }
 
-function partnerOrgIdsSubquery(partnerBrokerId: unknown) {
-  const partnerCondition = partnerBrokerCondition(partnerBrokerId);
+function partnerOrgIdsSubquery(partnerBrokerId: unknown, p: SqlParams) {
+  const partnerCondition = partnerBrokerCondition(partnerBrokerId, p);
   return `(
     SELECT CAST(opb.organization_id AS STRING) AS organization_id
     FROM ${ORGANIZATION_PARTNER_BROKERS_TABLE} opb
@@ -52,19 +52,19 @@ function partnerOrgIdsSubquery(partnerBrokerId: unknown) {
   )`;
 }
 
-function buildFilters(groupNames: string[], typeFilter: unknown, partnerBrokerId: unknown) {
+function buildFilters(groupNames: string[], typeFilter: unknown, partnerBrokerId: unknown, p: SqlParams) {
   const conditions = [];
   if (groupNames.length) {
-    const groupList = groupNames.map((group) => `'${escape(group)}'`).join(",");
+    const groupList = p.addAll(groupNames);
     conditions.push(`b.ID_EMPRESA IN (
-      SELECT id FROM hive_metastore.sanus_prod.organizations WHERE name IN (${groupList})
+      SELECT id FROM hive_metastore.sanus_prod.organizations WHERE TRIM(name) IN (${groupList})
       UNION
       SELECT id FROM hive_metastore.sanus_prod.organizations
-      WHERE matriz_id IN (SELECT id FROM hive_metastore.sanus_prod.organizations WHERE name IN (${groupList}))
+      WHERE matriz_id IN (SELECT id FROM hive_metastore.sanus_prod.organizations WHERE TRIM(name) IN (${groupList}))
     )`);
   }
   if (partnerBrokerId) {
-    conditions.push(`CAST(b.ID_EMPRESA AS STRING) IN ${partnerOrgIdsSubquery(partnerBrokerId)}`);
+    conditions.push(`CAST(b.ID_EMPRESA AS STRING) IN ${partnerOrgIdsSubquery(partnerBrokerId, p)}`);
   }
   if (typeFilter === 'TITULAR') {
     conditions.push(`UPPER(TRIM(COALESCE(b.GRAU_PARENTESCO,''))) = 'TITULAR'`);
@@ -82,8 +82,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   const groupNames = parseGroupNames(req.query);
   const typeFilter = req.query.type || null;
   const partnerBrokerId = scopedPartnerBrokerId(req, req.query.partner_broker_id || null);
-  const extraFilter = buildFilters(groupNames, typeFilter, null);
-  const partnerCte = partnerBrokerId ? `WITH partner_orgs AS ${partnerOrgIdsSubquery(partnerBrokerId)}` : '';
+  const params = createSqlParams();
+  const extraFilter = buildFilters(groupNames, typeFilter, null, params);
+  const partnerCte = partnerBrokerId ? `WITH partner_orgs AS ${partnerOrgIdsSubquery(partnerBrokerId, params)}` : '';
   const partnerJoin = partnerBrokerId
     ? `INNER JOIN (SELECT DISTINCT organization_id FROM partner_orgs) po
         ON CAST(b.ID_EMPRESA AS STRING) = po.organization_id`
@@ -103,7 +104,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         ${extraFilter}
       GROUP BY NOME_CLIENTE
       ORDER BY total DESC
-    `);
+    `, params.list);
 
     const companies = rows.map(r => ({
       empresa: getCell(r[0]) ? String(getCell(r[0])).trim() : "—",

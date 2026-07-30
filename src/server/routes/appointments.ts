@@ -1,6 +1,6 @@
 // api/appointments.ts
 import { MDS_PARTNER_SCOPE, requireBasicAuth, scopedPartnerBrokerId } from "../../../lib/basic-auth";
-import { escape, getCell, getColumns, quoteIdent, resolveWarehouseId, runQuery, toInt } from "../../../lib/databricks";
+import { createSqlParams, getCell, getColumns, quoteIdent, resolveWarehouseId, runQuery, toInt, type SqlParams } from "../../../lib/databricks";
 import { setApiCors } from "../../../lib/http";
 
 const APPOINTMENTS_TABLE = `hive_metastore.sanus_prod.atendimento_summarized_gold_live`;
@@ -24,9 +24,9 @@ function pickColumn(columns: string[], candidates: string[]) {
   return null;
 }
 
-function orgNamesSubquery(groupName: unknown) {
+function orgNamesSubquery(groupName: unknown, p: SqlParams) {
   const groups = (Array.isArray(groupName) ? groupName : [groupName]).map((value) => String(value).trim()).filter(Boolean);
-  const groupList = groups.map((group) => `UPPER(TRIM('${escape(group)}'))`).join(',');
+  const groupList = groups.map((group) => `UPPER(TRIM(${p.add(group)}))`).join(',');
   return `(
     SELECT UPPER(TRIM(name)) FROM ${ORGANIZATIONS_TABLE}
     WHERE UPPER(TRIM(name)) IN (${groupList})
@@ -63,21 +63,21 @@ function parseGroupNames(query: Record<string, any>) {
   return query.group_name ? [String(query.group_name).trim()].filter(Boolean) : [];
 }
 
-function buildGroupFilter(columns: string[], groupNames: string[]) {
+function buildGroupFilter(columns: string[], groupNames: string[], p: SqlParams) {
   if (!groupNames.length) return '';
   const conditions = [];
   const groupColumn = pickColumn(columns, ['grupo_economico', 'economic_group', 'group_name', 'grupo']);
   const companyColumn = pickColumn(columns, companyColumnCandidates);
   if (groupColumn) {
-    conditions.push(`(${groupNames.map((groupName) => `UPPER(TRIM(CAST(${quoteIdent(groupColumn)} AS STRING))) LIKE CONCAT('%', UPPER(TRIM('${escape(groupName)}')), '%')`).join(' OR ')})`);
+    conditions.push(`(${groupNames.map((groupName) => `UPPER(TRIM(CAST(${quoteIdent(groupColumn)} AS STRING))) LIKE CONCAT('%', UPPER(TRIM(${p.add(groupName)})), '%')`).join(' OR ')})`);
   }
   if (companyColumn) {
-    conditions.push(`UPPER(TRIM(CAST(${quoteIdent(companyColumn)} AS STRING))) IN ${orgNamesSubquery(groupNames)}`);
+    conditions.push(`UPPER(TRIM(CAST(${quoteIdent(companyColumn)} AS STRING))) IN ${orgNamesSubquery(groupNames, p)}`);
   }
   return conditions.length ? `AND (${conditions.join(' OR ')})` : '';
 }
 
-function partnerOrgNamesSubquery(partnerBrokerId: unknown) {
+function partnerOrgNamesSubquery(partnerBrokerId: unknown, p: SqlParams) {
   const partnerCondition = String(partnerBrokerId) === MDS_PARTNER_SCOPE
     ? `CAST(opb.partner_broker_id AS STRING) IN (
       SELECT CAST(pb.id AS STRING)
@@ -85,7 +85,7 @@ function partnerOrgNamesSubquery(partnerBrokerId: unknown) {
       WHERE UPPER(TRIM(COALESCE(CAST(pb.name AS STRING), ''))) = 'MDS'
         OR UPPER(TRIM(COALESCE(CAST(pb.name_secondary AS STRING), ''))) = 'MDS'
     )`
-    : `CAST(opb.partner_broker_id AS STRING) = '${escape(partnerBrokerId)}'`;
+    : `CAST(opb.partner_broker_id AS STRING) = ${p.add(partnerBrokerId)}`;
   return `(
     SELECT UPPER(TRIM(o.name))
     FROM ${ORGANIZATIONS_TABLE} o
@@ -103,18 +103,18 @@ function partnerOrgNamesSubquery(partnerBrokerId: unknown) {
   )`;
 }
 
-function buildPartnerFilter(columns: string[], partnerBrokerId: unknown) {
+function buildPartnerFilter(columns: string[], partnerBrokerId: unknown, p: SqlParams) {
   if (!partnerBrokerId) return '';
   const companyColumn = pickColumn(columns, companyColumnCandidates);
   if (!companyColumn) return '';
-  return `AND UPPER(TRIM(CAST(${quoteIdent(companyColumn)} AS STRING))) IN ${partnerOrgNamesSubquery(partnerBrokerId)}`;
+  return `AND UPPER(TRIM(CAST(${quoteIdent(companyColumn)} AS STRING))) IN ${partnerOrgNamesSubquery(partnerBrokerId, p)}`;
 }
 
-function buildCompanyFilter(columns: string[], company: unknown) {
+function buildCompanyFilter(columns: string[], company: unknown, p: SqlParams) {
   if (!company) return '';
   const companyColumn = pickColumn(columns, companyColumnCandidates);
   if (!companyColumn) return '';
-  return `AND UPPER(TRIM(CAST(${quoteIdent(companyColumn)} AS STRING))) = UPPER(TRIM('${escape(company)}'))`;
+  return `AND UPPER(TRIM(CAST(${quoteIdent(companyColumn)} AS STRING))) = UPPER(TRIM(${p.add(company)}))`;
 }
 
 function lastNMonthsList(n: number) {
@@ -176,9 +176,10 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   try {
     const warehouseId = await resolveWarehouseId();
     const columns = (groupNames.length || company || partnerBrokerId) ? await getColumns(warehouseId, APPOINTMENTS_TABLE) : [];
-    const groupFilter = buildGroupFilter(columns, groupNames);
-    const companyFilter = buildCompanyFilter(columns, company);
-    const partnerFilter = buildPartnerFilter(columns, partnerBrokerId);
+    const params = createSqlParams();
+    const groupFilter = buildGroupFilter(columns, groupNames, params);
+    const companyFilter = buildCompanyFilter(columns, company, params);
+    const partnerFilter = buildPartnerFilter(columns, partnerBrokerId, params);
 
     const rows = await runQuery(warehouseId, distinctCpf ? `
       WITH typed_rows AS (
@@ -240,7 +241,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         ${groupFilter}
         ${companyFilter}
         ${partnerFilter}
-    `);
+    `, params.list);
 
     res.status(200).json({
       total: toInt(rows[0]?.[0]),

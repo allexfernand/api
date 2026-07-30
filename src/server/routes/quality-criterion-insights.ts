@@ -2,7 +2,7 @@
 // Insights sob demanda a partir das justificativas factuais dos critérios de qualidade.
 
 import { rejectMdsAuth, requireBasicAuth } from "../../../lib/basic-auth";
-import { escape as escapeSql, getCell, getColumns, quoteIdent, resolveWarehouseId, runQuery, toInt } from "../../../lib/databricks";
+import { createSqlParams, getCell, getColumns, quoteIdent, resolveWarehouseId, runQuery, toInt } from "../../../lib/databricks";
 import { setApiCors } from "../../../lib/http";
 
 const CRITERIA_TABLE = "hive_metastore.sanus_prod.quality_analysis_silver_criteria";
@@ -89,9 +89,10 @@ function buildWhere({
   summaryTable,
   summaryAttendanceColumn,
   resolvedColumn,
+  params,
 }) {
   const conditions = [
-    `regexp_extract(regexp_replace(CAST(q.${quoteIdent(criterionColumn)} AS STRING), ',', '.'), '^(\\\\d+)', 1) = '${escapeSql(criterio)}'`,
+    `regexp_extract(regexp_replace(CAST(q.${quoteIdent(criterionColumn)} AS STRING), ',', '.'), '^(\\\\d+)', 1) = ${params.add(criterio)}`,
     applicableCondition("q", applicableColumn),
     `q.${quoteIdent(justificationColumn)} IS NOT NULL`,
     `TRIM(CAST(q.${quoteIdent(justificationColumn)} AS STRING)) != ''`,
@@ -99,7 +100,7 @@ function buildWhere({
 
   if (dateColumn) {
     if (meses.length) {
-      conditions.push(`DATE_FORMAT(try_cast(q.${quoteIdent(dateColumn)} AS TIMESTAMP), 'yyyy-MM') IN (${meses.map((mes) => `'${escapeSql(mes)}'`).join(",")})`);
+      conditions.push(`DATE_FORMAT(try_cast(q.${quoteIdent(dateColumn)} AS TIMESTAMP), 'yyyy-MM') IN (${params.addAll(meses)})`);
     } else {
       conditions.push(`try_cast(q.${quoteIdent(dateColumn)} AS TIMESTAMP) >= current_timestamp() - INTERVAL 30 DAYS`);
     }
@@ -260,6 +261,7 @@ export default async function handler(req, res) {
       throw new Error(`Colunas necessárias não encontradas. criterio=${criterionColumn || "n/a"} justificativa=${justificationColumn || "n/a"}`);
     }
 
+    const params = createSqlParams();
     const where = buildWhere({
       criterio,
       meses,
@@ -272,6 +274,7 @@ export default async function handler(req, res) {
       summaryTable: summaryFilter.summaryTable,
       summaryAttendanceColumn: summaryFilter.summaryAttendanceColumn,
       resolvedColumn: summaryFilter.resolvedColumn,
+      params,
     });
     const [summaryRows, justificationRows] = await Promise.all([
       runQuery(warehouseId, `
@@ -280,7 +283,7 @@ export default async function handler(req, res) {
           ${attendanceColumn ? `COUNT(DISTINCT CAST(q.${quoteIdent(attendanceColumn)} AS STRING))` : "COUNT(*)"} AS total_atendimentos
         FROM ${CRITERIA_TABLE} q
         WHERE ${where}
-      `),
+      `, params.list),
       runQuery(warehouseId, `
         SELECT
           TRIM(CAST(q.${quoteIdent(justificationColumn)} AS STRING)) AS justificativa,
@@ -290,7 +293,7 @@ export default async function handler(req, res) {
         GROUP BY TRIM(CAST(q.${quoteIdent(justificationColumn)} AS STRING))
         ORDER BY total DESC
         LIMIT 80
-      `),
+      `, params.list),
     ]);
 
     const total = toInt(summaryRows[0]?.[0]);
