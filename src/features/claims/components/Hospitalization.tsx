@@ -11,12 +11,6 @@
 // estatísticas de internação (claims.hospitalization — mesma consulta do
 // gráfico de agrupamento acima).
 //
-// O share de saúde mental é um INTERVALO, não um número único: parte do
-// custo tem flag_saude_mental NULL (nem confirmada, nem descartada), então
-// share_flag é o piso e share_flag + share_sem_classificacao é o teto
-// honesto do custo que PODE ser saúde mental — colapsar isso num só valor
-// reivindicaria uma precisão que os dados não têm.
-
 import styles from "../ClaimsTab.module.css";
 import type { GoldPreview } from "../../../contracts/gold-preview";
 import { ChartCard, ParetoChart } from "../../sinistralidade/components/charts";
@@ -25,6 +19,7 @@ import { LineageAnchor } from "../../sinistralidade/components/LineageAnchor";
 const formatadorInteiro = new Intl.NumberFormat("pt-BR");
 const formatadorPercentual = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 const moedaCheia = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
+const moedaCompacta = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", notation: "compact", maximumFractionDigits: 1 });
 
 // Valor já vem em milhões (sinistro_mi) — um formatador de moeda compacto
 // dividiria a magnitude de novo e mostraria "R$ 6" em vez de "R$ 5,8M".
@@ -40,6 +35,20 @@ function formatarDias(dias: number): string {
 function temaLabel(tema: string): string {
   const semUnderscore = tema.replace(/_/g, " ");
   return semUnderscore.charAt(0).toUpperCase() + semUnderscore.slice(1);
+}
+
+function percentual(valor: number | null): string {
+  return valor === null ? "—" : `${formatadorPercentual.format(valor)}%`;
+}
+
+function MetricTile({ label, value, helper }: { label: string; value: string; helper?: string }) {
+  return (
+    <div className={styles.statTile}>
+      <p className={styles.statLabel}>{label}</p>
+      <div className={styles.flowRow}>{value}</div>
+      {helper ? <p className={styles.statHelper}>{helper}</p> : null}
+    </div>
+  );
 }
 
 export function Hospitalization({
@@ -114,73 +123,78 @@ function MentalHealthPanel({
   saudeMental: GoldPreview["saude_mental"];
   internacao: GoldPreview["internacao"];
 }) {
-  const piso = saudeMental.share_flag;
-  const semClassificacao = saudeMental.share_sem_classificacao;
-  const teto = piso !== null && semClassificacao !== null ? piso + semClassificacao : null;
-  const intervalo = piso !== null && teto !== null
-    ? `${formatadorPercentual.format(piso)}% – ${formatadorPercentual.format(teto)}%`
-    : "—";
-  // Mesma condição que decide `intervalo` acima (o teto só existe com piso E
-  // share_sem_classificacao presentes) — sem isso, a nota podia explicar um
-  // teto que nem apareceu na tela (ex.: share_flag nulo com
-  // share_sem_classificacao presente: intervalo vira "—", mas a nota seguia
-  // descrevendo um teto que o usuário não tem como ver).
-  const notaSemClassificacao =
-    teto === null || semClassificacao === null
-      ? "Participação sem classificação indisponível."
-      : `${formatadorPercentual.format(semClassificacao)}% do custo está sem classificação — o teto do intervalo é um limite honesto, não uma confirmação de que todo esse custo é saúde mental.`;
+  const internacaoMental = internacao.por_saude_mental.find((linha) => linha.saude_mental);
+  const internacaoDemais = internacao.por_saude_mental.find((linha) => !linha.saude_mental);
+  const metricasInternacao = [
+    { label: "Episódios contínuos", mental: internacaoMental ? formatadorInteiro.format(internacaoMental.episodios) : "—", demais: internacaoDemais ? formatadorInteiro.format(internacaoDemais.episodios) : "—" },
+    { label: "Beneficiários", mental: internacaoMental ? formatadorInteiro.format(internacaoMental.beneficiarios) : "—", demais: internacaoDemais ? formatadorInteiro.format(internacaoDemais.beneficiarios) : "—" },
+    { label: "Custo total", mental: internacaoMental ? moedaCompacta.format(internacaoMental.custo) : "—", demais: internacaoDemais ? moedaCompacta.format(internacaoDemais.custo) : "—" },
+    { label: "Custo médio por episódio", mental: internacaoMental ? moedaCheia.format(internacaoMental.custo_medio) : "—", demais: internacaoDemais ? moedaCheia.format(internacaoDemais.custo_medio) : "—" },
+    { label: "Duração mediana / p90", mental: internacaoMental ? `${formatarDias(internacaoMental.duracao_mediana_dias)} / ${formatarDias(internacaoMental.duracao_p90_dias)}` : "—", demais: internacaoDemais ? `${formatarDias(internacaoDemais.duracao_mediana_dias)} / ${formatarDias(internacaoDemais.duracao_p90_dias)}` : "—" },
+    { label: "Reembolso", mental: internacaoMental ? `${moedaCompacta.format(internacaoMental.reembolso_custo)} · ${percentual(internacaoMental.custo ? 100 * internacaoMental.reembolso_custo / internacaoMental.custo : null)}` : "—", demais: internacaoDemais ? `${moedaCompacta.format(internacaoDemais.reembolso_custo)} · ${percentual(internacaoDemais.custo ? 100 * internacaoDemais.reembolso_custo / internacaoDemais.custo : null)}` : "—" },
+    { label: "Cobertura de duração", mental: internacaoMental ? percentual(100 * internacaoMental.cobertura_duracao) : "—", demais: internacaoDemais ? percentual(100 * internacaoDemais.cobertura_duracao) : "—" },
+  ];
 
   return (
     <article className={styles.card}>
       <div className={styles.cardTitle}>
         <h3>Saúde mental e internação</h3>
-        <p>Share de saúde mental exibido como intervalo — parte do custo não tem a flag de saúde mental confirmada nem descartada.</p>
+        <p>Visão agregada desde jan/2024. Saúde mental é classificada por critérios determinísticos e códigos nativos; não exibe diagnóstico.</p>
       </div>
       <LineageAnchor lineageId="claims.mental-health" label="Saúde mental — share do custo">
-        <div className={styles.factList}>
-          <div className={styles.factRow}>
-            <span>Saúde mental (share do custo)</span>
-            <strong>{intervalo}</strong>
-          </div>
-          <p className={styles.factNote}>{notaSemClassificacao}</p>
-          {saudeMental.por_tema_mi.length ? (
-            <div className={styles.factSubList}>
-              {saudeMental.por_tema_mi.map((tema) => (
-                <div className={styles.factRow} key={tema.tema}>
-                  <span>· {temaLabel(tema.tema)}</span>
-                  <strong>{formatarMilhoes(tema.sinistro_mi)}</strong>
-                </div>
-              ))}
-            </div>
-          ) : null}
+        <div className={styles.statGrid}>
+          <MetricTile label="Custo em saúde mental" value={moedaCompacta.format(saudeMental.custo)} helper={`${percentual(saudeMental.share_flag)} do sinistro`} />
+          <MetricTile label="Beneficiários" value={formatadorInteiro.format(saudeMental.beneficiarios)} helper="com uso sinalizado" />
+          <MetricTile label="Serviços" value={formatadorInteiro.format(saudeMental.servicos)} helper="quantidade assistencial" />
+          <MetricTile label="Reembolso" value={moedaCompacta.format(saudeMental.reembolso_custo)} helper={`${percentual(saudeMental.reembolso_share)} do custo em saúde mental`} />
         </div>
+        {saudeMental.por_tema.length ? (
+          <table className={`${styles.table} ${styles.tableSmall}`}>
+            <thead>
+              <tr>
+                <th scope="col" className={styles.txt}>Tema</th>
+                <th scope="col" className={styles.num}>Custo</th>
+                <th scope="col" className={styles.num}>Participação</th>
+                <th scope="col" className={styles.num}>Beneficiários</th>
+                <th scope="col" className={styles.num}>Serviços</th>
+              </tr>
+            </thead>
+            <tbody>
+              {saudeMental.por_tema.map((tema) => (
+                <tr key={tema.tema}>
+                  <td className={styles.txt}>{temaLabel(tema.tema)}</td>
+                  <td className={styles.num}>{moedaCompacta.format(tema.custo)}</td>
+                  <td className={styles.num}>{percentual(tema.share)}</td>
+                  <td className={styles.num}>{formatadorInteiro.format(tema.beneficiarios)}</td>
+                  <td className={styles.num}>{formatadorInteiro.format(tema.servicos)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : <p className={styles.factNote}>Não há temas de saúde mental para os filtros aplicados.</p>}
       </LineageAnchor>
       <LineageAnchor lineageId="claims.hospitalization" label="Estatísticas de internação">
         <div className={`${styles.factList} ${styles.factListDivided}`}>
-          <div className={styles.factRow}>
-            <span>Linhas assistenciais</span>
-            <strong>{formatadorInteiro.format(internacao.linhas_assistenciais)}</strong>
-          </div>
-          <div className={styles.factRow}>
-            <span>Episódios contínuos distintos</span>
-            <strong>{formatadorInteiro.format(internacao.internacoes_distintas)}</strong>
-          </div>
-          <div className={styles.factRow}>
-            <span>Beneficiários internados</span>
-            <strong>{formatadorInteiro.format(internacao.beneficiarios_unicos)}</strong>
-          </div>
-          <div className={styles.factRow}>
-            <span>Dias internados</span>
-            <strong>{formatadorInteiro.format(internacao.dias_internados)}</strong>
-          </div>
-          <div className={styles.factRow}>
-            <span>Custo médio por internação</span>
-            <strong>{moedaCheia.format(internacao.custo_medio)}</strong>
-          </div>
-          <div className={styles.factRow}>
-            <span>Duração mediana / p90</span>
-            <strong>{formatarDias(internacao.duracao_mediana_dias)} / {formatarDias(internacao.duracao_p90_dias)}</strong>
-          </div>
+          <p className={styles.insightLabel}>Internações — sinal de saúde mental versus demais</p>
+          <p className={styles.factNote}>{formatadorInteiro.format(internacao.linhas_assistenciais)} linhas assistenciais, {formatadorInteiro.format(internacao.internacoes_distintas)} episódios contínuos, {formatadorInteiro.format(internacao.beneficiarios_unicos)} beneficiários e {formatadorInteiro.format(internacao.dias_internados)} dias internados no total.</p>
+          <table className={`${styles.table} ${styles.tableSmall}`}>
+            <thead>
+              <tr>
+                <th scope="col" className={styles.txt}>Métrica</th>
+                <th scope="col" className={styles.num}>Com sinal</th>
+                <th scope="col" className={styles.num}>Demais</th>
+              </tr>
+            </thead>
+            <tbody>
+              {metricasInternacao.map((metrica) => (
+                <tr key={metrica.label}>
+                  <td className={styles.txt}>{metrica.label}</td>
+                  <td className={styles.num}>{metrica.mental}</td>
+                  <td className={styles.num}>{metrica.demais}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </LineageAnchor>
     </article>

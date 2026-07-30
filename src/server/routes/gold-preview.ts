@@ -31,13 +31,15 @@ const MONTH_STATUS = `hive_metastore.sanus_prod.sinistralidade_month_status_v2`;
 const BASE_FILTER = `NOT flag_data_suspeita`;
 const JANELA_2024 = `month_key >= '2024-01'`;
 const SERIE_INICIO = `'2025-01'`;
-// Janelas pareadas da metodologia da aba Análise Sinistro (impacto Sanus)
-const IMPACTO_PRE = ["2025-08", "2025-09"];
-const IMPACTO_POS = ["2025-10", "2025-11"];
-// Comparação mais madura herdada do BI: quatro meses completos de cada lado.
-// Mantemos apenas famílias presentes nas duas janelas para reduzir efeito de entrada/saída da carteira.
-const MADURO_PRE = ["2025-06", "2025-07", "2025-08", "2025-09"];
-const MADURO_POS = ["2025-10", "2025-11", "2025-12", "2026-01"];
+// Janelas pareadas com o mesmo ponto de corte (out/2025). A interface deixa
+// o usuário comparar 2, 4 ou 6 meses antes contra o mesmo número depois.
+const JANELAS_COMPARACAO = {
+  2: { before: ["2025-08", "2025-09"], after: ["2025-10", "2025-11"] },
+  4: { before: ["2025-06", "2025-07", "2025-08", "2025-09"], after: ["2025-10", "2025-11", "2025-12", "2026-01"] },
+  6: { before: ["2025-04", "2025-05", "2025-06", "2025-07", "2025-08", "2025-09"], after: ["2025-10", "2025-11", "2025-12", "2026-01", "2026-02", "2026-03"] },
+} as const;
+const TAMANHOS_COMPARACAO = [2, 4, 6] as const;
+const MESES_COMPARACAO = [...new Set(TAMANHOS_COMPARACAO.flatMap((tamanho) => [...JANELAS_COMPARACAO[tamanho].before, ...JANELAS_COMPARACAO[tamanho].after]))];
 const EVENTOS_COMPARAVEIS = ["Pronto Socorro", "Internacao", "Consulta", "Terapia"];
 const SINISTRO_MES_MINIMO = 100_000; // abaixo disso o mês é só lag residual, não entra na série
 
@@ -48,7 +50,7 @@ function continuousHospitalizationCte(filtroSql: string) {
   return `WITH hospitalization_rows AS (
     SELECT g.company_key, g.person_key, g.month_key, g.episode_key,
       g.data_inicio_internacao, g.data_alta, g.custo_assistencial_bruto,
-      g.duracao_internacao_dias,
+      g.duracao_internacao_dias, g.flag_saude_mental, g.flag_reembolso,
       sha2(concat_ws('||', g.company_key, g.person_key,
         coalesce(nullif(trim(g.numero_conta_medica), ''), 'SEM_CONTA'),
         coalesce(nullif(trim(g.authorization_id), ''), 'SEM_SENHA'),
@@ -94,6 +96,8 @@ function continuousHospitalizationCte(filtroSql: string) {
       coalesce(date_format(min(data_inicio_internacao), 'yyyy-MM'), min(month_key)) AS admission_month,
       count(*) AS linhas,
       sum(custo_assistencial_bruto) AS custo,
+      sum(CASE WHEN flag_reembolso THEN custo_assistencial_bruto ELSE 0 END) AS custo_reembolso,
+      max(coalesce(flag_saude_mental, false)) AS saude_mental,
       coalesce(datediff(max(data_alta), min(data_inicio_internacao)), max(duracao_internacao_dias)) AS duracao_dias
     FROM episode_rows
     GROUP BY 1, 2, 3
@@ -177,6 +181,36 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const escopo = companyScopeSql(auth, "g.company_key");
     const escopoMart = companyScopeSql(auth, "company_key");
     const filtroSql = `${escopo}${filtroUsuario}`;
+    const queryComparacaoMadura = (janela: (typeof JANELAS_COMPARACAO)[keyof typeof JANELAS_COMPARACAO]) => {
+      const beforeSql = janela.before.map((mes) => `'${mes}'`).join(",");
+      const afterSql = janela.after.map((mes) => `'${mes}'`).join(",");
+      const allMonthsSql = [...janela.before, ...janela.after].map((mes) => `'${mes}'`).join(",");
+      return q(`WITH pre AS (
+           SELECT DISTINCT g.family_key AS familia
+           FROM ${GOLD} g
+           WHERE NOT g.flag_data_suspeita AND g.family_key IS NOT NULL
+             AND g.month_key IN (${beforeSql})${filtroSql}
+         ), pos AS (
+           SELECT DISTINCT g.family_key AS familia
+           FROM ${GOLD} g
+           WHERE NOT g.flag_data_suspeita AND g.family_key IS NOT NULL
+             AND g.month_key IN (${afterSql})${filtroSql}
+         ), comuns AS (
+           SELECT pre.familia FROM pre INNER JOIN pos USING (familia)
+         ), base AS (
+           SELECT CASE WHEN g.month_key IN (${beforeSql}) THEN 'before' ELSE 'after' END AS periodo,
+                  g.family_key AS familia, g.custo_assistencial_bruto AS sinistro, g.tipo_evento
+           FROM ${GOLD} g
+           INNER JOIN comuns c ON g.family_key = c.familia
+           WHERE NOT g.flag_data_suspeita AND g.month_key IN (${allMonthsSql})${filtroSql}
+         )
+         SELECT periodo, count(DISTINCT familia), count(*), round(sum(sinistro), 2),
+                sum(CASE WHEN tipo_evento = 'Pronto Socorro' THEN 1 ELSE 0 END),
+                sum(CASE WHEN tipo_evento = 'Internacao' THEN 1 ELSE 0 END),
+                sum(CASE WHEN tipo_evento = 'Consulta' THEN 1 ELSE 0 END),
+                sum(CASE WHEN tipo_evento = 'Terapia' THEN 1 ELSE 0 END)
+         FROM base GROUP BY 1 ORDER BY 1`);
+    };
 
     // ---- Fase 1: séries mensais + versão da fonte e gate formal de fechamento.
     // Com filtro ativo, o mart de evento não serve (não tem as colunas de filtro) → gold direto.
@@ -231,6 +265,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const observados = fechados.length ? fechados : relevantes;
     const parciais = relevantes.filter((m) => statusPorMes.get(m.mes) !== "closed").map((m) => m.mes);
     const ultimoFechado = fechados[fechados.length - 1] || null;
+    const ultimoObservado = relevantes[relevantes.length - 1] || null;
+    const ultimoIndicador = ultimoFechado ?? ultimoObservado;
     const ultimoFechadoMes = ultimoFechado ? ultimoFechado.mes : null;
     const janela12 = observados.slice(-12).map((m) => m.mes).filter(mesValido);
     const janela12Sql = janela12.map((m) => `'${m}'`).join(",") || `'0000-00'`;
@@ -246,15 +282,17 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     }
 
     // ---- Fase 2: KPIs, blocos e impacto (dependem da janela 12m)
-    const [kpiRows, total24Rows, lotacaoRows, prestadorRows, concRows, intAgrupRows, intStatsRows, smTemaRows, impactoMesRows, impactoEventoRows, triRows, carteiraRows, topUtiRows, facetRows, cidadeRows, maduroRows, servicoRows, proximidadeRows, competenciaRows] = await Promise.all([
+    const [kpiRows, total24Rows, lotacaoRows, prestadorRows, concRows, intAgrupRows, intStatsRows, intSaudeMentalRows, smTemaRows, impactoMesRows, impactoEventoRows, triRows, carteiraRows, topUtiRows, facetRows, cidadeRows, maduro2Rows, maduro4Rows, maduro6Rows, servicoRows, proximidadeRows, competenciaRows] = await Promise.all([
       q(`SELECT round(sum(g.custo_assistencial_bruto), 2), count(DISTINCT g.person_key),
                 round(sum(CASE WHEN g.flag_reembolso THEN g.custo_assistencial_bruto END), 2),
                 count(DISTINCT CASE WHEN g.month_key = '${ultimoFechadoMes ?? ""}' THEN g.person_key END)
          FROM ${GOLD} g
          WHERE NOT g.flag_data_suspeita AND g.month_key IN (${janela12Sql})${filtroSql}`),
       q(`SELECT round(sum(g.custo_assistencial_bruto), 2),
-                round(sum(CASE WHEN g.flag_saude_mental THEN g.custo_assistencial_bruto END), 2),
-                round(sum(CASE WHEN g.flag_saude_mental IS NULL THEN g.custo_assistencial_bruto END), 2)
+                round(sum(CASE WHEN g.flag_saude_mental THEN g.custo_assistencial_bruto ELSE 0 END), 2),
+                count(DISTINCT CASE WHEN g.flag_saude_mental THEN g.person_key END),
+                sum(CASE WHEN g.flag_saude_mental THEN coalesce(g.quantidade_servicos, 0) ELSE 0 END),
+                round(sum(CASE WHEN g.flag_saude_mental AND g.flag_reembolso THEN g.custo_assistencial_bruto ELSE 0 END), 2)
          FROM ${GOLD} g WHERE NOT g.flag_data_suspeita AND g.${JANELA_2024}${filtroSql}`),
       q(`SELECT lot, sin, benef, tot FROM (
            SELECT COALESCE(NULLIF(trim(g.nome_lotacao), ''), 'Sem lotação') AS lot,
@@ -309,19 +347,26 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
          SELECT sum(linhas), count(*), count(DISTINCT person_key), sum(coalesce(duracao_dias, 0)),
            round(sum(custo) / count(*), 0), percentile(duracao_dias, 0.5), percentile(duracao_dias, 0.9)
          FROM episodes WHERE admission_month >= '2024-01'`),
+      q(`${continuousHospitalizationCte(filtroSql)}
+         SELECT saude_mental, count(*), count(DISTINCT person_key), round(sum(custo), 2),
+           round(sum(custo) / count(*), 2), percentile(duracao_dias, 0.5), percentile(duracao_dias, 0.9),
+           round(avg(CASE WHEN duracao_dias IS NOT NULL THEN 1.0 ELSE 0.0 END), 4), round(sum(custo_reembolso), 2)
+         FROM episodes WHERE admission_month >= '2024-01'
+         GROUP BY 1 ORDER BY 1 DESC`),
       q(`SELECT COALESCE(NULLIF(trim(g.tema_saude_mental), ''), 'Sem tema') AS tema,
-                round(sum(g.custo_assistencial_bruto) / 1e6, 2)
+                round(sum(g.custo_assistencial_bruto), 2), count(DISTINCT g.person_key),
+                sum(coalesce(g.quantidade_servicos, 0)),
+                round(100 * sum(g.custo_assistencial_bruto) / nullif(sum(sum(g.custo_assistencial_bruto)) OVER (), 0), 2)
          FROM ${GOLD} g WHERE NOT g.flag_data_suspeita AND g.flag_saude_mental AND g.${JANELA_2024}${filtroSql}
          GROUP BY 1 ORDER BY 2 DESC LIMIT 5`),
       q(`SELECT g.month_key, count(*), round(sum(g.custo_assistencial_bruto), 2), count(DISTINCT g.person_key)
          FROM ${GOLD} g
-         WHERE NOT g.flag_data_suspeita AND g.month_key IN (${[...IMPACTO_PRE, ...IMPACTO_POS].map((m) => `'${m}'`).join(",")})${filtroSql}
+         WHERE NOT g.flag_data_suspeita AND g.month_key IN (${MESES_COMPARACAO.map((mes) => `'${mes}'`).join(",")})${filtroSql}
          GROUP BY 1`),
-      q(`SELECT CASE WHEN g.month_key IN (${IMPACTO_PRE.map((m) => `'${m}'`).join(",")}) THEN 'before' ELSE 'after' END,
-                g.tipo_evento, count(*)
+      q(`SELECT g.month_key, g.tipo_evento, count(*)
          FROM ${GOLD} g
          WHERE NOT g.flag_data_suspeita
-           AND g.month_key IN (${[...IMPACTO_PRE, ...IMPACTO_POS].map((m) => `'${m}'`).join(",")})
+           AND g.month_key IN (${MESES_COMPARACAO.map((mes) => `'${mes}'`).join(",")})
            AND g.tipo_evento IN (${EVENTOS_COMPARAVEIS.map((tipo) => `'${tipo}'`).join(",")})${filtroSql}
          GROUP BY 1, 2 ORDER BY 1, 2`),
       q(`SELECT concat('T', quarter(to_date(concat(g.month_key, '-01'))), '/', substr(g.month_key, 3, 2)) AS tri,
@@ -368,36 +413,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
          FROM ${SNAPSHOT} g
          WHERE NULLIF(trim(g.city), '') IS NOT NULL${companyScopeSql(auth, "g.company_key")}
          GROUP BY 1, 2 ORDER BY n DESC LIMIT 60`),
-      // BI antigo: comparação 4+4 meses. Somente famílias presentes nos dois
-      // lados; resultado é associação temporal, não causalidade.
-      q(`WITH pre AS (
-           SELECT DISTINCT g.family_key AS familia
-           FROM ${GOLD} g
-           WHERE NOT g.flag_data_suspeita
-             AND g.month_key IN (${MADURO_PRE.map((m) => `'${m}'`).join(",")})${filtroSql}
-         ), pos AS (
-           SELECT DISTINCT g.family_key AS familia
-           FROM ${GOLD} g
-           WHERE NOT g.flag_data_suspeita
-             AND g.month_key IN (${MADURO_POS.map((m) => `'${m}'`).join(",")})${filtroSql}
-         ), comuns AS (
-           SELECT pre.familia FROM pre INNER JOIN pos USING (familia)
-         ), base AS (
-           SELECT CASE WHEN g.month_key IN (${MADURO_PRE.map((m) => `'${m}'`).join(",")})
-                       THEN 'before' ELSE 'after' END AS periodo,
-                  g.family_key AS familia,
-                  g.custo_assistencial_bruto AS sinistro, g.tipo_evento
-           FROM ${GOLD} g
-           INNER JOIN comuns c ON g.family_key = c.familia
-           WHERE NOT g.flag_data_suspeita
-             AND g.month_key IN (${[...MADURO_PRE, ...MADURO_POS].map((m) => `'${m}'`).join(",")})${filtroSql}
-         )
-         SELECT periodo, count(DISTINCT familia), count(*), round(sum(sinistro), 2),
-                sum(CASE WHEN tipo_evento = 'Pronto Socorro' THEN 1 ELSE 0 END),
-                sum(CASE WHEN tipo_evento = 'Internacao' THEN 1 ELSE 0 END),
-                sum(CASE WHEN tipo_evento = 'Consulta' THEN 1 ELSE 0 END),
-                sum(CASE WHEN tipo_evento = 'Terapia' THEN 1 ELSE 0 END)
-         FROM base GROUP BY 1 ORDER BY 1`),
+      queryComparacaoMadura(JANELAS_COMPARACAO[2]),
+      queryComparacaoMadura(JANELAS_COMPARACAO[4]),
+      queryComparacaoMadura(JANELAS_COMPARACAO[6]),
       // Alcance dos canais digitais dentro das famílias utilizantes da janela corrente.
       q(`WITH cohort AS (
            SELECT DISTINCT g.family_key AS familia
@@ -474,16 +492,6 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const versao = versaoRows[0] || [];
     const proximidade = proximidadeRows[0] || [];
 
-    const maduro = Object.fromEntries(maduroRows.map((r) => [String(getCell(r[0])), {
-      familias: toInt(r[1]),
-      itens: toInt(r[2]),
-      sinistro: toNum(r[3]),
-      pronto_socorro: toInt(r[4]),
-      internacao: toInt(r[5]),
-      consulta: toInt(r[6]),
-      terapia: toInt(r[7]),
-    }]));
-
     const deltaPct = (before: number, after: number) => before ? +(((after - before) / before) * 100).toFixed(1) : null;
 
     const impactoMes = impactoMesRows.map((r) => ({
@@ -492,11 +500,6 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       sinistro: toNum(r[2]),
       utilizantes: toInt(r[3]),
     }));
-    const impactoEventos = EVENTOS_COMPARAVEIS.map((tipo_evento) => {
-      const before = impactoEventoRows.find((r) => String(getCell(r[0])) === "before" && String(getCell(r[1])) === tipo_evento);
-      const after = impactoEventoRows.find((r) => String(getCell(r[0])) === "after" && String(getCell(r[1])) === tipo_evento);
-      return { tipo_evento, before_itens: toInt(before?.[2]), after_itens: toInt(after?.[2]) };
-    });
     const janelaMedia = (meses: string[]) => {
       const sel = impactoMes.filter((m) => meses.includes(m.mes));
       const n = sel.length || 1;
@@ -507,6 +510,56 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         utilizantes_media_mensal: Math.round(sel.reduce((s, m) => s + m.utilizantes, 0) / n),
       };
     };
+    const criarImpacto = (janela: (typeof JANELAS_COMPARACAO)[keyof typeof JANELAS_COMPARACAO]) => ({
+      pre: janelaMedia([...janela.before]),
+      pos: janelaMedia([...janela.after]),
+      eventos: EVENTOS_COMPARAVEIS.map((tipo_evento) => ({
+        tipo_evento,
+        before_itens: impactoEventoRows
+          .filter((row) => janela.before.some((mes) => mes === String(getCell(row[0]))) && String(getCell(row[1])) === tipo_evento)
+          .reduce((total, row) => total + toInt(row[2]), 0),
+        after_itens: impactoEventoRows
+          .filter((row) => janela.after.some((mes) => mes === String(getCell(row[0]))) && String(getCell(row[1])) === tipo_evento)
+          .reduce((total, row) => total + toInt(row[2]), 0),
+      })),
+    });
+    const impacto2 = criarImpacto(JANELAS_COMPARACAO[2]);
+    const impacto4 = criarImpacto(JANELAS_COMPARACAO[4]);
+    const impacto6 = criarImpacto(JANELAS_COMPARACAO[6]);
+    const criarComparacaoMadura = (rows: typeof maduro2Rows, janela: (typeof JANELAS_COMPARACAO)[keyof typeof JANELAS_COMPARACAO]) => {
+      const porPeriodo = Object.fromEntries(rows.map((row) => [String(getCell(row[0])), {
+        familias: toInt(row[1]), itens: toInt(row[2]), sinistro: toNum(row[3]), pronto_socorro: toInt(row[4]),
+        internacao: toInt(row[5]), consulta: toInt(row[6]), terapia: toInt(row[7]),
+      }]));
+      const before = porPeriodo.before ?? { familias: 0, itens: 0, sinistro: 0, pronto_socorro: 0, internacao: 0, consulta: 0, terapia: 0 };
+      const after = porPeriodo.after ?? { familias: 0, itens: 0, sinistro: 0, pronto_socorro: 0, internacao: 0, consulta: 0, terapia: 0 };
+      const tamanho = janela.before.length;
+      const normalizar = (dados: typeof before) => ({
+        ...dados,
+        sinistro_medio_mensal: +(dados.sinistro / tamanho).toFixed(2),
+        itens_medio_mensal: Math.round(dados.itens / tamanho),
+        sinistro_por_familia_mes: dados.familias ? +(dados.sinistro / dados.familias / tamanho).toFixed(2) : null,
+        itens_por_familia_mes: dados.familias ? +(dados.itens / dados.familias / tamanho).toFixed(2) : null,
+      });
+      return {
+        before_meses: janela.before,
+        after_meses: janela.after,
+        familias_comuns: Math.min(before.familias, after.familias),
+        before: normalizar(before),
+        after: normalizar(after),
+        deltas_pct: {
+          sinistro_medio_mensal: deltaPct(before.sinistro, after.sinistro),
+          itens_medio_mensal: deltaPct(before.itens, after.itens),
+          sinistro_por_familia_mes: deltaPct(before.familias ? before.sinistro / before.familias : 0, after.familias ? after.sinistro / after.familias : 0),
+          itens_por_familia_mes: deltaPct(before.familias ? before.itens / before.familias : 0, after.familias ? after.itens / after.familias : 0),
+          pronto_socorro: deltaPct(before.pronto_socorro, after.pronto_socorro), internacao: deltaPct(before.internacao, after.internacao),
+          consulta: deltaPct(before.consulta, after.consulta), terapia: deltaPct(before.terapia, after.terapia),
+        },
+      };
+    };
+    const madura2 = criarComparacaoMadura(maduro2Rows, JANELAS_COMPARACAO[2]);
+    const madura4 = criarComparacaoMadura(maduro4Rows, JANELAS_COMPARACAO[4]);
+    const madura6 = criarComparacaoMadura(maduro6Rows, JANELAS_COMPARACAO[6]);
 
     const facets: Record<string, string[]> = { faixa_etaria: [], sexo: [], tipo_plano: [] };
     for (const r of facetRows) {
@@ -532,8 +585,6 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       .filter((c) => mesValido(c.mes))
       .sort((a, b) => a.mes.localeCompare(b.mes));
 
-    const maduroBefore = maduro.before || { familias: 0, itens: 0, sinistro: 0, pronto_socorro: 0, internacao: 0, consulta: 0, terapia: 0 };
-    const maduroAfter = maduro.after || { familias: 0, itens: 0, sinistro: 0, pronto_socorro: 0, internacao: 0, consulta: 0, terapia: 0 };
     const servicosJornada = servicoRows.map((r) => {
       const familiasCohort = toInt(r[3]);
       const familias = toInt(r[2]);
@@ -586,7 +637,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       kpis: {
         periodo: fechados.length ? "closed" : "observed",
         ultimo_mes_fechado: ultimoFechadoMes,
-        sinistro_ultimo_mes_fechado: ultimoFechado?.sinistro ?? null,
+        sinistro_ultimo_mes_fechado: ultimoIndicador?.sinistro ?? null,
         utilizantes_ultimo_mes_fechado: toInt(kpi[3]) || (ultimoFechado?.utilizantes ?? null),
         janela_12m: janela12,
         sinistro_12m: toNum(kpi[0]),
@@ -625,54 +676,39 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         custo_medio: toNum(intStats[4]),
         duracao_mediana_dias: toNum(intStats[5]),
         duracao_p90_dias: toNum(intStats[6]),
+        por_saude_mental: intSaudeMentalRows.map((r) => ({
+          saude_mental: String(getCell(r[0])).toLowerCase() === "true",
+          episodios: toInt(r[1]),
+          beneficiarios: toInt(r[2]),
+          custo: toNum(r[3]),
+          custo_medio: toNum(r[4]),
+          duracao_mediana_dias: toNum(r[5]),
+          duracao_p90_dias: toNum(r[6]),
+          cobertura_duracao: toNum(r[7]),
+          reembolso_custo: toNum(r[8]),
+        })),
       },
       saude_mental: {
         share_flag: toNum(total24[0]) ? +(100 * toNum(total24[1]) / toNum(total24[0])).toFixed(2) : null,
-        share_sem_classificacao: toNum(total24[0]) ? +(100 * toNum(total24[2]) / toNum(total24[0])).toFixed(2) : null,
-        por_tema_mi: smTemaRows.map((r) => ({ tema: String(getCell(r[0])), sinistro_mi: toNum(r[1]) })),
+        custo: toNum(total24[1]),
+        beneficiarios: toInt(total24[2]),
+        servicos: toNum(total24[3]),
+        reembolso_custo: toNum(total24[4]),
+        reembolso_share: toNum(total24[1]) ? +(100 * toNum(total24[4]) / toNum(total24[1])).toFixed(2) : null,
+        por_tema: smTemaRows.map((r) => ({
+          tema: String(getCell(r[0])), custo: toNum(r[1]), beneficiarios: toInt(r[2]), servicos: toNum(r[3]), share: toNum(r[4]),
+        })),
       },
       impacto_sanus: {
-        metodologia: "janelas pareadas (mesma da aba Análise Sinistro), eixo data_atendimento, sinistro bruto",
-        pre: janelaMedia(IMPACTO_PRE),
-        pos: janelaMedia(IMPACTO_POS),
-        eventos: impactoEventos,
+        metodologia: "janelas pareadas, eixo data_atendimento, sinistro bruto; associação temporal, não causalidade",
+        ...impacto2,
+        comparacoes: { 2: impacto2, 4: impacto4, 6: impacto6 },
         trimestres_utilizantes: triRows.map((r) => ({ trimestre: String(getCell(r[0])), utilizantes: toInt(r[2]) })),
       },
       comparacao_madura: {
-        metodologia: "4 meses antes vs 4 meses depois; somente famílias presentes nas duas janelas; associação temporal, não causalidade",
-        before_meses: MADURO_PRE,
-        after_meses: MADURO_POS,
-        familias_comuns: Math.min(maduroBefore.familias, maduroAfter.familias),
-        before: {
-          ...maduroBefore,
-          sinistro_medio_mensal: +(maduroBefore.sinistro / MADURO_PRE.length).toFixed(2),
-          itens_medio_mensal: Math.round(maduroBefore.itens / MADURO_PRE.length),
-          sinistro_por_familia_mes: maduroBefore.familias ? +(maduroBefore.sinistro / maduroBefore.familias / MADURO_PRE.length).toFixed(2) : null,
-          itens_por_familia_mes: maduroBefore.familias ? +(maduroBefore.itens / maduroBefore.familias / MADURO_PRE.length).toFixed(2) : null,
-        },
-        after: {
-          ...maduroAfter,
-          sinistro_medio_mensal: +(maduroAfter.sinistro / MADURO_POS.length).toFixed(2),
-          itens_medio_mensal: Math.round(maduroAfter.itens / MADURO_POS.length),
-          sinistro_por_familia_mes: maduroAfter.familias ? +(maduroAfter.sinistro / maduroAfter.familias / MADURO_POS.length).toFixed(2) : null,
-          itens_por_familia_mes: maduroAfter.familias ? +(maduroAfter.itens / maduroAfter.familias / MADURO_POS.length).toFixed(2) : null,
-        },
-        deltas_pct: {
-          sinistro_medio_mensal: deltaPct(maduroBefore.sinistro, maduroAfter.sinistro),
-          itens_medio_mensal: deltaPct(maduroBefore.itens, maduroAfter.itens),
-          sinistro_por_familia_mes: deltaPct(
-            maduroBefore.familias ? maduroBefore.sinistro / maduroBefore.familias : 0,
-            maduroAfter.familias ? maduroAfter.sinistro / maduroAfter.familias : 0,
-          ),
-          itens_por_familia_mes: deltaPct(
-            maduroBefore.familias ? maduroBefore.itens / maduroBefore.familias : 0,
-            maduroAfter.familias ? maduroAfter.itens / maduroAfter.familias : 0,
-          ),
-          pronto_socorro: deltaPct(maduroBefore.pronto_socorro, maduroAfter.pronto_socorro),
-          internacao: deltaPct(maduroBefore.internacao, maduroAfter.internacao),
-          consulta: deltaPct(maduroBefore.consulta, maduroAfter.consulta),
-          terapia: deltaPct(maduroBefore.terapia, maduroAfter.terapia),
-        },
+        metodologia: "somente famílias presentes nas duas janelas; família = titular e dependentes ligados ao mesmo family_key; associação temporal, não causalidade",
+        ...madura4,
+        comparacoes: { 2: madura2, 4: madura4, 6: madura6 },
       },
       jornada_sanus: {
         janela: janela12,
