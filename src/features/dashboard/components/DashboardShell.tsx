@@ -4,6 +4,7 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 import Image from "next/image";
 import { apiRequest } from "../../../lib/api/client";
 import { authResponseSchema } from "../../../contracts/auth";
+import { MENU_SECTIONS, type MenuId } from "../../../dashboard/menu-catalog";
 
 type LegacyDashboardApi = Record<string, (...args: unknown[]) => unknown>;
 
@@ -13,39 +14,7 @@ declare global {
   }
 }
 
-const navSections = [
-  {
-    label: "Visão Geral",
-    items: [
-      ["demografica", "Análise Demográfica", "fa-chart-pie"],
-      ["visao-parceiros", "Visão Parceiros", "fa-handshake-angle"],
-      ["agendamentos", "Agendamentos", "fa-calendar-check"],
-      ["sessoes", "Sessões", "fa-comments"],
-    ],
-  },
-  {
-    label: "Executivo",
-    items: [
-      ["petit-comite", "Petit Comitê", "fa-briefcase"],
-      ["petit-comite-mds", "Petit Comitê MDS", "fa-handshake"],
-      ["coordenacao-cuidado", "Coordenação de Cuidado", "fa-heart-pulse"],
-    ],
-  },
-  {
-    label: "Sinistralidade",
-    items: [
-      ["analise-sinistro", "Análise Sinistro", "fa-file-invoice-dollar"],
-      ["sinistralidade-v2", "Visão 360", "fa-compass-drafting"],
-    ],
-  },
-  {
-    label: "Qualidade",
-    items: [
-      ["qualidade-estrategica", "Estratégica", "fa-bullseye"],
-      ["qualidade-operacional", "Operacional", "fa-list-check"],
-    ],
-  },
-] as const;
+const CONFIGURACOES_ITEM = { id: "configuracoes", label: "Configurações", icon: "fa-sliders" } as const;
 
 const defaultLogo = { src: "/assets/logo_sanus.svg", alt: "Sanus", width: 112, height: 32 };
 
@@ -164,36 +133,30 @@ function Header({
 
 function Navigation({
   activeTab,
-  hidePetitMds,
-  hideMdsRestrictedSections,
-  showPartnerVision,
+  isMenuVisible,
+  isAdmin,
   sidebarCollapsed,
   onChange,
 }: {
   activeTab: string;
-  hidePetitMds: boolean;
-  hideMdsRestrictedSections: boolean;
-  showPartnerVision: boolean;
+  isMenuVisible: (id: MenuId) => boolean;
+  isAdmin: boolean;
   sidebarCollapsed: boolean;
   onChange: (tab: string) => void;
 }) {
-  const visibleSections = hideMdsRestrictedSections
-    ? navSections.filter((section) => !["Sinistralidade", "Qualidade"].includes(section.label))
-    : navSections;
-
   return (
     <aside className="dashboard-sidebar" id="dashboard-sidebar" aria-label="Menu lateral do dashboard">
       <div className="sidebar-brand">
         <Image src={defaultLogo.src} alt={defaultLogo.alt} width={defaultLogo.width} height={defaultLogo.height} priority />
       </div>
       <nav className="tabs sidebar-nav" aria-label="Áreas do dashboard">
-        {visibleSections.map((section) => (
-          <div className="sidebar-section" key={section.label}>
-            <div className="sidebar-section-label">{section.label}</div>
-            {section.items
-              .filter(([id]) => !(hidePetitMds && id === "petit-comite-mds"))
-              .filter(([id]) => showPartnerVision || id !== "visao-parceiros")
-              .map(([id, label, icon]) => (
+        {MENU_SECTIONS.map((section) => {
+          const visibleItems = section.items.filter((item) => isMenuVisible(item.id));
+          if (!visibleItems.length) return null;
+          return (
+            <div className="sidebar-section" key={section.label}>
+              <div className="sidebar-section-label">{section.label}</div>
+              {visibleItems.map(({ id, label, icon }) => (
                 <button
                   type="button"
                   className={`tab sidebar-tab ${activeTab === id ? "active" : ""}`}
@@ -206,8 +169,24 @@ function Navigation({
                   <span>{label}</span>
                 </button>
               ))}
+            </div>
+          );
+        })}
+        {isAdmin ? (
+          <div className="sidebar-section" key="admin">
+            <div className="sidebar-section-label">Administração</div>
+            <button
+              type="button"
+              className={`tab sidebar-tab ${activeTab === CONFIGURACOES_ITEM.id ? "active" : ""}`}
+              data-tab={CONFIGURACOES_ITEM.id}
+              title={sidebarCollapsed ? CONFIGURACOES_ITEM.label : undefined}
+              onClick={() => onChange(CONFIGURACOES_ITEM.id)}
+            >
+              <i className={`fa-solid ${CONFIGURACOES_ITEM.icon}`} aria-hidden="true" />
+              <span>{CONFIGURACOES_ITEM.label}</span>
+            </button>
           </div>
-        ))}
+        ) : null}
       </nav>
     </aside>
   );
@@ -425,36 +404,60 @@ function Filters() {
   );
 }
 
+// Comportamento de hoje quando ninguém configurou uma lista explícita para o
+// usuário em Configurações — preservado intacto para não mudar nada em
+// produção até o admin abrir a tela e definir algo para alguém.
+function legacyMenuVisible(id: MenuId, dashboardUser: string, dashboardRole: string): boolean {
+  if (id === "visao-parceiros") return dashboardUser === "sanus";
+  if (id === "petit-comite-mds") return dashboardUser !== "sanus";
+  if (dashboardRole === "mds") {
+    return !(["analise-sinistro", "sinistralidade-v2", "qualidade-estrategica", "qualidade-operacional"] as MenuId[]).includes(id);
+  }
+  return true;
+}
+
 export function DashboardShell() {
   const [authenticated, setAuthenticated] = useState(false);
   const [activeTab, setActiveTab] = useState("demografica");
   const [dashboardUser, setDashboardUser] = useState("");
   const [dashboardRole, setDashboardRole] = useState("");
+  const [allowedMenus, setAllowedMenus] = useState<MenuId[] | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() =>
     typeof window !== "undefined" && window.matchMedia("(max-width: 760px)").matches,
   );
-  const hidePetitMds = dashboardUser === "sanus";
-  const showPartnerVision = dashboardUser === "sanus";
-  const isMdsDashboard = dashboardRole === "mds";
+
+  const isMenuVisible = useCallback(
+    (id: MenuId) => (allowedMenus ? allowedMenus.includes(id) : legacyMenuVisible(id, dashboardUser, dashboardRole)),
+    [allowedMenus, dashboardUser, dashboardRole],
+  );
 
   const activate = useCallback((tab: string) => {
-    let nextTab = hidePetitMds && tab === "petit-comite-mds" ? "demografica" : tab;
-    if (!showPartnerVision && nextTab === "visao-parceiros") nextTab = "demografica";
+    let nextTab = tab;
+    if (tab === "configuracoes") {
+      if (!isAdmin) nextTab = "demografica";
+    } else if (!isMenuVisible(tab as MenuId)) {
+      nextTab = "demografica";
+    }
     setActiveTab(nextTab);
     legacy("activateTab", nextTab);
     if (window.matchMedia("(max-width: 760px)").matches) setSidebarCollapsed(true);
-  }, [hidePetitMds, showPartnerVision]);
+  }, [isAdmin, isMenuVisible]);
 
   useEffect(() => {
     apiRequest("/api/data?scope=auth", { schema: authResponseSchema })
       .then((auth) => {
         setDashboardUser(normalizeDashboardUser(auth.user));
         setDashboardRole(auth.role);
+        setAllowedMenus(auth.allowedMenus ?? null);
+        setIsAdmin(auth.isAdmin);
         setAuthenticated(true);
       })
       .catch(() => {
         setDashboardUser("");
         setDashboardRole("");
+        setAllowedMenus(null);
+        setIsAdmin(false);
         setAuthenticated(false);
       });
     const onTabChange = (event: Event) => setActiveTab((event as CustomEvent<string>).detail);
@@ -493,9 +496,8 @@ export function DashboardShell() {
       />
       <Navigation
         activeTab={activeTab}
-        hidePetitMds={hidePetitMds}
-        hideMdsRestrictedSections={isMdsDashboard}
-        showPartnerVision={showPartnerVision}
+        isMenuVisible={isMenuVisible}
+        isAdmin={isAdmin}
         sidebarCollapsed={sidebarCollapsed}
         onChange={activate}
       />

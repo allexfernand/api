@@ -1,6 +1,7 @@
 // NOTE: marker "server-only" removido — Pages Router (pages/api/*) não suporta o import e derruba todos os endpoints com 500.
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { DashboardRole } from "../../contracts/common";
+import { isMenuId, type MenuId } from "../../dashboard/menu-catalog";
 
 export const SESSION_COOKIE = "sanus_dashboard_session";
 const SESSION_TTL_SECONDS = 8 * 60 * 60;
@@ -9,6 +10,11 @@ type SessionPayload = {
   user: string;
   role: DashboardRole;
   exp: number;
+  // `null`/ausente = sem restrição configurada em Configurações (mantém o
+  // comportamento legado baseado em role/username que já existia). Sessões
+  // assinadas antes desta mudança não têm este campo — tratadas como null.
+  allowedMenus?: MenuId[] | null;
+  isAdmin?: boolean;
 };
 
 function secret() {
@@ -21,11 +27,17 @@ function signature(value: string) {
   return createHmac("sha256", secret()).update(value).digest("base64url");
 }
 
-export function createSessionToken(user: string, role: DashboardRole) {
+export function createSessionToken(
+  user: string,
+  role: DashboardRole,
+  extra?: { allowedMenus?: MenuId[] | null; isAdmin?: boolean },
+) {
   const payload: SessionPayload = {
     user,
     role,
     exp: Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS,
+    allowedMenus: extra?.allowedMenus ?? null,
+    isAdmin: extra?.isAdmin ?? false,
   };
   const encoded = Buffer.from(JSON.stringify(payload)).toString("base64url");
   return `${encoded}.${signature(encoded)}`;
@@ -42,7 +54,10 @@ export function verifySessionToken(token: string): SessionPayload | null {
     const payload = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")) as SessionPayload;
     if (!payload.user || !["full", "mds"].includes(payload.role) || payload.exp <= Date.now() / 1000)
       return null;
-    return payload;
+    const allowedMenus = Array.isArray(payload.allowedMenus)
+      ? payload.allowedMenus.filter((id): id is MenuId => typeof id === "string" && isMenuId(id))
+      : null;
+    return { ...payload, allowedMenus, isAdmin: Boolean(payload.isAdmin) };
   } catch {
     return null;
   }

@@ -1468,6 +1468,7 @@ async function initializeDashboard() {
     const response = await fetch('/api/data?scope=auth', { credentials: 'same-origin' });
     const auth = response.ok ? await response.json() : null;
     hasAuthenticatedSession = Boolean(auth?.ok);
+    applyAllowedMenus(auth?.allowedMenus ?? null);
     if (hasAuthenticatedSession) {
       applyDashboardUser(auth?.user || '');
       await applyRouteMode(auth?.role || '');

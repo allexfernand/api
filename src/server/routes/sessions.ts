@@ -1,5 +1,6 @@
 // api/sessions.ts
-import { MDS_PARTNER_SCOPE, requireBasicAuth, scopedPartnerBrokerId } from "../../../lib/basic-auth";
+import { MDS_PARTNER_SCOPE, requireBasicAuth, requireMenuAccess, scopedPartnerBrokerId } from "../../../lib/basic-auth";
+import { CORE_DATA_MENUS } from "../../dashboard/menu-catalog";
 import { createSqlParams, getCell, quoteIdent, resolveWarehouseId, runQuery, toInt, type SqlParams } from "../../../lib/databricks";
 import { setApiCors, setStableCache } from "../../../lib/http";
 
@@ -228,6 +229,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   setApiCors(res);
   if (req.method === "OPTIONS") return res.status(200).end();
   if (!requireBasicAuth(req, res)) return;
+  if (!requireMenuAccess(req, res, CORE_DATA_MENUS)) return;
 
   const meses = req.query.meses ? req.query.meses.split(',').filter((m: string) => /^\d{4}-\d{2}$/.test(m)) : [];
   const groupNames = parseGroupNames(req.query);

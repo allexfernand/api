@@ -2,7 +2,7 @@
 // A rota HTTP é apenas um adaptador; período, permissão, consulta e
 // serialização vivem nos módulos deste diretório.
 
-import { getDashboardAuth, rejectMdsAuth, requireBasicAuth } from "../../../lib/basic-auth";
+import { getDashboardAuth, rejectMdsAuth, requireBasicAuth, requireMenuAccess } from "../../../lib/basic-auth";
 import { setApiCors, setStableCache } from "../../../lib/http";
 import {
   SINISTRALIDADE_CONTRACT_VERSION,
@@ -278,6 +278,7 @@ export async function sinistralidadeV2Handler(req: ApiRequest, res: ApiResponse)
   setApiCors(res);
   if (req.method === "OPTIONS") return res.status(200).end();
   if (!requireBasicAuth(req, res)) return;
+  if (!requireMenuAccess(req, res, ["sinistralidade-v2"])) return;
   const auth = getDashboardAuth(req);
   if (!auth) return;
 

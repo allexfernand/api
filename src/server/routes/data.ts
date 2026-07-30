@@ -1,5 +1,13 @@
 // api/data.ts
-import { MDS_PARTNER_SCOPE, getDashboardAuth, rejectMdsAuth, requireBasicAuth, scopedPartnerBrokerId } from "../../../lib/basic-auth";
+import {
+  MDS_PARTNER_SCOPE,
+  getDashboardAuth,
+  hasMenuAccess,
+  rejectMdsAuth,
+  requireBasicAuth,
+  scopedPartnerBrokerId,
+} from "../../../lib/basic-auth";
+import { CORE_DATA_MENUS, type MenuId } from "../../dashboard/menu-catalog";
 import {
   DatabricksRow,
   createSqlParams,
@@ -410,7 +418,22 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   const dashboardAuth = getDashboardAuth(req);
   if (scope === 'auth') {
     res.setHeader("Cache-Control", "no-store, max-age=0");
-    return res.status(200).json({ ok: true, role: dashboardAuth?.role || 'full', user: dashboardAuth?.user || '' });
+    return res.status(200).json({
+      ok: true,
+      role: dashboardAuth?.role || 'full',
+      user: dashboardAuth?.user || '',
+      allowedMenus: dashboardAuth?.allowedMenus ?? null,
+      isAdmin: dashboardAuth?.isAdmin || false,
+    });
+  }
+  // "partners" alimenta o seletor global de parceiro (usado em várias telas)
+  // e por isso fica sempre liberado para qualquer usuário autenticado; os
+  // demais escopos ficam sob checagem de menu abaixo.
+  if (scope !== 'partners') {
+    const requiredMenus: MenuId[] = scope.startsWith('care_') ? ['coordenacao-cuidado'] : CORE_DATA_MENUS;
+    if (!hasMenuAccess(dashboardAuth, requiredMenus)) {
+      return res.status(403).json({ error: "Usuário sem acesso a este menu." });
+    }
   }
   const params = createSqlParams();
   const groupFilter = buildFilters(groupNames, typeFilter, partnerBrokerId, params);

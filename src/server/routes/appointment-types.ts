@@ -1,6 +1,7 @@
 // api/appointment-types.ts
 // Tipos de consulta/agendamento na atendimento_summarized_gold_live.
-import { MDS_PARTNER_SCOPE, requireBasicAuth, scopedPartnerBrokerId } from "../../../lib/basic-auth";
+import { MDS_PARTNER_SCOPE, requireBasicAuth, requireMenuAccess, scopedPartnerBrokerId } from "../../../lib/basic-auth";
+import { CORE_DATA_MENUS } from "../../dashboard/menu-catalog";
 import { createSqlParams, getCell, getColumns, quoteIdent, resolveWarehouseId, runQuery, toInt, type SqlParams } from "../../../lib/databricks";
 import { setApiCors } from "../../../lib/http";
 
@@ -144,6 +145,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   res.setHeader("Cache-Control", "no-store, max-age=0");
   if (req.method === "OPTIONS") return res.status(200).end();
   if (!requireBasicAuth(req, res)) return;
+  if (!requireMenuAccess(req, res, CORE_DATA_MENUS)) return;
 
   const groupNames = parseGroupNames(req.query);
   const groupName = groupNames[0] || null;

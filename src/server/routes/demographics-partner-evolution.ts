@@ -1,4 +1,4 @@
-import { MDS_PARTNER_SCOPE, requireBasicAuth, scopedPartnerBrokerId } from "../../../lib/basic-auth";
+import { MDS_PARTNER_SCOPE, requireBasicAuth, requireMenuAccess, scopedPartnerBrokerId } from "../../../lib/basic-auth";
 import { createSqlParams, getCell, resolveWarehouseId, runQuery, toInt, type SqlParams } from "../../../lib/databricks";
 import { setApiCors } from "../../../lib/http";
 
@@ -49,6 +49,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   setApiCors(res);
   if (req.method === "OPTIONS") return res.status(200).end();
   if (!requireBasicAuth(req, res)) return;
+  if (!requireMenuAccess(req, res, ["visao-parceiros"])) return;
 
   const scopedPartnerBroker = scopedPartnerBrokerId(req, req.query.partner_broker_id || null);
   const partnerBrokerId = parsePartnerBrokerIds(req.query, scopedPartnerBroker);

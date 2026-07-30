@@ -10,6 +10,10 @@ const SESSIONS_Q3C_MONTHS = ['2026-01', '2026-02', '2026-03', '2026-04', '2026-0
 window.__SANUS_DASHBOARD_BUILD__ = '20260714-tabs';
 let hasAuthenticatedSession = false;
 let currentDashboardUser = '';
+// null = sem restrição configurada em Configurações (usa as regras legadas
+// abaixo, por role/username). Quando é um array, ele manda — sobrescreve as
+// regras legadas por completo para aquele usuário específico.
+let allowedMenusOverride = null;
 
 let usersData = [], companiesData = [], sessionCompaniesData = [], eChart, agegroupChart, partnerVisionEvolutionChart, appointmentTypesTrendChart, appointmentsDailyChart, appointmentsStatusChart, careCoordinationLinesChart, careLinesEvolutionChart, careComplementChart, careActiveComplementChart, petitCareLinesChart, petitSessionsEvolChart, petitSessionsTotalEvolChart, sessionsEvolChart, sessionsJanMay2026EvolChart, sessionsQ3cChart, sessionsTotalEvolChart, sessionsAttendanceChart, sessionsDailyChart, sessionsTopGroupsChart, qualityVolumeEvolutionChart, qualityDailyVolumeEvolutionChart, qualityEvolutionChart, qualityCriteriaEvolutionChart;
 let currentGroup = '', currentType = '', currentCompany = '';
@@ -70,6 +74,10 @@ function isMdsRestrictedTab(tabName) {
   return ['petit-comite', 'coordenacao-cuidado', 'analise-sinistro', 'sinistralidade-v2', 'qualidade-operacional'].includes(tabName);
 }
 
+function applyAllowedMenus(list) {
+  allowedMenusOverride = Array.isArray(list) ? list : null;
+}
+
 function normalizeDashboardUser(user) {
   return String(user || '').trim().toLowerCase();
 }
@@ -92,13 +100,15 @@ function applyDashboardUser(user = '') {
 }
 
 async function activateTab(tabName) {
-  if (tabName === 'visao-parceiros' && !isSanusDashboardUser()) {
+  if (Array.isArray(allowedMenusOverride) && tabName !== 'configuracoes' && !allowedMenusOverride.includes(tabName)) {
+    tabName = allowedMenusOverride[0] || 'demografica';
+  } else if (!Array.isArray(allowedMenusOverride) && tabName === 'visao-parceiros' && !isSanusDashboardUser()) {
     tabName = 'demografica';
   }
-  if (tabName === 'petit-comite-mds' && isSanusDashboardUser()) {
+  if (!Array.isArray(allowedMenusOverride) && tabName === 'petit-comite-mds' && isSanusDashboardUser()) {
     tabName = 'demografica';
   }
-  if (document.body.dataset.dashboardMode === 'mds' && isMdsRestrictedTab(tabName)) {
+  if (!Array.isArray(allowedMenusOverride) && document.body.dataset.dashboardMode === 'mds' && isMdsRestrictedTab(tabName)) {
     tabName = 'petit-comite-mds';
   }
   const tab = document.querySelector(`.tab[data-tab="${tabName}"]`);

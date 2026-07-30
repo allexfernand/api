@@ -1,5 +1,6 @@
 // api/demographics.ts
-import { MDS_PARTNER_SCOPE, requireBasicAuth, scopedPartnerBrokerId } from "../../../lib/basic-auth";
+import { MDS_PARTNER_SCOPE, requireBasicAuth, requireMenuAccess, scopedPartnerBrokerId } from "../../../lib/basic-auth";
+import { CORE_DATA_MENUS } from "../../dashboard/menu-catalog";
 import { createSqlParams, getCell, resolveWarehouseId, runQuery, toInt, toNum, type SqlParams } from "../../../lib/databricks";
 import { setApiCors } from "../../../lib/http";
 
@@ -112,6 +113,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   setApiCors(res);
   if (req.method === "OPTIONS") return res.status(200).end();
   if (!requireBasicAuth(req, res)) return;
+  if (!requireMenuAccess(req, res, CORE_DATA_MENUS)) return;
 
   const groupNames = parseGroupNames(req.query);
   const company = req.query.company || null;

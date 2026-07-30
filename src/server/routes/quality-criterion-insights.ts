@@ -1,7 +1,7 @@
 // api/quality-criterion-insights.js
 // Insights sob demanda a partir das justificativas factuais dos critérios de qualidade.
 
-import { rejectMdsAuth, requireBasicAuth } from "../../../lib/basic-auth";
+import { rejectMdsAuth, requireBasicAuth, requireMenuAccess } from "../../../lib/basic-auth";
 import { createSqlParams, getCell, getColumns, quoteIdent, resolveWarehouseId, runQuery, toInt } from "../../../lib/databricks";
 import { setApiCors } from "../../../lib/http";
 
@@ -237,6 +237,7 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (!requireBasicAuth(req, res)) return;
   if (rejectMdsAuth(req, res)) return;
+  if (!requireMenuAccess(req, res, ["qualidade-estrategica", "qualidade-operacional"])) return;
 
   const criterio = String(req.query.criterio || "").trim();
   const meses = req.query.meses ? String(req.query.meses).split(",").filter((mes) => /^\d{4}-\d{2}$/.test(mes)) : [];

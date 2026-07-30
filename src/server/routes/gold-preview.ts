@@ -8,7 +8,7 @@
 //   * família por family_key, não por CPF em claro no SQL;
 //   * company scope do usuário aplicado em todas as consultas;
 //   * nenhuma regra fixa de empresa (ex.: literal AZUL) — multiempresa.
-import { getDashboardAuth, rejectMdsAuth, requireBasicAuth } from "../../../lib/basic-auth";
+import { getDashboardAuth, rejectMdsAuth, requireBasicAuth, requireMenuAccess } from "../../../lib/basic-auth";
 import { createSqlParams, getCell, resolveWarehouseId, runQuery, toInt, toNum, type SqlParams } from "../../../lib/databricks";
 import { setApiCors, setStableCache } from "../../../lib/http";
 import { SINISTRALIDADE_CONTRACT_VERSION } from "../../contracts/sinistralidade-v2";
@@ -168,6 +168,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (!requireBasicAuth(req, res)) return;
   if (rejectMdsAuth(req, res)) return;
+  if (!requireMenuAccess(req, res, ["analise-sinistro"])) return;
   const auth = getDashboardAuth(req);
   if (!auth) return;
 

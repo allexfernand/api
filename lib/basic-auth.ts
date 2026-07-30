@@ -2,6 +2,7 @@ declare const process: { env: Record<string, string | undefined> };
 declare const Buffer: { from(value: string, encoding: string): { toString(encoding: string): string } };
 import { validateDashboardCredentials } from "../src/server/auth/credentials";
 import { readSessionCookie } from "../src/server/auth/session";
+import type { MenuId } from "../src/dashboard/menu-catalog";
 
 type AuthRequest = object;
 
@@ -41,9 +42,42 @@ function decodeBasicAuth(value: string) {
 
 export function getDashboardAuth(req: AuthRequest) {
   const session = readSessionCookie(headerValue(req, "cookie"));
-  if (session) return { user: session.user, role: session.role };
+  if (session)
+    return {
+      user: session.user,
+      role: session.role,
+      allowedMenus: session.allowedMenus ?? null,
+      isAdmin: Boolean(session.isAdmin),
+    };
   const credentials = decodeBasicAuth(headerValue(req, "authorization"));
-  return credentials ? validateDashboardCredentials(credentials.user, credentials.password) : null;
+  const legacy = credentials ? validateDashboardCredentials(credentials.user, credentials.password) : null;
+  // Fallback via Authorization Basic (sem passar por /api/auth/login) nunca
+  // teve acesso ao overlay do Edge Config — mantém o comportamento legado
+  // (sem restrição de menu, admin só quando o usuário literal é "sanus").
+  return legacy
+    ? { ...legacy, allowedMenus: null, isAdmin: legacy.user.trim().toLowerCase() === "sanus" }
+    : null;
+}
+
+export function hasMenuAccess(
+  auth: { allowedMenus?: MenuId[] | null } | null,
+  requiredMenus: MenuId[],
+): boolean {
+  if (!auth) return false;
+  if (!auth.allowedMenus) return true;
+  return auth.allowedMenus.some((id) => requiredMenus.includes(id));
+}
+
+export function requireMenuAccess(req: AuthRequest, res: AuthResponse, requiredMenus: MenuId[]) {
+  if (hasMenuAccess(getDashboardAuth(req), requiredMenus)) return true;
+  res.status(403).json({ error: "Usuário sem acesso a este menu." });
+  return false;
+}
+
+export function requireAdminAuth(req: AuthRequest, res: AuthResponse) {
+  if (getDashboardAuth(req)?.isAdmin) return true;
+  res.status(403).json({ error: "Acesso restrito a administradores." });
+  return false;
 }
 
 export function requireBasicAuth(req: AuthRequest, res: AuthResponse) {

@@ -8,6 +8,7 @@ import { ClaimsAnalysisTab } from "../features/claims/ClaimsAnalysisTab";
 import { StrategicQualityTab } from "../features/quality/StrategicQualityTab";
 import { OperationalQualityTab } from "../features/quality/OperationalQualityTab";
 import { SinistralidadeV2Tab } from "../features/sinistralidade/SinistralidadeV2Tab";
+import { SettingsTab } from "../features/admin/SettingsTab";
 
 export function DashboardTabs({ fragments }: { fragments: DashboardFragments }) {
   return (
@@ -23,6 +24,7 @@ export function DashboardTabs({ fragments }: { fragments: DashboardFragments }) 
       <SinistralidadeV2Tab />
       <StrategicQualityTab html={fragments["quality-strategic"]} />
       <OperationalQualityTab html={fragments["quality-operational"]} />
+      <SettingsTab />
     </main>
   );
 }

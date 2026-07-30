@@ -1,7 +1,7 @@
 // api/quality.js
 // Visões estratégica e operacional de qualidade a partir das tabelas silver.
 
-import { rejectMdsAuth, requireBasicAuth } from "../../../lib/basic-auth";
+import { rejectMdsAuth, requireBasicAuth, requireMenuAccess } from "../../../lib/basic-auth";
 import { escape, getCell, getColumns, quoteIdent, resolveWarehouseId, runQuery } from "../../../lib/databricks";
 import { setApiCors } from "../../../lib/http";
 
@@ -1551,6 +1551,7 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (!requireBasicAuth(req, res)) return;
   if (rejectMdsAuth(req, res)) return;
+  if (!requireMenuAccess(req, res, ["qualidade-estrategica", "qualidade-operacional"])) return;
 
   try {
     const criteriaFinisher = ["humano", "ia"].includes(String(req.query.criteria_finisher || "").toLowerCase())
