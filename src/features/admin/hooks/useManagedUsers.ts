@@ -17,11 +17,14 @@ import {
 
 const userResponseSchema = z.object({ user: managedDashboardUserPublicSchema });
 
+export type PartnerOption = { broker_id: string; broker_name: string };
+
 type Loaded = {
   attempt: number;
   kind: "ready" | "forbidden" | "error";
   users: ManagedDashboardUserPublic[] | null;
   economicGroups: string[];
+  partners: PartnerOption[];
   error: string | null;
 };
 
@@ -34,7 +37,14 @@ export function useManagedUsers() {
     apiRequest("/api/admin/users", { schema: managedUsersListResponseSchema })
       .then((data) => {
         if (cancelled) return;
-        setLoaded({ attempt, kind: "ready", users: data.users, economicGroups: data.economicGroups, error: null });
+        setLoaded({
+          attempt,
+          kind: "ready",
+          users: data.users,
+          economicGroups: data.economicGroups,
+          partners: data.partners,
+          error: null,
+        });
       })
       .catch((cause) => {
         if (cancelled) return;
@@ -44,6 +54,7 @@ export function useManagedUsers() {
           kind: httpStatus === 403 ? "forbidden" : "error",
           users: null,
           economicGroups: [],
+          partners: [],
           error: cause instanceof Error ? cause.message : "Não foi possível carregar os usuários.",
         });
       });
@@ -58,6 +69,7 @@ export function useManagedUsers() {
   const status = current ? current.kind : "loading";
   const users = current?.users ?? null;
   const economicGroups = current?.economicGroups ?? [];
+  const partners = current?.partners ?? [];
   const error = current?.error ?? null;
 
   const createUser = useCallback(
@@ -94,5 +106,5 @@ export function useManagedUsers() {
     [reload],
   );
 
-  return { users, economicGroups, status, error, reload, createUser, updateUser, deleteUser };
+  return { users, economicGroups, partners, status, error, reload, createUser, updateUser, deleteUser };
 }

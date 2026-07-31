@@ -22,6 +22,7 @@ export type EffectiveDashboardAuth = {
   allowedMenus: MenuId[] | null;
   isAdmin: boolean;
   groupScopes: string[] | null;
+  partnerScopes: string[] | null;
 };
 
 function normalize(user: string) {
@@ -59,6 +60,7 @@ export async function resolveEffectiveAuth(user: string, password: string): Prom
         allowedMenus: managed.allowedMenus,
         isAdmin: managed.isAdmin,
         groupScopes: managed.groupScopes,
+        partnerScopes: managed.partnerScopes,
       };
     }
     return {
@@ -67,6 +69,7 @@ export async function resolveEffectiveAuth(user: string, password: string): Prom
       allowedMenus: null,
       isAdmin: normalize(legacy.user) === "sanus",
       groupScopes: null,
+      partnerScopes: null,
     };
   }
   if (managed?.passwordHash && verifyPassword(password, managed.passwordHash)) {
@@ -76,6 +79,7 @@ export async function resolveEffectiveAuth(user: string, password: string): Prom
       allowedMenus: managed.allowedMenus,
       isAdmin: managed.isAdmin,
       groupScopes: managed.groupScopes,
+      partnerScopes: managed.partnerScopes,
     };
   }
   return null;
@@ -88,6 +92,7 @@ function toPublic(entry: ManagedDashboardUser, isLegacy: boolean): ManagedDashbo
     isAdmin: entry.isAdmin,
     allowedMenus: entry.allowedMenus,
     groupScopes: entry.groupScopes,
+    partnerScopes: entry.partnerScopes,
     createdAt: entry.createdAt,
     updatedAt: entry.updatedAt,
     isLegacy,
@@ -114,6 +119,7 @@ export async function listManagedUsersPublic(): Promise<ManagedDashboardUserPubl
             isAdmin: key === "sanus",
             allowedMenus: null,
             groupScopes: null,
+            partnerScopes: null,
             createdAt: "",
             updatedAt: "",
             isLegacy: true,
@@ -152,6 +158,7 @@ export async function createManagedUser(input: CreateManagedUserRequest): Promis
     isAdmin: input.isAdmin,
     allowedMenus: input.allowedMenus,
     groupScopes: input.groupScopes ?? [],
+    partnerScopes: input.partnerScopes ?? [],
     createdAt: now,
     updatedAt: now,
   };
@@ -183,6 +190,7 @@ export async function updateManagedUser(
       isAdmin: input.isAdmin ?? normalize(legacy.user) === "sanus",
       allowedMenus: input.allowedMenus ?? defaultAllowedMenusFor(input.role ?? legacy.role),
       groupScopes: input.groupScopes === undefined ? null : input.groupScopes,
+      partnerScopes: input.partnerScopes === undefined ? null : input.partnerScopes,
       createdAt: now,
       updatedAt: now,
     };
@@ -201,6 +209,7 @@ export async function updateManagedUser(
     isAdmin: input.isAdmin ?? current.isAdmin,
     allowedMenus: input.allowedMenus === undefined ? current.allowedMenus : input.allowedMenus,
     groupScopes: input.groupScopes === undefined ? current.groupScopes : input.groupScopes,
+    partnerScopes: input.partnerScopes === undefined ? current.partnerScopes : input.partnerScopes,
     passwordHash: input.password ? hashPassword(input.password) : current.passwordHash,
     updatedAt: now,
   };

@@ -273,9 +273,14 @@ function companySessionCondition(company: unknown, p: SqlParams, tableAlias = 's
 }
 
 function partnerBrokerCondition(partnerBrokerId: unknown, p: SqlParams, tableAlias = 's') {
+  const partnerIds = Array.isArray(partnerBrokerId)
+    ? partnerBrokerId.map((value) => String(value).trim()).filter(Boolean)
+    : [];
   const id = String(partnerBrokerId || '').trim();
-  if (!id) return null;
-  const partnerCondition = id === MDS_PARTNER_SCOPE
+  if (!partnerIds.length && !id) return null;
+  const partnerCondition = partnerIds.length
+    ? `CAST(opb.partner_broker_id AS STRING) IN (${p.addAll(partnerIds)})`
+    : id === MDS_PARTNER_SCOPE
     ? `CAST(opb.partner_broker_id AS STRING) IN (
       SELECT CAST(pb.id AS STRING)
       FROM ${PARTNER_BROKERS_TABLE} pb

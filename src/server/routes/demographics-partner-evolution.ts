@@ -1,4 +1,10 @@
-import { MDS_PARTNER_SCOPE, requireBasicAuth, requireMenuAccess, scopedPartnerBrokerId } from "../../../lib/basic-auth";
+import {
+  MDS_PARTNER_SCOPE,
+  requireBasicAuth,
+  requireMenuAccess,
+  scopedPartnerBrokerId,
+  scopedPartnerBrokerIds,
+} from "../../../lib/basic-auth";
 import { createSqlParams, getCell, resolveWarehouseId, runQuery, toInt, type SqlParams } from "../../../lib/databricks";
 import { setApiCors } from "../../../lib/http";
 
@@ -13,14 +19,19 @@ const ORGANIZATIONS_TABLE = `hive_metastore.sanus_prod.organizations`;
 const PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.partner_brokers`;
 const ORGANIZATION_PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.organization_partner_brokers`;
 
-function parsePartnerBrokerIds(query: Record<string, any>, fallback: unknown) {
+// `fallback` já vem escopado (ver scopedPartnerBrokerId): sentinel MDS, um
+// único id, um array (recorte inteiro, sem seleção explícita) ou o
+// NO_PARTNER_MATCH. Quando o cliente pede uma lista explícita via
+// `partner_broker_ids`, ela também precisa passar pelo recorte configurado
+// em Configurações — daí o scopedPartnerBrokerIds abaixo.
+function parsePartnerBrokerIds(req: ApiRequest, fallback: unknown) {
   if (fallback === MDS_PARTNER_SCOPE) return fallback;
-  if (query.partner_broker_ids) {
+  if (req.query.partner_broker_ids) {
     try {
-      const parsed = JSON.parse(String(query.partner_broker_ids));
+      const parsed = JSON.parse(String(req.query.partner_broker_ids));
       if (Array.isArray(parsed)) {
-        const partnerIds = [...new Set(parsed.map((value) => String(value).trim()).filter(Boolean))];
-        return partnerIds.length ? partnerIds : fallback || null;
+        const requested = [...new Set(parsed.map((value) => String(value).trim()).filter(Boolean))];
+        if (requested.length) return scopedPartnerBrokerIds(req, requested);
       }
     } catch {}
   }
@@ -52,7 +63,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   if (!requireMenuAccess(req, res, ["visao-parceiros"])) return;
 
   const scopedPartnerBroker = scopedPartnerBrokerId(req, req.query.partner_broker_id || null);
-  const partnerBrokerId = parsePartnerBrokerIds(req.query, scopedPartnerBroker);
+  const partnerBrokerId = parsePartnerBrokerIds(req, scopedPartnerBroker);
   const limit = Math.min(Math.max(toInt(req.query.limit) || 8, 1), 12);
   const params = createSqlParams();
   const partnerFilter = partnerBrokerId ? `WHERE ${partnerBrokerCondition(partnerBrokerId, params)}` : "";

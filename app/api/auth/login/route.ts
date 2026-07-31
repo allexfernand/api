@@ -18,6 +18,7 @@ export async function POST(request: Request) {
             allowedMenus: auth.allowedMenus,
             isAdmin: auth.isAdmin,
             groupScopes: auth.groupScopes,
+            partnerScopes: auth.partnerScopes,
           }),
         ),
         "Cache-Control": "no-store",

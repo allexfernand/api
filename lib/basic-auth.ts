@@ -21,6 +21,8 @@ export const MDS_PARTNER_SCOPE = "__SANUS_MDS_PARTNER__";
 // quando o usuário pede um grupo fora do seu recorte, sem precisar de um
 // caminho de código separado em cada rota (ver scopedGroupNames).
 export const NO_GROUP_MATCH = "__SANUS_NO_GROUP_MATCH__";
+// Mesma ideia do NO_GROUP_MATCH, mas para parceiro (partner_broker_id).
+export const NO_PARTNER_MATCH = "__SANUS_NO_PARTNER_MATCH__";
 
 function headerValue(req: AuthRequest, name: string) {
   const headers = (req as AuthRequestWithHeaders).headers || {};
@@ -54,14 +56,22 @@ export function getDashboardAuth(req: AuthRequest) {
       allowedMenus: session.allowedMenus ?? null,
       isAdmin: Boolean(session.isAdmin),
       groupScopes: session.groupScopes ?? null,
+      partnerScopes: session.partnerScopes ?? null,
     };
   const credentials = decodeBasicAuth(headerValue(req, "authorization"));
   const legacy = credentials ? validateDashboardCredentials(credentials.user, credentials.password) : null;
   // Fallback via Authorization Basic (sem passar por /api/auth/login) nunca
   // teve acesso ao overlay do Edge Config — mantém o comportamento legado
-  // (sem restrição de menu/grupo, admin só quando o usuário literal é "sanus").
+  // (sem restrição de menu/grupo/parceiro, admin só quando o usuário literal
+  // é "sanus").
   return legacy
-    ? { ...legacy, allowedMenus: null, isAdmin: legacy.user.trim().toLowerCase() === "sanus", groupScopes: null }
+    ? {
+        ...legacy,
+        allowedMenus: null,
+        isAdmin: legacy.user.trim().toLowerCase() === "sanus",
+        groupScopes: null,
+        partnerScopes: null,
+      }
     : null;
 }
 
@@ -112,8 +122,50 @@ export function isMdsAuth(req: AuthRequest) {
   return getDashboardAuth(req)?.role === "mds";
 }
 
+export function partnerScopesForAuth(req: AuthRequest): string[] | null {
+  return getDashboardAuth(req)?.partnerScopes ?? null;
+}
+
+// Concilia o parceiro pedido no filtro "Parceiro" com o recorte configurado
+// em Configurações. MDS mantém prioridade máxima (sempre o próprio escopo,
+// ignora partnerScopes — já é o recorte mais restrito possível). Sem
+// recorte, devolve o pedido sem alteração — comportamento de hoje. Com
+// recorte: sem pedido, força o recorte inteiro (array, se houver mais de um
+// parceiro liberado — as condições SQL de cada rota sabem tratar array como
+// `IN (...)`); pedido fora do recorte, devolve um id que não bate com
+// nenhum parceiro real (mesmo truque do NO_GROUP_MATCH).
 export function scopedPartnerBrokerId(req: AuthRequest, requestedPartnerBrokerId: unknown) {
-  return isMdsAuth(req) ? MDS_PARTNER_SCOPE : requestedPartnerBrokerId;
+  if (isMdsAuth(req)) return MDS_PARTNER_SCOPE;
+  const scope = partnerScopesForAuth(req);
+  if (!scope) return requestedPartnerBrokerId;
+  if (!scope.length) return NO_PARTNER_MATCH;
+  if (!requestedPartnerBrokerId) return scope.length === 1 ? scope[0] : [...scope];
+  const requestedId = String(requestedPartnerBrokerId).trim();
+  const allowed = scope.some((id) => String(id).trim() === requestedId);
+  return allowed ? requestedPartnerBrokerId : NO_PARTNER_MATCH;
+}
+
+// Rotas multi-parceiro (Visão Parceiros/#VP02): concilia a lista pedida
+// explicitamente pelo cliente com o recorte configurado.
+export function scopedPartnerBrokerIds(req: AuthRequest, requestedIds: string[]): string[] {
+  const scope = partnerScopesForAuth(req);
+  if (!scope) return requestedIds;
+  if (!scope.length) return [NO_PARTNER_MATCH];
+  if (!requestedIds.length) return [...scope];
+  const allowed = new Set(scope.map((id) => String(id).trim()));
+  const intersected = requestedIds.filter((id) => allowed.has(String(id).trim()));
+  return intersected.length ? intersected : [NO_PARTNER_MATCH];
+}
+
+// Usado só na listagem de parceiros disponíveis (popula o seletor
+// "Parceiro") — o pedido vazio ali significa "me devolva a lista toda",
+// então filtramos o resultado em vez do pedido (mesma lógica do
+// filterGroupsByScope).
+export function filterPartnersByScope<T extends { broker_id: string }>(req: AuthRequest, partners: T[]): T[] {
+  const scope = partnerScopesForAuth(req);
+  if (!scope) return partners;
+  const allowed = new Set(scope.map((id) => String(id).trim()));
+  return partners.filter((partner) => allowed.has(String(partner.broker_id).trim()));
 }
 
 export function groupScopesForAuth(req: AuthRequest): string[] | null {

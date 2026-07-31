@@ -86,7 +86,12 @@ function buildGroupFilter(columns: string[], groupNames: string[], p: SqlParams)
 }
 
 function partnerOrgNamesSubquery(partnerBrokerId: unknown, p: SqlParams) {
-  const partnerCondition = String(partnerBrokerId) === MDS_PARTNER_SCOPE
+  const partnerIds = Array.isArray(partnerBrokerId)
+    ? partnerBrokerId.map((value) => String(value).trim()).filter(Boolean)
+    : [];
+  const partnerCondition = partnerIds.length
+    ? `CAST(opb.partner_broker_id AS STRING) IN (${p.addAll(partnerIds)})`
+    : String(partnerBrokerId) === MDS_PARTNER_SCOPE
     ? `CAST(opb.partner_broker_id AS STRING) IN (
       SELECT CAST(pb.id AS STRING)
       FROM ${PARTNER_BROKERS_TABLE} pb

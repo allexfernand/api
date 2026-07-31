@@ -17,6 +17,8 @@ type SessionPayload = {
   isAdmin?: boolean;
   // Grupos econômicos liberados para este usuário. null = sem restrição.
   groupScopes?: string[] | null;
+  // Parceiros (partner_broker_id) liberados para este usuário. null = sem restrição.
+  partnerScopes?: string[] | null;
 };
 
 function secret() {
@@ -32,7 +34,12 @@ function signature(value: string) {
 export function createSessionToken(
   user: string,
   role: DashboardRole,
-  extra?: { allowedMenus?: MenuId[] | null; isAdmin?: boolean; groupScopes?: string[] | null },
+  extra?: {
+    allowedMenus?: MenuId[] | null;
+    isAdmin?: boolean;
+    groupScopes?: string[] | null;
+    partnerScopes?: string[] | null;
+  },
 ) {
   const payload: SessionPayload = {
     user,
@@ -41,6 +48,7 @@ export function createSessionToken(
     allowedMenus: extra?.allowedMenus ?? null,
     isAdmin: extra?.isAdmin ?? false,
     groupScopes: extra?.groupScopes ?? null,
+    partnerScopes: extra?.partnerScopes ?? null,
   };
   const encoded = Buffer.from(JSON.stringify(payload)).toString("base64url");
   return `${encoded}.${signature(encoded)}`;
@@ -63,7 +71,10 @@ export function verifySessionToken(token: string): SessionPayload | null {
     const groupScopes = Array.isArray(payload.groupScopes)
       ? payload.groupScopes.filter((name): name is string => typeof name === "string")
       : null;
-    return { ...payload, allowedMenus, isAdmin: Boolean(payload.isAdmin), groupScopes };
+    const partnerScopes = Array.isArray(payload.partnerScopes)
+      ? payload.partnerScopes.filter((id): id is string => typeof id === "string")
+      : null;
+    return { ...payload, allowedMenus, isAdmin: Boolean(payload.isAdmin), groupScopes, partnerScopes };
   } catch {
     return null;
   }

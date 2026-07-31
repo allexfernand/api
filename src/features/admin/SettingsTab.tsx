@@ -8,7 +8,7 @@
 
 import { FormEvent, useMemo, useState } from "react";
 import styles from "./SettingsTab.module.css";
-import { useManagedUsers } from "./hooks/useManagedUsers";
+import { useManagedUsers, type PartnerOption } from "./hooks/useManagedUsers";
 import { MENU_SECTIONS, FULL_DEFAULT_ALLOWED_MENUS, MDS_DEFAULT_ALLOWED_MENUS, type MenuId } from "../../dashboard/menu-catalog";
 import type { DashboardRole } from "../../contracts/common";
 import type { ManagedDashboardUserPublic } from "../../contracts/dashboard-users";
@@ -18,7 +18,7 @@ function defaultMenusFor(role: DashboardRole): MenuId[] {
 }
 
 export function SettingsTab() {
-  const { users, economicGroups, status, error, createUser, updateUser, deleteUser } = useManagedUsers();
+  const { users, economicGroups, partners, status, error, createUser, updateUser, deleteUser } = useManagedUsers();
   const [selected, setSelected] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
 
@@ -36,8 +36,9 @@ export function SettingsTab() {
       <header className={styles.header}>
         <h2 className={styles.title}>Configurações de acesso</h2>
         <p className={styles.subtitle}>
-          Escolha um usuário, marque quais menus da barra lateral e quais grupos econômicos ele pode
-          acessar. Sem uma seleção explícita, o usuário mantém o comportamento padrão de hoje.
+          Escolha um usuário, marque quais menus da barra lateral, quais grupos econômicos e quais
+          parceiros ele pode acessar. Sem uma seleção explícita, o usuário mantém o comportamento
+          padrão de hoje.
         </p>
       </header>
 
@@ -63,6 +64,7 @@ export function SettingsTab() {
           {creating ? (
             <CreateUserPanel
               economicGroups={economicGroups}
+              partners={partners}
               onCancel={() => setCreating(false)}
               onCreate={async (input) => {
                 const created = await createUser(input);
@@ -75,6 +77,7 @@ export function SettingsTab() {
               key={selectedUser.user}
               user={selectedUser}
               economicGroups={economicGroups}
+              partners={partners}
               onSave={(input) => updateUser(selectedUser.user, input)}
               onDelete={selectedUser.isLegacy ? undefined : () => deleteUser(selectedUser.user)}
             />
@@ -258,19 +261,100 @@ function GroupAccessEditor({
   );
 }
 
+function PartnerAccessEditor({
+  partnerScopes,
+  partners,
+  onChange,
+}: {
+  partnerScopes: string[] | null;
+  partners: PartnerOption[];
+  onChange: (next: string[] | null) => void;
+}) {
+  const isCustom = partnerScopes !== null;
+  const [search, setSearch] = useState("");
+
+  const nameById = useMemo(() => new Map(partners.map((p) => [p.broker_id, p.broker_name])), [partners]);
+
+  const filtered = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) return partners;
+    return partners.filter((p) => p.broker_name.toLowerCase().includes(query));
+  }, [partners, search]);
+
+  return (
+    <div>
+      <div className={styles.menuAccessHeader}>
+        <div>
+          <div className={styles.menuAccessTitle}>Parceiros liberados</div>
+          <div className={styles.menuAccessHint}>
+            {isCustom
+              ? `Personalizado — enxerga dados só de ${partnerScopes!.length} parceiro(s) marcado(s) abaixo.`
+              : "Sem personalização — este usuário enxerga dados de todos os parceiros."}
+          </div>
+        </div>
+        <button type="button" className={styles.linkButton} onClick={() => onChange(isCustom ? null : [])}>
+          {isCustom ? "Remover restrição" : "Restringir por parceiro"}
+        </button>
+      </div>
+      {isCustom ? (
+        <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
+          <input
+            type="text"
+            className={styles.input}
+            placeholder="Buscar parceiro…"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+          <div className={styles.groupPickerList}>
+            {partners.length === 0 ? (
+              <div className={styles.groupPickerEmpty}>Nenhum parceiro carregado.</div>
+            ) : filtered.length === 0 ? (
+              <div className={styles.groupPickerEmpty}>Nenhum parceiro encontrado para &quot;{search}&quot;.</div>
+            ) : (
+              filtered.map((partner) => (
+                <label className={styles.checkboxLabel} key={partner.broker_id}>
+                  <input
+                    type="checkbox"
+                    checked={partnerScopes!.includes(partner.broker_id)}
+                    onChange={(event) => {
+                      const next = event.target.checked
+                        ? [...partnerScopes!, partner.broker_id]
+                        : partnerScopes!.filter((existing) => existing !== partner.broker_id);
+                      onChange(next);
+                    }}
+                  />
+                  {partner.broker_name}
+                </label>
+              ))
+            )}
+          </div>
+          {partnerScopes!.some((id) => !nameById.has(id)) ? (
+            <div className={styles.groupPickerEmpty} style={{ textAlign: "left" }}>
+              Obs.: há parceiro(s) salvo(s) que não aparecem na lista acima (podem ter sido removidos).
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function UserEditorPanel({
   user,
   economicGroups,
+  partners,
   onSave,
   onDelete,
 }: {
   user: ManagedDashboardUserPublic;
   economicGroups: string[];
+  partners: PartnerOption[];
   onSave: (input: {
     role?: DashboardRole;
     isAdmin?: boolean;
     allowedMenus?: MenuId[] | null;
     groupScopes?: string[] | null;
+    partnerScopes?: string[] | null;
     password?: string;
   }) => Promise<unknown>;
   onDelete?: () => Promise<unknown>;
@@ -279,6 +363,7 @@ function UserEditorPanel({
   const [isAdmin, setIsAdmin] = useState(user.isAdmin);
   const [allowedMenus, setAllowedMenus] = useState<MenuId[] | null>(user.allowedMenus);
   const [groupScopes, setGroupScopes] = useState<string[] | null>(user.groupScopes);
+  const [partnerScopes, setPartnerScopes] = useState<string[] | null>(user.partnerScopes);
   const [password, setPassword] = useState("");
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -289,7 +374,7 @@ function UserEditorPanel({
     setSaving(true);
     setFeedback(null);
     try {
-      await onSave({ role, isAdmin, allowedMenus, groupScopes, password: password || undefined });
+      await onSave({ role, isAdmin, allowedMenus, groupScopes, partnerScopes, password: password || undefined });
       setPassword("");
       setFeedback({ ok: true, message: "Alterações salvas." });
     } catch (cause) {
@@ -373,6 +458,8 @@ function UserEditorPanel({
 
       <GroupAccessEditor groupScopes={groupScopes} economicGroups={economicGroups} onChange={setGroupScopes} />
 
+      <PartnerAccessEditor partnerScopes={partnerScopes} partners={partners} onChange={setPartnerScopes} />
+
       <div className={styles.actions}>
         <button type="submit" className={styles.saveButton} disabled={saving}>
           {saving ? "Salvando…" : "Salvar alterações"}
@@ -389,10 +476,12 @@ function UserEditorPanel({
 
 function CreateUserPanel({
   economicGroups,
+  partners,
   onCancel,
   onCreate,
 }: {
   economicGroups: string[];
+  partners: PartnerOption[];
   onCancel: () => void;
   onCreate: (input: {
     user: string;
@@ -401,6 +490,7 @@ function CreateUserPanel({
     isAdmin: boolean;
     allowedMenus: MenuId[];
     groupScopes: string[] | null;
+    partnerScopes: string[] | null;
   }) => Promise<unknown>;
 }) {
   const [user, setUser] = useState("");
@@ -409,6 +499,7 @@ function CreateUserPanel({
   const [isAdmin, setIsAdmin] = useState(false);
   const [allowedMenus, setAllowedMenus] = useState<MenuId[]>([]);
   const [groupScopes, setGroupScopes] = useState<string[] | null>([]);
+  const [partnerScopes, setPartnerScopes] = useState<string[] | null>([]);
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
 
@@ -417,7 +508,7 @@ function CreateUserPanel({
     setSaving(true);
     setFeedback(null);
     try {
-      await onCreate({ user, password, role, isAdmin, allowedMenus, groupScopes });
+      await onCreate({ user, password, role, isAdmin, allowedMenus, groupScopes, partnerScopes });
     } catch (cause) {
       setFeedback(cause instanceof Error ? cause.message : "Não foi possível criar o usuário.");
       setSaving(false);
@@ -491,6 +582,8 @@ function CreateUserPanel({
       />
 
       <GroupAccessEditor groupScopes={groupScopes} economicGroups={economicGroups} onChange={setGroupScopes} />
+
+      <PartnerAccessEditor partnerScopes={partnerScopes} partners={partners} onChange={setPartnerScopes} />
 
       <div className={styles.actions}>
         <button type="submit" className={styles.saveButton} disabled={saving}>

@@ -19,6 +19,9 @@ export const managedDashboardUserSchema = z.object({
   // hoje); [] bloqueia todos os grupos. `.optional()` mantém compatível
   // registros salvos no Edge Config antes deste campo existir.
   groupScopes: z.array(z.string()).nullable().optional().transform((value) => value ?? null),
+  // Parceiros (partner_broker_id) que o usuário pode enxergar. Mesma
+  // semântica de groupScopes: null = sem restrição, [] bloqueia todos.
+  partnerScopes: z.array(z.string()).nullable().optional().transform((value) => value ?? null),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -37,6 +40,7 @@ export const createManagedUserRequestSchema = z.object({
   isAdmin: z.boolean().default(false),
   allowedMenus: z.array(menuIdSchema).default([]),
   groupScopes: z.array(z.string()).nullable().default([]),
+  partnerScopes: z.array(z.string()).nullable().default([]),
 });
 export type CreateManagedUserRequest = z.infer<typeof createManagedUserRequestSchema>;
 
@@ -45,6 +49,7 @@ export const updateManagedUserRequestSchema = z.object({
   isAdmin: z.boolean().optional(),
   allowedMenus: z.array(menuIdSchema).nullable().optional(),
   groupScopes: z.array(z.string()).nullable().optional(),
+  partnerScopes: z.array(z.string()).nullable().optional(),
   password: z.string().min(8).max(200).optional(),
 });
 export type UpdateManagedUserRequest = z.infer<typeof updateManagedUserRequestSchema>;
@@ -61,5 +66,7 @@ export const managedUsersListResponseSchema = z.object({
   // completa (sem aplicar o próprio recorte de quem está logado), para o
   // admin poder liberar qualquer um deles a qualquer usuário.
   economicGroups: z.array(z.string()),
+  // Idem, para parceiros (partner_broker_id + nome de exibição).
+  partners: z.array(z.object({ broker_id: z.string(), broker_name: z.string() })),
 });
 export type ManagedUsersListResponse = z.infer<typeof managedUsersListResponseSchema>;

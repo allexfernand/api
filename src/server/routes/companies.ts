@@ -31,6 +31,12 @@ const PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.partner_brokers`;
 const ORGANIZATION_PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.organization_partner_brokers`;
 
 function partnerBrokerCondition(partnerBrokerId: unknown, p: SqlParams) {
+  const partnerIds = Array.isArray(partnerBrokerId)
+    ? partnerBrokerId.map((value) => String(value).trim()).filter(Boolean)
+    : [];
+  if (partnerIds.length) {
+    return `CAST(opb.partner_broker_id AS STRING) IN (${p.addAll(partnerIds)})`;
+  }
   if (String(partnerBrokerId) === MDS_PARTNER_SCOPE) {
     return `CAST(opb.partner_broker_id AS STRING) IN (
       SELECT CAST(pb.id AS STRING)

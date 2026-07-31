@@ -2,6 +2,7 @@
 import {
   MDS_PARTNER_SCOPE,
   filterGroupsByScope,
+  filterPartnersByScope,
   getDashboardAuth,
   hasMenuAccess,
   rejectMdsAuth,
@@ -62,6 +63,12 @@ const CLAIMS_EVENT_DATE_CANDIDATES = [
 ];
 
 function partnerBrokerCondition(partnerBrokerId: unknown, p: SqlParams) {
+  const partnerIds = Array.isArray(partnerBrokerId)
+    ? partnerBrokerId.map((value) => String(value).trim()).filter(Boolean)
+    : [];
+  if (partnerIds.length) {
+    return `CAST(opb.partner_broker_id AS STRING) IN (${p.addAll(partnerIds)})`;
+  }
   if (String(partnerBrokerId) === MDS_PARTNER_SCOPE) {
     return `CAST(opb.partner_broker_id AS STRING) IN (
       SELECT CAST(pb.id AS STRING)
@@ -740,13 +747,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           pb.active
         ORDER BY broker_name ASC
       `);
-      const partners = partnerRows.map((r) => ({
+      const partners = filterPartnersByScope(req, partnerRows.map((r) => ({
         broker_id: String(getCell(r[0]) || '').trim(),
         broker_name: String(getCell(r[1]) || 'Sem nome').trim(),
         broker_name_secondary: getCell(r[2]) ? String(getCell(r[2])).trim() : '',
         broker_active: String(getCell(r[3])).toLowerCase() === 'true',
         total_orgs: toInt(r[4]),
-      })).filter((partner) => partner.broker_id);
+      })).filter((partner) => partner.broker_id));
       setStableCache(res);
       return res.status(200).json({ partners, auth_role: getDashboardAuth(req)?.role || 'full', updatedAt: new Date().toISOString() });
     }
