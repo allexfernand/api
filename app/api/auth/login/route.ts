@@ -14,7 +14,11 @@ export async function POST(request: Request) {
     {
       headers: {
         "Set-Cookie": sessionCookie(
-          createSessionToken(auth.user, auth.role, { allowedMenus: auth.allowedMenus, isAdmin: auth.isAdmin }),
+          createSessionToken(auth.user, auth.role, {
+            allowedMenus: auth.allowedMenus,
+            isAdmin: auth.isAdmin,
+            groupScopes: auth.groupScopes,
+          }),
         ),
         "Cache-Control": "no-store",
       },

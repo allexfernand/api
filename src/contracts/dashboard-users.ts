@@ -6,13 +6,19 @@ export const menuIdSchema = z.enum(ALL_MENU_IDS as [MenuId, ...MenuId[]]);
 
 // Registro persistido no Edge Config. `passwordHash` ausente/nulo indica um
 // "overlay" de permissão sobre uma conta legada (sanus/mds, autenticada pelas
-// env vars) — só sobrescreve papel/allowedMenus/isAdmin, nunca a senha.
+// env vars) — só sobrescreve papel/allowedMenus/isAdmin/groupScopes, nunca a
+// senha.
 export const managedDashboardUserSchema = z.object({
   user: z.string().trim().min(3).max(60),
   passwordHash: z.string().nullable(),
   role: dashboardRoleSchema,
   isAdmin: z.boolean(),
   allowedMenus: z.array(menuIdSchema).nullable(),
+  // Grupos econômicos (nome da organização matriz) que o usuário pode
+  // enxergar nos dados. null = sem restrição (vê todos, comportamento de
+  // hoje); [] bloqueia todos os grupos. `.optional()` mantém compatível
+  // registros salvos no Edge Config antes deste campo existir.
+  groupScopes: z.array(z.string()).nullable().optional().transform((value) => value ?? null),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -30,6 +36,7 @@ export const createManagedUserRequestSchema = z.object({
   role: dashboardRoleSchema.default("mds"),
   isAdmin: z.boolean().default(false),
   allowedMenus: z.array(menuIdSchema).default([]),
+  groupScopes: z.array(z.string()).nullable().default([]),
 });
 export type CreateManagedUserRequest = z.infer<typeof createManagedUserRequestSchema>;
 
@@ -37,6 +44,7 @@ export const updateManagedUserRequestSchema = z.object({
   role: dashboardRoleSchema.optional(),
   isAdmin: z.boolean().optional(),
   allowedMenus: z.array(menuIdSchema).nullable().optional(),
+  groupScopes: z.array(z.string()).nullable().optional(),
   password: z.string().min(8).max(200).optional(),
 });
 export type UpdateManagedUserRequest = z.infer<typeof updateManagedUserRequestSchema>;
@@ -49,5 +57,9 @@ export const managedUsersListResponseSchema = z.object({
       items: z.array(z.object({ id: menuIdSchema, label: z.string(), icon: z.string() })),
     }),
   ),
+  // Todos os grupos econômicos existentes hoje na base — sempre a lista
+  // completa (sem aplicar o próprio recorte de quem está logado), para o
+  // admin poder liberar qualquer um deles a qualquer usuário.
+  economicGroups: z.array(z.string()),
 });
 export type ManagedUsersListResponse = z.infer<typeof managedUsersListResponseSchema>;

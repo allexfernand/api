@@ -1,10 +1,12 @@
 // api/data.ts
 import {
   MDS_PARTNER_SCOPE,
+  filterGroupsByScope,
   getDashboardAuth,
   hasMenuAccess,
   rejectMdsAuth,
   requireBasicAuth,
+  scopedGroupNames,
   scopedPartnerBrokerId,
 } from "../../../lib/basic-auth";
 import { CORE_DATA_MENUS, type MenuId } from "../../dashboard/menu-catalog";
@@ -411,7 +413,12 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (!requireBasicAuth(req, res)) return;
 
-  const groupNames = parseGroupNames(req.query);
+  // `requestedGroupNames` (cru) só serve pra decidir se a listagem de grupos
+  // disponíveis deve rodar (ver `!requestedGroupNames.length` mais abaixo);
+  // toda consulta de dados de fato usa `groupNames`, já aplicando o recorte
+  // por grupo econômico configurado em Configurações (null = sem recorte).
+  const requestedGroupNames = parseGroupNames(req.query);
+  const groupNames = scopedGroupNames(req, requestedGroupNames);
   const typeFilter = req.query.type || null;
   const partnerBrokerId = scopedPartnerBrokerId(req, req.query.partner_broker_id || null);
   const scope = String(req.query.scope || '').toLowerCase();
@@ -1935,7 +1942,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         ${groupFilter}
         GROUP BY 1 ORDER BY 1
       `, params.list),
-      !groupNames.length ? runQuery(warehouseId, partnerBrokerId ? `
+      !requestedGroupNames.length ? runQuery(warehouseId, partnerBrokerId ? `
         WITH partner_orgs AS (
           SELECT CAST(opb.organization_id AS STRING) AS organization_id
           FROM ${ORGANIZATION_PARTNER_BROKERS_TABLE} opb
@@ -1979,7 +1986,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           AND (o.is_matriz = true OR o.matriz_id IS NULL)
         ORDER BY o.name ASC
       `, params.list) : Promise.resolve(null),
-      !groupNames.length ? runQuery(warehouseId, `
+      !requestedGroupNames.length ? runQuery(warehouseId, `
         SELECT economic_group_canonical AS grupo, COUNT(*) AS total_sessions
         FROM hive_metastore.sanus_prod.dashboard_sessions_base_gold
         WHERE economic_group_canonical IS NOT NULL
@@ -1990,18 +1997,21 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     ]);
 
     const parse = (rows: DatabricksRow[] | null) => (rows || []).map((r) => [toDate(r[0]), toInt(r[1])]);
-    const groups = groupRows
+    // Listagem de grupos disponíveis (popula o seletor "Grupo Econômico"):
+    // filtrada pelo recorte do usuário, senão um usuário restrito veria (e
+    // poderia selecionar) grupos que não deveria enxergar.
+    const groups = filterGroupsByScope(req, groupRows
       ? groupRows.map((r) => ({
           economic_group: getCell(r[0]) ? String(getCell(r[0])).trim() : null,
           total_orgs: toInt(r[1]),
         })).filter((g) => g.economic_group)
-      : null;
-    const sessions_groups = sessionGroupRows
+      : null);
+    const sessions_groups = filterGroupsByScope(req, sessionGroupRows
       ? sessionGroupRows.map((r) => ({
           economic_group: getCell(r[0]) ? String(getCell(r[0])).trim() : null,
           total_sessions: toInt(r[1]),
         })).filter((g) => g.economic_group)
-      : null;
+      : null);
 
     setStableCache(res);
     res.status(200).json({ users: parse(userRows), groups, sessions_groups, auth_role: dashboardAuth?.role || 'full', auth_user: dashboardAuth?.user || '', updatedAt: new Date().toISOString() });

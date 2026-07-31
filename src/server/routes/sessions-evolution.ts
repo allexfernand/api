@@ -3,7 +3,13 @@
 // - Sem filtro de grupo/empresa: COUNT(*) GROUP BY mês — query rápida.
 // - Com filtro: JOIN por botmaker_session.organization_id x organizations.id.
 // Aceita ?group_name=, ?company=, ?type=, ?months=12 ou ?meses=2026-01,2026-02.
-import { MDS_PARTNER_SCOPE, requireBasicAuth, requireMenuAccess, scopedPartnerBrokerId } from "../../../lib/basic-auth";
+import {
+  MDS_PARTNER_SCOPE,
+  requireBasicAuth,
+  requireMenuAccess,
+  scopedGroupNames,
+  scopedPartnerBrokerId,
+} from "../../../lib/basic-auth";
 import { CORE_DATA_MENUS } from "../../dashboard/menu-catalog";
 import { createSqlParams, getCell, quoteIdent, resolveWarehouseId, runQuery, toInt, type SqlParams } from "../../../lib/databricks";
 import { setApiCors, setStableCache } from "../../../lib/http";
@@ -329,7 +335,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   if (!requireBasicAuth(req, res)) return;
   if (!requireMenuAccess(req, res, CORE_DATA_MENUS)) return;
 
-  const groupNames = parseGroupNames(req.query);
+  const groupNames = scopedGroupNames(req, parseGroupNames(req.query));
   const groupName = groupNames[0] || null;
   const company = req.query.company || null;
   const partnerBrokerId = scopedPartnerBrokerId(req, req.query.partner_broker_id || null);

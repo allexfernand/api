@@ -18,7 +18,7 @@ function defaultMenusFor(role: DashboardRole): MenuId[] {
 }
 
 export function SettingsTab() {
-  const { users, status, error, createUser, updateUser, deleteUser } = useManagedUsers();
+  const { users, economicGroups, status, error, createUser, updateUser, deleteUser } = useManagedUsers();
   const [selected, setSelected] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
 
@@ -36,8 +36,8 @@ export function SettingsTab() {
       <header className={styles.header}>
         <h2 className={styles.title}>Configurações de acesso</h2>
         <p className={styles.subtitle}>
-          Escolha um usuário e marque quais menus da barra lateral ele pode acessar. Sem uma seleção
-          explícita, o usuário mantém o comportamento padrão de hoje.
+          Escolha um usuário, marque quais menus da barra lateral e quais grupos econômicos ele pode
+          acessar. Sem uma seleção explícita, o usuário mantém o comportamento padrão de hoje.
         </p>
       </header>
 
@@ -62,6 +62,7 @@ export function SettingsTab() {
           />
           {creating ? (
             <CreateUserPanel
+              economicGroups={economicGroups}
               onCancel={() => setCreating(false)}
               onCreate={async (input) => {
                 const created = await createUser(input);
@@ -73,6 +74,7 @@ export function SettingsTab() {
             <UserEditorPanel
               key={selectedUser.user}
               user={selectedUser}
+              economicGroups={economicGroups}
               onSave={(input) => updateUser(selectedUser.user, input)}
               onDelete={selectedUser.isLegacy ? undefined : () => deleteUser(selectedUser.user)}
             />
@@ -185,16 +187,90 @@ function MenuAccessEditor({
   );
 }
 
+function GroupAccessEditor({
+  groupScopes,
+  economicGroups,
+  onChange,
+}: {
+  groupScopes: string[] | null;
+  economicGroups: string[];
+  onChange: (next: string[] | null) => void;
+}) {
+  const isCustom = groupScopes !== null;
+  const [search, setSearch] = useState("");
+
+  const filtered = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) return economicGroups;
+    return economicGroups.filter((name) => name.toLowerCase().includes(query));
+  }, [economicGroups, search]);
+
+  return (
+    <div>
+      <div className={styles.menuAccessHeader}>
+        <div>
+          <div className={styles.menuAccessTitle}>Grupos econômicos liberados</div>
+          <div className={styles.menuAccessHint}>
+            {isCustom
+              ? `Personalizado — enxerga dados só de ${groupScopes!.length} grupo(s) marcado(s) abaixo.`
+              : "Sem personalização — este usuário enxerga dados de todos os grupos econômicos."}
+          </div>
+        </div>
+        <button type="button" className={styles.linkButton} onClick={() => onChange(isCustom ? null : [])}>
+          {isCustom ? "Remover restrição" : "Restringir por grupo"}
+        </button>
+      </div>
+      {isCustom ? (
+        <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
+          <input
+            type="text"
+            className={styles.input}
+            placeholder="Buscar grupo econômico…"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+          <div className={styles.groupPickerList}>
+            {economicGroups.length === 0 ? (
+              <div className={styles.groupPickerEmpty}>Nenhum grupo econômico carregado.</div>
+            ) : filtered.length === 0 ? (
+              <div className={styles.groupPickerEmpty}>Nenhum grupo encontrado para &quot;{search}&quot;.</div>
+            ) : (
+              filtered.map((name) => (
+                <label className={styles.checkboxLabel} key={name}>
+                  <input
+                    type="checkbox"
+                    checked={groupScopes!.includes(name)}
+                    onChange={(event) => {
+                      const next = event.target.checked
+                        ? [...groupScopes!, name]
+                        : groupScopes!.filter((existing) => existing !== name);
+                      onChange(next);
+                    }}
+                  />
+                  {name}
+                </label>
+              ))
+            )}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function UserEditorPanel({
   user,
+  economicGroups,
   onSave,
   onDelete,
 }: {
   user: ManagedDashboardUserPublic;
+  economicGroups: string[];
   onSave: (input: {
     role?: DashboardRole;
     isAdmin?: boolean;
     allowedMenus?: MenuId[] | null;
+    groupScopes?: string[] | null;
     password?: string;
   }) => Promise<unknown>;
   onDelete?: () => Promise<unknown>;
@@ -202,6 +278,7 @@ function UserEditorPanel({
   const [role, setRole] = useState<DashboardRole>(user.role);
   const [isAdmin, setIsAdmin] = useState(user.isAdmin);
   const [allowedMenus, setAllowedMenus] = useState<MenuId[] | null>(user.allowedMenus);
+  const [groupScopes, setGroupScopes] = useState<string[] | null>(user.groupScopes);
   const [password, setPassword] = useState("");
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -212,7 +289,7 @@ function UserEditorPanel({
     setSaving(true);
     setFeedback(null);
     try {
-      await onSave({ role, isAdmin, allowedMenus, password: password || undefined });
+      await onSave({ role, isAdmin, allowedMenus, groupScopes, password: password || undefined });
       setPassword("");
       setFeedback({ ok: true, message: "Alterações salvas." });
     } catch (cause) {
@@ -294,6 +371,8 @@ function UserEditorPanel({
 
       <MenuAccessEditor role={role} allowedMenus={allowedMenus} onChange={setAllowedMenus} />
 
+      <GroupAccessEditor groupScopes={groupScopes} economicGroups={economicGroups} onChange={setGroupScopes} />
+
       <div className={styles.actions}>
         <button type="submit" className={styles.saveButton} disabled={saving}>
           {saving ? "Salvando…" : "Salvar alterações"}
@@ -309,9 +388,11 @@ function UserEditorPanel({
 }
 
 function CreateUserPanel({
+  economicGroups,
   onCancel,
   onCreate,
 }: {
+  economicGroups: string[];
   onCancel: () => void;
   onCreate: (input: {
     user: string;
@@ -319,6 +400,7 @@ function CreateUserPanel({
     role: DashboardRole;
     isAdmin: boolean;
     allowedMenus: MenuId[];
+    groupScopes: string[] | null;
   }) => Promise<unknown>;
 }) {
   const [user, setUser] = useState("");
@@ -326,6 +408,7 @@ function CreateUserPanel({
   const [role, setRole] = useState<DashboardRole>("mds");
   const [isAdmin, setIsAdmin] = useState(false);
   const [allowedMenus, setAllowedMenus] = useState<MenuId[]>([]);
+  const [groupScopes, setGroupScopes] = useState<string[] | null>([]);
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
 
@@ -334,7 +417,7 @@ function CreateUserPanel({
     setSaving(true);
     setFeedback(null);
     try {
-      await onCreate({ user, password, role, isAdmin, allowedMenus });
+      await onCreate({ user, password, role, isAdmin, allowedMenus, groupScopes });
     } catch (cause) {
       setFeedback(cause instanceof Error ? cause.message : "Não foi possível criar o usuário.");
       setSaving(false);
@@ -406,6 +489,8 @@ function CreateUserPanel({
         allowedMenus={allowedMenus}
         onChange={(next) => setAllowedMenus(next ?? defaultMenusFor(role))}
       />
+
+      <GroupAccessEditor groupScopes={groupScopes} economicGroups={economicGroups} onChange={setGroupScopes} />
 
       <div className={styles.actions}>
         <button type="submit" className={styles.saveButton} disabled={saving}>

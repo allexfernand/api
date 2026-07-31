@@ -16,6 +16,11 @@ type AuthResponse = {
 };
 
 export const MDS_PARTNER_SCOPE = "__SANUS_MDS_PARTNER__";
+// Valor de grupo econômico que não existe em nenhuma organização real — usado
+// para forçar "zero resultados" em cláusulas `WHERE TRIM(name) IN (...)`
+// quando o usuário pede um grupo fora do seu recorte, sem precisar de um
+// caminho de código separado em cada rota (ver scopedGroupNames).
+export const NO_GROUP_MATCH = "__SANUS_NO_GROUP_MATCH__";
 
 function headerValue(req: AuthRequest, name: string) {
   const headers = (req as AuthRequestWithHeaders).headers || {};
@@ -48,14 +53,15 @@ export function getDashboardAuth(req: AuthRequest) {
       role: session.role,
       allowedMenus: session.allowedMenus ?? null,
       isAdmin: Boolean(session.isAdmin),
+      groupScopes: session.groupScopes ?? null,
     };
   const credentials = decodeBasicAuth(headerValue(req, "authorization"));
   const legacy = credentials ? validateDashboardCredentials(credentials.user, credentials.password) : null;
   // Fallback via Authorization Basic (sem passar por /api/auth/login) nunca
   // teve acesso ao overlay do Edge Config — mantém o comportamento legado
-  // (sem restrição de menu, admin só quando o usuário literal é "sanus").
+  // (sem restrição de menu/grupo, admin só quando o usuário literal é "sanus").
   return legacy
-    ? { ...legacy, allowedMenus: null, isAdmin: legacy.user.trim().toLowerCase() === "sanus" }
+    ? { ...legacy, allowedMenus: null, isAdmin: legacy.user.trim().toLowerCase() === "sanus", groupScopes: null }
     : null;
 }
 
@@ -108,6 +114,42 @@ export function isMdsAuth(req: AuthRequest) {
 
 export function scopedPartnerBrokerId(req: AuthRequest, requestedPartnerBrokerId: unknown) {
   return isMdsAuth(req) ? MDS_PARTNER_SCOPE : requestedPartnerBrokerId;
+}
+
+export function groupScopesForAuth(req: AuthRequest): string[] | null {
+  return getDashboardAuth(req)?.groupScopes ?? null;
+}
+
+// Concilia o grupo econômico pedido pelo cliente (filtro da barra) com o
+// recorte configurado em Configurações para o usuário logado. Sem recorte
+// (null), devolve o pedido sem alteração — comportamento de hoje. Com
+// recorte: sem filtro pedido, assume o recorte inteiro (nunca "todos");
+// com filtro pedido fora do recorte, devolve um nome que não bate com
+// nenhuma organização real, fazendo o `WHERE ... IN (...)` de cada rota
+// retornar zero linhas em vez de cair silenciosamente para "sem filtro".
+export function scopedGroupNames(req: AuthRequest, requestedGroupNames: string[]): string[] {
+  const scope = groupScopesForAuth(req);
+  if (!scope) return requestedGroupNames;
+  if (!scope.length) return [NO_GROUP_MATCH];
+  if (!requestedGroupNames.length) return [...scope];
+  const allowed = new Set(scope.map((name) => name.trim()));
+  const intersected = requestedGroupNames.filter((name) => allowed.has(name.trim()));
+  return intersected.length ? intersected : [NO_GROUP_MATCH];
+}
+
+// Usado só para as rotas que devolvem a LISTA de grupos disponíveis (para
+// popular o seletor "Grupo Econômico") — aqui não dá pra reaproveitar
+// scopedGroupNames porque o parâmetro vazio tem outro significado ("me
+// devolva a lista"), então filtramos o resultado em vez do pedido.
+export function filterGroupsByScope<T extends { economic_group: string | null }>(
+  req: AuthRequest,
+  groups: T[] | null,
+): T[] | null {
+  if (!groups) return groups;
+  const scope = groupScopesForAuth(req);
+  if (!scope) return groups;
+  const allowed = new Set(scope.map((name) => name.trim()));
+  return groups.filter((g) => g.economic_group && allowed.has(g.economic_group.trim()));
 }
 
 export function rejectMdsAuth(req: AuthRequest, res: AuthResponse) {

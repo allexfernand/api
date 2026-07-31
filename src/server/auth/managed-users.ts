@@ -21,6 +21,7 @@ export type EffectiveDashboardAuth = {
   role: DashboardRole;
   allowedMenus: MenuId[] | null;
   isAdmin: boolean;
+  groupScopes: string[] | null;
 };
 
 function normalize(user: string) {
@@ -52,12 +53,30 @@ export async function resolveEffectiveAuth(user: string, password: string): Prom
   const managed = await findManagedUser(user);
   if (legacy) {
     if (managed) {
-      return { user: legacy.user, role: managed.role, allowedMenus: managed.allowedMenus, isAdmin: managed.isAdmin };
+      return {
+        user: legacy.user,
+        role: managed.role,
+        allowedMenus: managed.allowedMenus,
+        isAdmin: managed.isAdmin,
+        groupScopes: managed.groupScopes,
+      };
     }
-    return { user: legacy.user, role: legacy.role, allowedMenus: null, isAdmin: normalize(legacy.user) === "sanus" };
+    return {
+      user: legacy.user,
+      role: legacy.role,
+      allowedMenus: null,
+      isAdmin: normalize(legacy.user) === "sanus",
+      groupScopes: null,
+    };
   }
   if (managed?.passwordHash && verifyPassword(password, managed.passwordHash)) {
-    return { user: managed.user, role: managed.role, allowedMenus: managed.allowedMenus, isAdmin: managed.isAdmin };
+    return {
+      user: managed.user,
+      role: managed.role,
+      allowedMenus: managed.allowedMenus,
+      isAdmin: managed.isAdmin,
+      groupScopes: managed.groupScopes,
+    };
   }
   return null;
 }
@@ -68,6 +87,7 @@ function toPublic(entry: ManagedDashboardUser, isLegacy: boolean): ManagedDashbo
     role: entry.role,
     isAdmin: entry.isAdmin,
     allowedMenus: entry.allowedMenus,
+    groupScopes: entry.groupScopes,
     createdAt: entry.createdAt,
     updatedAt: entry.updatedAt,
     isLegacy,
@@ -93,6 +113,7 @@ export async function listManagedUsersPublic(): Promise<ManagedDashboardUserPubl
             role: legacy.role,
             isAdmin: key === "sanus",
             allowedMenus: null,
+            groupScopes: null,
             createdAt: "",
             updatedAt: "",
             isLegacy: true,
@@ -130,6 +151,7 @@ export async function createManagedUser(input: CreateManagedUserRequest): Promis
     role: input.role,
     isAdmin: input.isAdmin,
     allowedMenus: input.allowedMenus,
+    groupScopes: input.groupScopes ?? [],
     createdAt: now,
     updatedAt: now,
   };
@@ -160,6 +182,7 @@ export async function updateManagedUser(
       role: input.role ?? legacy.role,
       isAdmin: input.isAdmin ?? normalize(legacy.user) === "sanus",
       allowedMenus: input.allowedMenus ?? defaultAllowedMenusFor(input.role ?? legacy.role),
+      groupScopes: input.groupScopes === undefined ? null : input.groupScopes,
       createdAt: now,
       updatedAt: now,
     };
@@ -177,6 +200,7 @@ export async function updateManagedUser(
     role: input.role ?? current.role,
     isAdmin: input.isAdmin ?? current.isAdmin,
     allowedMenus: input.allowedMenus === undefined ? current.allowedMenus : input.allowedMenus,
+    groupScopes: input.groupScopes === undefined ? current.groupScopes : input.groupScopes,
     passwordHash: input.password ? hashPassword(input.password) : current.passwordHash,
     updatedAt: now,
   };

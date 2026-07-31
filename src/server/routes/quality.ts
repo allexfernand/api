@@ -1,7 +1,7 @@
 // api/quality.js
 // Visões estratégica e operacional de qualidade a partir das tabelas silver.
 
-import { rejectMdsAuth, requireBasicAuth, requireMenuAccess } from "../../../lib/basic-auth";
+import { rejectMdsAuth, requireBasicAuth, requireMenuAccess, scopedGroupNames } from "../../../lib/basic-auth";
 import { escape, getCell, getColumns, quoteIdent, resolveWarehouseId, runQuery } from "../../../lib/databricks";
 import { setApiCors } from "../../../lib/http";
 
@@ -426,8 +426,8 @@ function parseGroupNames(query) {
   return query.group_name ? [String(query.group_name).trim()].filter(Boolean) : [];
 }
 
-function buildSummaryScope(columns, query) {
-  const groupNames = parseGroupNames(query);
+function buildSummaryScope(columns, query, req) {
+  const groupNames = scopedGroupNames(req, parseGroupNames(query));
   const groupName = groupNames[0] || null;
   const company = query.company || null;
   const months = query.meses ? String(query.meses).split(",").filter((month) => /^\d{4}-\d{2}$/.test(month)) : [];
@@ -1564,7 +1564,7 @@ export default async function handler(req, res) {
       getColumns(warehouseId, CRITERIA_TABLE),
       getColumns(warehouseId, SESSION_TABLE),
     ]);
-    const scope = buildSummaryScope(summaryColumns, req.query);
+    const scope = buildSummaryScope(summaryColumns, req.query, req);
     const qualityDailyMonth = /^\d{4}-\d{2}$/.test(String(req.query.quality_daily_month || ""))
       ? String(req.query.quality_daily_month)
       : lastNMonthsList(1)[0];

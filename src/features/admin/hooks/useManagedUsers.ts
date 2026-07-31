@@ -21,6 +21,7 @@ type Loaded = {
   attempt: number;
   kind: "ready" | "forbidden" | "error";
   users: ManagedDashboardUserPublic[] | null;
+  economicGroups: string[];
   error: string | null;
 };
 
@@ -33,7 +34,7 @@ export function useManagedUsers() {
     apiRequest("/api/admin/users", { schema: managedUsersListResponseSchema })
       .then((data) => {
         if (cancelled) return;
-        setLoaded({ attempt, kind: "ready", users: data.users, error: null });
+        setLoaded({ attempt, kind: "ready", users: data.users, economicGroups: data.economicGroups, error: null });
       })
       .catch((cause) => {
         if (cancelled) return;
@@ -42,6 +43,7 @@ export function useManagedUsers() {
           attempt,
           kind: httpStatus === 403 ? "forbidden" : "error",
           users: null,
+          economicGroups: [],
           error: cause instanceof Error ? cause.message : "Não foi possível carregar os usuários.",
         });
       });
@@ -55,6 +57,7 @@ export function useManagedUsers() {
   const current = loaded && loaded.attempt === attempt ? loaded : null;
   const status = current ? current.kind : "loading";
   const users = current?.users ?? null;
+  const economicGroups = current?.economicGroups ?? [];
   const error = current?.error ?? null;
 
   const createUser = useCallback(
@@ -91,5 +94,5 @@ export function useManagedUsers() {
     [reload],
   );
 
-  return { users, status, error, reload, createUser, updateUser, deleteUser };
+  return { users, economicGroups, status, error, reload, createUser, updateUser, deleteUser };
 }

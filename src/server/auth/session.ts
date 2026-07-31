@@ -15,6 +15,8 @@ type SessionPayload = {
   // assinadas antes desta mudança não têm este campo — tratadas como null.
   allowedMenus?: MenuId[] | null;
   isAdmin?: boolean;
+  // Grupos econômicos liberados para este usuário. null = sem restrição.
+  groupScopes?: string[] | null;
 };
 
 function secret() {
@@ -30,7 +32,7 @@ function signature(value: string) {
 export function createSessionToken(
   user: string,
   role: DashboardRole,
-  extra?: { allowedMenus?: MenuId[] | null; isAdmin?: boolean },
+  extra?: { allowedMenus?: MenuId[] | null; isAdmin?: boolean; groupScopes?: string[] | null },
 ) {
   const payload: SessionPayload = {
     user,
@@ -38,6 +40,7 @@ export function createSessionToken(
     exp: Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS,
     allowedMenus: extra?.allowedMenus ?? null,
     isAdmin: extra?.isAdmin ?? false,
+    groupScopes: extra?.groupScopes ?? null,
   };
   const encoded = Buffer.from(JSON.stringify(payload)).toString("base64url");
   return `${encoded}.${signature(encoded)}`;
@@ -57,7 +60,10 @@ export function verifySessionToken(token: string): SessionPayload | null {
     const allowedMenus = Array.isArray(payload.allowedMenus)
       ? payload.allowedMenus.filter((id): id is MenuId => typeof id === "string" && isMenuId(id))
       : null;
-    return { ...payload, allowedMenus, isAdmin: Boolean(payload.isAdmin) };
+    const groupScopes = Array.isArray(payload.groupScopes)
+      ? payload.groupScopes.filter((name): name is string => typeof name === "string")
+      : null;
+    return { ...payload, allowedMenus, isAdmin: Boolean(payload.isAdmin), groupScopes };
   } catch {
     return null;
   }

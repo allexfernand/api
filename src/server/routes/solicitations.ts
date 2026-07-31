@@ -1,5 +1,5 @@
 // api/solicitations.ts
-import { rejectMdsAuth, requireBasicAuth } from "../../../lib/basic-auth";
+import { rejectMdsAuth, requireBasicAuth, scopedGroupNames } from "../../../lib/basic-auth";
 import { getCell, resolveWarehouseId, runQuery, toFloat, toInt } from "../../../lib/databricks";
 import { setApiCors, setStableCache } from "../../../lib/http";
 
@@ -26,7 +26,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   if (rejectMdsAuth(req, res)) return;
 
   const meses     = req.query.meses ? req.query.meses.split(',').filter((m: string) => /^\d{4}-\d{2}$/.test(m)) : [];
-  const groupNames = parseGroupNames(req.query);
+  const groupNames = scopedGroupNames(req, parseGroupNames(req.query));
 
   const periodoFilter = meses.length > 0
     ? `AND DATE_FORMAT(hora_criacao_atendimento, 'yyyy-MM') IN (${meses.map((m: string) => `'${m}'`).join(',')})`

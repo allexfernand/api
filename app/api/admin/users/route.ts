@@ -3,13 +3,17 @@ import { MENU_SECTIONS } from "../../../../src/dashboard/menu-catalog";
 import { createManagedUserRequestSchema } from "../../../../src/contracts/dashboard-users";
 import { authFromNextRequest } from "../../../../src/server/auth/request-auth";
 import { createManagedUser, listManagedUsersPublic } from "../../../../src/server/auth/managed-users";
+import { listAllEconomicGroups } from "../../../../src/server/dashboard/economic-groups";
 
 export async function GET(request: NextRequest) {
   const auth = authFromNextRequest(request);
   if (!auth?.isAdmin) return NextResponse.json({ error: "Acesso restrito a administradores." }, { status: 403 });
-  const users = await listManagedUsersPublic();
+  const [users, economicGroups] = await Promise.all([
+    listManagedUsersPublic(),
+    listAllEconomicGroups().catch(() => []),
+  ]);
   return NextResponse.json(
-    { users, menuCatalog: MENU_SECTIONS },
+    { users, menuCatalog: MENU_SECTIONS, economicGroups },
     { headers: { "Cache-Control": "no-store, max-age=0" } },
   );
 }
