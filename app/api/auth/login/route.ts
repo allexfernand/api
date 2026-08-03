@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { loginRequestSchema } from "../../../../src/contracts/auth";
+import { continueAfterPasswordAuth } from "../../../../src/server/auth/auth-response";
 import { resolveEffectiveAuth } from "../../../../src/server/auth/managed-users";
-import { createSessionToken, sessionCookie } from "../../../../src/server/auth/session";
 
 export async function POST(request: Request) {
   const parsed = loginRequestSchema.safeParse(await request.json().catch(() => null));
@@ -10,28 +10,10 @@ export async function POST(request: Request) {
   const auth = await resolveEffectiveAuth(parsed.data.user, parsed.data.password);
   if (!auth) return NextResponse.json({ error: "Usuário ou senha inválidos." }, { status: 401 });
 
-  // Sem cookie de sessão: o frontend mostra o formulário de troca de senha.
-  if (auth.mustChangePassword) {
-    return NextResponse.json(
-      { ok: true, mustChangePassword: true, user: auth.user },
-      { headers: { "Cache-Control": "no-store" } },
-    );
+  try {
+    return await continueAfterPasswordAuth(auth);
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : "Não foi possível concluir o login.";
+    return NextResponse.json({ error: message }, { status: 400 });
   }
-
-  return NextResponse.json(
-    { ok: true, role: auth.role, user: auth.user, allowedMenus: auth.allowedMenus, isAdmin: auth.isAdmin },
-    {
-      headers: {
-        "Set-Cookie": sessionCookie(
-          createSessionToken(auth.user, auth.role, {
-            allowedMenus: auth.allowedMenus,
-            isAdmin: auth.isAdmin,
-            groupScopes: auth.groupScopes,
-            partnerScopes: auth.partnerScopes,
-          }),
-        ),
-        "Cache-Control": "no-store",
-      },
-    },
-  );
 }

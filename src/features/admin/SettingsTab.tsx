@@ -440,6 +440,7 @@ function UserEditorPanel({
     groupScopes?: string[] | null;
     partnerScopes?: string[] | null;
     mustChangePassword?: boolean;
+    totpEnabled?: boolean;
     password?: string;
   }) => Promise<unknown>;
   onDelete?: () => Promise<unknown>;
@@ -450,6 +451,7 @@ function UserEditorPanel({
   const [groupScopes, setGroupScopes] = useState<string[] | null>(user.groupScopes);
   const [partnerScopes, setPartnerScopes] = useState<string[] | null>(user.partnerScopes);
   const [mustChangePassword, setMustChangePassword] = useState(Boolean(user.mustChangePassword));
+  const [totpEnabled, setTotpEnabled] = useState(Boolean(user.totpEnabled));
   const [password, setPassword] = useState("");
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -481,6 +483,7 @@ function UserEditorPanel({
         groupScopes,
         partnerScopes,
         mustChangePassword: user.isLegacy ? undefined : mustChangePassword,
+        totpEnabled: user.isLegacy ? undefined : totpEnabled,
         password: password || undefined,
       });
       setPassword("");
@@ -564,14 +567,31 @@ function UserEditorPanel({
       </div>
 
       {!user.isLegacy ? (
-        <label className={styles.switchRow} style={{ marginTop: 4 }}>
-          <input
-            type="checkbox"
-            checked={mustChangePassword}
-            onChange={(event) => setMustChangePassword(event.target.checked)}
-          />
-          Trocar senha no próximo login
-        </label>
+        <div style={{ display: "grid", gap: 10 }}>
+          <label className={styles.switchRow}>
+            <input
+              type="checkbox"
+              checked={mustChangePassword}
+              onChange={(event) => setMustChangePassword(event.target.checked)}
+            />
+            Trocar senha no próximo login
+          </label>
+          <label className={styles.switchRow}>
+            <input
+              type="checkbox"
+              checked={totpEnabled}
+              onChange={(event) => setTotpEnabled(event.target.checked)}
+            />
+            Autenticador 2 fatores (app de segurança)
+          </label>
+          {totpEnabled ? (
+            <div className={styles.groupPickerEmpty} style={{ textAlign: "left" }}>
+              {user.totpVerified
+                ? "2FA já configurado. Se desmarcar e marcar de novo, o usuário precisará escanear um novo QR no próximo login."
+                : "No próximo login o usuário verá um QR Code para cadastrar no Google Authenticator, Authy ou similar."}
+            </div>
+          ) : null}
+        </div>
       ) : null}
 
       <MenuAccessEditor role={role} allowedMenus={allowedMenus} onChange={setAllowedMenus} />
@@ -619,6 +639,7 @@ function CreateUserPanel({
     groupScopes: string[] | null;
     partnerScopes: string[] | null;
     mustChangePassword: boolean;
+    totpEnabled: boolean;
   }) => Promise<unknown>;
 }) {
   const [user, setUser] = useState("");
@@ -629,6 +650,7 @@ function CreateUserPanel({
   const [groupScopes, setGroupScopes] = useState<string[] | null>([]);
   const [partnerScopes, setPartnerScopes] = useState<string[] | null>([]);
   const [mustChangePassword, setMustChangePassword] = useState(true);
+  const [totpEnabled, setTotpEnabled] = useState(false);
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
 
@@ -656,6 +678,7 @@ function CreateUserPanel({
         groupScopes,
         partnerScopes,
         mustChangePassword,
+        totpEnabled,
       });
     } catch (cause) {
       setFeedback(cause instanceof Error ? cause.message : "Não foi possível criar o usuário.");
@@ -735,6 +758,21 @@ function CreateUserPanel({
         />
         Trocar senha no próximo login
       </label>
+
+      <label className={styles.switchRow}>
+        <input
+          type="checkbox"
+          checked={totpEnabled}
+          onChange={(event) => setTotpEnabled(event.target.checked)}
+        />
+        Autenticador 2 fatores (app de segurança)
+      </label>
+      {totpEnabled ? (
+        <div className={styles.groupPickerEmpty} style={{ textAlign: "left" }}>
+          No primeiro login o usuário escaneia um QR Code no Google Authenticator, Authy ou similar e
+          confirma o código de 6 dígitos.
+        </div>
+      ) : null}
 
       <MenuAccessEditor
         role={role}

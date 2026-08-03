@@ -27,15 +27,22 @@ export const managedDashboardUserSchema = z.object({
   // frontend pede troca de senha forte antes de liberar o dashboard.
   // `.optional()` + default false: registros antigos no Edge Config.
   mustChangePassword: z.boolean().optional().transform((value) => value ?? false),
+  // Autenticador 2 fatores (TOTP). Secret fica criptografado; nunca vai
+  // na resposta pública. totpVerified=false = ainda precisa escanear o QR.
+  totpEnabled: z.boolean().optional().transform((value) => value ?? false),
+  totpSecret: z.string().nullable().optional().transform((value) => value ?? null),
+  totpVerified: z.boolean().optional().transform((value) => value ?? false),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
 export type ManagedDashboardUser = z.infer<typeof managedDashboardUserSchema>;
 
-export const managedDashboardUserPublicSchema = managedDashboardUserSchema.omit({ passwordHash: true }).extend({
-  isLegacy: z.boolean(),
-  hasCustomPassword: z.boolean(),
-});
+export const managedDashboardUserPublicSchema = managedDashboardUserSchema
+  .omit({ passwordHash: true, totpSecret: true })
+  .extend({
+    isLegacy: z.boolean(),
+    hasCustomPassword: z.boolean(),
+  });
 export type ManagedDashboardUserPublic = z.infer<typeof managedDashboardUserPublicSchema>;
 
 export const createManagedUserRequestSchema = z.object({
@@ -47,6 +54,7 @@ export const createManagedUserRequestSchema = z.object({
   groupScopes: z.array(z.string()).nullable().default([]),
   partnerScopes: z.array(z.string()).nullable().default([]),
   mustChangePassword: z.boolean().default(true),
+  totpEnabled: z.boolean().default(false),
 });
 export type CreateManagedUserRequest = z.infer<typeof createManagedUserRequestSchema>;
 
@@ -57,6 +65,7 @@ export const updateManagedUserRequestSchema = z.object({
   groupScopes: z.array(z.string()).nullable().optional(),
   partnerScopes: z.array(z.string()).nullable().optional(),
   mustChangePassword: z.boolean().optional(),
+  totpEnabled: z.boolean().optional(),
   password: strongPasswordSchema.optional(),
 });
 export type UpdateManagedUserRequest = z.infer<typeof updateManagedUserRequestSchema>;

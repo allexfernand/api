@@ -34,6 +34,60 @@ function LoginOverlay({ authenticated }: { authenticated: boolean }) {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [totpUser, setTotpUser] = useState<string | null>(null);
+  const [totpSetup, setTotpSetup] = useState(false);
+  const [totpQrDataUrl, setTotpQrDataUrl] = useState<string | null>(null);
+  const [totpManualKey, setTotpManualKey] = useState<string | null>(null);
+  const [totpCode, setTotpCode] = useState("");
+
+  function resetToLogin() {
+    setChangePasswordFor(null);
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
+    setTotpUser(null);
+    setTotpSetup(false);
+    setTotpQrDataUrl(null);
+    setTotpManualKey(null);
+    setTotpCode("");
+    setError("");
+  }
+
+  function applyAuthChallenge(auth: {
+    mustChangePassword?: boolean;
+    needsTotpSetup?: boolean;
+    needsTotp?: boolean;
+    user?: string;
+    role?: string;
+    totpQrDataUrl?: string;
+    totpManualKey?: string;
+  }, fallbackUser: string) {
+    if (auth.mustChangePassword) {
+      setChangePasswordFor(auth.user || fallbackUser);
+      setNewPassword("");
+      setConfirmPassword("");
+      return;
+    }
+    if (auth.needsTotpSetup) {
+      setChangePasswordFor(null);
+      setTotpUser(auth.user || fallbackUser);
+      setTotpSetup(true);
+      setTotpQrDataUrl(auth.totpQrDataUrl || null);
+      setTotpManualKey(auth.totpManualKey || null);
+      setTotpCode("");
+      return;
+    }
+    if (auth.needsTotp) {
+      setChangePasswordFor(null);
+      setTotpUser(auth.user || fallbackUser);
+      setTotpSetup(false);
+      setTotpQrDataUrl(null);
+      setTotpManualKey(null);
+      setTotpCode("");
+      return;
+    }
+    window.location.href = auth.role === "mds" ? "/mds" : "/";
+  }
 
   async function submitLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -48,14 +102,8 @@ function LoginOverlay({ authenticated }: { authenticated: boolean }) {
         body: JSON.stringify({ user, password }),
         schema: authResponseSchema,
       });
-      if (auth.mustChangePassword) {
-        setChangePasswordFor(auth.user || user);
-        setCurrentPassword(password);
-        setNewPassword("");
-        setConfirmPassword("");
-        return;
-      }
-      window.location.href = auth.role === "mds" ? "/mds" : "/";
+      setCurrentPassword(password);
+      applyAuthChallenge(auth, user);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Não foi possível validar o acesso.");
     } finally {
@@ -87,12 +135,88 @@ function LoginOverlay({ authenticated }: { authenticated: boolean }) {
         }),
         schema: authResponseSchema,
       });
-      window.location.href = auth.role === "mds" ? "/mds" : "/";
+      setCurrentPassword(newPassword);
+      applyAuthChallenge(auth, changePasswordFor);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Não foi possível trocar a senha.");
     } finally {
       setSubmitting(false);
     }
+  }
+
+  async function submitTotp(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!totpUser) return;
+    setSubmitting(true);
+    setError("");
+    try {
+      const auth = await apiRequest("/api/auth/totp/verify", {
+        method: "POST",
+        body: JSON.stringify({ code: totpCode.replace(/\s+/g, "") }),
+        schema: authResponseSchema,
+      });
+      window.location.href = auth.role === "mds" ? "/mds" : "/";
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Não foi possível validar o autenticador.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  if (totpUser) {
+    return (
+      <div className="auth-overlay" id="auth-overlay" style={{ display: authenticated ? "none" : "grid" }}>
+        <form className="auth-card" onSubmit={submitTotp}>
+          <Image
+            className="auth-logo"
+            src="/assets/logo_sanus.svg"
+            alt="Sanus"
+            width={140}
+            height={40}
+            priority
+          />
+          <div className="auth-title">{totpSetup ? "Configurar autenticador" : "Código do autenticador"}</div>
+          <div className="auth-subtitle">
+            {totpSetup
+              ? "Escaneie o QR Code no Google Authenticator, Authy ou app equivalente e digite o código de 6 dígitos."
+              : `Digite o código de 6 dígitos gerado no app de segurança para ${totpUser}.`}
+          </div>
+          {totpSetup && totpQrDataUrl ? (
+            <div className="auth-totp-qr">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={totpQrDataUrl} alt="QR Code do autenticador" width={220} height={220} />
+            </div>
+          ) : null}
+          {totpSetup && totpManualKey ? (
+            <div className="auth-totp-manual">
+              Chave manual: <code>{totpManualKey}</code>
+            </div>
+          ) : null}
+          <div className="auth-field">
+            <label htmlFor="auth-totp-code">Código de 6 dígitos</label>
+            <input
+              id="auth-totp-code"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              pattern="\d{6}"
+              maxLength={6}
+              value={totpCode}
+              onChange={(event) => setTotpCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
+              required
+            />
+          </div>
+          <button className="auth-submit" type="submit" disabled={submitting || totpCode.length !== 6}>
+            {submitting ? "Validando..." : totpSetup ? "Confirmar e entrar" : "Entrar"}
+          </button>
+          <button type="button" className="auth-back" onClick={resetToLogin}>
+            Voltar ao login
+          </button>
+          <div className="auth-error" style={{ display: error ? "block" : "none" }}>
+            {error}
+          </div>
+        </form>
+      </div>
+    );
   }
 
   if (changePasswordFor) {
@@ -145,19 +269,9 @@ function LoginOverlay({ authenticated }: { authenticated: boolean }) {
             })}
           </ul>
           <button className="auth-submit" type="submit" disabled={submitting}>
-            {submitting ? "Salvando..." : "Salvar nova senha e entrar"}
+            {submitting ? "Salvando..." : "Salvar nova senha e continuar"}
           </button>
-          <button
-            type="button"
-            className="auth-back"
-            onClick={() => {
-              setChangePasswordFor(null);
-              setCurrentPassword("");
-              setNewPassword("");
-              setConfirmPassword("");
-              setError("");
-            }}
-          >
+          <button type="button" className="auth-back" onClick={resetToLogin}>
             Voltar ao login
           </button>
           <div className="auth-error" style={{ display: error ? "block" : "none" }}>
