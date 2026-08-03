@@ -18,6 +18,7 @@ import {
 const userResponseSchema = z.object({ user: managedDashboardUserPublicSchema });
 
 export type PartnerOption = { broker_id: string; broker_name: string };
+export type PartnerGroupMap = Record<string, string[]>;
 
 type Loaded = {
   attempt: number;
@@ -25,6 +26,7 @@ type Loaded = {
   users: ManagedDashboardUserPublic[] | null;
   economicGroups: string[];
   partners: PartnerOption[];
+  partnerGroupMap: PartnerGroupMap;
   error: string | null;
 };
 
@@ -43,6 +45,7 @@ export function useManagedUsers() {
           users: data.users,
           economicGroups: data.economicGroups,
           partners: data.partners,
+          partnerGroupMap: data.partnerGroupMap,
           error: null,
         });
       })
@@ -55,6 +58,7 @@ export function useManagedUsers() {
           users: null,
           economicGroups: [],
           partners: [],
+          partnerGroupMap: {},
           error: cause instanceof Error ? cause.message : "Não foi possível carregar os usuários.",
         });
       });
@@ -70,6 +74,7 @@ export function useManagedUsers() {
   const users = current?.users ?? null;
   const economicGroups = current?.economicGroups ?? [];
   const partners = current?.partners ?? [];
+  const partnerGroupMap = current?.partnerGroupMap ?? {};
   const error = current?.error ?? null;
 
   const createUser = useCallback(
@@ -106,5 +111,5 @@ export function useManagedUsers() {
     [reload],
   );
 
-  return { users, economicGroups, partners, status, error, reload, createUser, updateUser, deleteUser };
+  return { users, economicGroups, partners, partnerGroupMap, status, error, reload, createUser, updateUser, deleteUser };
 }

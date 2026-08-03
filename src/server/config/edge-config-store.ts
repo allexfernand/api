@@ -7,12 +7,31 @@ import { managedDashboardUserSchema, type ManagedDashboardUser } from "../../con
 
 const STORE_KEY = "dashboard_users";
 
+function trimEnv(name: string) {
+  const value = process.env[name];
+  return value ? value.trim() : "";
+}
+
+// Preferimos nomes sem prefixo VERCEL_ (menos confusão com vars de sistema).
+// Mantemos fallback nos nomes antigos pra não quebrar quem já configurou.
+function writeToken() {
+  return trimEnv("EDGE_CONFIG_WRITE_TOKEN") || trimEnv("VERCEL_API_TOKEN");
+}
+
+function writeTeamId() {
+  return trimEnv("EDGE_CONFIG_TEAM_ID") || trimEnv("VERCEL_TEAM_ID");
+}
+
+function writeEdgeConfigId() {
+  return trimEnv("EDGE_CONFIG_ID");
+}
+
 export function isEdgeConfigReadable() {
   return Boolean(process.env.EDGE_CONFIG);
 }
 
 export function isEdgeConfigWritable() {
-  return Boolean(process.env.EDGE_CONFIG_ID && process.env.VERCEL_API_TOKEN);
+  return Boolean(writeEdgeConfigId() && writeToken());
 }
 
 export async function readManagedUsers(): Promise<ManagedDashboardUser[]> {
@@ -27,14 +46,24 @@ export async function readManagedUsers(): Promise<ManagedDashboardUser[]> {
 }
 
 export async function writeManagedUsers(users: ManagedDashboardUser[]): Promise<void> {
-  const edgeConfigId = process.env.EDGE_CONFIG_ID;
-  const apiToken = process.env.VERCEL_API_TOKEN;
+  const edgeConfigId = writeEdgeConfigId();
+  const apiToken = writeToken();
   if (!edgeConfigId || !apiToken) {
     throw new Error(
-      "Edge Config não está configurado para escrita. Defina EDGE_CONFIG_ID e VERCEL_API_TOKEN nas env vars da Vercel.",
+      "Edge Config não está configurado para escrita. Defina EDGE_CONFIG_ID e EDGE_CONFIG_WRITE_TOKEN (e EDGE_CONFIG_TEAM_ID se o projeto for de time).",
     );
   }
-  const teamQuery = process.env.VERCEL_TEAM_ID ? `?teamId=${encodeURIComponent(process.env.VERCEL_TEAM_ID)}` : "";
+
+  // Sintoma clássico: colar o token de LEITURA da connection string EDGE_CONFIG
+  // (ou a URL inteira) no lugar do token de conta criado em Account → Tokens.
+  if (apiToken.includes("edge-config.vercel.com") || apiToken.startsWith("http")) {
+    throw new Error(
+      "EDGE_CONFIG_WRITE_TOKEN parece ser a connection string de leitura. Use um token criado em vercel.com/account/tokens (não o token da URL EDGE_CONFIG).",
+    );
+  }
+
+  const teamId = writeTeamId();
+  const teamQuery = teamId ? `?teamId=${encodeURIComponent(teamId)}` : "";
   const response = await fetch(`https://api.vercel.com/v1/edge-config/${edgeConfigId}/items${teamQuery}`, {
     method: "PATCH",
     headers: {
@@ -47,6 +76,17 @@ export async function writeManagedUsers(users: ManagedDashboardUser[]): Promise<
   });
   if (!response.ok) {
     const detail = await response.text().catch(() => "");
+    if (response.status === 403 && detail.includes("invalidToken")) {
+      throw new Error(
+        [
+          "Token inválido ao gravar no Edge Config.",
+          "Use um token de CONTA criado em https://vercel.com/account/tokens (escopo do time do projeto).",
+          "Não use o token que aparece na connection string EDGE_CONFIG (esse só lê).",
+          "Se o projeto for de time, defina também EDGE_CONFIG_TEAM_ID (Team Settings → General → Team ID).",
+          detail,
+        ].join(" "),
+      );
+    }
     throw new Error(`Falha ao gravar no Edge Config (HTTP ${response.status}). ${detail}`.trim());
   }
 }

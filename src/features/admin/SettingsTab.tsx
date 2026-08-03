@@ -8,7 +8,7 @@
 
 import { FormEvent, useMemo, useState } from "react";
 import styles from "./SettingsTab.module.css";
-import { useManagedUsers, type PartnerOption } from "./hooks/useManagedUsers";
+import { useManagedUsers, type PartnerGroupMap, type PartnerOption } from "./hooks/useManagedUsers";
 import { MENU_SECTIONS, FULL_DEFAULT_ALLOWED_MENUS, MDS_DEFAULT_ALLOWED_MENUS, type MenuId } from "../../dashboard/menu-catalog";
 import type { DashboardRole } from "../../contracts/common";
 import type { ManagedDashboardUserPublic } from "../../contracts/dashboard-users";
@@ -17,8 +17,20 @@ function defaultMenusFor(role: DashboardRole): MenuId[] {
   return role === "mds" ? [...MDS_DEFAULT_ALLOWED_MENUS] : [...FULL_DEFAULT_ALLOWED_MENUS];
 }
 
+// União dos grupos econômicos ligados aos parceiros selecionados. As
+// "empresas" (filiais) já entram no recorte do servidor via matriz_id —
+// liberar o grupo econômico cobre a carteira inteira do parceiro.
+function groupsForPartners(partnerIds: string[], partnerGroupMap: PartnerGroupMap): string[] {
+  const groups = new Set<string>();
+  for (const id of partnerIds) {
+    for (const group of partnerGroupMap[id] ?? []) groups.add(group);
+  }
+  return [...groups].sort((a, b) => a.localeCompare(b, "pt-BR"));
+}
+
 export function SettingsTab() {
-  const { users, economicGroups, partners, status, error, createUser, updateUser, deleteUser } = useManagedUsers();
+  const { users, economicGroups, partners, partnerGroupMap, status, error, createUser, updateUser, deleteUser } =
+    useManagedUsers();
   const [selected, setSelected] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
 
@@ -36,9 +48,8 @@ export function SettingsTab() {
       <header className={styles.header}>
         <h2 className={styles.title}>Configurações de acesso</h2>
         <p className={styles.subtitle}>
-          Escolha um usuário, marque quais menus da barra lateral, quais grupos econômicos e quais
-          parceiros ele pode acessar. Sem uma seleção explícita, o usuário mantém o comportamento
-          padrão de hoje.
+          Escolha um usuário, marque parceiros e menus liberados. Ao selecionar um parceiro, os grupos
+          econômicos dele são atribuídos automaticamente ao perfil.
         </p>
       </header>
 
@@ -65,6 +76,7 @@ export function SettingsTab() {
             <CreateUserPanel
               economicGroups={economicGroups}
               partners={partners}
+              partnerGroupMap={partnerGroupMap}
               onCancel={() => setCreating(false)}
               onCreate={async (input) => {
                 const created = await createUser(input);
@@ -78,6 +90,7 @@ export function SettingsTab() {
               user={selectedUser}
               economicGroups={economicGroups}
               partners={partners}
+              partnerGroupMap={partnerGroupMap}
               onSave={(input) => updateUser(selectedUser.user, input)}
               onDelete={selectedUser.isLegacy ? undefined : () => deleteUser(selectedUser.user)}
             />
@@ -193,10 +206,12 @@ function MenuAccessEditor({
 function GroupAccessEditor({
   groupScopes,
   economicGroups,
+  partnerSyncedCount,
   onChange,
 }: {
   groupScopes: string[] | null;
   economicGroups: string[];
+  partnerSyncedCount?: number | null;
   onChange: (next: string[] | null) => void;
 }) {
   const isCustom = groupScopes !== null;
@@ -215,7 +230,9 @@ function GroupAccessEditor({
           <div className={styles.menuAccessTitle}>Grupos econômicos liberados</div>
           <div className={styles.menuAccessHint}>
             {isCustom
-              ? `Personalizado — enxerga dados só de ${groupScopes!.length} grupo(s) marcado(s) abaixo.`
+              ? partnerSyncedCount != null && partnerSyncedCount > 0
+                ? `Preenchido pelos parceiros selecionados — ${groupScopes!.length} grupo(s). Você ainda pode ajustar manualmente.`
+                : `Personalizado — enxerga dados só de ${groupScopes!.length} grupo(s) marcado(s) abaixo.`
               : "Sem personalização — este usuário enxerga dados de todos os grupos econômicos."}
           </div>
         </div>
@@ -288,7 +305,7 @@ function PartnerAccessEditor({
           <div className={styles.menuAccessTitle}>Parceiros liberados</div>
           <div className={styles.menuAccessHint}>
             {isCustom
-              ? `Personalizado — enxerga dados só de ${partnerScopes!.length} parceiro(s) marcado(s) abaixo.`
+              ? `Personalizado — enxerga dados só de ${partnerScopes!.length} parceiro(s). Os grupos econômicos deles são liberados automaticamente.`
               : "Sem personalização — este usuário enxerga dados de todos os parceiros."}
           </div>
         </div>
@@ -343,12 +360,14 @@ function UserEditorPanel({
   user,
   economicGroups,
   partners,
+  partnerGroupMap,
   onSave,
   onDelete,
 }: {
   user: ManagedDashboardUserPublic;
   economicGroups: string[];
   partners: PartnerOption[];
+  partnerGroupMap: PartnerGroupMap;
   onSave: (input: {
     role?: DashboardRole;
     isAdmin?: boolean;
@@ -368,6 +387,13 @@ function UserEditorPanel({
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [feedback, setFeedback] = useState<{ ok: boolean; message: string } | null>(null);
+
+  function applyPartnerScopes(next: string[] | null) {
+    setPartnerScopes(next);
+    // Ao restringir/alterar parceiros, sincroniza os grupos econômicos da
+    // carteira deles (inclui as empresas-filiais via matriz no servidor).
+    if (next !== null) setGroupScopes(groupsForPartners(next, partnerGroupMap));
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -456,9 +482,14 @@ function UserEditorPanel({
 
       <MenuAccessEditor role={role} allowedMenus={allowedMenus} onChange={setAllowedMenus} />
 
-      <GroupAccessEditor groupScopes={groupScopes} economicGroups={economicGroups} onChange={setGroupScopes} />
+      <PartnerAccessEditor partnerScopes={partnerScopes} partners={partners} onChange={applyPartnerScopes} />
 
-      <PartnerAccessEditor partnerScopes={partnerScopes} partners={partners} onChange={setPartnerScopes} />
+      <GroupAccessEditor
+        groupScopes={groupScopes}
+        economicGroups={economicGroups}
+        partnerSyncedCount={partnerScopes?.length ?? null}
+        onChange={setGroupScopes}
+      />
 
       <div className={styles.actions}>
         <button type="submit" className={styles.saveButton} disabled={saving}>
@@ -477,11 +508,13 @@ function UserEditorPanel({
 function CreateUserPanel({
   economicGroups,
   partners,
+  partnerGroupMap,
   onCancel,
   onCreate,
 }: {
   economicGroups: string[];
   partners: PartnerOption[];
+  partnerGroupMap: PartnerGroupMap;
   onCancel: () => void;
   onCreate: (input: {
     user: string;
@@ -503,6 +536,11 @@ function CreateUserPanel({
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
 
+  function applyPartnerScopes(next: string[] | null) {
+    setPartnerScopes(next);
+    if (next !== null) setGroupScopes(groupsForPartners(next, partnerGroupMap));
+  }
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSaving(true);
@@ -520,7 +558,10 @@ function CreateUserPanel({
       <div className={styles.panelHeader}>
         <div>
           <div className={styles.panelUserName}>Novo usuário</div>
-          <div className={styles.panelUserHint}>Cria um login próprio (usuário + senha) para o dashboard.</div>
+          <div className={styles.panelUserHint}>
+            Cria um login próprio. Ao marcar um parceiro, os grupos econômicos dele entram no perfil
+            automaticamente.
+          </div>
         </div>
       </div>
 
@@ -581,9 +622,14 @@ function CreateUserPanel({
         onChange={(next) => setAllowedMenus(next ?? defaultMenusFor(role))}
       />
 
-      <GroupAccessEditor groupScopes={groupScopes} economicGroups={economicGroups} onChange={setGroupScopes} />
+      <PartnerAccessEditor partnerScopes={partnerScopes} partners={partners} onChange={applyPartnerScopes} />
 
-      <PartnerAccessEditor partnerScopes={partnerScopes} partners={partners} onChange={setPartnerScopes} />
+      <GroupAccessEditor
+        groupScopes={groupScopes}
+        economicGroups={economicGroups}
+        partnerSyncedCount={partnerScopes?.length ?? null}
+        onChange={setGroupScopes}
+      />
 
       <div className={styles.actions}>
         <button type="submit" className={styles.saveButton} disabled={saving}>

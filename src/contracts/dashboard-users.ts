@@ -68,5 +68,8 @@ export const managedUsersListResponseSchema = z.object({
   economicGroups: z.array(z.string()),
   // Idem, para parceiros (partner_broker_id + nome de exibição).
   partners: z.array(z.object({ broker_id: z.string(), broker_name: z.string() })),
+  // partner_broker_id → grupos econômicos (matrizes) ligados a ele. Usado
+  // pra autoatribuir groupScopes ao marcar um parceiro na criação/edição.
+  partnerGroupMap: z.record(z.string(), z.array(z.string())),
 });
 export type ManagedUsersListResponse = z.infer<typeof managedUsersListResponseSchema>;
