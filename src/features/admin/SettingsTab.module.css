@@ -23,6 +23,17 @@
   max-width: 640px;
 }
 
+.fullAccessNotice {
+  margin-top: 4px;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in srgb, var(--accent, #0d9488) 28%, var(--border));
+  background: color-mix(in srgb, var(--accent, #0d9488) 8%, var(--surface));
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.45;
+}
+
 .layout {
   display: grid;
   grid-template-columns: 260px 1fr;

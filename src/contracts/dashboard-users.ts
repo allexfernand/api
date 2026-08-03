@@ -50,9 +50,12 @@ export const createManagedUserRequestSchema = z.object({
   password: strongPasswordSchema,
   role: dashboardRoleSchema.default("mds"),
   isAdmin: z.boolean().default(false),
-  allowedMenus: z.array(menuIdSchema).default([]),
-  groupScopes: z.array(z.string()).nullable().default([]),
-  partnerScopes: z.array(z.string()).nullable().default([]),
+  // null = menus padrão do papel (perfil Completo = todas as funcionalidades).
+  allowedMenus: z.array(menuIdSchema).nullable().default(null),
+  // null = sem recorte (vê todos os clientes). [] bloqueia tudo até marcar.
+  // Perfil Completo deve ir com null nos dois.
+  groupScopes: z.array(z.string()).nullable().default(null),
+  partnerScopes: z.array(z.string()).nullable().default(null),
   mustChangePassword: z.boolean().default(true),
   totpEnabled: z.boolean().default(false),
 });

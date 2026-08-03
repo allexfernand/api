@@ -65,8 +65,8 @@ export function SettingsTab() {
       <header className={styles.header}>
         <h2 className={styles.title}>Configurações de acesso</h2>
         <p className={styles.subtitle}>
-          Escolha um usuário, marque parceiros e menus liberados. Ao selecionar um parceiro, os grupos
-          econômicos dele são atribuídos automaticamente ao perfil.
+          Perfil <strong>Completo</strong> libera todas as funcionalidades e todos os clientes, sem
+          precisar marcar parceiro ou grupo. Perfil <strong>MDS</strong> usa recorte por parceiro.
         </p>
       </header>
 
@@ -181,7 +181,9 @@ function MenuAccessEditor({
           <div className={styles.menuAccessHint}>
             {isCustom
               ? "Personalizado — só os menus marcados abaixo aparecem para este usuário."
-              : "Sem personalização — este usuário mantém o comportamento padrão de hoje."}
+              : role === "full"
+                ? "Padrão Completo — todas as funcionalidades do dashboard (exceto Petit Comitê MDS)."
+                : "Sem personalização — este usuário mantém o comportamento padrão de hoje."}
           </div>
         </div>
         <button
@@ -447,9 +449,11 @@ function UserEditorPanel({
 }) {
   const [role, setRole] = useState<DashboardRole>(user.role);
   const [isAdmin, setIsAdmin] = useState(user.isAdmin);
-  const [allowedMenus, setAllowedMenus] = useState<MenuId[] | null>(user.allowedMenus);
-  const [groupScopes, setGroupScopes] = useState<string[] | null>(user.groupScopes);
-  const [partnerScopes, setPartnerScopes] = useState<string[] | null>(user.partnerScopes);
+  // Completo = sem recorte/menus custom: null = acesso full. Se o registro
+  // antigo ainda tiver listas, ignoramos na UI pra não forçar "selecionar todos".
+  const [allowedMenus, setAllowedMenus] = useState<MenuId[] | null>(user.role === "full" ? null : user.allowedMenus);
+  const [groupScopes, setGroupScopes] = useState<string[] | null>(user.role === "full" ? null : user.groupScopes);
+  const [partnerScopes, setPartnerScopes] = useState<string[] | null>(user.role === "full" ? null : user.partnerScopes);
   const [mustChangePassword, setMustChangePassword] = useState(Boolean(user.mustChangePassword));
   const [totpEnabled, setTotpEnabled] = useState(Boolean(user.totpEnabled));
   const [password, setPassword] = useState("");
@@ -464,6 +468,21 @@ function UserEditorPanel({
     if (next !== null) setGroupScopes(groupsForPartners(next, partnerGroupMap));
   }
 
+  // Perfil Completo = acesso full: todos os menus e todos os clientes,
+  // sem lista de parceiro/grupo. MDS volta ao modo com recorte.
+  function applyRole(next: DashboardRole) {
+    setRole(next);
+    if (next === "full") {
+      setAllowedMenus(null);
+      setPartnerScopes(null);
+      setGroupScopes(null);
+      return;
+    }
+    setAllowedMenus(defaultMenusFor("mds"));
+    setPartnerScopes([]);
+    setGroupScopes([]);
+  }
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (password) {
@@ -476,12 +495,13 @@ function UserEditorPanel({
     setSaving(true);
     setFeedback(null);
     try {
+      const isFull = role === "full";
       await onSave({
         role,
         isAdmin,
-        allowedMenus,
-        groupScopes,
-        partnerScopes,
+        allowedMenus: isFull ? null : allowedMenus,
+        groupScopes: isFull ? null : groupScopes,
+        partnerScopes: isFull ? null : partnerScopes,
         mustChangePassword: user.isLegacy ? undefined : mustChangePassword,
         totpEnabled: user.isLegacy ? undefined : totpEnabled,
         password: password || undefined,
@@ -534,7 +554,7 @@ function UserEditorPanel({
             id="user-role"
             className={styles.select}
             value={role}
-            onChange={(event) => setRole(event.target.value as DashboardRole)}
+            onChange={(event) => applyRole(event.target.value as DashboardRole)}
           >
             <option value="full">Completo</option>
             <option value="mds">MDS</option>
@@ -594,16 +614,27 @@ function UserEditorPanel({
         </div>
       ) : null}
 
+      {role === "full" ? (
+        <div className={styles.fullAccessNotice}>
+          Perfil Completo: este usuário enxerga todas as funcionalidades e todos os clientes
+          (parceiros e grupos). Não é necessário selecionar recorte.
+        </div>
+      ) : null}
+
       <MenuAccessEditor role={role} allowedMenus={allowedMenus} onChange={setAllowedMenus} />
 
-      <PartnerAccessEditor partnerScopes={partnerScopes} partners={partners} onChange={applyPartnerScopes} />
+      {role !== "full" ? (
+        <>
+          <PartnerAccessEditor partnerScopes={partnerScopes} partners={partners} onChange={applyPartnerScopes} />
 
-      <GroupAccessEditor
-        groupScopes={groupScopes}
-        economicGroups={economicGroups}
-        partnerSyncedCount={partnerScopes?.length ?? null}
-        onChange={setGroupScopes}
-      />
+          <GroupAccessEditor
+            groupScopes={groupScopes}
+            economicGroups={economicGroups}
+            partnerSyncedCount={partnerScopes?.length ?? null}
+            onChange={setGroupScopes}
+          />
+        </>
+      ) : null}
 
       <div className={styles.actions}>
         <button type="submit" className={styles.saveButton} disabled={saving}>
@@ -635,7 +666,7 @@ function CreateUserPanel({
     password: string;
     role: DashboardRole;
     isAdmin: boolean;
-    allowedMenus: MenuId[];
+    allowedMenus: MenuId[] | null;
     groupScopes: string[] | null;
     partnerScopes: string[] | null;
     mustChangePassword: boolean;
@@ -644,11 +675,11 @@ function CreateUserPanel({
 }) {
   const [user, setUser] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState<DashboardRole>("mds");
+  const [role, setRole] = useState<DashboardRole>("full");
   const [isAdmin, setIsAdmin] = useState(false);
-  const [allowedMenus, setAllowedMenus] = useState<MenuId[]>([]);
-  const [groupScopes, setGroupScopes] = useState<string[] | null>([]);
-  const [partnerScopes, setPartnerScopes] = useState<string[] | null>([]);
+  const [allowedMenus, setAllowedMenus] = useState<MenuId[] | null>(null);
+  const [groupScopes, setGroupScopes] = useState<string[] | null>(null);
+  const [partnerScopes, setPartnerScopes] = useState<string[] | null>(null);
   const [mustChangePassword, setMustChangePassword] = useState(true);
   const [totpEnabled, setTotpEnabled] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -657,6 +688,19 @@ function CreateUserPanel({
   function applyPartnerScopes(next: string[] | null) {
     setPartnerScopes(next);
     if (next !== null) setGroupScopes(groupsForPartners(next, partnerGroupMap));
+  }
+
+  function applyRole(next: DashboardRole) {
+    setRole(next);
+    if (next === "full") {
+      setAllowedMenus(null);
+      setPartnerScopes(null);
+      setGroupScopes(null);
+      return;
+    }
+    setAllowedMenus(defaultMenusFor("mds"));
+    setPartnerScopes([]);
+    setGroupScopes([]);
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -669,14 +713,15 @@ function CreateUserPanel({
     setSaving(true);
     setFeedback(null);
     try {
+      const isFull = role === "full";
       await onCreate({
         user,
         password,
         role,
         isAdmin,
-        allowedMenus,
-        groupScopes,
-        partnerScopes,
+        allowedMenus: isFull ? null : (allowedMenus ?? defaultMenusFor(role)),
+        groupScopes: isFull ? null : groupScopes,
+        partnerScopes: isFull ? null : partnerScopes,
         mustChangePassword,
         totpEnabled,
       });
@@ -692,8 +737,8 @@ function CreateUserPanel({
         <div>
           <div className={styles.panelUserName}>Novo usuário</div>
           <div className={styles.panelUserHint}>
-            Cria um login próprio. Ao marcar um parceiro, os grupos econômicos dele entram no perfil
-            automaticamente.
+            Perfil Completo libera tudo sem marcar parceiro/grupo. No MDS, ao marcar um parceiro os
+            grupos econômicos dele entram automaticamente.
           </div>
         </div>
       </div>
@@ -735,10 +780,10 @@ function CreateUserPanel({
             id="new-role"
             className={styles.select}
             value={role}
-            onChange={(event) => setRole(event.target.value as DashboardRole)}
+            onChange={(event) => applyRole(event.target.value as DashboardRole)}
           >
-            <option value="mds">MDS</option>
             <option value="full">Completo</option>
+            <option value="mds">MDS</option>
           </select>
         </div>
         <div className={styles.field}>
@@ -774,20 +819,27 @@ function CreateUserPanel({
         </div>
       ) : null}
 
-      <MenuAccessEditor
-        role={role}
-        allowedMenus={allowedMenus}
-        onChange={(next) => setAllowedMenus(next ?? defaultMenusFor(role))}
-      />
+      {role === "full" ? (
+        <div className={styles.fullAccessNotice}>
+          Perfil Completo: este usuário enxerga todas as funcionalidades e todos os clientes
+          (parceiros e grupos). Não é necessário selecionar recorte.
+        </div>
+      ) : null}
 
-      <PartnerAccessEditor partnerScopes={partnerScopes} partners={partners} onChange={applyPartnerScopes} />
+      <MenuAccessEditor role={role} allowedMenus={allowedMenus} onChange={setAllowedMenus} />
 
-      <GroupAccessEditor
-        groupScopes={groupScopes}
-        economicGroups={economicGroups}
-        partnerSyncedCount={partnerScopes?.length ?? null}
-        onChange={setGroupScopes}
-      />
+      {role !== "full" ? (
+        <>
+          <PartnerAccessEditor partnerScopes={partnerScopes} partners={partners} onChange={applyPartnerScopes} />
+
+          <GroupAccessEditor
+            groupScopes={groupScopes}
+            economicGroups={economicGroups}
+            partnerSyncedCount={partnerScopes?.length ?? null}
+            onChange={setGroupScopes}
+          />
+        </>
+      ) : null}
 
       <div className={styles.actions}>
         <button type="submit" className={styles.saveButton} disabled={saving}>

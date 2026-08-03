@@ -273,14 +273,17 @@ export async function createManagedUser(input: CreateManagedUserRequest): Promis
 
   const now = new Date().toISOString();
   const totpEnabled = Boolean(input.totpEnabled);
+  // Perfil Completo: null nos escopos = acesso a todos os clientes/parceiros.
+  // Não converter null → [] (isso bloqueava tudo e forçava "selecionar todos").
+  const isFull = input.role === "full";
   const record: ManagedDashboardUser = {
     user: input.user.trim(),
     passwordHash: hashPassword(input.password),
     role: input.role,
     isAdmin: input.isAdmin,
     allowedMenus: input.allowedMenus,
-    groupScopes: input.groupScopes ?? [],
-    partnerScopes: input.partnerScopes ?? [],
+    groupScopes: input.groupScopes === undefined ? (isFull ? null : []) : input.groupScopes,
+    partnerScopes: input.partnerScopes === undefined ? (isFull ? null : []) : input.partnerScopes,
     mustChangePassword: Boolean(input.mustChangePassword),
     totpEnabled,
     totpSecret: null,
@@ -361,9 +364,10 @@ export async function updateManagedUser(
     totpVerified = false;
   }
 
+  const nextRole = input.role ?? current.role;
   const updated: ManagedDashboardUser = {
     ...current,
-    role: input.role ?? current.role,
+    role: nextRole,
     isAdmin: input.isAdmin ?? current.isAdmin,
     allowedMenus: input.allowedMenus === undefined ? current.allowedMenus : input.allowedMenus,
     groupScopes: input.groupScopes === undefined ? current.groupScopes : input.groupScopes,
@@ -376,6 +380,15 @@ export async function updateManagedUser(
     passwordHash: input.password ? hashPassword(input.password) : current.passwordHash,
     updatedAt: now,
   };
+  // Perfil Completo nunca carrega recorte: limpa listas antigas ("selecionar todos")
+  // que só inchavam o cookie e não eram necessárias.
+  if (nextRole === "full") {
+    updated.groupScopes = null;
+    updated.partnerScopes = null;
+    if (input.allowedMenus === undefined || input.allowedMenus === null) {
+      updated.allowedMenus = null;
+    }
+  }
   const next = [...users];
   next[index] = updated;
   await writeManagedUsers(next);
