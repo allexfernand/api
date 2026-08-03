@@ -1,9 +1,16 @@
 import { NextResponse } from "next/server";
-import { expiredSessionCookie } from "../../../../src/server/auth/session";
+import { MFA_PENDING_COOKIE, SESSION_COOKIE } from "../../../../src/server/auth/session";
 
 export function POST() {
-  return NextResponse.json(
-    { ok: true },
-    { headers: { "Set-Cookie": expiredSessionCookie(), "Cache-Control": "no-store" } },
-  );
+  const response = NextResponse.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
+  const base = {
+    httpOnly: true,
+    sameSite: "lax" as const,
+    path: "/",
+    secure: process.env.NODE_ENV === "production",
+    maxAge: 0,
+  };
+  response.cookies.set(SESSION_COOKIE, "", base);
+  response.cookies.set(MFA_PENDING_COOKIE, "", base);
+  return response;
 }

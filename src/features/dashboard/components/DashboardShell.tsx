@@ -155,7 +155,8 @@ function LoginOverlay({ authenticated }: { authenticated: boolean }) {
         body: JSON.stringify({ code: totpCode.replace(/\s+/g, "") }),
         schema: authResponseSchema,
       });
-      window.location.href = auth.role === "mds" ? "/mds" : "/";
+      // Força reload completo pra o cookie de sessão já gravado ser lido.
+      window.location.assign(auth.role === "mds" ? "/mds" : "/");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Não foi possível validar o autenticador.");
     } finally {
