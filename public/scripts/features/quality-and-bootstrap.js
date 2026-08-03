@@ -1470,6 +1470,8 @@ async function initializeDashboard() {
     hasAuthenticatedSession = Boolean(auth?.ok);
     applyAllowedMenus(auth?.allowedMenus ?? null);
     if (hasAuthenticatedSession) {
+      if (auth?.role) document.body.dataset.dashboardRole = auth.role;
+      else delete document.body.dataset.dashboardRole;
       applyDashboardUser(auth?.user || '');
       await applyRouteMode(auth?.role || '');
       hideAuthScreen();

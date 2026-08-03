@@ -86,6 +86,22 @@ function isSanusDashboardUser() {
   return currentDashboardUser === 'sanus';
 }
 
+function isFullDashboardRole() {
+  return document.body.dataset.dashboardRole === 'full';
+}
+
+function canAccessPartnerVisionByLegacy() {
+  return isSanusDashboardUser() || isFullDashboardRole();
+}
+
+// Sem role ainda (auth a meio do boot), não redireciona — evita derrubar
+// perfil Completo com allowedMenus null antes de applyRouteMode.
+function shouldBlockPartnerVisionLegacy() {
+  if (Array.isArray(allowedMenusOverride)) return !allowedMenusOverride.includes('visao-parceiros');
+  if (!document.body.dataset.dashboardRole) return false;
+  return !canAccessPartnerVisionByLegacy();
+}
+
 function applyDashboardUser(user = '') {
   currentDashboardUser = normalizeDashboardUser(user);
   if (currentDashboardUser) document.body.dataset.dashboardUser = currentDashboardUser;
@@ -94,7 +110,7 @@ function applyDashboardUser(user = '') {
   if (currentDashboardUser === 'sanus' && getActiveTab() === 'petit-comite-mds') {
     activateTab('demografica');
   }
-  if (currentDashboardUser !== 'sanus' && getActiveTab() === 'visao-parceiros') {
+  if (shouldBlockPartnerVisionLegacy() && getActiveTab() === 'visao-parceiros') {
     activateTab('demografica');
   }
 }
@@ -102,7 +118,7 @@ function applyDashboardUser(user = '') {
 async function activateTab(tabName) {
   if (Array.isArray(allowedMenusOverride) && tabName !== 'configuracoes' && !allowedMenusOverride.includes(tabName)) {
     tabName = allowedMenusOverride[0] || 'demografica';
-  } else if (!Array.isArray(allowedMenusOverride) && tabName === 'visao-parceiros' && !isSanusDashboardUser()) {
+  } else if (tabName === 'visao-parceiros' && shouldBlockPartnerVisionLegacy()) {
     tabName = 'demografica';
   }
   if (!Array.isArray(allowedMenusOverride) && tabName === 'petit-comite-mds' && isSanusDashboardUser()) {
@@ -147,6 +163,8 @@ function isMdsRoute() {
 }
 
 async function applyRouteMode(role = '') {
+  if (role) document.body.dataset.dashboardRole = role;
+  else delete document.body.dataset.dashboardRole;
   const isMdsMode = role === 'mds' || (!role && isMdsRoute());
   if (isMdsMode) {
     document.body.dataset.dashboardMode = 'mds';

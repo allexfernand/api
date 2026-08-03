@@ -59,8 +59,64 @@ function defaultAllowedMenusFor(role: DashboardRole): MenuId[] {
   return role === "mds" ? MDS_DEFAULT_ALLOWED_MENUS : FULL_DEFAULT_ALLOWED_MENUS;
 }
 
-async function findManagedUser(user: string): Promise<ManagedDashboardUser | undefined> {
+/** Garante Visão Parceiros (e limpa recortes) em perfis Completo já salvos. */
+function sensitizeFullProfileUser(entry: ManagedDashboardUser): {
+  entry: ManagedDashboardUser;
+  changed: boolean;
+} {
+  if (entry.role !== "full") return { entry, changed: false };
+
+  let changed = false;
+  let allowedMenus = entry.allowedMenus;
+  let groupScopes = entry.groupScopes ?? null;
+  let partnerScopes = entry.partnerScopes ?? null;
+
+  if (Array.isArray(allowedMenus) && !allowedMenus.includes("visao-parceiros")) {
+    const next = [...allowedMenus];
+    const demoIdx = next.indexOf("demografica");
+    if (demoIdx >= 0) next.splice(demoIdx + 1, 0, "visao-parceiros");
+    else next.unshift("visao-parceiros");
+    allowedMenus = next;
+    changed = true;
+  }
+
+  if (groupScopes !== null || partnerScopes !== null) {
+    groupScopes = null;
+    partnerScopes = null;
+    changed = true;
+  }
+
+  if (!changed) return { entry, changed: false };
+  return {
+    entry: {
+      ...entry,
+      allowedMenus,
+      groupScopes,
+      partnerScopes,
+      updatedAt: new Date().toISOString(),
+    },
+    changed: true,
+  };
+}
+
+async function readSensitizedManagedUsers(): Promise<ManagedDashboardUser[]> {
   const users = await readManagedUsers();
+  let dirty = false;
+  const next = users.map((entry) => {
+    const result = sensitizeFullProfileUser(entry);
+    if (result.changed) dirty = true;
+    return result.entry;
+  });
+  if (dirty && isEdgeConfigWritable()) {
+    await writeManagedUsers(next).catch(() => {
+      // Leitura segue com a versão sensibilizada em memória mesmo se o write falhar.
+    });
+  }
+  return next;
+}
+
+async function findManagedUser(user: string): Promise<ManagedDashboardUser | undefined> {
+  const users = await readSensitizedManagedUsers();
   return users.find((entry) => normalize(entry.user) === normalize(user));
 }
 
@@ -78,16 +134,17 @@ export async function getAccessScopesForUser(user: string): Promise<{
 }
 
 function authFromManaged(managed: ManagedDashboardUser): EffectiveDashboardAuth {
+  const { entry } = sensitizeFullProfileUser(managed);
   return {
-    user: managed.user,
-    role: managed.role,
-    allowedMenus: managed.allowedMenus,
-    isAdmin: managed.isAdmin,
-    groupScopes: managed.groupScopes,
-    partnerScopes: managed.partnerScopes,
-    mustChangePassword: Boolean(managed.mustChangePassword),
-    totpEnabled: Boolean(managed.totpEnabled),
-    totpVerified: Boolean(managed.totpVerified),
+    user: entry.user,
+    role: entry.role,
+    allowedMenus: entry.allowedMenus,
+    isAdmin: entry.isAdmin,
+    groupScopes: entry.groupScopes,
+    partnerScopes: entry.partnerScopes,
+    mustChangePassword: Boolean(entry.mustChangePassword),
+    totpEnabled: Boolean(entry.totpEnabled),
+    totpVerified: Boolean(entry.totpVerified),
   };
 }
 
@@ -216,7 +273,7 @@ function toPublic(entry: ManagedDashboardUser, isLegacy: boolean): ManagedDashbo
 }
 
 export async function listManagedUsersPublic(): Promise<ManagedDashboardUserPublic[]> {
-  const stored = await readManagedUsers();
+  const stored = await readSensitizedManagedUsers();
   const byName = new Map(stored.map((entry) => [normalize(entry.user), entry] as const));
   const result: ManagedDashboardUserPublic[] = [];
   const seen = new Set<string>();

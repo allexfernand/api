@@ -638,10 +638,10 @@ function Filters() {
   );
 }
 
-// Comportamento de hoje quando ninguém configurou uma lista explícita para o
-// usuário em Configurações — preservado intacto para não mudar nada em
-// produção até o admin abrir a tela e definir algo para alguém.
+// Comportamento quando ninguém configurou lista explícita em Configurações.
+// Perfil Completo = todas as funcionalidades (inclui Visão Parceiros).
 function legacyMenuVisible(id: MenuId, dashboardUser: string, dashboardRole: string): boolean {
+  if (dashboardRole === "full") return id !== "petit-comite-mds";
   if (id === "visao-parceiros") return dashboardUser === "sanus";
   if (id === "petit-comite-mds") return dashboardUser !== "sanus";
   if (dashboardRole === "mds") {
@@ -713,6 +713,11 @@ export function DashboardShell() {
     if (dashboardUser) document.body.dataset.dashboardUser = dashboardUser;
     else delete document.body.dataset.dashboardUser;
   }, [dashboardUser]);
+
+  useEffect(() => {
+    if (dashboardRole) document.body.dataset.dashboardRole = dashboardRole;
+    else delete document.body.dataset.dashboardRole;
+  }, [dashboardRole]);
 
   useEffect(() => {
     document.body.dataset.sidebar = sidebarCollapsed ? "collapsed" : "expanded";
