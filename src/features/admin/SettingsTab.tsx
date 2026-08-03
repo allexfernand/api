@@ -259,13 +259,37 @@ function GroupAccessEditor({
       </div>
       {isCustom ? (
         <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
-          <input
-            type="text"
-            className={styles.input}
-            placeholder="Buscar grupo econômico…"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-          />
+          <div className={styles.pickerToolbar}>
+            <input
+              type="text"
+              className={styles.input}
+              placeholder="Buscar grupo econômico…"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+            />
+            <div className={styles.pickerActions}>
+              <button
+                type="button"
+                className={styles.linkButton}
+                onClick={() => {
+                  const next = new Set(groupScopes ?? []);
+                  for (const name of filtered) next.add(name);
+                  onChange([...next]);
+                }}
+                disabled={filtered.length === 0}
+              >
+                Selecionar todos{search.trim() ? " (filtrados)" : ""}
+              </button>
+              <button
+                type="button"
+                className={styles.linkButton}
+                onClick={() => onChange([])}
+                disabled={!groupScopes?.length}
+              >
+                Limpar
+              </button>
+            </div>
+          </div>
           <div className={styles.groupPickerList}>
             {economicGroups.length === 0 ? (
               <div className={styles.groupPickerEmpty}>Nenhum grupo econômico carregado.</div>
@@ -332,13 +356,37 @@ function PartnerAccessEditor({
       </div>
       {isCustom ? (
         <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
-          <input
-            type="text"
-            className={styles.input}
-            placeholder="Buscar parceiro…"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-          />
+          <div className={styles.pickerToolbar}>
+            <input
+              type="text"
+              className={styles.input}
+              placeholder="Buscar parceiro…"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+            />
+            <div className={styles.pickerActions}>
+              <button
+                type="button"
+                className={styles.linkButton}
+                onClick={() => {
+                  const next = new Set(partnerScopes ?? []);
+                  for (const partner of filtered) next.add(partner.broker_id);
+                  onChange([...next]);
+                }}
+                disabled={filtered.length === 0}
+              >
+                Selecionar todos{search.trim() ? " (filtrados)" : ""}
+              </button>
+              <button
+                type="button"
+                className={styles.linkButton}
+                onClick={() => onChange([])}
+                disabled={!partnerScopes?.length}
+              >
+                Limpar
+              </button>
+            </div>
+          </div>
           <div className={styles.groupPickerList}>
             {partners.length === 0 ? (
               <div className={styles.groupPickerEmpty}>Nenhum parceiro carregado.</div>

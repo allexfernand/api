@@ -267,6 +267,24 @@
   text-decoration: underline;
 }
 
+.linkButton:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  text-decoration: none;
+}
+
+.pickerToolbar {
+  display: grid;
+  gap: 8px;
+}
+
+.pickerActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
 .menuSections {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
