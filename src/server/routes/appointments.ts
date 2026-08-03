@@ -157,10 +157,10 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   if (!requireMenuAccess(req, res, CORE_DATA_MENUS)) return;
 
   const meses     = req.query.meses ? String(req.query.meses).split(',').filter(m => /^\d{4}-\d{2}$/.test(m)) : [];
-  const groupNames = scopedGroupNames(req, parseGroupNames(req.query));
+  const groupNames = await scopedGroupNames(req, parseGroupNames(req.query));
   const groupName = groupNames[0] || null;
   const company = req.query.company || null;
-  const partnerBrokerId = scopedPartnerBrokerId(req, req.query.partner_broker_id || null);
+  const partnerBrokerId = await scopedPartnerBrokerId(req, req.query.partner_broker_id || null);
   const distinctCpf = req.query.dedupe === 'distinct_cpf' || req.query.dedupe === 'cpf_day';
   const monthList = meses.length ? meses.sort() : lastNMonthsList(Math.min(Math.max(parseInt(String(req.query.months)) || 12, 1), 24));
   const monthRangeFilter = monthList.map((month) => `(

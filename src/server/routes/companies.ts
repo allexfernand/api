@@ -93,9 +93,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   if (!requireBasicAuth(req, res)) return;
   if (!requireMenuAccess(req, res, CORE_DATA_MENUS)) return;
 
-  const groupNames = scopedGroupNames(req, parseGroupNames(req.query));
+  const groupNames = await scopedGroupNames(req, parseGroupNames(req.query));
   const typeFilter = req.query.type || null;
-  const partnerBrokerId = scopedPartnerBrokerId(req, req.query.partner_broker_id || null);
+  const partnerBrokerId = await scopedPartnerBrokerId(req, req.query.partner_broker_id || null);
   const params = createSqlParams();
   const extraFilter = buildFilters(groupNames, typeFilter, null, params);
   const partnerCte = partnerBrokerId ? `WITH partner_orgs AS ${partnerOrgIdsSubquery(partnerBrokerId, params)}` : '';

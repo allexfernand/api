@@ -158,10 +158,10 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   if (!requireBasicAuth(req, res)) return;
   if (!requireMenuAccess(req, res, CORE_DATA_MENUS)) return;
 
-  const groupNames = scopedGroupNames(req, parseGroupNames(req.query));
+  const groupNames = await scopedGroupNames(req, parseGroupNames(req.query));
   const groupName = groupNames[0] || null;
   const company = req.query.company || null;
-  const partnerBrokerId = scopedPartnerBrokerId(req, req.query.partner_broker_id || null);
+  const partnerBrokerId = await scopedPartnerBrokerId(req, req.query.partner_broker_id || null);
   const meses = req.query.meses ? String(req.query.meses).split(',').filter((m) => /^\d{4}-\d{2}$/.test(m)) : [];
   const groupByMonth = req.query.group_by === 'month';
   const distinctCpf = req.query.dedupe === 'distinct_cpf' || req.query.dedupe === 'cpf_day';

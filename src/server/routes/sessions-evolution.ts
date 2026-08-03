@@ -340,10 +340,10 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   if (!requireBasicAuth(req, res)) return;
   if (!requireMenuAccess(req, res, CORE_DATA_MENUS)) return;
 
-  const groupNames = scopedGroupNames(req, parseGroupNames(req.query));
+  const groupNames = await scopedGroupNames(req, parseGroupNames(req.query));
   const groupName = groupNames[0] || null;
   const company = req.query.company || null;
-  const partnerBrokerId = scopedPartnerBrokerId(req, req.query.partner_broker_id || null);
+  const partnerBrokerId = await scopedPartnerBrokerId(req, req.query.partner_broker_id || null);
   const typeFilter = req.query.type || null;
   const granularity = req.query.granularity || 'month';
   const dayMonth = req.query.mes && /^\d{4}-\d{2}$/.test(req.query.mes) ? req.query.mes : null;

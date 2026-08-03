@@ -24,14 +24,14 @@ const ORGANIZATION_PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.organizati
 // NO_PARTNER_MATCH. Quando o cliente pede uma lista explícita via
 // `partner_broker_ids`, ela também precisa passar pelo recorte configurado
 // em Configurações — daí o scopedPartnerBrokerIds abaixo.
-function parsePartnerBrokerIds(req: ApiRequest, fallback: unknown) {
+async function parsePartnerBrokerIds(req: ApiRequest, fallback: unknown) {
   if (fallback === MDS_PARTNER_SCOPE) return fallback;
   if (req.query.partner_broker_ids) {
     try {
       const parsed = JSON.parse(String(req.query.partner_broker_ids));
       if (Array.isArray(parsed)) {
         const requested = [...new Set(parsed.map((value) => String(value).trim()).filter(Boolean))];
-        if (requested.length) return scopedPartnerBrokerIds(req, requested);
+        if (requested.length) return await scopedPartnerBrokerIds(req, requested);
       }
     } catch {}
   }
@@ -62,8 +62,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   if (!requireBasicAuth(req, res)) return;
   if (!requireMenuAccess(req, res, ["visao-parceiros"])) return;
 
-  const scopedPartnerBroker = scopedPartnerBrokerId(req, req.query.partner_broker_id || null);
-  const partnerBrokerId = parsePartnerBrokerIds(req, scopedPartnerBroker);
+  const scopedPartnerBroker = await scopedPartnerBrokerId(req, req.query.partner_broker_id || null);
+  const partnerBrokerId = await parsePartnerBrokerIds(req, scopedPartnerBroker);
   const limit = Math.min(Math.max(toInt(req.query.limit) || 8, 1), 12);
   const params = createSqlParams();
   const partnerFilter = partnerBrokerId ? `WHERE ${partnerBrokerCondition(partnerBrokerId, params)}` : "";

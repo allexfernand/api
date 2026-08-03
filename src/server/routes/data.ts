@@ -425,9 +425,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   // toda consulta de dados de fato usa `groupNames`, já aplicando o recorte
   // por grupo econômico configurado em Configurações (null = sem recorte).
   const requestedGroupNames = parseGroupNames(req.query);
-  const groupNames = scopedGroupNames(req, requestedGroupNames);
+  const groupNames = await scopedGroupNames(req, requestedGroupNames);
   const typeFilter = req.query.type || null;
-  const partnerBrokerId = scopedPartnerBrokerId(req, req.query.partner_broker_id || null);
+  const partnerBrokerId = await scopedPartnerBrokerId(req, req.query.partner_broker_id || null);
   const scope = String(req.query.scope || '').toLowerCase();
   const dashboardAuth = getDashboardAuth(req);
   if (scope === 'auth') {
@@ -747,7 +747,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           pb.active
         ORDER BY broker_name ASC
       `);
-      const partners = filterPartnersByScope(req, partnerRows.map((r) => ({
+      const partners = await filterPartnersByScope(req, partnerRows.map((r) => ({
         broker_id: String(getCell(r[0]) || '').trim(),
         broker_name: String(getCell(r[1]) || 'Sem nome').trim(),
         broker_name_secondary: getCell(r[2]) ? String(getCell(r[2])).trim() : '',
@@ -2007,13 +2007,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     // Listagem de grupos disponíveis (popula o seletor "Grupo Econômico"):
     // filtrada pelo recorte do usuário, senão um usuário restrito veria (e
     // poderia selecionar) grupos que não deveria enxergar.
-    const groups = filterGroupsByScope(req, groupRows
+    const groups = await filterGroupsByScope(req, groupRows
       ? groupRows.map((r) => ({
           economic_group: getCell(r[0]) ? String(getCell(r[0])).trim() : null,
           total_orgs: toInt(r[1]),
         })).filter((g) => g.economic_group)
       : null);
-    const sessions_groups = filterGroupsByScope(req, sessionGroupRows
+    const sessions_groups = await filterGroupsByScope(req, sessionGroupRows
       ? sessionGroupRows.map((r) => ({
           economic_group: getCell(r[0]) ? String(getCell(r[0])).trim() : null,
           total_sessions: toInt(r[1]),

@@ -31,8 +31,6 @@ function setSessionCookie(response: NextResponse, auth: EffectiveDashboardAuth) 
   const token = createSessionToken(auth.user, auth.role, {
     allowedMenus: auth.allowedMenus,
     isAdmin: auth.isAdmin,
-    groupScopes: auth.groupScopes,
-    partnerScopes: auth.partnerScopes,
   });
   response.cookies.set(SESSION_COOKIE, token, {
     ...cookieBase(),

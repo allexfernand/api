@@ -17,10 +17,9 @@ type SessionPayload = {
   // assinadas antes desta mudança não têm este campo — tratadas como null.
   allowedMenus?: MenuId[] | null;
   isAdmin?: boolean;
-  // Grupos econômicos liberados para este usuário. null = sem restrição.
-  groupScopes?: string[] | null;
-  // Parceiros (partner_broker_id) liberados para este usuário. null = sem restrição.
-  partnerScopes?: string[] | null;
+  // groupScopes/partnerScopes NÃO vão mais no cookie: com "selecionar todos"
+  // o payload estoura o limite de ~4KB do browser, o cookie é descartado e o
+  // login "pisca" com 401. Escopos vêm do Edge Config a cada request.
 };
 
 export type MfaPendingPayload = {
@@ -67,8 +66,6 @@ export function createSessionToken(
   extra?: {
     allowedMenus?: MenuId[] | null;
     isAdmin?: boolean;
-    groupScopes?: string[] | null;
-    partnerScopes?: string[] | null;
   },
 ) {
   const payload: SessionPayload = {
@@ -77,8 +74,6 @@ export function createSessionToken(
     exp: Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS,
     allowedMenus: extra?.allowedMenus ?? null,
     isAdmin: extra?.isAdmin ?? false,
-    groupScopes: extra?.groupScopes ?? null,
-    partnerScopes: extra?.partnerScopes ?? null,
   };
   return signPayload(payload);
 }
@@ -89,13 +84,7 @@ export function verifySessionToken(token: string): SessionPayload | null {
   const allowedMenus = Array.isArray(payload.allowedMenus)
     ? payload.allowedMenus.filter((id): id is MenuId => typeof id === "string" && isMenuId(id))
     : null;
-  const groupScopes = Array.isArray(payload.groupScopes)
-    ? payload.groupScopes.filter((name): name is string => typeof name === "string")
-    : null;
-  const partnerScopes = Array.isArray(payload.partnerScopes)
-    ? payload.partnerScopes.filter((id): id is string => typeof id === "string")
-    : null;
-  return { ...payload, allowedMenus, isAdmin: Boolean(payload.isAdmin), groupScopes, partnerScopes };
+  return { ...payload, allowedMenus, isAdmin: Boolean(payload.isAdmin) };
 }
 
 function readCookie(cookieHeader: string, name: string) {

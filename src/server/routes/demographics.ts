@@ -121,10 +121,10 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   if (!requireBasicAuth(req, res)) return;
   if (!requireMenuAccess(req, res, CORE_DATA_MENUS)) return;
 
-  const groupNames = scopedGroupNames(req, parseGroupNames(req.query));
+  const groupNames = await scopedGroupNames(req, parseGroupNames(req.query));
   const company = req.query.company || null;
   const typeFilter = req.query.type || null;
-  const scopedPartnerBroker = scopedPartnerBrokerId(req, req.query.partner_broker_id || null);
+  const scopedPartnerBroker = await scopedPartnerBrokerId(req, req.query.partner_broker_id || null);
   const partnerBrokerId = parsePartnerBrokerIds(req.query, scopedPartnerBroker);
   const params = createSqlParams();
   const groupFilter = buildFilters(groupNames, company, typeFilter, partnerBrokerId, params);

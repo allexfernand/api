@@ -243,9 +243,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   if (!requireMenuAccess(req, res, CORE_DATA_MENUS)) return;
 
   const meses = req.query.meses ? req.query.meses.split(',').filter((m: string) => /^\d{4}-\d{2}$/.test(m)) : [];
-  const groupNames = scopedGroupNames(req, parseGroupNames(req.query));
+  const groupNames = await scopedGroupNames(req, parseGroupNames(req.query));
   const company = req.query.company || null;
-  const partnerBrokerId = scopedPartnerBrokerId(req, req.query.partner_broker_id || null);
+  const partnerBrokerId = await scopedPartnerBrokerId(req, req.query.partner_broker_id || null);
   const typificationFinisher = ['humano', 'ia'].includes(String(req.query.typification_finisher || '').toLowerCase())
     ? String(req.query.typification_finisher).toLowerCase()
     : '';

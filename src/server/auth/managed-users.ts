@@ -64,6 +64,19 @@ async function findManagedUser(user: string): Promise<ManagedDashboardUser | und
   return users.find((entry) => normalize(entry.user) === normalize(user));
 }
 
+/** Escopos de dados do usuário — lidos do Edge Config (não vão no cookie). */
+export async function getAccessScopesForUser(user: string): Promise<{
+  groupScopes: string[] | null;
+  partnerScopes: string[] | null;
+}> {
+  const managed = await findManagedUser(user);
+  if (!managed) return { groupScopes: null, partnerScopes: null };
+  return {
+    groupScopes: managed.groupScopes ?? null,
+    partnerScopes: managed.partnerScopes ?? null,
+  };
+}
+
 function authFromManaged(managed: ManagedDashboardUser): EffectiveDashboardAuth {
   return {
     user: managed.user,

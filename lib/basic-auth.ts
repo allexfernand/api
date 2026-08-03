@@ -55,22 +55,17 @@ export function getDashboardAuth(req: AuthRequest) {
       role: session.role,
       allowedMenus: session.allowedMenus ?? null,
       isAdmin: Boolean(session.isAdmin),
-      groupScopes: session.groupScopes ?? null,
-      partnerScopes: session.partnerScopes ?? null,
     };
   const credentials = decodeBasicAuth(headerValue(req, "authorization"));
   const legacy = credentials ? validateDashboardCredentials(credentials.user, credentials.password) : null;
   // Fallback via Authorization Basic (sem passar por /api/auth/login) nunca
   // teve acesso ao overlay do Edge Config — mantém o comportamento legado
-  // (sem restrição de menu/grupo/parceiro, admin só quando o usuário literal
-  // é "sanus").
+  // (sem restrição de menu, admin só quando o usuário literal é "sanus").
   return legacy
     ? {
         ...legacy,
         allowedMenus: null,
         isAdmin: legacy.user.trim().toLowerCase() === "sanus",
-        groupScopes: null,
-        partnerScopes: null,
       }
     : null;
 }
@@ -122,8 +117,17 @@ export function isMdsAuth(req: AuthRequest) {
   return getDashboardAuth(req)?.role === "mds";
 }
 
-export function partnerScopesForAuth(req: AuthRequest): string[] | null {
-  return getDashboardAuth(req)?.partnerScopes ?? null;
+async function accessScopesForAuth(req: AuthRequest) {
+  const auth = getDashboardAuth(req);
+  if (!auth) return { groupScopes: null as string[] | null, partnerScopes: null as string[] | null };
+  // Escopos vivem no Edge Config (não no cookie) pra não estourar o limite
+  // de 4KB do browser quando o admin marca "selecionar todos".
+  const { getAccessScopesForUser } = await import("../src/server/auth/managed-users");
+  return getAccessScopesForUser(auth.user);
+}
+
+export async function partnerScopesForAuth(req: AuthRequest): Promise<string[] | null> {
+  return (await accessScopesForAuth(req)).partnerScopes;
 }
 
 // Concilia o parceiro pedido no filtro "Parceiro" com o recorte configurado
@@ -134,9 +138,9 @@ export function partnerScopesForAuth(req: AuthRequest): string[] | null {
 // parceiro liberado — as condições SQL de cada rota sabem tratar array como
 // `IN (...)`); pedido fora do recorte, devolve um id que não bate com
 // nenhum parceiro real (mesmo truque do NO_GROUP_MATCH).
-export function scopedPartnerBrokerId(req: AuthRequest, requestedPartnerBrokerId: unknown) {
+export async function scopedPartnerBrokerId(req: AuthRequest, requestedPartnerBrokerId: unknown) {
   if (isMdsAuth(req)) return MDS_PARTNER_SCOPE;
-  const scope = partnerScopesForAuth(req);
+  const scope = await partnerScopesForAuth(req);
   if (!scope) return requestedPartnerBrokerId;
   if (!scope.length) return NO_PARTNER_MATCH;
   if (!requestedPartnerBrokerId) return scope.length === 1 ? scope[0] : [...scope];
@@ -147,8 +151,8 @@ export function scopedPartnerBrokerId(req: AuthRequest, requestedPartnerBrokerId
 
 // Rotas multi-parceiro (Visão Parceiros/#VP02): concilia a lista pedida
 // explicitamente pelo cliente com o recorte configurado.
-export function scopedPartnerBrokerIds(req: AuthRequest, requestedIds: string[]): string[] {
-  const scope = partnerScopesForAuth(req);
+export async function scopedPartnerBrokerIds(req: AuthRequest, requestedIds: string[]): Promise<string[]> {
+  const scope = await partnerScopesForAuth(req);
   if (!scope) return requestedIds;
   if (!scope.length) return [NO_PARTNER_MATCH];
   if (!requestedIds.length) return [...scope];
@@ -161,15 +165,18 @@ export function scopedPartnerBrokerIds(req: AuthRequest, requestedIds: string[])
 // "Parceiro") — o pedido vazio ali significa "me devolva a lista toda",
 // então filtramos o resultado em vez do pedido (mesma lógica do
 // filterGroupsByScope).
-export function filterPartnersByScope<T extends { broker_id: string }>(req: AuthRequest, partners: T[]): T[] {
-  const scope = partnerScopesForAuth(req);
+export async function filterPartnersByScope<T extends { broker_id: string }>(
+  req: AuthRequest,
+  partners: T[],
+): Promise<T[]> {
+  const scope = await partnerScopesForAuth(req);
   if (!scope) return partners;
   const allowed = new Set(scope.map((id) => String(id).trim()));
   return partners.filter((partner) => allowed.has(String(partner.broker_id).trim()));
 }
 
-export function groupScopesForAuth(req: AuthRequest): string[] | null {
-  return getDashboardAuth(req)?.groupScopes ?? null;
+export async function groupScopesForAuth(req: AuthRequest): Promise<string[] | null> {
+  return (await accessScopesForAuth(req)).groupScopes;
 }
 
 // Concilia o grupo econômico pedido pelo cliente (filtro da barra) com o
@@ -179,8 +186,8 @@ export function groupScopesForAuth(req: AuthRequest): string[] | null {
 // com filtro pedido fora do recorte, devolve um nome que não bate com
 // nenhuma organização real, fazendo o `WHERE ... IN (...)` de cada rota
 // retornar zero linhas em vez de cair silenciosamente para "sem filtro".
-export function scopedGroupNames(req: AuthRequest, requestedGroupNames: string[]): string[] {
-  const scope = groupScopesForAuth(req);
+export async function scopedGroupNames(req: AuthRequest, requestedGroupNames: string[]): Promise<string[]> {
+  const scope = await groupScopesForAuth(req);
   if (!scope) return requestedGroupNames;
   if (!scope.length) return [NO_GROUP_MATCH];
   if (!requestedGroupNames.length) return [...scope];
@@ -193,12 +200,12 @@ export function scopedGroupNames(req: AuthRequest, requestedGroupNames: string[]
 // popular o seletor "Grupo Econômico") — aqui não dá pra reaproveitar
 // scopedGroupNames porque o parâmetro vazio tem outro significado ("me
 // devolva a lista"), então filtramos o resultado em vez do pedido.
-export function filterGroupsByScope<T extends { economic_group: string | null }>(
+export async function filterGroupsByScope<T extends { economic_group: string | null }>(
   req: AuthRequest,
   groups: T[] | null,
-): T[] | null {
+): Promise<T[] | null> {
   if (!groups) return groups;
-  const scope = groupScopesForAuth(req);
+  const scope = await groupScopesForAuth(req);
   if (!scope) return groups;
   const allowed = new Set(scope.map((name) => name.trim()));
   return groups.filter((g) => g.economic_group && allowed.has(g.economic_group.trim()));

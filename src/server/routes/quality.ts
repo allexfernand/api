@@ -426,8 +426,8 @@ function parseGroupNames(query) {
   return query.group_name ? [String(query.group_name).trim()].filter(Boolean) : [];
 }
 
-function buildSummaryScope(columns, query, req) {
-  const groupNames = scopedGroupNames(req, parseGroupNames(query));
+async function buildSummaryScope(columns, query, req) {
+  const groupNames = await scopedGroupNames(req, parseGroupNames(query));
   const groupName = groupNames[0] || null;
   const company = query.company || null;
   const months = query.meses ? String(query.meses).split(",").filter((month) => /^\d{4}-\d{2}$/.test(month)) : [];
@@ -1564,7 +1564,7 @@ export default async function handler(req, res) {
       getColumns(warehouseId, CRITERIA_TABLE),
       getColumns(warehouseId, SESSION_TABLE),
     ]);
-    const scope = buildSummaryScope(summaryColumns, req.query, req);
+    const scope = await buildSummaryScope(summaryColumns, req.query, req);
     const qualityDailyMonth = /^\d{4}-\d{2}$/.test(String(req.query.quality_daily_month || ""))
       ? String(req.query.quality_daily_month)
       : lastNMonthsList(1)[0];
