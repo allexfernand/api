@@ -12,6 +12,7 @@ import { useManagedUsers, type PartnerGroupMap, type PartnerOption } from "./hoo
 import { MENU_SECTIONS, FULL_DEFAULT_ALLOWED_MENUS, MDS_DEFAULT_ALLOWED_MENUS, type MenuId } from "../../dashboard/menu-catalog";
 import type { DashboardRole } from "../../contracts/common";
 import type { ManagedDashboardUserPublic } from "../../contracts/dashboard-users";
+import { PASSWORD_RULES, validateStrongPassword } from "../../lib/password-policy";
 
 function defaultMenusFor(role: DashboardRole): MenuId[] {
   return role === "mds" ? [...MDS_DEFAULT_ALLOWED_MENUS] : [...FULL_DEFAULT_ALLOWED_MENUS];
@@ -26,6 +27,22 @@ function groupsForPartners(partnerIds: string[], partnerGroupMap: PartnerGroupMa
     for (const group of partnerGroupMap[id] ?? []) groups.add(group);
   }
   return [...groups].sort((a, b) => a.localeCompare(b, "pt-BR"));
+}
+
+function PasswordRulesHint({ password }: { password: string }) {
+  if (!password) return null;
+  return (
+    <ul className={styles.passwordRules} aria-label="Requisitos da senha">
+      {PASSWORD_RULES.map((rule) => {
+        const ok = rule.test(password);
+        return (
+          <li key={rule.id} className={ok ? styles.passwordRuleOk : undefined}>
+            {ok ? "✓" : "•"} {rule.label}
+          </li>
+        );
+      })}
+    </ul>
+  );
 }
 
 export function SettingsTab() {
@@ -374,6 +391,7 @@ function UserEditorPanel({
     allowedMenus?: MenuId[] | null;
     groupScopes?: string[] | null;
     partnerScopes?: string[] | null;
+    mustChangePassword?: boolean;
     password?: string;
   }) => Promise<unknown>;
   onDelete?: () => Promise<unknown>;
@@ -383,6 +401,7 @@ function UserEditorPanel({
   const [allowedMenus, setAllowedMenus] = useState<MenuId[] | null>(user.allowedMenus);
   const [groupScopes, setGroupScopes] = useState<string[] | null>(user.groupScopes);
   const [partnerScopes, setPartnerScopes] = useState<string[] | null>(user.partnerScopes);
+  const [mustChangePassword, setMustChangePassword] = useState(Boolean(user.mustChangePassword));
   const [password, setPassword] = useState("");
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -397,10 +416,25 @@ function UserEditorPanel({
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (password) {
+      const strength = validateStrongPassword(password);
+      if (strength.length) {
+        setFeedback({ ok: false, message: `Senha fraca: ${strength.join("; ")}` });
+        return;
+      }
+    }
     setSaving(true);
     setFeedback(null);
     try {
-      await onSave({ role, isAdmin, allowedMenus, groupScopes, partnerScopes, password: password || undefined });
+      await onSave({
+        role,
+        isAdmin,
+        allowedMenus,
+        groupScopes,
+        partnerScopes,
+        mustChangePassword: user.isLegacy ? undefined : mustChangePassword,
+        password: password || undefined,
+      });
       setPassword("");
       setFeedback({ ok: true, message: "Alterações salvas." });
     } catch (cause) {
@@ -474,11 +508,23 @@ function UserEditorPanel({
               placeholder="Deixe em branco para manter"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              minLength={8}
+              minLength={10}
             />
+            <PasswordRulesHint password={password} />
           </div>
         ) : null}
       </div>
+
+      {!user.isLegacy ? (
+        <label className={styles.switchRow} style={{ marginTop: 4 }}>
+          <input
+            type="checkbox"
+            checked={mustChangePassword}
+            onChange={(event) => setMustChangePassword(event.target.checked)}
+          />
+          Trocar senha no próximo login
+        </label>
+      ) : null}
 
       <MenuAccessEditor role={role} allowedMenus={allowedMenus} onChange={setAllowedMenus} />
 
@@ -524,6 +570,7 @@ function CreateUserPanel({
     allowedMenus: MenuId[];
     groupScopes: string[] | null;
     partnerScopes: string[] | null;
+    mustChangePassword: boolean;
   }) => Promise<unknown>;
 }) {
   const [user, setUser] = useState("");
@@ -533,6 +580,7 @@ function CreateUserPanel({
   const [allowedMenus, setAllowedMenus] = useState<MenuId[]>([]);
   const [groupScopes, setGroupScopes] = useState<string[] | null>([]);
   const [partnerScopes, setPartnerScopes] = useState<string[] | null>([]);
+  const [mustChangePassword, setMustChangePassword] = useState(true);
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
 
@@ -543,10 +591,24 @@ function CreateUserPanel({
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const strength = validateStrongPassword(password);
+    if (strength.length) {
+      setFeedback(`Senha fraca: ${strength.join("; ")}`);
+      return;
+    }
     setSaving(true);
     setFeedback(null);
     try {
-      await onCreate({ user, password, role, isAdmin, allowedMenus, groupScopes, partnerScopes });
+      await onCreate({
+        user,
+        password,
+        role,
+        isAdmin,
+        allowedMenus,
+        groupScopes,
+        partnerScopes,
+        mustChangePassword,
+      });
     } catch (cause) {
       setFeedback(cause instanceof Error ? cause.message : "Não foi possível criar o usuário.");
       setSaving(false);
@@ -589,9 +651,10 @@ function CreateUserPanel({
             type="password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            minLength={8}
+            minLength={10}
             required
           />
+          <PasswordRulesHint password={password} />
         </div>
         <div className={styles.field}>
           <label className={styles.fieldLabel} htmlFor="new-role">
@@ -615,6 +678,15 @@ function CreateUserPanel({
           </label>
         </div>
       </div>
+
+      <label className={styles.switchRow}>
+        <input
+          type="checkbox"
+          checked={mustChangePassword}
+          onChange={(event) => setMustChangePassword(event.target.checked)}
+        />
+        Trocar senha no próximo login
+      </label>
 
       <MenuAccessEditor
         role={role}

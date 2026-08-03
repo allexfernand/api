@@ -12,6 +12,7 @@ import {
   type UpdateManagedUserRequest,
 } from "../../contracts/dashboard-users";
 import { FULL_DEFAULT_ALLOWED_MENUS, MDS_DEFAULT_ALLOWED_MENUS, type MenuId } from "../../dashboard/menu-catalog";
+import { validateStrongPassword } from "../../lib/password-policy";
 import { isEdgeConfigWritable, readManagedUsers, writeManagedUsers } from "../config/edge-config-store";
 import { validateDashboardCredentials } from "./credentials";
 import { hashPassword, verifyPassword } from "./password";
@@ -23,6 +24,7 @@ export type EffectiveDashboardAuth = {
   isAdmin: boolean;
   groupScopes: string[] | null;
   partnerScopes: string[] | null;
+  mustChangePassword: boolean;
 };
 
 function normalize(user: string) {
@@ -61,6 +63,9 @@ export async function resolveEffectiveAuth(user: string, password: string): Prom
         isAdmin: managed.isAdmin,
         groupScopes: managed.groupScopes,
         partnerScopes: managed.partnerScopes,
+        // Contas legadas autenticam pela env var — não há troca de senha
+        // própria; ignora a flag mesmo se alguém marcar no overlay.
+        mustChangePassword: false,
       };
     }
     return {
@@ -70,6 +75,7 @@ export async function resolveEffectiveAuth(user: string, password: string): Prom
       isAdmin: normalize(legacy.user) === "sanus",
       groupScopes: null,
       partnerScopes: null,
+      mustChangePassword: false,
     };
   }
   if (managed?.passwordHash && verifyPassword(password, managed.passwordHash)) {
@@ -80,6 +86,7 @@ export async function resolveEffectiveAuth(user: string, password: string): Prom
       isAdmin: managed.isAdmin,
       groupScopes: managed.groupScopes,
       partnerScopes: managed.partnerScopes,
+      mustChangePassword: Boolean(managed.mustChangePassword),
     };
   }
   return null;
@@ -93,6 +100,7 @@ function toPublic(entry: ManagedDashboardUser, isLegacy: boolean): ManagedDashbo
     allowedMenus: entry.allowedMenus,
     groupScopes: entry.groupScopes,
     partnerScopes: entry.partnerScopes,
+    mustChangePassword: Boolean(entry.mustChangePassword),
     createdAt: entry.createdAt,
     updatedAt: entry.updatedAt,
     isLegacy,
@@ -120,6 +128,7 @@ export async function listManagedUsersPublic(): Promise<ManagedDashboardUserPubl
             allowedMenus: null,
             groupScopes: null,
             partnerScopes: null,
+            mustChangePassword: false,
             createdAt: "",
             updatedAt: "",
             isLegacy: true,
@@ -150,6 +159,9 @@ export async function createManagedUser(input: CreateManagedUserRequest): Promis
   if (users.some((entry) => normalize(entry.user) === normalize(input.user))) {
     throw new Error("Já existe um usuário com esse nome.");
   }
+  const strength = validateStrongPassword(input.password);
+  if (strength.length) throw new Error(`Senha fraca: ${strength.join("; ")}`);
+
   const now = new Date().toISOString();
   const record: ManagedDashboardUser = {
     user: input.user.trim(),
@@ -159,6 +171,7 @@ export async function createManagedUser(input: CreateManagedUserRequest): Promis
     allowedMenus: input.allowedMenus,
     groupScopes: input.groupScopes ?? [],
     partnerScopes: input.partnerScopes ?? [],
+    mustChangePassword: Boolean(input.mustChangePassword),
     createdAt: now,
     updatedAt: now,
   };
@@ -191,10 +204,14 @@ export async function updateManagedUser(
       allowedMenus: input.allowedMenus ?? defaultAllowedMenusFor(input.role ?? legacy.role),
       groupScopes: input.groupScopes === undefined ? null : input.groupScopes,
       partnerScopes: input.partnerScopes === undefined ? null : input.partnerScopes,
+      mustChangePassword: false,
       createdAt: now,
       updatedAt: now,
     };
     if (input.password) throw new Error("Contas legadas (sanus/mds) mantêm a senha da env var; não é possível trocá-la aqui.");
+    if (input.mustChangePassword) {
+      throw new Error("Contas legadas não suportam troca de senha no próximo login.");
+    }
     await writeManagedUsers([...users, record]);
     return toPublic(record, true);
   }
@@ -203,6 +220,13 @@ export async function updateManagedUser(
   if (isLegacy && input.password) {
     throw new Error("Contas legadas (sanus/mds) mantêm a senha da env var; não é possível trocá-la aqui.");
   }
+  if (isLegacy && input.mustChangePassword) {
+    throw new Error("Contas legadas não suportam troca de senha no próximo login.");
+  }
+  if (input.password) {
+    const strength = validateStrongPassword(input.password);
+    if (strength.length) throw new Error(`Senha fraca: ${strength.join("; ")}`);
+  }
   const updated: ManagedDashboardUser = {
     ...current,
     role: input.role ?? current.role,
@@ -210,6 +234,8 @@ export async function updateManagedUser(
     allowedMenus: input.allowedMenus === undefined ? current.allowedMenus : input.allowedMenus,
     groupScopes: input.groupScopes === undefined ? current.groupScopes : input.groupScopes,
     partnerScopes: input.partnerScopes === undefined ? current.partnerScopes : input.partnerScopes,
+    mustChangePassword:
+      input.mustChangePassword === undefined ? Boolean(current.mustChangePassword) : input.mustChangePassword,
     passwordHash: input.password ? hashPassword(input.password) : current.passwordHash,
     updatedAt: now,
   };
@@ -217,6 +243,58 @@ export async function updateManagedUser(
   next[index] = updated;
   await writeManagedUsers(next);
   return toPublic(updated, isLegacy);
+}
+
+// Troca obrigatória no login: valida a senha atual, exige mustChangePassword,
+// aplica senha forte, limpa a flag e devolve o auth efetivo pra emitir sessão.
+export async function changePasswordOnLogin(
+  user: string,
+  currentPassword: string,
+  newPassword: string,
+): Promise<EffectiveDashboardAuth> {
+  if (!isEdgeConfigWritable()) {
+    throw new Error("Edge Config não está configurado para escrita. Veja as instruções em .env.example.");
+  }
+  const strength = validateStrongPassword(newPassword);
+  if (strength.length) throw new Error(`Senha fraca: ${strength.join("; ")}`);
+  if (currentPassword === newPassword) {
+    throw new Error("A nova senha precisa ser diferente da senha atual.");
+  }
+
+  const users = await readManagedUsers();
+  const index = users.findIndex((entry) => normalize(entry.user) === normalize(user));
+  if (index < 0) throw new Error("Usuário não encontrado.");
+  const current = users[index];
+  if (!current.passwordHash) {
+    throw new Error("Esta conta não permite troca de senha por aqui.");
+  }
+  if (!verifyPassword(currentPassword, current.passwordHash)) {
+    throw new Error("Usuário ou senha inválidos.");
+  }
+  if (!current.mustChangePassword) {
+    throw new Error("Este usuário não está marcado para trocar a senha neste login.");
+  }
+
+  const now = new Date().toISOString();
+  const updated: ManagedDashboardUser = {
+    ...current,
+    passwordHash: hashPassword(newPassword),
+    mustChangePassword: false,
+    updatedAt: now,
+  };
+  const next = [...users];
+  next[index] = updated;
+  await writeManagedUsers(next);
+
+  return {
+    user: updated.user,
+    role: updated.role,
+    allowedMenus: updated.allowedMenus,
+    isAdmin: updated.isAdmin,
+    groupScopes: updated.groupScopes,
+    partnerScopes: updated.partnerScopes,
+    mustChangePassword: false,
+  };
 }
 
 export async function deleteManagedUser(username: string): Promise<void> {

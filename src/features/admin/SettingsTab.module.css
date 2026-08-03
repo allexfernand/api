@@ -378,6 +378,28 @@
   gap: 16px;
 }
 
+.passwordRules {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: #f8fafc;
+  display: grid;
+  gap: 4px;
+}
+
+.passwordRules li {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.passwordRuleOk {
+  color: #047857 !important;
+}
+
 .notice {
   font-size: 12px;
   padding: 10px 12px;

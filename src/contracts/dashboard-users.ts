@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { ALL_MENU_IDS, type MenuId } from "../dashboard/menu-catalog";
+import { strongPasswordSchema } from "../lib/password-policy";
 import { dashboardRoleSchema } from "./common";
 
 export const menuIdSchema = z.enum(ALL_MENU_IDS as [MenuId, ...MenuId[]]);
@@ -22,6 +23,10 @@ export const managedDashboardUserSchema = z.object({
   // Parceiros (partner_broker_id) que o usuário pode enxergar. Mesma
   // semântica de groupScopes: null = sem restrição, [] bloqueia todos.
   partnerScopes: z.array(z.string()).nullable().optional().transform((value) => value ?? null),
+  // Se true, o próximo login bem-sucedido não emite sessão normal — o
+  // frontend pede troca de senha forte antes de liberar o dashboard.
+  // `.optional()` + default false: registros antigos no Edge Config.
+  mustChangePassword: z.boolean().optional().transform((value) => value ?? false),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -35,12 +40,13 @@ export type ManagedDashboardUserPublic = z.infer<typeof managedDashboardUserPubl
 
 export const createManagedUserRequestSchema = z.object({
   user: z.string().trim().min(3).max(60),
-  password: z.string().min(8).max(200),
+  password: strongPasswordSchema,
   role: dashboardRoleSchema.default("mds"),
   isAdmin: z.boolean().default(false),
   allowedMenus: z.array(menuIdSchema).default([]),
   groupScopes: z.array(z.string()).nullable().default([]),
   partnerScopes: z.array(z.string()).nullable().default([]),
+  mustChangePassword: z.boolean().default(true),
 });
 export type CreateManagedUserRequest = z.infer<typeof createManagedUserRequestSchema>;
 
@@ -50,7 +56,8 @@ export const updateManagedUserRequestSchema = z.object({
   allowedMenus: z.array(menuIdSchema).nullable().optional(),
   groupScopes: z.array(z.string()).nullable().optional(),
   partnerScopes: z.array(z.string()).nullable().optional(),
-  password: z.string().min(8).max(200).optional(),
+  mustChangePassword: z.boolean().optional(),
+  password: strongPasswordSchema.optional(),
 });
 export type UpdateManagedUserRequest = z.infer<typeof updateManagedUserRequestSchema>;
 

@@ -9,6 +9,15 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Usuário e senha são obrigatórios." }, { status: 400 });
   const auth = await resolveEffectiveAuth(parsed.data.user, parsed.data.password);
   if (!auth) return NextResponse.json({ error: "Usuário ou senha inválidos." }, { status: 401 });
+
+  // Sem cookie de sessão: o frontend mostra o formulário de troca de senha.
+  if (auth.mustChangePassword) {
+    return NextResponse.json(
+      { ok: true, mustChangePassword: true, user: auth.user },
+      { headers: { "Cache-Control": "no-store" } },
+    );
+  }
+
   return NextResponse.json(
     { ok: true, role: auth.role, user: auth.user, allowedMenus: auth.allowedMenus, isAdmin: auth.isAdmin },
     {

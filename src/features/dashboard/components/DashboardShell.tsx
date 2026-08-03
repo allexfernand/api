@@ -4,6 +4,7 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 import Image from "next/image";
 import { apiRequest } from "../../../lib/api/client";
 import { authResponseSchema } from "../../../contracts/auth";
+import { PASSWORD_RULES, validateStrongPassword } from "../../../lib/password-policy";
 import { MENU_SECTIONS, type MenuId } from "../../../dashboard/menu-catalog";
 
 type LegacyDashboardApi = Record<string, (...args: unknown[]) => unknown>;
@@ -29,18 +30,31 @@ function normalizeDashboardUser(user: string) {
 function LoginOverlay({ authenticated }: { authenticated: boolean }) {
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [changePasswordFor, setChangePasswordFor] = useState<string | null>(null);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
+  async function submitLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
+    const user = String(form.get("user") || "");
+    const password = String(form.get("password") || "");
     setSubmitting(true);
     setError("");
     try {
       const auth = await apiRequest("/api/auth/login", {
         method: "POST",
-        body: JSON.stringify({ user: form.get("user"), password: form.get("password") }),
+        body: JSON.stringify({ user, password }),
         schema: authResponseSchema,
       });
+      if (auth.mustChangePassword) {
+        setChangePasswordFor(auth.user || user);
+        setCurrentPassword(password);
+        setNewPassword("");
+        setConfirmPassword("");
+        return;
+      }
       window.location.href = auth.role === "mds" ? "/mds" : "/";
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Não foi possível validar o acesso.");
@@ -49,9 +63,114 @@ function LoginOverlay({ authenticated }: { authenticated: boolean }) {
     }
   }
 
+  async function submitChangePassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!changePasswordFor) return;
+    if (newPassword !== confirmPassword) {
+      setError("A confirmação não confere com a nova senha.");
+      return;
+    }
+    const strength = validateStrongPassword(newPassword);
+    if (strength.length) {
+      setError(strength.join("; "));
+      return;
+    }
+    setSubmitting(true);
+    setError("");
+    try {
+      const auth = await apiRequest("/api/auth/change-password", {
+        method: "POST",
+        body: JSON.stringify({
+          user: changePasswordFor,
+          currentPassword,
+          newPassword,
+        }),
+        schema: authResponseSchema,
+      });
+      window.location.href = auth.role === "mds" ? "/mds" : "/";
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Não foi possível trocar a senha.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  if (changePasswordFor) {
+    return (
+      <div className="auth-overlay" id="auth-overlay" style={{ display: authenticated ? "none" : "grid" }}>
+        <form className="auth-card" onSubmit={submitChangePassword}>
+          <Image
+            className="auth-logo"
+            src="/assets/logo_sanus.svg"
+            alt="Sanus"
+            width={140}
+            height={40}
+            priority
+          />
+          <div className="auth-title">Trocar senha</div>
+          <div className="auth-subtitle">
+            O usuário <strong>{changePasswordFor}</strong> precisa definir uma senha forte antes de
+            acessar o dashboard.
+          </div>
+          <div className="auth-field">
+            <label htmlFor="auth-new-password">Nova senha</label>
+            <input
+              id="auth-new-password"
+              type="password"
+              autoComplete="new-password"
+              value={newPassword}
+              onChange={(event) => setNewPassword(event.target.value)}
+              required
+            />
+          </div>
+          <div className="auth-field">
+            <label htmlFor="auth-confirm-password">Confirmar nova senha</label>
+            <input
+              id="auth-confirm-password"
+              type="password"
+              autoComplete="new-password"
+              value={confirmPassword}
+              onChange={(event) => setConfirmPassword(event.target.value)}
+              required
+            />
+          </div>
+          <ul className="auth-password-rules" aria-label="Requisitos da senha">
+            {PASSWORD_RULES.map((rule) => {
+              const ok = rule.test(newPassword);
+              return (
+                <li key={rule.id} className={ok ? "ok" : undefined}>
+                  {ok ? "✓" : "•"} {rule.label}
+                </li>
+              );
+            })}
+          </ul>
+          <button className="auth-submit" type="submit" disabled={submitting}>
+            {submitting ? "Salvando..." : "Salvar nova senha e entrar"}
+          </button>
+          <button
+            type="button"
+            className="auth-back"
+            onClick={() => {
+              setChangePasswordFor(null);
+              setCurrentPassword("");
+              setNewPassword("");
+              setConfirmPassword("");
+              setError("");
+            }}
+          >
+            Voltar ao login
+          </button>
+          <div className="auth-error" style={{ display: error ? "block" : "none" }}>
+            {error}
+          </div>
+        </form>
+      </div>
+    );
+  }
+
   return (
     <div className="auth-overlay" id="auth-overlay" style={{ display: authenticated ? "none" : "grid" }}>
-      <form className="auth-card" onSubmit={submit}>
+      <form className="auth-card" onSubmit={submitLogin}>
         <Image
           className="auth-logo"
           src="/assets/logo_sanus.svg"
