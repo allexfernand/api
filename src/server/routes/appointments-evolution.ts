@@ -123,10 +123,11 @@ function buildPartnerFilter(columns: string[], partnerBrokerId: unknown, p: SqlP
   return `AND UPPER(TRIM(CAST(${quoteIdent(companyColumn)} AS STRING))) IN ${partnerOrgNamesSubquery(partnerBrokerId, p)}`;
 }
 
-function lastNMonthsList(n: number) {
+function lastNMonthsList(n: number, includeCurrentMonth = true) {
   const out = [];
   const d = new Date();
   d.setUTCDate(1);
+  if (!includeCurrentMonth) d.setUTCMonth(d.getUTCMonth() - 1);
   for (let i = n - 1; i >= 0; i--) {
     const dd = new Date(d);
     dd.setUTCMonth(d.getUTCMonth() - i);
@@ -277,9 +278,18 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   const granularity = String(req.query.granularity || "month");
   const dayMonth = req.query.mes && /^\d{4}-\d{2}$/.test(String(req.query.mes)) ? String(req.query.mes) : null;
   const meses = req.query.meses ? String(req.query.meses).split(',').filter((m) => /^\d{4}-\d{2}$/.test(m)) : [];
+  const includeBeneficiaries = String(req.query.include_beneficiaries || "") === "1";
+  const onlyBeneficiaries = String(req.query.only_beneficiaries || "") === "1";
   const monthList = meses.length ? meses.sort() : lastNMonthsList(Math.min(Math.max(parseInt(String(req.query.months)) || 12, 1), 24));
+  const fullMonthScopes = {
+    last_1_month: lastNMonthsList(1, false),
+    last_3_months: lastNMonthsList(3, false),
+    last_6_months: lastNMonthsList(6, false),
+    last_12_months: lastNMonthsList(12, false),
+  };
   const monthExpr = `DATE_FORMAT(${quoteIdent(APPOINTMENTS_DATE_COLUMN)}, 'yyyy-MM')`;
   const dayExpr = `DATE_FORMAT(${quoteIdent(APPOINTMENTS_DATE_COLUMN)}, 'yyyy-MM-dd')`;
+  const cpfNormExpr = `LPAD(REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', ''), 11, '0')`;
   const monthRangeFilter = monthList.map((month) => `(
     ${quoteIdent(APPOINTMENTS_DATE_COLUMN)} >= '${month}-01'
     AND ${quoteIdent(APPOINTMENTS_DATE_COLUMN)} < '${nextMonth(month)}-01'
@@ -292,7 +302,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const warehouseId = await resolveWarehouseId();
 
     let companyColumn = null;
-    const columns = (granularity === "status_month" || groupNames.length || company || partnerBrokerId) ? await getColumns(warehouseId, APPOINTMENTS_TABLE) : [];
+    const needsColumns =
+      granularity === "status_month" ||
+      includeBeneficiaries ||
+      groupNames.length ||
+      company ||
+      partnerBrokerId;
+    const columns = needsColumns ? await getColumns(warehouseId, APPOINTMENTS_TABLE) : [];
     const params = createSqlParams();
     const groupFilter = buildGroupFilter(columns, groupNames, params);
     const partnerFilter = buildPartnerFilter(columns, partnerBrokerId, params);
@@ -458,7 +474,12 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       });
     }
 
-    const rows = await runQuery(warehouseId, `
+    const [rows, beneficiaryRows] = await Promise.all([
+      onlyBeneficiaries
+        ? Promise.resolve([])
+        : runQuery(
+            warehouseId,
+            `
       SELECT
         ${monthExpr} AS mes,
         COUNT(*) AS total
@@ -470,14 +491,95 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         ${partnerFilter}
       GROUP BY ${monthExpr}
       ORDER BY mes
-    `, params.list);
+    `,
+            params.list,
+          ),
+      includeBeneficiaries
+        ? runQuery(
+            warehouseId,
+            `
+      WITH beneficiary_base AS (
+        SELECT
+          ${monthExpr} AS mes,
+          ${cpfNormExpr} AS cpf_norm
+        FROM ${APPOINTMENTS_TABLE}
+        WHERE (${monthRangeFilter})
+          AND cpf_atendido IS NOT NULL
+          AND TRIM(CAST(cpf_atendido AS STRING)) != ''
+          ${assuntoExclusionSql()}
+          ${groupFilter}
+          ${companyFilter}
+          ${partnerFilter}
+      )
+      SELECT
+        mes,
+        COUNT(DISTINCT cpf_norm) AS unique_beneficiaries
+      FROM beneficiary_base
+      WHERE cpf_norm IS NOT NULL
+        AND cpf_norm != ''
+        AND cpf_norm != '00000000000'
+      GROUP BY mes
+      UNION ALL
+      SELECT '__last_1_month', COUNT(DISTINCT CASE WHEN mes IN (${fullMonthScopes.last_1_month.map((month) => `'${month}'`).join(',')}) THEN cpf_norm END)
+      FROM beneficiary_base
+      WHERE cpf_norm IS NOT NULL
+        AND cpf_norm != ''
+        AND cpf_norm != '00000000000'
+      UNION ALL
+      SELECT '__last_3_months', COUNT(DISTINCT CASE WHEN mes IN (${fullMonthScopes.last_3_months.map((month) => `'${month}'`).join(',')}) THEN cpf_norm END)
+      FROM beneficiary_base
+      WHERE cpf_norm IS NOT NULL
+        AND cpf_norm != ''
+        AND cpf_norm != '00000000000'
+      UNION ALL
+      SELECT '__last_6_months', COUNT(DISTINCT CASE WHEN mes IN (${fullMonthScopes.last_6_months.map((month) => `'${month}'`).join(',')}) THEN cpf_norm END)
+      FROM beneficiary_base
+      WHERE cpf_norm IS NOT NULL
+        AND cpf_norm != ''
+        AND cpf_norm != '00000000000'
+      UNION ALL
+      SELECT '__last_12_months', COUNT(DISTINCT cpf_norm)
+      FROM beneficiary_base
+      WHERE cpf_norm IS NOT NULL
+        AND cpf_norm != ''
+        AND cpf_norm != '00000000000'
+    `,
+            params.list,
+          )
+        : Promise.resolve([]),
+    ]);
 
     const byMes = Object.fromEntries(rows.map((r) => [String(getCell(r[0]) || ''), toInt(r[1])]));
-    const series = monthList.map((m) => ({ mes: m, total: byMes[m] || 0 }));
+    const beneficiariesByMes = new Map<string, number>();
+    const utilization = {
+      last_1_month: 0,
+      last_3_months: 0,
+      last_6_months: 0,
+      last_12_months: 0,
+    };
+    beneficiaryRows.forEach((row) => {
+      const key = String(getCell(row[0]) || "");
+      const value = toInt(row[1]);
+      if (key === "__last_1_month") utilization.last_1_month = value;
+      else if (key === "__last_3_months") utilization.last_3_months = value;
+      else if (key === "__last_6_months") utilization.last_6_months = value;
+      else if (key === "__last_12_months") utilization.last_12_months = value;
+      else beneficiariesByMes.set(key, value);
+    });
+    const series = monthList.map((m) => ({
+      mes: m,
+      total: byMes[m] || 0,
+      unique_cpfs: beneficiariesByMes.get(m) || 0,
+      unique_beneficiaries: beneficiariesByMes.get(m) || 0,
+    }));
 
     res.status(200).json({
       months: monthList,
+      period_months: monthList,
       series,
+      utilization,
+      utilization_periods: fullMonthScopes,
+      beneficiaries_included: Boolean(includeBeneficiaries),
       source: "atendimento_summarized_gold_live.hora_criacao_atendimento",
       filters: { group_name: groupName, company, partner_broker_id: partnerBrokerId },
       company_column: companyColumn,

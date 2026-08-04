@@ -152,6 +152,7 @@ async function loadAppointments() {
   loadAppointmentTypesTrend();
   loadAppointmentsDailyEvolution();
   loadAppointmentsStatusEvolution();
+  loadAppointmentsUtilization();
 
   if (appt && !appt.error) {
     document.getElementById('bullet-agend').textContent = fmt(appt.total);
@@ -162,6 +163,77 @@ async function loadAppointments() {
   } else {
     document.getElementById('bullet-agend').textContent = 'Erro';
   }
+}
+
+function selectedAppointmentsScopeText() {
+  const parts = [];
+  if (currentGroups.length) parts.push(selectedGroupsText());
+  if (currentCompany) parts.push(currentCompany);
+  if (currentPartnerBrokerId) parts.push(`Parceiro: ${selectedPartnerLabel()}`);
+  return parts.join(' · ');
+}
+
+function renderAppointmentsUtilization(data, demographicsData, comparison) {
+  return renderUtilizationCards(data, demographicsData, comparison, {
+    loading: document.getElementById('appointments-utilization-loading'),
+    content: document.getElementById('appointments-utilization-content'),
+    errorBox: document.getElementById('appointments-utilization-error'),
+    context: document.getElementById('appointments-utilization-context'),
+    scoped: Boolean(currentGroups.length || currentPartnerBrokerId || currentCompany),
+    scopeText: selectedAppointmentsScopeText(),
+  });
+}
+
+async function loadAppointmentsUtilization() {
+  const loading = document.getElementById('appointments-utilization-loading');
+  const content = document.getElementById('appointments-utilization-content');
+  const errorBox = document.getElementById('appointments-utilization-error');
+  if (loading) {
+    loading.style.display = 'block';
+    loading.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando utilização...';
+  }
+  if (content) content.style.display = 'none';
+  if (errorBox) {
+    errorBox.style.display = 'none';
+    errorBox.textContent = '';
+  }
+
+  const p = new URLSearchParams();
+  p.set('include_beneficiaries', '1');
+  p.set('only_beneficiaries', '1');
+  appendGroupParams(p);
+  if (currentCompany) p.set('company', currentCompany);
+
+  const globalP = new URLSearchParams();
+  globalP.set('include_beneficiaries', '1');
+  globalP.set('only_beneficiaries', '1');
+
+  const hasScopedComparison = Boolean(currentGroups.length || currentPartnerBrokerId || currentCompany);
+  const demoParams = new URLSearchParams();
+  appendGroupParams(demoParams);
+  if (currentCompany) demoParams.set('company', currentCompany);
+  const demoQs = demoParams.toString() ? '?' + demoParams.toString() : '';
+
+  const [data, demographicsData, globalData, globalDemographicsData] = await Promise.all([
+    safeGet('/api/appointments-evolution?' + p.toString()),
+    safeGet('/api/demographics' + demoQs),
+    hasScopedComparison ? safeGet('/api/appointments-evolution?' + globalP.toString()) : Promise.resolve(null),
+    hasScopedComparison ? safeGet('/api/demographics') : Promise.resolve(null),
+  ]);
+
+  if (!data || data.error) {
+    if (loading) loading.style.display = 'none';
+    if (errorBox) {
+      errorBox.style.display = 'block';
+      errorBox.textContent = data?.error ? String(data.error).slice(0, 220) : 'Erro ao carregar utilização da base';
+    }
+    return;
+  }
+
+  renderAppointmentsUtilization(data, demographicsData, hasScopedComparison ? {
+    data: globalData,
+    demographicsData: globalDemographicsData,
+  } : null);
 }
 
 async function loadAppointmentsDailyEvolution() {
