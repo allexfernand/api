@@ -191,7 +191,7 @@ SELECT
   DATE_FORMAT(try_cast(hora_criacao_atendimento AS TIMESTAMP), 'yyyy-MM') AS mes,
   TRIM(CAST(grupo_economico AS STRING)) AS grupo_economico,
   CASE
-    WHEN UPPER(assunto) LIKE '%DASA%' THEN 'Exames - DASA'
+    WHEN UPPER(assunto) LIKE '%DASA%' THEN 'Exames'
     WHEN UPPER(assunto) LIKE '%CONEXA%' AND UPPER(assunto) LIKE '%PA%' THEN 'Conexa PA'
     WHEN UPPER(assunto) LIKE '%CONEXA%' THEN 'Conexa Eletiva'
     WHEN UPPER(assunto) LIKE '%DENTIST%' OR UPPER(assunto) LIKE '%ODONTO%'
@@ -228,7 +228,7 @@ GROUP BY
   DATE_FORMAT(try_cast(hora_criacao_atendimento AS TIMESTAMP), 'yyyy-MM'),
   TRIM(CAST(grupo_economico AS STRING)),
   CASE
-    WHEN UPPER(assunto) LIKE '%DASA%' THEN 'Exames - DASA'
+    WHEN UPPER(assunto) LIKE '%DASA%' THEN 'Exames'
     WHEN UPPER(assunto) LIKE '%CONEXA%' AND UPPER(assunto) LIKE '%PA%' THEN 'Conexa PA'
     WHEN UPPER(assunto) LIKE '%CONEXA%' THEN 'Conexa Eletiva'
     WHEN UPPER(assunto) LIKE '%DENTIST%' OR UPPER(assunto) LIKE '%ODONTO%'

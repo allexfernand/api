@@ -173,7 +173,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   )`).join(' OR ');
 
   const typeExpr = `CASE
-    WHEN UPPER(assunto) LIKE '%DASA%' THEN 'Exames - DASA'
+    WHEN UPPER(assunto) LIKE '%DASA%' THEN 'Exames'
     WHEN UPPER(assunto) LIKE '%CONEXA%' AND UPPER(assunto) LIKE '%PA%' THEN 'Conexa PA'
     WHEN UPPER(assunto) LIKE '%CONEXA%' THEN 'Conexa Eletiva'
     WHEN UPPER(assunto) LIKE '%DENTIST%' OR UPPER(assunto) LIKE '%ODONTO%'
@@ -238,7 +238,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           SELECT ${examExpr} AS exame
           FROM ${APPOINTMENTS_TABLE}
           ${commonWhere}
-            AND ${typeExpr} IN ('Exames', 'Exames - DASA')
+            AND ${typeExpr} = 'Exames'
         ),
         grouped_exams AS (
           SELECT

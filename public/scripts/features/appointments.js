@@ -18,7 +18,6 @@ function appointmentTypeColor(type) {
   const colors = {
     'Consultas': '#2563eb',
     'Exames': '#0f766e',
-    'Exames - DASA': '#7c3aed',
     'Conexa PA': '#dc2626',
     'Conexa Eletiva': '#ea580c',
     'Odontologia': '#0891b2',
