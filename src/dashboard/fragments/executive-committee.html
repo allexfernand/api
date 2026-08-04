@@ -161,33 +161,34 @@
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap">
         <div>
           <div class="section-title" style="margin-bottom:4px"><i class="fa-solid fa-heart-pulse" style="margin-right:6px"></i>Linhas de cuidado</div>
+          <div class="petit-editable-hint">Clique no valor para editar · Enter para fixar antes de baixar o PDF</div>
         </div>
         <span class="petit-chip">PC07</span>
       </div>
-      <div class="petit-metric-stack" style="grid-template-columns:repeat(3,minmax(0,1fr))">
-        <div class="petit-metric">
+      <div class="petit-metric-stack" style="grid-template-columns:repeat(3,minmax(0,1fr))" id="petit-care-lines-metrics">
+        <div class="petit-metric petit-metric--editable" data-care-line="total">
           <span>Total de pessoas<small>linha de cuidado</small></span>
-          <strong>0</strong>
+          <input class="petit-metric-input" id="petit-care-line-total" type="text" inputmode="numeric" value="0" aria-label="Total de pessoas" title="Digite o valor e pressione Enter para fixar" />
         </div>
-        <div class="petit-metric">
+        <div class="petit-metric petit-metric--editable" data-care-line="cronicos">
           <span>Crônicos<small>linha ativa</small></span>
-          <strong>0</strong>
+          <input class="petit-metric-input" id="petit-care-line-cronicos" type="text" inputmode="numeric" value="0" aria-label="Crônicos" title="Digite o valor e pressione Enter para fixar" />
         </div>
-        <div class="petit-metric">
+        <div class="petit-metric petit-metric--editable" data-care-line="outras">
           <span>Outras condições<small>linha ativa</small></span>
-          <strong>0</strong>
+          <input class="petit-metric-input" id="petit-care-line-outras" type="text" inputmode="numeric" value="0" aria-label="Outras condições" title="Digite o valor e pressione Enter para fixar" />
         </div>
-        <div class="petit-metric">
+        <div class="petit-metric petit-metric--editable" data-care-line="investigacao">
           <span>Em investigação de saúde<small>linha ativa</small></span>
-          <strong>0</strong>
+          <input class="petit-metric-input" id="petit-care-line-investigacao" type="text" inputmode="numeric" value="0" aria-label="Em investigação de saúde" title="Digite o valor e pressione Enter para fixar" />
         </div>
-        <div class="petit-metric">
+        <div class="petit-metric petit-metric--editable" data-care-line="saudavel">
           <span>Saudável<small>linha ativa</small></span>
-          <strong>0</strong>
+          <input class="petit-metric-input" id="petit-care-line-saudavel" type="text" inputmode="numeric" value="0" aria-label="Saudável" title="Digite o valor e pressione Enter para fixar" />
         </div>
-        <div class="petit-metric">
+        <div class="petit-metric petit-metric--editable" data-care-line="obesidade">
           <span>Obesidade<small>linha ativa</small></span>
-          <strong>0</strong>
+          <input class="petit-metric-input" id="petit-care-line-obesidade" type="text" inputmode="numeric" value="0" aria-label="Obesidade" title="Digite o valor e pressione Enter para fixar" />
         </div>
       </div>
     </div>

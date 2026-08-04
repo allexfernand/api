@@ -1066,6 +1066,9 @@ function ensurePetitMdsContent() {
       <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="petit-mds-base-utilization-error"></div>
     </div>`;
   }
+  if (typeof syncPetitCareLineInputsForClone === 'function') {
+    syncPetitCareLineInputsForClone(source, clone);
+  }
   target.innerHTML = clone.innerHTML;
   petitMdsInitialized = true;
 }
@@ -1296,12 +1299,14 @@ function buildPdfReport() {
 
   const content = document.createElement('div');
   content.className = 'pdf-export-content';
+  if (typeof freezePetitCareLineMetrics === 'function') freezePetitCareLineMetrics(activeTab);
   const activeClone = activeTab.cloneNode(true);
   activeClone.classList.add('active');
   replacePdfRemoteAssets(activeClone);
   activeClone.querySelector('.petit-hero-logo')?.remove();
   normalizePdfExportStyles(activeClone);
   copyCanvasAsImages(activeTab, activeClone);
+  if (typeof freezePetitCareLineMetrics === 'function') freezePetitCareLineMetrics(activeClone);
   content.appendChild(activeClone);
 
   report.appendChild(content);

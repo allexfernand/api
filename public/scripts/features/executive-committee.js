@@ -453,3 +453,136 @@ function renderPetitComiteMds() {
   }
 }
 
+function parsePetitCareLineValue(raw) {
+  const digits = String(raw ?? '').replace(/\D/g, '');
+  if (!digits) return 0;
+  return Number(digits);
+}
+
+function formatPetitCareLineValue(value) {
+  return fmt(Number(value) || 0);
+}
+
+function lockPetitCareLineMetric(metric, rawValue) {
+  if (!metric) return;
+  const value = parsePetitCareLineValue(rawValue);
+  const label = metric.querySelector('span')?.childNodes?.[0]?.textContent?.trim() || 'Valor';
+  const input = metric.querySelector('input.petit-metric-input');
+  const inputId = input?.id || '';
+  metric.classList.add('is-locked');
+  metric.dataset.value = String(value);
+  const strong = document.createElement('strong');
+  strong.className = 'petit-metric-value';
+  strong.tabIndex = 0;
+  strong.title = 'Clique para editar';
+  strong.setAttribute('aria-label', `${label}: ${formatPetitCareLineValue(value)}. Clique para editar`);
+  if (inputId) strong.dataset.inputId = inputId;
+  strong.textContent = formatPetitCareLineValue(value);
+  if (input) input.replaceWith(strong);
+  else {
+    const existing = metric.querySelector('.petit-metric-value, strong');
+    if (existing) existing.replaceWith(strong);
+    else metric.appendChild(strong);
+  }
+}
+
+function unlockPetitCareLineMetric(metric) {
+  if (!metric || !metric.classList.contains('is-locked')) return;
+  const valueNode = metric.querySelector('.petit-metric-value, strong');
+  const raw = metric.dataset.value ?? valueNode?.textContent ?? '0';
+  const value = parsePetitCareLineValue(raw);
+  const label = metric.querySelector('span')?.childNodes?.[0]?.textContent?.trim() || 'Valor';
+  const input = document.createElement('input');
+  input.className = 'petit-metric-input';
+  input.type = 'text';
+  input.inputMode = 'numeric';
+  input.value = String(value);
+  input.title = 'Digite o valor e pressione Enter para fixar';
+  input.setAttribute('aria-label', label);
+  if (valueNode?.dataset?.inputId) input.id = valueNode.dataset.inputId;
+  else if (metric.dataset.careLine) {
+    const prefix = metric.closest('#tab-petit-comite-mds') ? 'petit-mds-care-line-' : 'petit-care-line-';
+    input.id = prefix + metric.dataset.careLine;
+  }
+  metric.classList.remove('is-locked');
+  if (valueNode) valueNode.replaceWith(input);
+  else metric.appendChild(input);
+  requestAnimationFrame(() => {
+    input.focus();
+    input.select();
+  });
+}
+
+function freezePetitCareLineMetrics(root = document) {
+  root.querySelectorAll('.petit-metric--editable').forEach((metric) => {
+    if (metric.classList.contains('is-locked')) return;
+    const input = metric.querySelector('input.petit-metric-input');
+    lockPetitCareLineMetric(metric, input?.value ?? metric.dataset.value ?? '0');
+  });
+}
+
+function syncPetitCareLineInputsForClone(sourceRoot, cloneRoot) {
+  if (!sourceRoot || !cloneRoot) return;
+  sourceRoot.querySelectorAll('.petit-metric--editable[data-care-line]').forEach((srcMetric) => {
+    const key = srcMetric.dataset.careLine;
+    const destMetric = cloneRoot.querySelector(`.petit-metric--editable[data-care-line="${key}"]`);
+    if (!destMetric) return;
+    if (srcMetric.classList.contains('is-locked')) {
+      lockPetitCareLineMetric(destMetric, srcMetric.dataset.value ?? srcMetric.querySelector('.petit-metric-value, strong')?.textContent);
+      return;
+    }
+    const srcInput = srcMetric.querySelector('input.petit-metric-input');
+    const destInput = destMetric.querySelector('input.petit-metric-input');
+    if (srcInput && destInput) {
+      destInput.value = srcInput.value;
+      destInput.setAttribute('value', srcInput.value);
+    }
+  });
+}
+
+let petitCareLinesEditingBound = false;
+function bindPetitCareLinesEditing() {
+  if (petitCareLinesEditingBound) return;
+  petitCareLinesEditingBound = true;
+
+  document.addEventListener('keydown', (event) => {
+    const input = event.target?.closest?.('input.petit-metric-input');
+    if (!input) return;
+    const metric = input.closest('.petit-metric--editable');
+    if (!metric) return;
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      lockPetitCareLineMetric(metric, input.value);
+      return;
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      input.value = metric.dataset.value || '0';
+      input.blur();
+    }
+  });
+
+  document.addEventListener('click', (event) => {
+    const valueNode = event.target?.closest?.('.petit-metric--editable.is-locked .petit-metric-value');
+    if (!valueNode) return;
+    const metric = valueNode.closest('.petit-metric--editable');
+    unlockPetitCareLineMetric(metric);
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    const valueNode = event.target?.closest?.('.petit-metric--editable.is-locked .petit-metric-value');
+    if (!valueNode) return;
+    event.preventDefault();
+    unlockPetitCareLineMetric(valueNode.closest('.petit-metric--editable'));
+  });
+
+  document.addEventListener('focusin', (event) => {
+    const input = event.target?.closest?.('input.petit-metric-input');
+    if (!input) return;
+    requestAnimationFrame(() => input.select());
+  });
+}
+
+bindPetitCareLinesEditing();
+
