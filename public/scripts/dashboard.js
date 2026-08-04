@@ -1,5 +1,5 @@
 (async function loadSanusDashboard() {
-  const CACHE = "20260804-ag16-utilization";
+  const CACHE = "20260804-ag16-volume";
 
   function loadScript(src) {
     return new Promise((resolve, reject) => {

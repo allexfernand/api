@@ -289,7 +289,6 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   };
   const monthExpr = `DATE_FORMAT(${quoteIdent(APPOINTMENTS_DATE_COLUMN)}, 'yyyy-MM')`;
   const dayExpr = `DATE_FORMAT(${quoteIdent(APPOINTMENTS_DATE_COLUMN)}, 'yyyy-MM-dd')`;
-  const cpfNormExpr = `LPAD(REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', ''), 11, '0')`;
   const monthRangeFilter = monthList.map((month) => `(
     ${quoteIdent(APPOINTMENTS_DATE_COLUMN)} >= '${month}-01'
     AND ${quoteIdent(APPOINTMENTS_DATE_COLUMN)} < '${nextMonth(month)}-01'
@@ -316,6 +315,16 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const companyFilter = company && companyColumn
       ? `AND UPPER(TRIM(CAST(${quoteIdent(companyColumn)} AS STRING))) = UPPER(TRIM(${params.add(company)}))`
       : '';
+    const recordColumn = pickColumn(columns, appointmentRecordColumnCandidates);
+    // Mesmo racional do KPI principal: volume de agendamentos (card/registro único),
+    // sem deduplicar por CPF.
+    const volumeKeyExpr = recordColumn ? `CAST(${quoteIdent(recordColumn)} AS STRING)` : null;
+    const volumeCountInMonths = (months: string[]) => {
+      const list = months.map((month) => `'${month}'`).join(',');
+      return volumeKeyExpr
+        ? `COUNT(DISTINCT CASE WHEN mes IN (${list}) THEN record_key END)`
+        : `SUM(CASE WHEN mes IN (${list}) THEN 1 ELSE 0 END)`;
+    };
 
     if (granularity === "status_month") {
       const recordColumn = pickColumn(columns, appointmentRecordColumnCandidates);
@@ -498,51 +507,35 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         ? runQuery(
             warehouseId,
             `
-      WITH beneficiary_base AS (
+      WITH volume_base AS (
         SELECT
-          ${monthExpr} AS mes,
-          ${cpfNormExpr} AS cpf_norm
+          ${monthExpr} AS mes
+          ${volumeKeyExpr ? `, ${volumeKeyExpr} AS record_key` : ""}
         FROM ${APPOINTMENTS_TABLE}
         WHERE (${monthRangeFilter})
-          AND cpf_atendido IS NOT NULL
-          AND TRIM(CAST(cpf_atendido AS STRING)) != ''
           ${assuntoExclusionSql()}
           ${groupFilter}
           ${companyFilter}
           ${partnerFilter}
+          ${volumeKeyExpr ? `AND ${volumeKeyExpr} IS NOT NULL` : ""}
       )
       SELECT
         mes,
-        COUNT(DISTINCT cpf_norm) AS unique_beneficiaries
-      FROM beneficiary_base
-      WHERE cpf_norm IS NOT NULL
-        AND cpf_norm != ''
-        AND cpf_norm != '00000000000'
+        ${volumeKeyExpr ? "COUNT(DISTINCT record_key)" : "COUNT(*)"} AS volume
+      FROM volume_base
       GROUP BY mes
       UNION ALL
-      SELECT '__last_1_month', COUNT(DISTINCT CASE WHEN mes IN (${fullMonthScopes.last_1_month.map((month) => `'${month}'`).join(',')}) THEN cpf_norm END)
-      FROM beneficiary_base
-      WHERE cpf_norm IS NOT NULL
-        AND cpf_norm != ''
-        AND cpf_norm != '00000000000'
+      SELECT '__last_1_month', ${volumeCountInMonths(fullMonthScopes.last_1_month)}
+      FROM volume_base
       UNION ALL
-      SELECT '__last_3_months', COUNT(DISTINCT CASE WHEN mes IN (${fullMonthScopes.last_3_months.map((month) => `'${month}'`).join(',')}) THEN cpf_norm END)
-      FROM beneficiary_base
-      WHERE cpf_norm IS NOT NULL
-        AND cpf_norm != ''
-        AND cpf_norm != '00000000000'
+      SELECT '__last_3_months', ${volumeCountInMonths(fullMonthScopes.last_3_months)}
+      FROM volume_base
       UNION ALL
-      SELECT '__last_6_months', COUNT(DISTINCT CASE WHEN mes IN (${fullMonthScopes.last_6_months.map((month) => `'${month}'`).join(',')}) THEN cpf_norm END)
-      FROM beneficiary_base
-      WHERE cpf_norm IS NOT NULL
-        AND cpf_norm != ''
-        AND cpf_norm != '00000000000'
+      SELECT '__last_6_months', ${volumeCountInMonths(fullMonthScopes.last_6_months)}
+      FROM volume_base
       UNION ALL
-      SELECT '__last_12_months', COUNT(DISTINCT cpf_norm)
-      FROM beneficiary_base
-      WHERE cpf_norm IS NOT NULL
-        AND cpf_norm != ''
-        AND cpf_norm != '00000000000'
+      SELECT '__last_12_months', ${volumeKeyExpr ? "COUNT(DISTINCT record_key)" : "COUNT(*)"}
+      FROM volume_base
     `,
             params.list,
           )
@@ -550,7 +543,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     ]);
 
     const byMes = Object.fromEntries(rows.map((r) => [String(getCell(r[0]) || ''), toInt(r[1])]));
-    const beneficiariesByMes = new Map<string, number>();
+    const volumeByMes = new Map<string, number>();
     const utilization = {
       last_1_month: 0,
       last_3_months: 0,
@@ -564,13 +557,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       else if (key === "__last_3_months") utilization.last_3_months = value;
       else if (key === "__last_6_months") utilization.last_6_months = value;
       else if (key === "__last_12_months") utilization.last_12_months = value;
-      else beneficiariesByMes.set(key, value);
+      else volumeByMes.set(key, value);
     });
     const series = monthList.map((m) => ({
       mes: m,
       total: byMes[m] || 0,
-      unique_cpfs: beneficiariesByMes.get(m) || 0,
-      unique_beneficiaries: beneficiariesByMes.get(m) || 0,
+      unique_cpfs: volumeByMes.get(m) || 0,
+      unique_beneficiaries: volumeByMes.get(m) || 0,
     }));
 
     res.status(200).json({
@@ -580,6 +573,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       utilization,
       utilization_periods: fullMonthScopes,
       beneficiaries_included: Boolean(includeBeneficiaries),
+      volume_metric: volumeKeyExpr ? "distinct_record" : "row_count",
+      record_column: recordColumn,
       source: "atendimento_summarized_gold_live.hora_criacao_atendimento",
       filters: { group_name: groupName, company, partner_broker_id: partnerBrokerId },
       company_column: companyColumn,

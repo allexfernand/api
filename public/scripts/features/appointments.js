@@ -174,6 +174,7 @@ function selectedAppointmentsScopeText() {
 }
 
 function renderAppointmentsUtilization(data, demographicsData, comparison) {
+  const periods = data?.utilization_periods || {};
   return renderUtilizationCards(data, demographicsData, comparison, {
     loading: document.getElementById('appointments-utilization-loading'),
     content: document.getElementById('appointments-utilization-content'),
@@ -181,6 +182,39 @@ function renderAppointmentsUtilization(data, demographicsData, comparison) {
     context: document.getElementById('appointments-utilization-context'),
     scoped: Boolean(currentGroups.length || currentPartnerBrokerId || currentCompany),
     scopeText: selectedAppointmentsScopeText(),
+    metricKind: 'volume de agendamentos',
+    baseKind: 'beneficiários',
+    missingMetricMessage: 'Volume de agendamentos indisponível para o schema atual.',
+    cards: [
+      {
+        key: 'last_1_month',
+        label: 'Agendamentos · último mês cheio',
+        period: periods.last_1_month,
+        accent: '#4f46e5',
+        tint: '#eef2ff',
+      },
+      {
+        key: 'last_3_months',
+        label: 'Agendamentos · 3 meses',
+        period: periods.last_3_months,
+        accent: '#0f766e',
+        tint: '#f0fdfa',
+      },
+      {
+        key: 'last_6_months',
+        label: 'Agendamentos · 6 meses',
+        period: periods.last_6_months,
+        accent: '#7c3aed',
+        tint: '#f5f3ff',
+      },
+      {
+        key: 'last_12_months',
+        label: 'Agendamentos · 12 meses',
+        period: periods.last_12_months,
+        accent: '#b45309',
+        tint: '#fffbeb',
+      },
+    ],
   });
 }
 

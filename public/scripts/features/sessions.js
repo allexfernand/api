@@ -431,10 +431,10 @@ function renderUtilizationCards(data, demographicsData, comparison, elements = {
     errorBox.textContent = !base
       ? 'Base total de beneficiários indisponível para o filtro atual.'
       : (!data?.utilization
-        ? 'Usuários únicos indisponíveis para o schema atual.'
+        ? (elements.missingMetricMessage || 'Usuários únicos indisponíveis para o schema atual.')
         : (comparisonError ? 'Comparativo global indisponível no momento.' : ''));
   }
-  const cards = [
+  const cards = elements.cards || [
     {
       key: 'last_1_month',
       label: 'Utilização · último mês cheio',
@@ -484,7 +484,9 @@ function renderUtilizationCards(data, demographicsData, comparison, elements = {
       </div>
       <div class="sessions-utilization-delta ${deltaClass(selectedRatio, globalRatio)}">${escapeHtml(deltaLabel(selectedRatio, globalRatio))}</div>
     </div>` : '';
-    const meta = `${periodLabel(card.period)} · base ${hasScopedComparison ? 'do recorte' : 'global'}: ${fmt(base)} beneficiários`;
+    const baseKind = elements.baseKind || 'beneficiários';
+    const metricKind = elements.metricKind || 'usuários únicos';
+    const meta = `${periodLabel(card.period || periods[card.key])} · ${metricKind} ÷ base ${hasScopedComparison ? 'do recorte' : 'global'}: ${fmt(base)} ${baseKind}`;
     return `<div class="sessions-utilization-card" style="--accent:${escapeAttr(card.accent)};--tint:${escapeAttr(card.tint)}">
     <div class="sessions-utilization-label">${escapeHtml(card.label)}</div>
     <div class="sessions-utilization-value"><span>${fmt(selectedValue)}</span><span class="sessions-utilization-pct">${escapeHtml(pctLabel(selectedRatio))}</span></div>
