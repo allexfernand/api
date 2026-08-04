@@ -13,7 +13,7 @@ let currentDashboardUser = '';
 // regras legadas por completo para aquele usuário específico.
 let allowedMenusOverride = null;
 
-let usersData = [], companiesData = [], sessionCompaniesData = [], eChart, agegroupChart, partnerVisionEvolutionChart, appointmentTypesTrendChart, appointmentsDailyChart, appointmentsStatusChart, careCoordinationLinesChart, careLinesEvolutionChart, careComplementChart, careActiveComplementChart, petitCareLinesChart, petitSessionsEvolChart, petitSessionsTotalEvolChart, sessionsEvolChart, sessionsTotalEvolChart, sessionsAttendanceChart, sessionsDailyChart, sessionsTopGroupsChart, qualityVolumeEvolutionChart, qualityDailyVolumeEvolutionChart, qualityEvolutionChart, qualityCriteriaEvolutionChart;
+let usersData = [], companiesData = [], sessionCompaniesData = [], eChart, agegroupChart, partnerVisionEvolutionChart, partnerReactivationChart, appointmentTypesTrendChart, appointmentsDailyChart, appointmentsStatusChart, careCoordinationLinesChart, careLinesEvolutionChart, careComplementChart, careActiveComplementChart, petitCareLinesChart, petitSessionsEvolChart, petitSessionsTotalEvolChart, sessionsEvolChart, sessionsTotalEvolChart, sessionsAttendanceChart, sessionsDailyChart, sessionsTopGroupsChart, qualityVolumeEvolutionChart, qualityDailyVolumeEvolutionChart, qualityEvolutionChart, qualityCriteriaEvolutionChart;
 let currentGroup = '', currentType = '', currentCompany = '';
 let currentGroups = [];
 let currentPartnerBrokerId = '';
@@ -23,6 +23,14 @@ let partnerVisionRequestId = 0;
 let partnerVisionEvolutionRequestId = 0;
 let partnerVisionSummaryRequestId = 0;
 let partnerVisionCompanyDrilldownRequestId = 0;
+let partnerReactivationRequestId = 0;
+let partnerReactivationGroupsRequestId = 0;
+let partnerReactivationWindow = 6;
+let partnerReactivationGroup = '';
+let partnerReactivationRequestId = 0;
+let partnerReactivationGroupsRequestId = 0;
+let partnerReactivationWindow = 6;
+let partnerReactivationGroup = '';
 let currentCareBeneficiaryType = '';
 let partnerOptionsCache = [];
 let groupOptionsCache = { orgs: null, sessions: null, petitMds: null };

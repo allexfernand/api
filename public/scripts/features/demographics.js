@@ -390,6 +390,8 @@ async function loadPartnerVision() {
 
   loadPartnerVisionEvolution();
   loadPartnerVisionSummary();
+  loadPartnerReactivationGroups();
+  loadPartnerReactivation();
   const p = partnerVisionParams();
   const data = await safeGet('/api/demographics' + (p.toString() ? '?' + p.toString() : ''));
   if (requestId !== partnerVisionRequestId) return;
@@ -412,6 +414,207 @@ async function loadPartnerVision() {
       ? `Parceiro: ${selectedPartnerVisionLabel()}`
       : 'Todos os parceiros · beneficiaries · acumulado desde mai/2022';
   }
+  if (loading) loading.style.display = 'none';
+}
+
+function partnerReactivationMonthLabel(month) {
+  return partnerVisionMonthLabel(month);
+}
+
+function initPartnerReactivationControls() {
+  const groupSelect = document.getElementById('partner-reactivation-group');
+  const windowButtons = document.querySelectorAll('.partner-reactivation-window');
+  if (groupSelect && !groupSelect.dataset.bound) {
+    groupSelect.dataset.bound = '1';
+    groupSelect.addEventListener('change', () => {
+      partnerReactivationGroup = String(groupSelect.value || '').trim();
+      loadPartnerReactivation();
+    });
+  }
+  windowButtons.forEach((button) => {
+    if (button.dataset.bound) return;
+    button.dataset.bound = '1';
+    button.addEventListener('click', () => {
+      const next = Number(button.dataset.window || 6);
+      partnerReactivationWindow = next === 3 || next === 12 ? next : 6;
+      windowButtons.forEach((item) => item.classList.toggle('is-active', Number(item.dataset.window) === partnerReactivationWindow));
+      loadPartnerReactivation();
+    });
+  });
+}
+
+async function loadPartnerReactivationGroups() {
+  initPartnerReactivationControls();
+  const select = document.getElementById('partner-reactivation-group');
+  if (!select) return;
+  const requestId = ++partnerReactivationGroupsRequestId;
+  const previous = partnerReactivationGroup || String(select.value || '').trim();
+
+  let groupRows = [];
+  if (currentPartnerBrokerIds.length > 1) {
+    const results = await Promise.all(currentPartnerBrokerIds.map(async (id) => {
+      const data = await safeGet('/api/data?' + partnerVisionSingleParams(id).toString());
+      return Array.isArray(data?.groups) ? data.groups : [];
+    }));
+    groupRows = results.flat();
+  } else {
+    const p = partnerVisionParams();
+    const data = await safeGet('/api/data' + (p.toString() ? '?' + p.toString() : ''));
+    groupRows = Array.isArray(data?.groups) ? data.groups : [];
+  }
+  if (requestId !== partnerReactivationGroupsRequestId) return;
+
+  const unique = [...new Set(groupRows.map((item) => String(item.economic_group || '').trim()).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  select.innerHTML = `<option value="">Selecione…</option>${unique.map((name) =>
+    `<option value="${escapeAttr(name)}"${previous === name ? ' selected' : ''}>${escapeHtml(name)}</option>`
+  ).join('')}`;
+  if (previous && unique.includes(previous)) {
+    partnerReactivationGroup = previous;
+    select.value = previous;
+  } else {
+    partnerReactivationGroup = '';
+    select.value = '';
+  }
+}
+
+function renderPartnerReactivationEmpty(message) {
+  const body = document.getElementById('partner-reactivation-body');
+  const rows = document.getElementById('partner-reactivation-body-rows');
+  const context = document.getElementById('partner-reactivation-context');
+  const skel = document.getElementById('skel-partner-reactivation');
+  const wrap = document.getElementById('partner-reactivation-chart-wrap');
+  if (body) body.style.display = 'none';
+  if (rows) rows.innerHTML = `<tr><td colspan="6">${escapeHtml(message)}</td></tr>`;
+  if (context) context.textContent = message;
+  if (skel) skel.style.display = 'none';
+  if (wrap) wrap.style.display = 'none';
+  if (partnerReactivationChart) {
+    partnerReactivationChart.destroy();
+    partnerReactivationChart = null;
+  }
+}
+
+async function loadPartnerReactivation() {
+  initPartnerReactivationControls();
+  const loading = document.getElementById('partner-reactivation-loading');
+  const error = document.getElementById('partner-reactivation-error');
+  const body = document.getElementById('partner-reactivation-body');
+  const context = document.getElementById('partner-reactivation-context');
+  const groupSelect = document.getElementById('partner-reactivation-group');
+  const groupName = partnerReactivationGroup || String(groupSelect?.value || '').trim();
+  partnerReactivationGroup = groupName;
+
+  if (!groupName) {
+    if (loading) loading.style.display = 'none';
+    if (error) {
+      error.style.display = 'none';
+      error.textContent = '';
+    }
+    renderPartnerReactivationEmpty('Selecione um grupo econômico para ver a evolução de sessões e onde reativar engajamento.');
+    return;
+  }
+
+  const requestId = ++partnerReactivationRequestId;
+  if (loading) loading.style.display = 'block';
+  if (error) {
+    error.style.display = 'none';
+    error.textContent = '';
+  }
+  if (body) body.style.display = 'none';
+
+  const p = partnerVisionParams();
+  p.set('group_name', groupName);
+  p.set('window', String(partnerReactivationWindow || 6));
+  const data = await safeGet('/api/partner-reactivation?' + p.toString());
+  if (requestId !== partnerReactivationRequestId) return;
+
+  if (!data || data.error) {
+    if (loading) loading.style.display = 'none';
+    if (error) {
+      error.style.display = 'block';
+      error.textContent = data?.error ? String(data.error).slice(0, 220) : 'Erro ao carregar análise de reativação.';
+    }
+    renderPartnerReactivationEmpty('Não foi possível analisar este grupo.');
+    return;
+  }
+
+  const sessionsEl = document.getElementById('partner-reactivation-sessions');
+  const livesEl = document.getElementById('partner-reactivation-lives');
+  const engagementEl = document.getElementById('partner-reactivation-engagement');
+  const chartMeta = document.getElementById('partner-reactivation-chart-meta');
+  const rows = document.getElementById('partner-reactivation-body-rows');
+  const skel = document.getElementById('skel-partner-reactivation');
+  const wrap = document.getElementById('partner-reactivation-chart-wrap');
+  const cv = document.getElementById('partnerReactivationChart');
+
+  if (sessionsEl) sessionsEl.textContent = fmt(Number(data.group_sessions) || 0);
+  if (livesEl) livesEl.textContent = fmt(Number(data.group_lives) || 0);
+  if (engagementEl) engagementEl.textContent = Number(data.group_engagement || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (chartMeta) {
+    chartMeta.textContent = `${groupName} · últimos ${data.window_months || partnerReactivationWindow} meses${currentPartnerBrokerIds.length ? ` · ${selectedPartnerVisionLabel()}` : ''}`;
+  }
+  if (context) {
+    context.textContent = `${groupName} · janela de ${data.window_months || partnerReactivationWindow} meses · engajamento = sessões / vidas`;
+  }
+
+  const recommendations = Array.isArray(data.recommendations) ? data.recommendations : [];
+  if (rows) {
+    rows.innerHTML = recommendations.length
+      ? recommendations.map((item) => `<tr>
+          <td style="text-align:left;font-weight:600">${escapeHtml(item.company || '—')}</td>
+          <td>${fmt(Number(item.lives) || 0)}</td>
+          <td>${fmt(Number(item.sessions_total) || 0)}</td>
+          <td>${Number(item.engagement || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+          <td>${Number(item.decline_pct || 0).toLocaleString('pt-BR', { maximumFractionDigits: 0 })}%</td>
+          <td>${escapeHtml(item.reason || '—')}</td>
+        </tr>`).join('')
+      : `<tr><td colspan="6">Nenhuma empresa com sinal claro de reativação nesta janela.</td></tr>`;
+  }
+
+  const series = Array.isArray(data.series) ? data.series : [];
+  const labels = series.map((item) => partnerReactivationMonthLabel(item.mes));
+  const values = series.map((item) => Number(item.sessions) || 0);
+  if (skel) skel.style.display = 'none';
+  if (wrap) wrap.style.display = 'block';
+  if (cv) {
+    if (partnerReactivationChart) partnerReactivationChart.destroy();
+    partnerReactivationChart = new Chart(cv, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          label: 'Sessões',
+          data: values,
+          borderColor: '#0f766e',
+          backgroundColor: 'rgba(15,118,110,0.12)',
+          borderWidth: 2.5,
+          pointRadius: 3,
+          pointBackgroundColor: '#0f766e',
+          tension: 0.35,
+          fill: true,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: (ctx) => `Sessões: ${fmt(ctx.parsed.y || 0)}`,
+            },
+          },
+        },
+        scales: {
+          x: { ticks: { font: { size: 10 }, color: '#94a3b8' }, grid: { display: false }, border: { display: false } },
+          y: { beginAtZero: true, ticks: { font: { size: 10 }, color: '#94a3b8', callback: (v) => fmt(v) }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } },
+        },
+      },
+    });
+  }
+
+  if (body) body.style.display = 'grid';
   if (loading) loading.style.display = 'none';
 }
 
