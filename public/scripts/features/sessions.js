@@ -389,15 +389,20 @@ function renderSessionsUtilization(data, demographicsData, comparison) {
 function renderUtilizationCards(data, demographicsData, comparison, elements = {}) {
   const { loading, content, errorBox, context } = elements;
   if (!content) return;
-  const base = demographicsData && !demographicsData.error
-    ? Number(demographicsData.total_beneficiarios ?? demographicsData.total_vidas) || 0
-    : 0;
+  const useAppointmentVolumeBase = Boolean(elements.useAppointmentVolumeBase);
+  const base = useAppointmentVolumeBase
+    ? Number(data?.utilization_base) || 0
+    : (demographicsData && !demographicsData.error
+      ? Number(demographicsData.total_beneficiarios ?? demographicsData.total_vidas) || 0
+      : 0);
   const utilization = data?.utilization || {};
   const periods = data?.utilization_periods || {};
   const comparisonData = comparison?.data && !comparison.data.error ? comparison.data : null;
-  const comparisonBase = comparison?.demographicsData && !comparison.demographicsData.error
-    ? Number(comparison.demographicsData.total_beneficiarios ?? comparison.demographicsData.total_vidas) || 0
-    : 0;
+  const comparisonBase = useAppointmentVolumeBase
+    ? Number(comparisonData?.utilization_base) || 0
+    : (comparison?.demographicsData && !comparison.demographicsData.error
+      ? Number(comparison.demographicsData.total_beneficiarios ?? comparison.demographicsData.total_vidas) || 0
+      : 0);
   const hasScopedComparison = Boolean(elements.scoped);
   const scopeText = elements.scopeText || selectedSessionScopeText();
   const hasComparison = Boolean(hasScopedComparison && comparisonData && comparisonBase > 0);
@@ -429,7 +434,9 @@ function renderUtilizationCards(data, demographicsData, comparison, elements = {
     const comparisonError = hasScopedComparison && !hasComparison && !hasError;
     errorBox.style.display = hasError || comparisonError ? 'block' : 'none';
     errorBox.textContent = !base
-      ? 'Base total de beneficiários indisponível para o filtro atual.'
+      ? (useAppointmentVolumeBase
+        ? 'Total geral de agendamentos indisponível para o filtro atual.'
+        : 'Base total de beneficiários indisponível para o filtro atual.')
       : (!data?.utilization
         ? (elements.missingMetricMessage || 'Usuários únicos indisponíveis para o schema atual.')
         : (comparisonError ? 'Comparativo global indisponível no momento.' : ''));
@@ -486,7 +493,7 @@ function renderUtilizationCards(data, demographicsData, comparison, elements = {
     </div>` : '';
     const baseKind = elements.baseKind || 'beneficiários';
     const metricKind = elements.metricKind || 'usuários únicos';
-    const meta = `${periodLabel(card.period || periods[card.key])} · ${metricKind} ÷ base ${hasScopedComparison ? 'do recorte' : 'global'}: ${fmt(base)} ${baseKind}`;
+    const meta = `${periodLabel(card.period || periods[card.key])} · ${metricKind} ÷ total ${hasScopedComparison ? 'do recorte' : 'geral'}: ${fmt(base)} ${baseKind}`;
     return `<div class="sessions-utilization-card" style="--accent:${escapeAttr(card.accent)};--tint:${escapeAttr(card.tint)}">
     <div class="sessions-utilization-label">${escapeHtml(card.label)}</div>
     <div class="sessions-utilization-value"><span>${fmt(selectedValue)}</span><span class="sessions-utilization-pct">${escapeHtml(pctLabel(selectedRatio))}</span></div>

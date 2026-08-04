@@ -536,6 +536,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       UNION ALL
       SELECT '__last_12_months', ${volumeKeyExpr ? "COUNT(DISTINCT record_key)" : "COUNT(*)"}
       FROM volume_base
+      UNION ALL
+      SELECT '__total', ${volumeKeyExpr ? "COUNT(DISTINCT record_key)" : "COUNT(*)"}
+      FROM volume_base
     `,
             params.list,
           )
@@ -550,6 +553,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       last_6_months: 0,
       last_12_months: 0,
     };
+    let utilizationBase = 0;
     beneficiaryRows.forEach((row) => {
       const key = String(getCell(row[0]) || "");
       const value = toInt(row[1]);
@@ -557,8 +561,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       else if (key === "__last_3_months") utilization.last_3_months = value;
       else if (key === "__last_6_months") utilization.last_6_months = value;
       else if (key === "__last_12_months") utilization.last_12_months = value;
+      else if (key === "__total") utilizationBase = value;
       else volumeByMes.set(key, value);
     });
+    // Fallback: se a query antiga não trouxe __total, usa a janela de 12 meses cheios.
+    if (!utilizationBase) utilizationBase = utilization.last_12_months;
     const series = monthList.map((m) => ({
       mes: m,
       total: byMes[m] || 0,
@@ -571,6 +578,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       period_months: monthList,
       series,
       utilization,
+      utilization_base: utilizationBase,
       utilization_periods: fullMonthScopes,
       beneficiaries_included: Boolean(includeBeneficiaries),
       volume_metric: volumeKeyExpr ? "distinct_record" : "row_count",
