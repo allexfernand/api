@@ -141,7 +141,8 @@ async function loadAppointments() {
   const meses = [...selectedMonths].sort();
   const p = new URLSearchParams();
   if (meses.length > 0)  p.set('meses', meses.join(','));
-  p.set('dedupe', 'distinct_cpf');
+  // Indicador inicial = volume de agendamentos (tickets), sem dedupe por CPF.
+  // O backend ainda evita contar o mesmo card/registro duas vezes quando há id.
   appendGroupParams(p);
   if (currentCompany)    p.set('company', currentCompany);
   const qs = p.toString() ? '?' + p.toString() : '';
@@ -154,9 +155,9 @@ async function loadAppointments() {
 
   if (appt && !appt.error) {
     document.getElementById('bullet-agend').textContent = fmt(appt.total);
-    let label = 'CPFs distintos por tipo · últimos 12 meses';
-    if (meses.length === 1) { const [y,mm] = meses[0].split('-'); label = `CPFs distintos por tipo · ${mN[mm]}/${y}`; }
-    else if (meses.length > 1) label = `CPFs distintos por tipo · ${meses.length} meses selecionados`;
+    let label = 'Total de agendamentos · últimos 12 meses';
+    if (meses.length === 1) { const [y,mm] = meses[0].split('-'); label = `Total de agendamentos · ${mN[mm]}/${y}`; }
+    else if (meses.length > 1) label = `Total de agendamentos · ${meses.length} meses selecionados`;
     document.getElementById('bullet-agend-periodo').textContent = label;
   } else {
     document.getElementById('bullet-agend').textContent = 'Erro';

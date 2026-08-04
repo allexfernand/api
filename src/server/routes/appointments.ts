@@ -59,6 +59,46 @@ const companyColumnCandidates = [
   'company_name',
 ];
 
+const appointmentRecordColumnCandidates = [
+  'id_unico',
+  'identificacao_atendimento',
+  'record_id',
+  'registro_id',
+  'card_uuid',
+  'card_id',
+  'id_card',
+  'cardId',
+  'agendamento_id',
+  'id_agendamento',
+  'appointment_id',
+  'atendimento_id',
+  'id_atendimento',
+  'ticket_id',
+  'solicitacao_id',
+  'id_solicitacao',
+  'protocolo',
+  'protocol',
+  'id',
+];
+
+function assuntoExclusionSql() {
+  return `
+    AND UPPER(assunto) NOT IN (
+      'ATENDIMENTO WHATSAPP',
+      'ATENDIMENTO HUMANO',
+      'FORA DE HORÁRIO DE ATENDIMENTO'
+    )
+    AND LOWER(COALESCE(CAST(assunto AS STRING), '')) NOT LIKE '%http%'
+    AND UPPER(COALESCE(CAST(assunto AS STRING), '')) NOT LIKE '%ATENDIMENTO HUMANO%'
+    AND UPPER(TRIM(REGEXP_REPLACE(COALESCE(CAST(assunto AS STRING), ''), '[^A-Za-z0-9]+', ' '))) NOT LIKE '%ATENDIMENTO%HUMANO%'
+    AND NOT (
+      assunto RLIKE '^[A-Z][a-z]+ [A-Z]'
+      OR assunto RLIKE '^[A-Z][A-Z]+ [A-Z]'
+      OR assunto RLIKE '^ [A-Z]'
+    )
+  `;
+}
+
 function parseGroupNames(query: Record<string, any>) {
   const raw = query.group_names;
   if (raw) {
@@ -188,11 +228,17 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
   try {
     const warehouseId = await resolveWarehouseId();
-    const columns = (groupNames.length || company || partnerBrokerId) ? await getColumns(warehouseId, APPOINTMENTS_TABLE) : [];
+    // Sempre lê colunas no total sem CPF: precisamos do id do card/registro
+    // pra não contar duas vezes o mesmo agendamento se a gold tiver linhas repetidas.
+    const columns = await getColumns(warehouseId, APPOINTMENTS_TABLE);
     const params = createSqlParams();
     const groupFilter = buildGroupFilter(columns, groupNames, params);
     const companyFilter = buildCompanyFilter(columns, company, params);
     const partnerFilter = buildPartnerFilter(columns, partnerBrokerId, params);
+    const recordColumn = pickColumn(columns, appointmentRecordColumnCandidates);
+    const volumeExpr = recordColumn
+      ? `COUNT(DISTINCT CAST(${quoteIdent(recordColumn)} AS STRING))`
+      : `COUNT(*)`;
 
     const rows = await runQuery(warehouseId, distinctCpf ? `
       WITH typed_rows AS (
@@ -203,19 +249,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         WHERE (${monthRangeFilter})
           AND cpf_atendido IS NOT NULL
           AND TRIM(CAST(cpf_atendido AS STRING)) != ''
-          AND UPPER(assunto) NOT IN (
-            'ATENDIMENTO WHATSAPP',
-            'ATENDIMENTO HUMANO',
-            'FORA DE HORÁRIO DE ATENDIMENTO'
-          )
-          AND LOWER(COALESCE(CAST(assunto AS STRING), '')) NOT LIKE '%http%'
-          AND UPPER(COALESCE(CAST(assunto AS STRING), '')) NOT LIKE '%ATENDIMENTO HUMANO%'
-          AND UPPER(TRIM(REGEXP_REPLACE(COALESCE(CAST(assunto AS STRING), ''), '[^A-Za-z0-9]+', ' '))) NOT LIKE '%ATENDIMENTO%HUMANO%'
-          AND NOT (
-            assunto RLIKE '^[A-Z][a-z]+ [A-Z]'
-            OR assunto RLIKE '^[A-Z][A-Z]+ [A-Z]'
-            OR assunto RLIKE '^ [A-Z]'
-          )
+          ${assuntoExclusionSql()}
           ${groupFilter}
           ${companyFilter}
           ${partnerFilter}
@@ -235,32 +269,27 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       SELECT SUM(total) AS total_tickets
       FROM grouped
     ` : `
-      SELECT COUNT(*) AS total_tickets
+      SELECT ${volumeExpr} AS total_tickets
       FROM ${APPOINTMENTS_TABLE}
       WHERE (${monthRangeFilter})
-        AND UPPER(assunto) NOT IN (
-          'ATENDIMENTO WHATSAPP',
-          'ATENDIMENTO HUMANO',
-          'FORA DE HORÁRIO DE ATENDIMENTO'
-        )
-        AND LOWER(COALESCE(CAST(assunto AS STRING), '')) NOT LIKE '%http%'
-        AND UPPER(COALESCE(CAST(assunto AS STRING), '')) NOT LIKE '%ATENDIMENTO HUMANO%'
-        AND UPPER(TRIM(REGEXP_REPLACE(COALESCE(CAST(assunto AS STRING), ''), '[^A-Za-z0-9]+', ' '))) NOT LIKE '%ATENDIMENTO%HUMANO%'
-        AND NOT (
-          assunto RLIKE '^[A-Z][a-z]+ [A-Z]'
-          OR assunto RLIKE '^[A-Z][A-Z]+ [A-Z]'
-          OR assunto RLIKE '^ [A-Z]'
-        )
+        ${assuntoExclusionSql()}
         ${groupFilter}
         ${companyFilter}
         ${partnerFilter}
+        ${recordColumn ? `AND ${quoteIdent(recordColumn)} IS NOT NULL` : ''}
     `, params.list);
 
     res.status(200).json({
       total: toInt(rows[0]?.[0]),
       months: monthList,
       source: "atendimento_summarized_gold_live",
-      filters: { group_name: groupName, company, partner_broker_id: partnerBrokerId, dedupe: distinctCpf ? 'distinct_cpf' : null },
+      filters: {
+        group_name: groupName,
+        company,
+        partner_broker_id: partnerBrokerId,
+        dedupe: distinctCpf ? 'distinct_cpf' : recordColumn ? 'distinct_record' : null,
+      },
+      record_column: recordColumn,
     });
   } catch (err) {
     res.status(500).json({ error: (err as { message?: string }).message });

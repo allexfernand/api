@@ -1,5 +1,5 @@
 (async function loadSanusDashboard() {
-  const CACHE = "20260804-chart-ready";
+  const CACHE = "20260804-appointments-volume";
 
   function loadScript(src) {
     return new Promise((resolve, reject) => {
