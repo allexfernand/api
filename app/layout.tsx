@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Script from "next/script";
 import { Inter } from "next/font/google";
 import type { ReactNode } from "react";
 import "../styles/dashboard.css";
@@ -23,10 +22,9 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
       </head>
       <body className={`${inter.className} auth-locked`}>
         {children}
-        <Script
-          src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"
-          strategy="beforeInteractive"
-        />
+        {/* Chart.js é carregado por /scripts/dashboard.js (cópia local em
+            /vendor) antes dos feature scripts — evita "Chart is not defined"
+            pela corrida do next/script assíncrono com o CDN. */}
       </body>
     </html>
   );
