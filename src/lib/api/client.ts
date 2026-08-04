@@ -13,6 +13,13 @@ export class ApiClientError extends Error {
 
 type RequestOptions<T> = RequestInit & { schema?: z.ZodType<T> };
 
+function formatZodMessage(error: z.ZodError) {
+  const first = error.issues[0];
+  if (!first) return "Resposta inválida do servidor.";
+  // Evita jogar o JSON cru do Zod na UI de login/2FA.
+  return first.message || "Resposta inválida do servidor.";
+}
+
 export async function apiRequest<T>(path: string, options: RequestOptions<T> = {}): Promise<T> {
   const response = await fetch(path, {
     ...options,
@@ -27,5 +34,8 @@ export async function apiRequest<T>(path: string, options: RequestOptions<T> = {
         : payload?.error?.message || `HTTP ${response.status}`;
     throw new ApiClientError(message, response.status, payload);
   }
-  return options.schema ? options.schema.parse(payload) : (payload as T);
+  if (!options.schema) return payload as T;
+  const parsed = options.schema.safeParse(payload);
+  if (parsed.success) return parsed.data;
+  throw new ApiClientError(formatZodMessage(parsed.error), 200, payload);
 }

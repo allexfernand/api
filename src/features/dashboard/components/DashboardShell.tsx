@@ -150,13 +150,25 @@ function LoginOverlay({ authenticated }: { authenticated: boolean }) {
     setSubmitting(true);
     setError("");
     try {
-      const auth = await apiRequest("/api/auth/totp/verify", {
+      // O servidor já grava o cookie de sessão no 200. Não podemos deixar o
+      // parse do cliente bloquear o redirect (foi o caso do role "custom").
+      const response = await fetch("/api/auth/totp/verify", {
         method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code: totpCode.replace(/\s+/g, "") }),
-        schema: authResponseSchema,
       });
-      // Força reload completo pra o cookie de sessão já gravado ser lido.
-      window.location.assign(auth.role === "mds" ? "/mds" : "/");
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        const message =
+          typeof payload?.error === "string"
+            ? payload.error
+            : payload?.error?.message || `HTTP ${response.status}`;
+        throw new Error(message);
+      }
+      const parsed = authResponseSchema.safeParse(payload);
+      const role = parsed.success ? parsed.data.role : payload?.role;
+      window.location.assign(role === "mds" ? "/mds" : "/");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Não foi possível validar o autenticador.");
     } finally {

@@ -14,16 +14,19 @@ describe("authResponseSchema after custom role", () => {
     });
     expect(r.success).toBe(true);
   });
-  it("parses custom", () => {
+
+  it("parses custom role without blocking 2FA/login", () => {
     const r = authResponseSchema.safeParse({
       ok: true,
       role: "custom",
-      user: "x",
+      user: "elane.andrade@sanus.tech",
       allowedMenus: ["demografica"],
       isAdmin: false,
     });
     expect(r.success).toBe(true);
+    if (r.success) expect(r.data.role).toBe("custom");
   });
+
   it("parses null menus", () => {
     const r = authResponseSchema.safeParse({
       ok: true,
@@ -34,6 +37,19 @@ describe("authResponseSchema after custom role", () => {
     });
     expect(r.success).toBe(true);
   });
+
+  it("drops unknown menu ids instead of failing", () => {
+    const r = authResponseSchema.safeParse({
+      ok: true,
+      role: "custom",
+      user: "x",
+      allowedMenus: ["demografica", "menu-inexistente"],
+      isAdmin: false,
+    });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.allowedMenus).toEqual(["demografica"]);
+  });
+
   it("parses admin list with custom role in catalog", () => {
     const r = managedUsersListResponseSchema.safeParse({
       users: [

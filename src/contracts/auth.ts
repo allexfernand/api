@@ -22,6 +22,9 @@ export const totpVerifyRequestSchema = z.object({
 });
 
 // Login pode devolver sessão normal, pedir troca de senha, ou pedir 2FA.
+// `role` aceita string (não só o enum atual): o cookie já foi gravado no
+// servidor antes do parse no cliente — rejeitar um papel novo (ex.: custom)
+// derrubava o 2FA com JSON feio mesmo com sessão válida.
 export const authResponseSchema = z.object({
   ok: z.literal(true),
   mustChangePassword: z.boolean().optional().default(false),
@@ -29,10 +32,20 @@ export const authResponseSchema = z.object({
   needsTotp: z.boolean().optional().default(false),
   totpQrDataUrl: z.string().optional(),
   totpManualKey: z.string().optional(),
-  role: dashboardRoleSchema.optional(),
+  role: z.union([dashboardRoleSchema, z.string()]).optional(),
   user: z.string().optional().default(""),
   // null = sem restrição configurada (comportamento legado por role/username).
-  allowedMenus: z.array(menuIdSchema).nullable().optional().default(null),
+  // Menus desconhecidos são ignorados (não derrubam o login).
+  allowedMenus: z
+    .array(z.string())
+    .nullable()
+    .optional()
+    .default(null)
+    .transform((menus) =>
+      menus === null || menus === undefined
+        ? null
+        : (menus.filter((id) => menuIdSchema.safeParse(id).success) as z.infer<typeof menuIdSchema>[]),
+    ),
   isAdmin: z.boolean().optional().default(false),
 });
 
