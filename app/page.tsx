@@ -7,7 +7,7 @@ export default function Page() {
   return (
     <>
       <DashboardPage fragments={fragments} />
-      <Script src="/scripts/dashboard.js?v=20260804-ag16-appt-base" strategy="afterInteractive" />
+      <Script src="/scripts/dashboard.js?v=20260804-ag16-ben-base" strategy="afterInteractive" />
     </>
   );
 }

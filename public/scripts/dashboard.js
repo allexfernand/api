@@ -1,5 +1,5 @@
 (async function loadSanusDashboard() {
-  const CACHE = "20260804-ag16-appt-base";
+  const CACHE = "20260804-ag16-ben-base";
 
   function loadScript(src) {
     return new Promise((resolve, reject) => {
