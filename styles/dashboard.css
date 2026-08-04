@@ -267,18 +267,6 @@ body[data-sidebar="collapsed"] .sidebar-tab span{opacity:0;position:absolute;tra
 .chart-card:hover{box-shadow:var(--shadow-md)}
 
 .chart-wrap{position:relative;width:100%;height:clamp(260px,32vw,360px)}
-.sessions-q3-compact-card{max-width:calc(50% - 8px);margin-right:auto}
-.sessions-q3-compact-card .chart-wrap{height:260px}
-.sessions-q3-presentation-grid{display:grid;grid-template-columns:1fr;gap:16px;align-items:stretch;margin-bottom:16px}
-.sessions-q3-presentation-grid>.chart-card{margin-bottom:0;max-width:none}
-.sessions-q3c-card .chart-wrap{height:300px}
-.sessions-q3c-kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:14px}
-.sessions-q3c-kpi{background:#1f2937;border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:12px 14px}
-.sessions-q3c-kpi-label{font-size:10px;font-weight:800;color:#cbd5e1;margin-bottom:6px}
-.sessions-q3c-kpi-value{font-size:24px;font-weight:800;color:#fff;letter-spacing:-.7px;line-height:1}
-.sessions-q3c-kpi-note{font-size:10px;color:#9ca3af;margin-top:7px}
-.sessions-q3c-meta{font-size:10px;color:#94a3b8;margin-top:10px;text-align:right}
-@media (max-width: 900px){.sessions-q3c-kpis{grid-template-columns:1fr}}
 
 .fluid-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:16px;align-items:stretch;margin-bottom:16px}
 .fluid-grid>.card-box,.fluid-grid>.chart-card{margin-bottom:0}
@@ -590,7 +578,6 @@ body[data-sidebar="collapsed"] .sidebar-tab span{opacity:0;position:absolute;tra
 }
 @media (max-width:980px){
   .appointments-analysis-grid,.sessions-appointments-grid{grid-template-columns:1fr}
-  .sessions-q3-compact-card{max-width:100%}
   .sessions-utilization-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
   .petit-kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
   .petit-grid-2,.petit-grid-3{grid-template-columns:1fr}

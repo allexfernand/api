@@ -5,8 +5,6 @@ function currentMonthValue() {
 const fmt = n => Number(n).toLocaleString('pt-BR');
 const fmtCurrency = n => Number(n || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
 const mN = {'01':'Jan','02':'Fev','03':'Mar','04':'Abr','05':'Mai','06':'Jun','07':'Jul','08':'Ago','09':'Set','10':'Out','11':'Nov','12':'Dez'};
-const SESSIONS_Q3_PRESENTATION_MONTHS = ['2025-09', '2025-10', '2025-11', '2025-12', '2026-01', '2026-02', '2026-03', '2026-04', '2026-05'];
-const SESSIONS_Q3C_MONTHS = ['2026-01', '2026-02', '2026-03', '2026-04', '2026-05'];
 window.__SANUS_DASHBOARD_BUILD__ = '20260714-tabs';
 let hasAuthenticatedSession = false;
 let currentDashboardUser = '';
@@ -15,7 +13,7 @@ let currentDashboardUser = '';
 // regras legadas por completo para aquele usuário específico.
 let allowedMenusOverride = null;
 
-let usersData = [], companiesData = [], sessionCompaniesData = [], eChart, agegroupChart, partnerVisionEvolutionChart, appointmentTypesTrendChart, appointmentsDailyChart, appointmentsStatusChart, careCoordinationLinesChart, careLinesEvolutionChart, careComplementChart, careActiveComplementChart, petitCareLinesChart, petitSessionsEvolChart, petitSessionsTotalEvolChart, sessionsEvolChart, sessionsJanMay2026EvolChart, sessionsQ3cChart, sessionsTotalEvolChart, sessionsAttendanceChart, sessionsDailyChart, sessionsTopGroupsChart, qualityVolumeEvolutionChart, qualityDailyVolumeEvolutionChart, qualityEvolutionChart, qualityCriteriaEvolutionChart;
+let usersData = [], companiesData = [], sessionCompaniesData = [], eChart, agegroupChart, partnerVisionEvolutionChart, appointmentTypesTrendChart, appointmentsDailyChart, appointmentsStatusChart, careCoordinationLinesChart, careLinesEvolutionChart, careComplementChart, careActiveComplementChart, petitCareLinesChart, petitSessionsEvolChart, petitSessionsTotalEvolChart, sessionsEvolChart, sessionsTotalEvolChart, sessionsAttendanceChart, sessionsDailyChart, sessionsTopGroupsChart, qualityVolumeEvolutionChart, qualityDailyVolumeEvolutionChart, qualityEvolutionChart, qualityCriteriaEvolutionChart;
 let currentGroup = '', currentType = '', currentCompany = '';
 let currentGroups = [];
 let currentPartnerBrokerId = '';
@@ -39,8 +37,6 @@ let selectedTypification = null;
 let typificationGroupsRequestId = 0;
 let sessionsRequestId = 0;
 let sessionsEvolutionRequestId = 0;
-let sessionsJanMay2026EvolutionRequestId = 0;
-let sessionsQ3cRequestId = 0;
 let petitComiteRequestId = 0;
 let petitMdsInitialized = false;
 let petitRenderVariant = 'default';
