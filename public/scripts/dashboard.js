@@ -1,5 +1,5 @@
 (async function loadSanusDashboard() {
-  const CACHE = "20260804-petit-care-edit";
+  const CACHE = "20260804-pdf-fix";
 
   function loadScript(src) {
     return new Promise((resolve, reject) => {

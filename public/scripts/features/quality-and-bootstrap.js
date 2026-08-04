@@ -1495,6 +1495,8 @@ setInterval(() => schedulePdfReadinessUpdate(), 1200);
 window.SanusDashboard = {
   activateTab,
   reload,
+  updateFilterVisibility,
+  schedulePdfReadinessUpdate,
   toggleGroupDropdown,
   renderGroupOptions,
   selectAllGroupSelection,

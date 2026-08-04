@@ -936,11 +936,33 @@ function loadScriptOnce(id, src, errorMessage) {
 
 async function ensurePdfLibraries() {
   if (!window.html2canvas) {
+    try {
+      await loadScriptOnce(
+        'html2canvas-script-local',
+        '/vendor/html2canvas.min.js',
+        'html2canvas local indisponível'
+      );
+    } catch (_) {
+      /* fallback CDN abaixo */
+    }
+  }
+  if (!window.html2canvas) {
     await loadScriptOnce(
       'html2canvas-script',
       'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js',
       'Não foi possível carregar a biblioteca de captura (html2canvas).'
     );
+  }
+  if (!(window.jspdf?.jsPDF || window.jsPDF)) {
+    try {
+      await loadScriptOnce(
+        'jspdf-script-local',
+        '/vendor/jspdf.umd.min.js',
+        'jspdf local indisponível'
+      );
+    } catch (_) {
+      /* fallback CDN abaixo */
+    }
   }
   if (!(window.jspdf?.jsPDF || window.jsPDF)) {
     await loadScriptOnce(
@@ -1189,12 +1211,13 @@ function schedulePdfReadinessUpdate() {
 
 function waitForPdfReadiness(timeoutMs = 1000) {
   const started = Date.now();
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const check = () => {
       const state = getPdfReadiness();
       if (state.ready >= state.total) return resolve(state);
       if (Date.now() - started > timeoutMs) {
-        return reject(new Error(`Ainda há ${state.total - state.ready} quadro(s) pendente(s).`));
+        console.warn('[pdf] Prosseguindo com quadros ainda pendentes:', state.pending.slice(0, 6));
+        return resolve(state);
       }
       setTimeout(check, 120);
     };
@@ -1299,14 +1322,22 @@ function buildPdfReport() {
 
   const content = document.createElement('div');
   content.className = 'pdf-export-content';
-  if (typeof freezePetitCareLineMetrics === 'function') freezePetitCareLineMetrics(activeTab);
+  try {
+    if (typeof freezePetitCareLineMetrics === 'function') freezePetitCareLineMetrics(activeTab);
+  } catch (error) {
+    console.warn('[pdf] Falha ao fixar linhas de cuidado', error);
+  }
   const activeClone = activeTab.cloneNode(true);
   activeClone.classList.add('active');
   replacePdfRemoteAssets(activeClone);
   activeClone.querySelector('.petit-hero-logo')?.remove();
   normalizePdfExportStyles(activeClone);
   copyCanvasAsImages(activeTab, activeClone);
-  if (typeof freezePetitCareLineMetrics === 'function') freezePetitCareLineMetrics(activeClone);
+  try {
+    if (typeof freezePetitCareLineMetrics === 'function') freezePetitCareLineMetrics(activeClone);
+  } catch (error) {
+    console.warn('[pdf] Falha ao fixar linhas de cuidado no clone', error);
+  }
   content.appendChild(activeClone);
 
   report.appendChild(content);
@@ -1349,7 +1380,7 @@ async function downloadDashboardPdf() {
       throw new Error('O download em PDF está disponível somente nas abas Petit Comitê.');
     }
     closeGroupDropdown();
-    await waitForPdfReadiness(1200);
+    await waitForPdfReadiness(8000);
     if (btn) {
       btn.disabled = true;
       btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i>Gerando...';

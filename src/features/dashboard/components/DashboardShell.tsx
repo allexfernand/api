@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useLayoutEffect, useState } from "react";
 import Image from "next/image";
 import { apiRequest } from "../../../lib/api/client";
 import { authResponseSchema } from "../../../contracts/auth";
@@ -439,7 +439,14 @@ function Navigation({
   );
 }
 
-function Filters() {
+function Filters({ activeTab }: { activeTab: string }) {
+  // O JS legado controla display/disabled desses filtros. Depois do commit do React,
+  // reaplica para o JSX não sobrescrever (ex.: botão PDF sumindo no Petit Comitê).
+  useLayoutEffect(() => {
+    legacy("updateFilterVisibility");
+    legacy("schedulePdfReadinessUpdate");
+  }, [activeTab]);
+
   return (
     <div className="filterbar">
       <div className="filter-group" id="filter-group-group">
@@ -770,7 +777,7 @@ export function DashboardShell() {
         sidebarCollapsed={sidebarCollapsed}
         onChange={activate}
       />
-      <Filters />
+      <Filters activeTab={activeTab} />
     </>
   );
 }

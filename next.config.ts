@@ -12,6 +12,8 @@ const contentSecurityPolicy = [
   "font-src 'self' data: https://cdnjs.cloudflare.com",
   "img-src 'self' data: blob:",
   "connect-src 'self'",
+  "worker-src 'self' blob:",
+  "child-src 'self' blob:",
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",
