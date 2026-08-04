@@ -176,11 +176,11 @@ function LoginOverlay({ authenticated }: { authenticated: boolean }) {
             height={40}
             priority
           />
-          <div className="auth-title">{totpSetup ? "Configurar autenticador" : "Código do autenticador"}</div>
+          <div className="auth-title">{totpSetup ? "Configurar autenticador" : "Verificação em duas etapas"}</div>
           <div className="auth-subtitle">
             {totpSetup
-              ? "Escaneie o QR Code no Google Authenticator, Authy ou app equivalente e digite o código de 6 dígitos."
-              : `Digite o código de 6 dígitos gerado no app de segurança para ${totpUser}.`}
+              ? "Escaneie o QR Code no Google Authenticator, Authy ou app equivalente e digite o código de 6 dígitos para concluir a configuração."
+              : `Digite o código de 6 dígitos gerado no app de segurança da conta ${totpUser}.`}
           </div>
           {totpSetup && totpQrDataUrl ? (
             <div className="auth-totp-qr">
@@ -232,10 +232,10 @@ function LoginOverlay({ authenticated }: { authenticated: boolean }) {
             height={40}
             priority
           />
-          <div className="auth-title">Trocar senha</div>
+          <div className="auth-title">Definir nova senha</div>
           <div className="auth-subtitle">
-            O usuário <strong>{changePasswordFor}</strong> precisa definir uma senha forte antes de
-            acessar o dashboard.
+            Por segurança, a conta <strong>{changePasswordFor}</strong> precisa criar uma senha
+            forte antes do primeiro acesso ao painel.
           </div>
           <div className="auth-field">
             <label htmlFor="auth-new-password">Nova senha</label>
@@ -270,7 +270,7 @@ function LoginOverlay({ authenticated }: { authenticated: boolean }) {
             })}
           </ul>
           <button className="auth-submit" type="submit" disabled={submitting}>
-            {submitting ? "Salvando..." : "Salvar nova senha e continuar"}
+            {submitting ? "Salvando..." : "Salvar e continuar"}
           </button>
           <button type="button" className="auth-back" onClick={resetToLogin}>
             Voltar ao login
@@ -294,9 +294,10 @@ function LoginOverlay({ authenticated }: { authenticated: boolean }) {
           height={40}
           priority
         />
-        <div className="auth-title">Acesso ao dashboard</div>
+        <div className="auth-title">Bem-vindo à Sanus</div>
         <div className="auth-subtitle">
-          Informe usuário e senha para carregar os indicadores e proteger as consultas do Databricks.
+          Entre com suas credenciais para acessar o painel de indicadores da carteira.
+          O acesso é pessoal e confidencial.
         </div>
         <div className="auth-field">
           <label htmlFor="auth-user">Usuário</label>
@@ -313,7 +314,7 @@ function LoginOverlay({ authenticated }: { authenticated: boolean }) {
           />
         </div>
         <button className="auth-submit" type="submit" disabled={submitting}>
-          {submitting ? "Validando..." : "Entrar"}
+          {submitting ? "Entrando..." : "Entrar"}
         </button>
         <div className="auth-error" id="auth-error" style={{ display: error ? "block" : "none" }}>
           {error}
