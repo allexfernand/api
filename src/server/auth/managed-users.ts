@@ -331,16 +331,17 @@ export async function createManagedUser(input: CreateManagedUserRequest): Promis
   const now = new Date().toISOString();
   const totpEnabled = Boolean(input.totpEnabled);
   // Perfil Completo: null nos escopos = acesso a todos os clientes/parceiros.
-  // Não converter null → [] (isso bloqueava tudo e forçava "selecionar todos").
+  // Personalizado (`custom`) pode gravar listas; MDS começa restrito.
   const isFull = input.role === "full";
+  const isCustom = input.role === "custom";
   const record: ManagedDashboardUser = {
     user: input.user.trim(),
     passwordHash: hashPassword(input.password),
     role: input.role,
     isAdmin: input.isAdmin,
-    allowedMenus: input.allowedMenus,
-    groupScopes: input.groupScopes === undefined ? (isFull ? null : []) : input.groupScopes,
-    partnerScopes: input.partnerScopes === undefined ? (isFull ? null : []) : input.partnerScopes,
+    allowedMenus: input.allowedMenus ?? (isCustom ? defaultAllowedMenusFor("custom") : null),
+    groupScopes: input.groupScopes === undefined ? (isFull || isCustom ? null : []) : input.groupScopes,
+    partnerScopes: input.partnerScopes === undefined ? (isFull || isCustom ? null : []) : input.partnerScopes,
     mustChangePassword: Boolean(input.mustChangePassword),
     totpEnabled,
     totpSecret: null,

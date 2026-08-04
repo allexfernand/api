@@ -642,7 +642,7 @@ function Filters() {
 // Comportamento quando ninguém configurou lista explícita em Configurações.
 // Perfil Completo = todas as funcionalidades (inclui Visão Parceiros).
 function legacyMenuVisible(id: MenuId, dashboardUser: string, dashboardRole: string): boolean {
-  if (dashboardRole === "full") return id !== "petit-comite-mds";
+  if (dashboardRole === "full" || dashboardRole === "custom") return id !== "petit-comite-mds";
   if (id === "visao-parceiros") return dashboardUser === "sanus";
   if (id === "petit-comite-mds") return dashboardUser !== "sanus";
   if (dashboardRole === "mds") {

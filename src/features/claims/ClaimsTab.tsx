@@ -38,7 +38,7 @@ export function ClaimsTab() {
 
   return (
     <section id="tab-analise-sinistro" className={`tab-content ${styles.root}`}>
-      <LineageProvider available={data?.fonte.role === "full"}>
+      <LineageProvider available={data?.fonte.role === "full" || data?.fonte.role === "custom"}>
         {status === "loading" ? (
           <div className={styles.loading} role="status">
             Carregando a análise de sinistro…

@@ -168,7 +168,7 @@ function LongitudinalExperience({
   ];
 
   return (
-    <LineageProvider available={role === "full"}>
+    <LineageProvider available={role === "full" || role === "custom"}>
       <AnalyticsHeader
         companies={companies}
         filters={filters}

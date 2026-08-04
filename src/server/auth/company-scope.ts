@@ -15,7 +15,9 @@ export function companyScopesForAuth(auth: AuthIdentity) {
   // O papel full representa o administrador interno já autenticado. Quando a
   // variável ainda não existe (deploy legado), mantém o acesso administrativo;
   // uma variável explicitamente vazia continua negando tudo.
-  if (auth.role === "full" && raw === undefined) return ["*"];
+  if (auth.role === "full" || auth.role === "custom") {
+    if (raw === undefined) return ["*"];
+  }
   const configured = parseScopes(raw);
   if (configured.includes("*")) return ["*"];
   return configured.filter((scope) => COMPANY_KEY.test(scope));

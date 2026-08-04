@@ -51,9 +51,10 @@ export const createManagedUserRequestSchema = z.object({
   role: dashboardRoleSchema.default("mds"),
   isAdmin: z.boolean().default(false),
   // null = menus padrão do papel (perfil Completo = todas as funcionalidades).
+  // Perfil Personalizado (`custom`) permite marcar menus/parceiros/grupos.
   allowedMenus: z.array(menuIdSchema).nullable().default(null),
   // null = sem recorte (vê todos os clientes). [] bloqueia tudo até marcar.
-  // Perfil Completo deve ir com null nos dois.
+  // Perfil Completo deve ir com null nos dois; Personalizado pode customizar.
   groupScopes: z.array(z.string()).nullable().default(null),
   partnerScopes: z.array(z.string()).nullable().default(null),
   mustChangePassword: z.boolean().default(true),

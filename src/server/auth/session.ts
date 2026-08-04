@@ -80,7 +80,7 @@ export function createSessionToken(
 
 export function verifySessionToken(token: string): SessionPayload | null {
   const payload = verifySignedPayload<SessionPayload>(token);
-  if (!payload?.user || !["full", "mds"].includes(payload.role)) return null;
+  if (!payload?.user || !["full", "mds", "custom"].includes(payload.role)) return null;
   const allowedMenus = Array.isArray(payload.allowedMenus)
     ? payload.allowedMenus.filter((id): id is MenuId => typeof id === "string" && isMenuId(id))
     : null;

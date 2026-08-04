@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const dashboardRoleSchema = z.enum(["full", "mds"]);
+export const dashboardRoleSchema = z.enum(["full", "mds", "custom"]);
 export type DashboardRole = z.infer<typeof dashboardRoleSchema>;
 
 export const apiErrorSchema = z.object({

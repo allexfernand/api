@@ -18,6 +18,12 @@ function defaultMenusFor(role: DashboardRole): MenuId[] {
   return role === "mds" ? [...MDS_DEFAULT_ALLOWED_MENUS] : [...FULL_DEFAULT_ALLOWED_MENUS];
 }
 
+function roleLabel(role: DashboardRole) {
+  if (role === "mds") return "Perfil MDS";
+  if (role === "custom") return "Perfil personalizado";
+  return "Perfil completo";
+}
+
 // União dos grupos econômicos ligados aos parceiros selecionados. As
 // "empresas" (filiais) já entram no recorte do servidor via matriz_id —
 // liberar o grupo econômico cobre a carteira inteira do parceiro.
@@ -65,8 +71,9 @@ export function SettingsTab() {
       <header className={styles.header}>
         <h2 className={styles.title}>Configurações de acesso</h2>
         <p className={styles.subtitle}>
-          Perfil <strong>Completo</strong> libera todas as funcionalidades e todos os clientes, sem
-          precisar marcar parceiro ou grupo. Perfil <strong>MDS</strong> usa recorte por parceiro.
+          Perfil <strong>Completo</strong> libera tudo. <strong>Personalizado</strong> também é
+          acesso amplo (não MDS), mas você escolhe menus, parceiros e grupos. <strong>MDS</strong>{" "}
+          usa recorte por parceiro.
         </p>
       </header>
 
@@ -148,7 +155,7 @@ function UserList({
           <span>
             <div className={styles.userRowName}>{user.user}</div>
             <div className={styles.userRowMeta}>
-              {user.role === "mds" ? "Perfil MDS" : "Perfil completo"}
+              {roleLabel(user.role)}
               {user.isAdmin ? " · Admin" : ""}
             </div>
           </span>
@@ -183,7 +190,9 @@ function MenuAccessEditor({
               ? "Personalizado — só os menus marcados abaixo aparecem para este usuário."
               : role === "full"
                 ? "Padrão Completo — todas as funcionalidades do dashboard (exceto Petit Comitê MDS)."
-                : "Sem personalização — este usuário mantém o comportamento padrão de hoje."}
+                : role === "custom"
+                  ? "Marque os menus que este usuário pode ver."
+                  : "Sem personalização — este usuário mantém o comportamento padrão de hoje."}
           </div>
         </div>
         <button
@@ -449,9 +458,10 @@ function UserEditorPanel({
 }) {
   const [role, setRole] = useState<DashboardRole>(user.role);
   const [isAdmin, setIsAdmin] = useState(user.isAdmin);
-  // Completo = sem recorte/menus custom: null = acesso full. Se o registro
-  // antigo ainda tiver listas, ignoramos na UI pra não forçar "selecionar todos".
-  const [allowedMenus, setAllowedMenus] = useState<MenuId[] | null>(user.role === "full" ? null : user.allowedMenus);
+  // Completo = sem recorte/menus custom. Personalizado = listas editáveis.
+  const [allowedMenus, setAllowedMenus] = useState<MenuId[] | null>(
+    user.role === "full" ? null : user.role === "custom" ? (user.allowedMenus ?? defaultMenusFor("custom")) : user.allowedMenus,
+  );
   const [groupScopes, setGroupScopes] = useState<string[] | null>(user.role === "full" ? null : user.groupScopes);
   const [partnerScopes, setPartnerScopes] = useState<string[] | null>(user.role === "full" ? null : user.partnerScopes);
   const [mustChangePassword, setMustChangePassword] = useState(Boolean(user.mustChangePassword));
@@ -468,12 +478,16 @@ function UserEditorPanel({
     if (next !== null) setGroupScopes(groupsForPartners(next, partnerGroupMap));
   }
 
-  // Perfil Completo = acesso full: todos os menus e todos os clientes,
-  // sem lista de parceiro/grupo. MDS volta ao modo com recorte.
   function applyRole(next: DashboardRole) {
     setRole(next);
     if (next === "full") {
       setAllowedMenus(null);
+      setPartnerScopes(null);
+      setGroupScopes(null);
+      return;
+    }
+    if (next === "custom") {
+      setAllowedMenus(defaultMenusFor("custom"));
       setPartnerScopes(null);
       setGroupScopes(null);
       return;
@@ -557,6 +571,7 @@ function UserEditorPanel({
             onChange={(event) => applyRole(event.target.value as DashboardRole)}
           >
             <option value="full">Completo</option>
+            <option value="custom">Personalizado</option>
             <option value="mds">MDS</option>
           </select>
         </div>
@@ -621,7 +636,18 @@ function UserEditorPanel({
         </div>
       ) : null}
 
-      <MenuAccessEditor role={role} allowedMenus={allowedMenus} onChange={setAllowedMenus} />
+      {role === "custom" ? (
+        <div className={styles.fullAccessNotice}>
+          Perfil Personalizado: escolha menus, parceiros e grupos econômicos. Sem restrição de
+          parceiro/grupo, enxerga todos os clientes (como o Completo).
+        </div>
+      ) : null}
+
+      <MenuAccessEditor
+        role={role}
+        allowedMenus={role === "custom" ? (allowedMenus ?? defaultMenusFor("custom")) : allowedMenus}
+        onChange={(next) => setAllowedMenus(role === "custom" ? (next ?? defaultMenusFor("custom")) : next)}
+      />
 
       {role !== "full" ? (
         <>
@@ -698,6 +724,12 @@ function CreateUserPanel({
       setGroupScopes(null);
       return;
     }
+    if (next === "custom") {
+      setAllowedMenus(defaultMenusFor("custom"));
+      setPartnerScopes(null);
+      setGroupScopes(null);
+      return;
+    }
     setAllowedMenus(defaultMenusFor("mds"));
     setPartnerScopes([]);
     setGroupScopes([]);
@@ -737,8 +769,8 @@ function CreateUserPanel({
         <div>
           <div className={styles.panelUserName}>Novo usuário</div>
           <div className={styles.panelUserHint}>
-            Perfil Completo libera tudo sem marcar parceiro/grupo. No MDS, ao marcar um parceiro os
-            grupos econômicos dele entram automaticamente.
+            Completo libera tudo. Personalizado deixa você marcar menus/parceiros/grupos. No MDS, ao
+            marcar um parceiro os grupos econômicos dele entram automaticamente.
           </div>
         </div>
       </div>
@@ -783,6 +815,7 @@ function CreateUserPanel({
             onChange={(event) => applyRole(event.target.value as DashboardRole)}
           >
             <option value="full">Completo</option>
+            <option value="custom">Personalizado</option>
             <option value="mds">MDS</option>
           </select>
         </div>
@@ -826,7 +859,18 @@ function CreateUserPanel({
         </div>
       ) : null}
 
-      <MenuAccessEditor role={role} allowedMenus={allowedMenus} onChange={setAllowedMenus} />
+      {role === "custom" ? (
+        <div className={styles.fullAccessNotice}>
+          Perfil Personalizado: escolha menus, parceiros e grupos econômicos. Sem restrição de
+          parceiro/grupo, enxerga todos os clientes (como o Completo).
+        </div>
+      ) : null}
+
+      <MenuAccessEditor
+        role={role}
+        allowedMenus={role === "custom" ? (allowedMenus ?? defaultMenusFor("custom")) : allowedMenus}
+        onChange={(next) => setAllowedMenus(role === "custom" ? (next ?? defaultMenusFor("custom")) : next)}
+      />
 
       {role !== "full" ? (
         <>
