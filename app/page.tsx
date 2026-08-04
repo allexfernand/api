@@ -7,7 +7,7 @@ export default function Page() {
   return (
     <>
       <DashboardPage fragments={fragments} />
-      <Script src="/scripts/dashboard.js?v=20260728-domain-loader-fix" strategy="afterInteractive" />
+      <Script src="/scripts/dashboard.js?v=20260804-custom-role" strategy="afterInteractive" />
     </>
   );
 }

@@ -680,12 +680,29 @@ export function DashboardShell() {
   }, [isAdmin, isMenuVisible]);
 
   useEffect(() => {
-    apiRequest("/api/data?scope=auth", { schema: authResponseSchema })
-      .then((auth) => {
-        setDashboardUser(normalizeDashboardUser(auth.user));
-        setDashboardRole(auth.role);
-        setAllowedMenus(auth.allowedMenus ?? null);
-        setIsAdmin(auth.isAdmin);
+    // Não trava a UI só porque o Zod falhou em um campo opcional — se a sessão
+    // respondeu 200 com ok:true, libera o shell e aplica o que der pra ler.
+    fetch("/api/data?scope=auth", { credentials: "same-origin" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const payload = await response.json();
+        const parsed = authResponseSchema.safeParse(payload);
+        const auth = parsed.success
+          ? parsed.data
+          : payload?.ok === true
+            ? {
+                ok: true as const,
+                user: String(payload.user || ""),
+                role: typeof payload.role === "string" ? payload.role : "",
+                allowedMenus: Array.isArray(payload.allowedMenus) ? payload.allowedMenus : null,
+                isAdmin: Boolean(payload.isAdmin),
+              }
+            : null;
+        if (!auth) throw new Error("Sessão inválida");
+        setDashboardUser(normalizeDashboardUser(auth.user || ""));
+        setDashboardRole(auth.role || "");
+        setAllowedMenus((auth.allowedMenus as MenuId[] | null) ?? null);
+        setIsAdmin(Boolean(auth.isAdmin));
         setAuthenticated(true);
       })
       .catch(() => {

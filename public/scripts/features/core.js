@@ -87,7 +87,8 @@ function isSanusDashboardUser() {
 }
 
 function isFullDashboardRole() {
-  return document.body.dataset.dashboardRole === 'full';
+  const role = document.body.dataset.dashboardRole;
+  return role === 'full' || role === 'custom';
 }
 
 function canAccessPartnerVisionByLegacy() {
