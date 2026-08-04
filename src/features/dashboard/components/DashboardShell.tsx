@@ -440,12 +440,14 @@ function Navigation({
 }
 
 function Filters({ activeTab }: { activeTab: string }) {
-  // O JS legado controla display/disabled desses filtros. Depois do commit do React,
-  // reaplica para o JSX não sobrescrever (ex.: botão PDF sumindo no Petit Comitê).
+  const isPetit = activeTab === "petit-comite" || activeTab === "petit-comite-mds";
+
+  // Reaplica filtros legados e o disabled do PDF (100% pronto) após cada
+  // commit do React, para o JSX não sobrescrever o estado calculado no legado.
   useLayoutEffect(() => {
     legacy("updateFilterVisibility");
     legacy("schedulePdfReadinessUpdate");
-  }, [activeTab]);
+  });
 
   return (
     <div className="filterbar">
@@ -633,15 +635,22 @@ function Filters({ activeTab }: { activeTab: string }) {
         ✕ Limpar
       </button>
       <div
-        className="pdf-control filter-pdf-control is-busy"
+        className="pdf-control filter-pdf-control"
         id="pdf-ready-control"
-        style={{ display: "none" }}
+        style={{ display: isPetit ? "grid" : "none" }}
       >
         <button
+          type="button"
           className="pdf-btn"
           id="pdf-download-btn"
-          onClick={() => legacy("downloadDashboardPdf")}
-          disabled
+          onClick={() => {
+            const download = window.SanusDashboard?.downloadDashboardPdf;
+            if (typeof download !== "function") {
+              alert("Dashboard ainda está carregando. Aguarde um instante e tente de novo.");
+              return;
+            }
+            void download();
+          }}
         >
           <i className="fa-solid fa-file-pdf" />
           Baixar PDF
@@ -694,6 +703,7 @@ export function DashboardShell() {
       nextTab = "demografica";
     }
     setActiveTab(nextTab);
+    document.body.dataset.activeTab = nextTab;
     legacy("activateTab", nextTab);
     if (window.matchMedia("(max-width: 760px)").matches) setSidebarCollapsed(true);
   }, [isAdmin, isMenuVisible]);

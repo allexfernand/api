@@ -191,7 +191,6 @@ function updateFilterVisibility() {
   const qualityCollaboratorGroup = document.getElementById('filter-quality-operational-collaborator-group');
   const qualitySetorGroup = document.getElementById('filter-quality-operational-setor-group');
   const qualityStatusGroup = document.getElementById('filter-quality-operational-status-group');
-  const pdfControl = document.getElementById('pdf-ready-control');
   const activeTab = getActiveTab();
   const isSinistro = isSinistroTab(activeTab);
   const isQualityOperational = activeTab === 'qualidade-operacional';
@@ -212,7 +211,9 @@ function updateFilterVisibility() {
   if (qualityCollaboratorGroup) qualityCollaboratorGroup.style.display = isQualityOperational ? 'flex' : 'none';
   if (qualitySetorGroup) qualitySetorGroup.style.display = isQualityOperational ? 'flex' : 'none';
   if (qualityStatusGroup) qualityStatusGroup.style.display = isQualityOperational ? 'flex' : 'none';
-  if (pdfControl) pdfControl.style.display = isPetitTab(activeTab) ? 'grid' : 'none';
+  // Botão PDF: a visibilidade fica a cargo do React (activeTab). Aqui só
+  // sincronizamos readiness para não travar o clique.
+  if (isPetitTab(activeTab)) schedulePdfReadinessUpdate();
   if (!isSinistro && isPartnerFilteredTab(activeTab)) loadPartnerOptions();
 }
 
@@ -778,6 +779,8 @@ function setStatus(type, msg) {
 }
 
 function getActiveTab() {
+  const fromBody = document.body.dataset.activeTab;
+  if (fromBody) return fromBody;
   return document.querySelector('.tab.active')?.dataset.tab || 'demografica';
 }
 
@@ -1191,9 +1194,11 @@ function updatePdfReadiness() {
   const control = document.getElementById('pdf-ready-control');
   if (fill) fill.style.width = `${state.percent}%`;
   if (label) label.textContent = isReady ? '100% pronto' : `${state.percent}% pronto`;
-  if (btn) {
+  if (btn && isPetitTab()) {
     btn.disabled = !isReady;
-    btn.title = isReady ? 'Baixar PDF do Petit Comitê' : `Aguardando ${state.total - state.ready} de ${state.total} quadros`;
+    btn.title = isReady
+      ? 'Baixar PDF do Petit Comitê'
+      : `Aguardando ${state.total - state.ready} de ${state.total} quadros`;
   }
   if (control) {
     control.classList.toggle('is-ready', isReady);
@@ -1211,13 +1216,12 @@ function schedulePdfReadinessUpdate() {
 
 function waitForPdfReadiness(timeoutMs = 1000) {
   const started = Date.now();
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const check = () => {
       const state = getPdfReadiness();
       if (state.ready >= state.total) return resolve(state);
       if (Date.now() - started > timeoutMs) {
-        console.warn('[pdf] Prosseguindo com quadros ainda pendentes:', state.pending.slice(0, 6));
-        return resolve(state);
+        return reject(new Error(`Ainda há ${state.total - state.ready} quadro(s) pendente(s). Aguarde 100% pronto.`));
       }
       setTimeout(check, 120);
     };
@@ -1271,19 +1275,43 @@ async function exportRenderedReportAsPdf(report) {
   if (!window.html2canvas || !JsPdfCtor) {
     throw new Error('Bibliotecas de captura/PDF não disponíveis.');
   }
+  // allowTaint:true impede toDataURL (canvas "tainted") e quebra o PDF.
+  const maxSide = 8192;
+  const baseWidth = Math.max(report.scrollWidth || 1320, 800);
+  const baseHeight = Math.max(report.scrollHeight || 1, 1);
+  const scale = Math.min(2, maxSide / baseWidth, maxSide / baseHeight);
   const captureOptions = {
-    scale: 2,
+    scale: Math.max(1, Number(scale.toFixed(2))),
     useCORS: true,
-    allowTaint: true,
+    allowTaint: false,
     backgroundColor: '#f7f8fa',
     logging: false,
-    width: report.scrollWidth,
-    height: report.scrollHeight,
-    windowWidth: report.scrollWidth,
+    imageTimeout: 15000,
+    width: baseWidth,
+    height: baseHeight,
+    windowWidth: baseWidth,
     scrollX: 0,
     scrollY: 0,
+    onclone: (clonedDoc) => {
+      const clonedReport = clonedDoc.querySelector('.pdf-export-root') || clonedDoc.body;
+      clonedReport?.querySelectorAll?.('input,textarea,select').forEach((el) => {
+        if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+          el.setAttribute('value', el.value);
+          el.value = el.value;
+        }
+      });
+    },
   };
-  const canvas = await window.html2canvas(report, captureOptions);
+  let canvas;
+  try {
+    canvas = await window.html2canvas(report, captureOptions);
+  } catch (error) {
+    console.error('[pdf] html2canvas', error);
+    throw new Error('Falha ao capturar a aba para PDF. Recarregue e tente novamente.');
+  }
+  if (!canvas || !canvas.width || !canvas.height) {
+    throw new Error('Captura do PDF ficou vazia. Verifique se a aba Petit carregou.');
+  }
   const pdf = new JsPdfCtor({ orientation: 'landscape', unit: 'mm', format: 'a4' });
   const pageWidth = pdf.internal.pageSize.getWidth();
   const pageHeight = pdf.internal.pageSize.getHeight();
@@ -1293,15 +1321,25 @@ async function exportRenderedReportAsPdf(report) {
   const pageCanvasHeight = Math.floor((contentHeight * canvas.width) / contentWidth);
   const pageCanvas = document.createElement('canvas');
   const pageCtx = pageCanvas.getContext('2d');
+  if (!pageCtx) throw new Error('Canvas de PDF indisponível neste navegador.');
   pageCanvas.width = canvas.width;
   const protectedRanges = getPdfProtectedRanges(report, canvas, pageCanvasHeight);
 
   for (let y = 0, page = 0; y < canvas.height; page += 1) {
     const sliceHeight = choosePdfSliceHeight(y, pageCanvasHeight, canvas.height, protectedRanges);
+    if (sliceHeight <= 0) break;
     pageCanvas.height = sliceHeight;
     pageCtx.clearRect(0, 0, pageCanvas.width, pageCanvas.height);
+    pageCtx.fillStyle = '#f7f8fa';
+    pageCtx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
     pageCtx.drawImage(canvas, 0, y, canvas.width, sliceHeight, 0, 0, canvas.width, sliceHeight);
-    const imgData = pageCanvas.toDataURL('image/jpeg', 0.96);
+    let imgData;
+    try {
+      imgData = pageCanvas.toDataURL('image/jpeg', 0.92);
+    } catch (error) {
+      console.error('[pdf] toDataURL', error);
+      throw new Error('O navegador bloqueou a exportação da imagem do PDF (canvas protegido).');
+    }
     const imgHeight = (sliceHeight * contentWidth) / canvas.width;
     if (page > 0) pdf.addPage();
     pdf.addImage(imgData, 'JPEG', margin, margin, contentWidth, imgHeight, undefined, 'FAST');
@@ -1379,18 +1417,22 @@ async function downloadDashboardPdf() {
     if (!isPetitTab()) {
       throw new Error('O download em PDF está disponível somente nas abas Petit Comitê.');
     }
-    closeGroupDropdown();
-    await waitForPdfReadiness(8000);
+    const readiness = getPdfReadiness();
+    if (readiness.ready < readiness.total) {
+      throw new Error(`Aguarde 100% pronto antes de baixar. Pendentes: ${readiness.pending.slice(0, 4).join(' · ') || 'quadros'}`);
+    }
+    try { closeGroupDropdown(); } catch (_) { /* ignore */ }
+    await waitForPdfReadiness(15000);
     if (btn) {
       btn.disabled = true;
       btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i>Gerando...';
     }
     isPdfGenerating = true;
     document.querySelectorAll('.pdf-export-overlay').forEach((node) => node.remove());
-    await withTimeout(ensurePdfLibraries(), 15000, 'Carregamento das bibliotecas de PDF');
+    await withTimeout(ensurePdfLibraries(), 20000, 'Carregamento das bibliotecas de PDF');
     pdfDom = buildPdfReport();
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-    await withTimeout(exportRenderedReportAsPdf(pdfDom.report), 45000, 'Geração do PDF');
+    await withTimeout(exportRenderedReportAsPdf(pdfDom.report), 60000, 'Geração do PDF');
   } catch (error) {
     console.error('[pdf]', error);
     alert(error?.message || 'Não foi possível gerar o PDF agora.');
