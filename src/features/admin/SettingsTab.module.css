@@ -1,7 +1,11 @@
 .root {
-  display: grid;
+  display: none;
   gap: 24px;
   max-width: 1080px;
+}
+
+.root:global(.active) {
+  display: grid;
 }
 
 .header {
