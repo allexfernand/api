@@ -283,7 +283,7 @@ function onCareBeneficiaryTypeChange(value) {
 }
 
 function isPartnerFilteredTab(tab = getActiveTab()) {
-  return tab === 'demografica' || tab === 'visao-parceiros' || tab === 'sessoes' || tab === 'coordenacao-cuidado' || isPetitTab(tab);
+  return tab === 'demografica' || tab === 'visao-parceiros' || tab === 'agendamentos' || tab === 'sessoes' || tab === 'coordenacao-cuidado' || isPetitTab(tab);
 }
 
 function isPartnerVisionTab(tab = getActiveTab()) {
@@ -420,6 +420,10 @@ document.getElementById('partner-select').addEventListener('change', async e => 
   }
   if (activeTab === 'demografica') {
     loadAll(false);
+    return;
+  }
+  if (activeTab === 'agendamentos') {
+    loadAppointments();
     return;
   }
   if (activeTab === 'visao-parceiros') {
