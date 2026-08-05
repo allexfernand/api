@@ -109,9 +109,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         COALESCE(NULLIF(TRIM(CAST(o.name AS STRING)), ''), '(sem empresa)') AS empresa,
         COUNT(*) AS total
       FROM ${BENEFICIARIES_TABLE} b
-      LEFT JOIN ${ORGANIZATIONS_TABLE} o
+      INNER JOIN ${ORGANIZATIONS_TABLE} o
         ON CAST(b.organization_id AS STRING) = CAST(o.id AS STRING)
-      ${extraFilter}
+      ${extraFilter ? `${extraFilter} AND o.active = true` : 'WHERE o.active = true'}
       GROUP BY COALESCE(NULLIF(TRIM(CAST(o.name AS STRING)), ''), '(sem empresa)')
       ORDER BY total DESC
     `, params.list);
@@ -125,7 +125,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     res.status(200).json({
       companies,
       total: companies.reduce((acc, item) => acc + item.total, 0),
-      source: "beneficiaries+organizations",
+      source: "beneficiaries+organizations.active",
     });
   } catch (err) {
     res.status(500).json({ error: (err as { message?: string }).message });

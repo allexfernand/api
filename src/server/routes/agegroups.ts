@@ -137,7 +137,10 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           b.type_kinship,
           FLOOR(try_divide(DATEDIFF(CURRENT_DATE(), CAST(b.birthday AS DATE)), 365.25)) AS idade
         FROM hive_metastore.sanus_prod.beneficiaries b
+        INNER JOIN hive_metastore.sanus_prod.organizations o
+          ON CAST(b.organization_id AS STRING) = CAST(o.id AS STRING)
         WHERE b.birthday IS NOT NULL
+          AND o.active = true
         ${extraFilter}
       ) b
       GROUP BY faixa, genero

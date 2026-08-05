@@ -151,7 +151,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
             AND try_divide(MONTHS_BETWEEN(CURRENT_DATE(), b.birthday), 12) BETWEEN 19 AND 38
             THEN 1 ELSE 0 END)                                                                                AS mulheres_19_38
       FROM hive_metastore.sanus_prod.beneficiaries b
-      ${groupFilter}
+      INNER JOIN hive_metastore.sanus_prod.organizations o
+        ON CAST(b.organization_id AS STRING) = CAST(o.id AS STRING)
+      ${groupFilter ? `${groupFilter} AND o.active = true` : 'WHERE o.active = true'}
     `, params.list);
 
     const r = rows[0] || [];
