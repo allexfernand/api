@@ -1,5 +1,5 @@
 (async function loadSanusDashboard() {
-  const CACHE = "20260804-pdf-ready100";
+  const CACHE = "20260804-ag16-vol-share";
 
   function loadScript(src) {
     return new Promise((resolve, reject) => {

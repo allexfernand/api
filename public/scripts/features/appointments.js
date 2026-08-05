@@ -173,17 +173,18 @@ function selectedAppointmentsScopeText() {
   return parts.join(' · ');
 }
 
-function renderAppointmentsUtilization(data, demographicsData, comparison) {
+function renderAppointmentsUtilization(data, comparison) {
   const periods = data?.utilization_periods || {};
-  return renderUtilizationCards(data, demographicsData, comparison, {
+  return renderUtilizationCards(data, null, comparison, {
     loading: document.getElementById('appointments-utilization-loading'),
     content: document.getElementById('appointments-utilization-content'),
     errorBox: document.getElementById('appointments-utilization-error'),
     context: document.getElementById('appointments-utilization-context'),
     scoped: Boolean(currentGroups.length || currentPartnerBrokerId || currentCompany),
     scopeText: selectedAppointmentsScopeText(),
-    metricKind: 'volume no período',
-    baseKind: 'beneficiários',
+    useVolumeShareOfGlobal: true,
+    metricKind: 'volume de agendamentos',
+    baseKind: 'agendamentos',
     missingMetricMessage: 'Volume de agendamentos indisponível para o schema atual.',
     cards: [
       {
@@ -238,21 +239,15 @@ async function loadAppointmentsUtilization() {
   appendGroupParams(p);
   if (currentCompany) p.set('company', currentCompany);
 
-  const demoP = new URLSearchParams();
-  appendGroupParams(demoP);
-  if (currentCompany) demoP.set('company', currentCompany);
-
   const globalP = new URLSearchParams();
   globalP.set('include_beneficiaries', '1');
   globalP.set('only_beneficiaries', '1');
 
   const hasScopedComparison = Boolean(currentGroups.length || currentPartnerBrokerId || currentCompany);
 
-  const [data, demographicsData, globalData, globalDemographicsData] = await Promise.all([
+  const [data, globalData] = await Promise.all([
     safeGet('/api/appointments-evolution?' + p.toString()),
-    safeGet('/api/demographics' + (demoP.toString() ? '?' + demoP.toString() : '')),
     hasScopedComparison ? safeGet('/api/appointments-evolution?' + globalP.toString()) : Promise.resolve(null),
-    hasScopedComparison ? safeGet('/api/demographics') : Promise.resolve(null),
   ]);
 
   if (!data || data.error) {
@@ -266,8 +261,7 @@ async function loadAppointmentsUtilization() {
 
   renderAppointmentsUtilization(
     data,
-    demographicsData,
-    hasScopedComparison ? { data: globalData, demographicsData: globalDemographicsData } : null,
+    hasScopedComparison ? { data: globalData } : null,
   );
 }
 

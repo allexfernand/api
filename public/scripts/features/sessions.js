@@ -390,22 +390,32 @@ function renderUtilizationCards(data, demographicsData, comparison, elements = {
   const { loading, content, errorBox, context } = elements;
   if (!content) return;
   const useAppointmentVolumeBase = Boolean(elements.useAppointmentVolumeBase);
-  const base = useAppointmentVolumeBase
-    ? Number(data?.utilization_base) || 0
-    : (demographicsData && !demographicsData.error
-      ? Number(demographicsData.total_beneficiarios ?? demographicsData.total_vidas) || 0
-      : 0);
+  const useVolumeShareOfGlobal = Boolean(elements.useVolumeShareOfGlobal);
+  const base = useVolumeShareOfGlobal
+    ? 1
+    : (useAppointmentVolumeBase
+      ? Number(data?.utilization_base) || 0
+      : (demographicsData && !demographicsData.error
+        ? Number(demographicsData.total_beneficiarios ?? demographicsData.total_vidas) || 0
+        : 0));
   const utilization = data?.utilization || {};
   const periods = data?.utilization_periods || {};
   const comparisonData = comparison?.data && !comparison.data.error ? comparison.data : null;
-  const comparisonBase = useAppointmentVolumeBase
-    ? Number(comparisonData?.utilization_base) || 0
-    : (comparison?.demographicsData && !comparison.demographicsData.error
-      ? Number(comparison.demographicsData.total_beneficiarios ?? comparison.demographicsData.total_vidas) || 0
-      : 0);
+  const comparisonBase = useVolumeShareOfGlobal
+    ? 1
+    : (useAppointmentVolumeBase
+      ? Number(comparisonData?.utilization_base) || 0
+      : (comparison?.demographicsData && !comparison.demographicsData.error
+        ? Number(comparison.demographicsData.total_beneficiarios ?? comparison.demographicsData.total_vidas) || 0
+        : 0));
   const hasScopedComparison = Boolean(elements.scoped);
   const scopeText = elements.scopeText || selectedSessionScopeText();
-  const hasComparison = Boolean(hasScopedComparison && comparisonData && comparisonBase > 0);
+  const hasComparison = Boolean(
+    hasScopedComparison
+    && comparisonData
+    && comparisonData.utilization
+    && (useVolumeShareOfGlobal || comparisonBase > 0),
+  );
   const pct = (value, baseValue) => baseValue > 0 ? ((value / baseValue) * 100) : null;
   const pctLabel = (ratio) => ratio === null ? '—' : fmtPct(ratio);
   const width = (ratio) => `${Math.max(0, Math.min(100, ratio || 0))}%`;
@@ -416,13 +426,18 @@ function renderUtilizationCards(data, demographicsData, comparison, elements = {
     if (values.length === 1) return monthShortLabel(values[0]);
     return `de ${monthShortLabel(values[0])} a ${monthShortLabel(values[values.length - 1])}`;
   };
-  const deltaLabel = (selectedRatio, globalRatio) => {
+  const deltaLabel = (selectedRatio, globalRatio, selectedValue, globalValue) => {
+    if (useVolumeShareOfGlobal) {
+      if (selectedRatio === null || !globalValue) return 'sem comparativo';
+      return `${pctLabel(selectedRatio)} do volume global · Δ ${fmt(selectedValue - globalValue)}`;
+    }
     if (selectedRatio === null || globalRatio === null) return 'sem comparativo';
     const delta = selectedRatio - globalRatio;
     const sign = delta > 0 ? '+' : '';
     return `${sign}${delta.toFixed(1).replace('.', ',')} p.p. vs global`;
   };
   const deltaClass = (selectedRatio, globalRatio) => {
+    if (useVolumeShareOfGlobal) return '';
     if (selectedRatio === null || globalRatio === null) return '';
     if (selectedRatio - globalRatio > 0.05) return 'positive';
     if (selectedRatio - globalRatio < -0.05) return 'negative';
@@ -430,15 +445,17 @@ function renderUtilizationCards(data, demographicsData, comparison, elements = {
   };
   if (context) context.textContent = hasComparison ? `${scopeText} x global` : (hasScopedComparison ? scopeText : 'global');
   if (errorBox) {
-    const hasError = !base || !data?.utilization;
+    const hasError = useVolumeShareOfGlobal
+      ? !data?.utilization
+      : (!base || !data?.utilization);
     const comparisonError = hasScopedComparison && !hasComparison && !hasError;
     errorBox.style.display = hasError || comparisonError ? 'block' : 'none';
-    errorBox.textContent = !base
-      ? (useAppointmentVolumeBase
-        ? 'Total geral de agendamentos indisponível para o filtro atual.'
-        : 'Base total de beneficiários indisponível para o filtro atual.')
-      : (!data?.utilization
-        ? (elements.missingMetricMessage || 'Usuários únicos indisponíveis para o schema atual.')
+    errorBox.textContent = !data?.utilization
+      ? (elements.missingMetricMessage || 'Usuários únicos indisponíveis para o schema atual.')
+      : (!useVolumeShareOfGlobal && !base
+        ? (useAppointmentVolumeBase
+          ? 'Total geral de agendamentos indisponível para o filtro atual.'
+          : 'Base total de beneficiários indisponível para o filtro atual.')
         : (comparisonError ? 'Comparativo global indisponível no momento.' : ''));
   }
   const cards = elements.cards || [
@@ -474,10 +491,14 @@ function renderUtilizationCards(data, demographicsData, comparison, elements = {
   content.classList.toggle('is-comparison', hasComparison);
   content.innerHTML = cards.map((card) => {
     const selectedValue = valueFor(data, card.key);
-    const selectedRatio = pct(selectedValue, base);
     const globalValue = hasComparison ? valueFor(comparisonData, card.key) : 0;
-    const globalRatio = hasComparison ? pct(globalValue, comparisonBase) : null;
-  const selectedLabel = hasScopedComparison ? 'Recorte' : 'Global';
+    const selectedRatio = useVolumeShareOfGlobal
+      ? (hasComparison ? pct(selectedValue, globalValue) : null)
+      : pct(selectedValue, base);
+    const globalRatio = useVolumeShareOfGlobal
+      ? (hasComparison ? 100 : null)
+      : (hasComparison ? pct(globalValue, comparisonBase) : null);
+    const selectedLabel = hasScopedComparison ? 'Recorte' : 'Global';
     const comparisonHtml = hasComparison ? `<div class="sessions-utilization-compare">
       <div class="sessions-utilization-compare-row">
         <div class="sessions-utilization-compare-label">${escapeHtml(selectedLabel)}</div>
@@ -489,11 +510,15 @@ function renderUtilizationCards(data, demographicsData, comparison, elements = {
         <div class="sessions-utilization-compare-track"><div class="sessions-utilization-compare-fill" style="width:${width(globalRatio)}"></div></div>
         <div class="sessions-utilization-compare-value">${fmt(globalValue)} · ${escapeHtml(pctLabel(globalRatio))}</div>
       </div>
-      <div class="sessions-utilization-delta ${deltaClass(selectedRatio, globalRatio)}">${escapeHtml(deltaLabel(selectedRatio, globalRatio))}</div>
+      <div class="sessions-utilization-delta ${deltaClass(selectedRatio, globalRatio)}">${escapeHtml(deltaLabel(selectedRatio, globalRatio, selectedValue, globalValue))}</div>
     </div>` : '';
     const baseKind = elements.baseKind || 'beneficiários';
     const metricKind = elements.metricKind || 'usuários únicos';
-    const meta = `${periodLabel(card.period || periods[card.key])} · ${metricKind} ÷ total ${hasScopedComparison ? 'do recorte' : 'geral'}: ${fmt(base)} ${baseKind}`;
+    const meta = useVolumeShareOfGlobal
+      ? (hasComparison
+        ? `${periodLabel(card.period || periods[card.key])} · volume do recorte ÷ volume global do período: ${fmt(globalValue)}`
+        : `${periodLabel(card.period || periods[card.key])} · volume total de agendamentos`)
+      : `${periodLabel(card.period || periods[card.key])} · ${metricKind} ÷ total ${hasScopedComparison ? 'do recorte' : 'geral'}: ${fmt(base)} ${baseKind}`;
     return `<div class="sessions-utilization-card" style="--accent:${escapeAttr(card.accent)};--tint:${escapeAttr(card.tint)}">
     <div class="sessions-utilization-label">${escapeHtml(card.label)}</div>
     <div class="sessions-utilization-value"><span>${fmt(selectedValue)}</span><span class="sessions-utilization-pct">${escapeHtml(pctLabel(selectedRatio))}</span></div>
