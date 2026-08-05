@@ -1,14 +1,22 @@
 <!-- Tab: Sessões -->
   <div class="tab-content" id="tab-sessoes">
-    <div class="card-box" data-qtag="#Q13" style="display:flex;align-items:center;justify-content:space-between;gap:20px;padding:20px 28px;flex-wrap:wrap">
-      <div style="display:flex;align-items:center;gap:20px;min-width:260px">
-        <div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#0f766e,#0b3b47);display:flex;align-items:center;justify-content:center">
-          <i class="fa-solid fa-building-user" style="font-size:20px;color:#fff"></i>
+    <div class="card-box kpi-hero" data-qtag="#Q13">
+      <div class="kpi-hero-icon" style="background:linear-gradient(135deg,#0f766e,#0b3b47)">
+        <i class="fa-solid fa-building-user"></i>
+      </div>
+      <div class="kpi-hero-body">
+        <div class="kpi-hero-kicker">Total de Sessões · grupo econômico</div>
+        <div class="kpi-hero-value" style="color:#0f766e" id="bullet-sessoes-eg">—</div>
+        <div class="kpi-hero-note" style="display:none" id="bullet-sessoes-eg-periodo"></div>
+      </div>
+      <div class="kpi-hero-split">
+        <div class="kpi-hero-pill">
+          <i class="fa-solid fa-user"></i>
+          <span>Titular <strong id="bullet-sessoes-tit">—</strong></span>
         </div>
-        <div>
-          <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;margin-bottom:3px">Total de Sessões · grupo econômico</div>
-          <div style="font-size:34px;font-weight:700;color:#0f766e;letter-spacing:-1px;line-height:1" id="bullet-sessoes-eg">—</div>
-          <div style="font-size:11px;color:#94a3b8;margin-top:3px;display:none" id="bullet-sessoes-eg-periodo"></div>
+        <div class="kpi-hero-pill">
+          <i class="fa-solid fa-users"></i>
+          <span>Dependente <strong id="bullet-sessoes-dep">—</strong></span>
         </div>
       </div>
     </div>

@@ -137,6 +137,10 @@ async function loadAppointmentTypesTrend() {
 
 async function loadAppointments() {
   document.getElementById('bullet-agend').textContent = '…';
+  const titEl = document.getElementById('bullet-agend-tit');
+  const depEl = document.getElementById('bullet-agend-dep');
+  if (titEl) titEl.textContent = '…';
+  if (depEl) depEl.textContent = '…';
   const meses = [...selectedMonths].sort();
   const p = new URLSearchParams();
   if (meses.length > 0)  p.set('meses', meses.join(','));
@@ -155,12 +159,16 @@ async function loadAppointments() {
 
   if (appt && !appt.error) {
     document.getElementById('bullet-agend').textContent = fmt(appt.total);
+    if (titEl) titEl.textContent = fmt(Number(appt.titulares) || 0);
+    if (depEl) depEl.textContent = fmt(Number(appt.dependentes) || 0);
     let label = 'Total de agendamentos · últimos 12 meses';
     if (meses.length === 1) { const [y,mm] = meses[0].split('-'); label = `Total de agendamentos · ${mN[mm]}/${y}`; }
     else if (meses.length > 1) label = `Total de agendamentos · ${meses.length} meses selecionados`;
     document.getElementById('bullet-agend-periodo').textContent = label;
   } else {
     document.getElementById('bullet-agend').textContent = 'Erro';
+    if (titEl) titEl.textContent = '—';
+    if (depEl) depEl.textContent = '—';
   }
 }
 

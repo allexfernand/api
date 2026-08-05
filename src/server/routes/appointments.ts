@@ -12,6 +12,7 @@ import { setApiCors } from "../../../lib/http";
 
 const APPOINTMENTS_TABLE = `hive_metastore.sanus_prod.atendimento_summarized_gold_live`;
 const APPOINTMENTS_DATE_COLUMN = 'hora_criacao_atendimento';
+const BENEFICIARIES_TABLE = `hive_metastore.sanus_prod.beneficiaries`;
 const ORGANIZATIONS_TABLE = `hive_metastore.sanus_prod.organizations`;
 const PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.partner_brokers`;
 const ORGANIZATION_PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.organization_partner_brokers`;
@@ -233,9 +234,6 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const companyFilter = buildCompanyFilter(columns, company, params);
     const partnerFilter = buildPartnerFilter(columns, partnerBrokerId, params);
     const recordColumn = pickColumn(columns, appointmentRecordColumnCandidates);
-    const volumeExpr = recordColumn
-      ? `COUNT(DISTINCT CAST(${quoteIdent(recordColumn)} AS STRING))`
-      : `COUNT(*)`;
 
     const rows = await runQuery(warehouseId, distinctCpf ? `
       WITH typed_rows AS (
@@ -263,21 +261,61 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         FROM deduped
         GROUP BY tipo_agrupado
       )
-      SELECT SUM(total) AS total_tickets
+      SELECT SUM(total) AS total_tickets, NULL AS titulares, NULL AS dependentes, NULL AS sem_cadastro
       FROM grouped
     ` : `
-      SELECT ${volumeExpr} AS total_tickets
-      FROM ${APPOINTMENTS_TABLE}
-      WHERE (${monthRangeFilter})
-        ${assuntoExclusionSql()}
-        ${groupFilter}
-        ${companyFilter}
-        ${partnerFilter}
-        ${recordColumn ? `AND ${quoteIdent(recordColumn)} IS NOT NULL` : ''}
+      WITH filtered AS (
+        SELECT DISTINCT
+          ${recordColumn
+            ? `CAST(${quoteIdent(recordColumn)} AS STRING)`
+            : `CONCAT(COALESCE(CAST(cpf_atendido AS STRING), ''), '|', COALESCE(CAST(${quoteIdent(APPOINTMENTS_DATE_COLUMN)} AS STRING), ''))`
+          } AS record_key,
+          LPAD(REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', ''), 11, '0') AS cpf_norm
+        FROM ${APPOINTMENTS_TABLE}
+        WHERE (${monthRangeFilter})
+          ${assuntoExclusionSql()}
+          ${groupFilter}
+          ${companyFilter}
+          ${partnerFilter}
+          ${recordColumn ? `AND ${quoteIdent(recordColumn)} IS NOT NULL` : ''}
+      ),
+      beneficiary_types AS (
+        SELECT
+          LPAD(REGEXP_REPLACE(CAST(b.cpf AS STRING), '[^0-9]', ''), 11, '0') AS cpf_norm,
+          CASE
+            WHEN MAX(CASE WHEN UPPER(TRIM(COALESCE(b.type_kinship,''))) = 'TITULAR' THEN 1 ELSE 0 END) = 1 THEN 'TITULAR'
+            WHEN MAX(CASE WHEN UPPER(TRIM(COALESCE(b.type_kinship,''))) NOT IN ('TITULAR','') THEN 1 ELSE 0 END) = 1 THEN 'DEPENDENTE'
+            ELSE NULL
+          END AS tipo
+        FROM ${BENEFICIARIES_TABLE} b
+        WHERE b.cpf IS NOT NULL
+          AND TRIM(CAST(b.cpf AS STRING)) != ''
+        GROUP BY LPAD(REGEXP_REPLACE(CAST(b.cpf AS STRING), '[^0-9]', ''), 11, '0')
+      ),
+      joined AS (
+        SELECT
+          f.record_key,
+          bt.tipo
+        FROM filtered f
+        LEFT JOIN beneficiary_types bt
+          ON bt.cpf_norm = f.cpf_norm
+         AND f.cpf_norm IS NOT NULL
+         AND f.cpf_norm != ''
+         AND f.cpf_norm != '00000000000'
+      )
+      SELECT
+        COUNT(*) AS total_tickets,
+        SUM(CASE WHEN tipo = 'TITULAR' THEN 1 ELSE 0 END) AS titulares,
+        SUM(CASE WHEN tipo = 'DEPENDENTE' THEN 1 ELSE 0 END) AS dependentes,
+        SUM(CASE WHEN tipo IS NULL THEN 1 ELSE 0 END) AS sem_cadastro
+      FROM joined
     `, params.list);
 
     res.status(200).json({
       total: toInt(rows[0]?.[0]),
+      titulares: toInt(rows[0]?.[1]),
+      dependentes: toInt(rows[0]?.[2]),
+      sem_cadastro: toInt(rows[0]?.[3]),
       months: monthList,
       source: "atendimento_summarized_gold_live",
       filters: {

@@ -636,6 +636,8 @@ async function loadSessions() {
   buildSessionsDailyMonthOptions();
   const economicGroupBullet = document.getElementById('bullet-sessoes-eg');
   const economicGroupPeriodoLabel = document.getElementById('bullet-sessoes-eg-periodo');
+  const sessionsTitEl = document.getElementById('bullet-sessoes-tit');
+  const sessionsDepEl = document.getElementById('bullet-sessoes-dep');
   const messageFinishersLoading = document.getElementById('session-message-finishers-loading');
   const messageFinishersContent = document.getElementById('session-message-finishers-content');
   const sessionCompaniesLoading = document.getElementById('session-companies-loading');
@@ -646,6 +648,8 @@ async function loadSessions() {
   const topGroupsCanvas = document.getElementById('sessionsTopGroupsChart');
   const topGroupsError = document.getElementById('s-top-groups-error');
   if (economicGroupBullet) economicGroupBullet.textContent = '…';
+  if (sessionsTitEl) sessionsTitEl.textContent = '…';
+  if (sessionsDepEl) sessionsDepEl.textContent = '…';
   if (messageFinishersLoading) {
     messageFinishersLoading.style.display = 'block';
     messageFinishersLoading.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...';
@@ -684,6 +688,12 @@ async function loadSessions() {
   if (requestId !== sessionsRequestId) return;
   if (sessions && !sessions.error) {
     if (economicGroupBullet) economicGroupBullet.textContent = sessions.economic_group_total_error ? 'Erro' : fmt(sessions.economic_group_total || 0);
+    if (sessionsTitEl) {
+      sessionsTitEl.textContent = sessions.kinship_error ? '—' : fmt(Number(sessions.titulares) || 0);
+    }
+    if (sessionsDepEl) {
+      sessionsDepEl.textContent = sessions.kinship_error ? '—' : fmt(Number(sessions.dependentes) || 0);
+    }
     if (economicGroupPeriodoLabel) {
       economicGroupPeriodoLabel.style.display = 'none';
       economicGroupPeriodoLabel.textContent = '';
@@ -703,6 +713,8 @@ async function loadSessions() {
     renderSessionsTopGroupsEvolution(sessions.top_groups_evolution);
   } else {
     if (economicGroupBullet) economicGroupBullet.textContent = 'Erro';
+    if (sessionsTitEl) sessionsTitEl.textContent = '—';
+    if (sessionsDepEl) sessionsDepEl.textContent = '—';
     const msg = sessions && sessions.error ? sessions.error : 'Erro ao carregar sessões';
     if (economicGroupPeriodoLabel) {
       economicGroupPeriodoLabel.style.display = 'block';

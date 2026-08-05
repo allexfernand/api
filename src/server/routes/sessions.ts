@@ -30,6 +30,7 @@ const SESSION_TABLE = `hive_metastore.sanus_prod.botmaker_session`;
 const MESSAGE_TABLE = `hive_metastore.sanus_prod.botmaker_message`;
 const DASHBOARD_SESSIONS_TABLE = `hive_metastore.sanus_prod.dashboard_sessions_base_gold`;
 const BENEFICIARIES_TABLE = `hive_metastore.sanus_prod.vw_beneficiarios`;
+const BENEFICIARIES_KINSHIP_TABLE = `hive_metastore.sanus_prod.beneficiaries`;
 const ORGANIZATIONS_TABLE = `hive_metastore.sanus_prod.organizations`;
 const PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.partner_brokers`;
 const ORGANIZATION_PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.organization_partner_brokers`;
@@ -442,6 +443,66 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         ORDER BY total_sessions DESC
       `);
 
+    const kinshipWhere = companySessionsMode === "company"
+      ? companySessionsWhere
+      : companySessionsDateFilter;
+    const kinshipPromise = runQuery(warehouseId, `
+      WITH scoped AS (
+        SELECT
+          CASE
+            WHEN s.${quoteIdent('beneficiary_key')} LIKE 'cpf:%'
+            THEN CONCAT(
+              'cpf:',
+              LPAD(
+                REGEXP_REPLACE(SUBSTRING(CAST(s.${quoteIdent('beneficiary_key')} AS STRING), 5), '[^0-9]', ''),
+                11,
+                '0'
+              )
+            )
+            ELSE CAST(s.${quoteIdent('beneficiary_key')} AS STRING)
+          END AS beneficiary_key
+        FROM ${dashboardSessionsTable} s
+        ${kinshipWhere ? `WHERE ${kinshipWhere}` : ''}
+      ),
+      by_id AS (
+        SELECT
+          CONCAT('beneficiary:', CAST(b.id AS STRING)) AS beneficiary_key,
+          CASE
+            WHEN UPPER(TRIM(COALESCE(b.type_kinship, ''))) = 'TITULAR' THEN 'TITULAR'
+            WHEN UPPER(TRIM(COALESCE(b.type_kinship, ''))) NOT IN ('TITULAR', '') THEN 'DEPENDENTE'
+            ELSE NULL
+          END AS tipo
+        FROM ${BENEFICIARIES_KINSHIP_TABLE} b
+        WHERE b.id IS NOT NULL
+      ),
+      by_cpf AS (
+        SELECT
+          CONCAT(
+            'cpf:',
+            LPAD(REGEXP_REPLACE(CAST(b.cpf AS STRING), '[^0-9]', ''), 11, '0')
+          ) AS beneficiary_key,
+          CASE
+            WHEN MAX(CASE WHEN UPPER(TRIM(COALESCE(b.type_kinship, ''))) = 'TITULAR' THEN 1 ELSE 0 END) = 1 THEN 'TITULAR'
+            WHEN MAX(CASE WHEN UPPER(TRIM(COALESCE(b.type_kinship, ''))) NOT IN ('TITULAR', '') THEN 1 ELSE 0 END) = 1 THEN 'DEPENDENTE'
+            ELSE NULL
+          END AS tipo
+        FROM ${BENEFICIARIES_KINSHIP_TABLE} b
+        WHERE b.cpf IS NOT NULL
+          AND TRIM(CAST(b.cpf AS STRING)) != ''
+        GROUP BY LPAD(REGEXP_REPLACE(CAST(b.cpf AS STRING), '[^0-9]', ''), 11, '0')
+      )
+      SELECT
+        COUNT(*) AS total_sessions,
+        SUM(CASE WHEN COALESCE(bi.tipo, bc.tipo) = 'TITULAR' THEN 1 ELSE 0 END) AS titulares,
+        SUM(CASE WHEN COALESCE(bi.tipo, bc.tipo) = 'DEPENDENTE' THEN 1 ELSE 0 END) AS dependentes,
+        SUM(CASE WHEN COALESCE(bi.tipo, bc.tipo) IS NULL THEN 1 ELSE 0 END) AS sem_cadastro
+      FROM scoped s
+      LEFT JOIN by_id bi ON bi.beneficiary_key = s.beneficiary_key
+      LEFT JOIN by_cpf bc
+        ON bc.beneficiary_key = s.beneficiary_key
+       AND bi.beneficiary_key IS NULL
+    `, params.list);
+
     const typificationsPromise = companySessionsMode === "company"
       ? runQuery(warehouseId, `
         SELECT
@@ -529,11 +590,12 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       ORDER BY tg.current_sessions DESC, s.grupo, s.mes
     `, params.list);
 
-    const [typificationsSettled, messageAgentFinishersSettled, companySessionsSettled, topGroupsEvolutionSettled] = await Promise.allSettled([
+    const [typificationsSettled, messageAgentFinishersSettled, companySessionsSettled, topGroupsEvolutionSettled, kinshipSettled] = await Promise.allSettled([
       typificationsPromise,
       messageAgentFinishersPromise,
       companySessionsPromise,
       topGroupsEvolutionPromise,
+      kinshipPromise,
     ]);
 
     const typificationsError = typificationsSettled.status === 'rejected'
@@ -566,6 +628,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const companySessionsTotal = companySessions.reduce((acc, item) => acc + (Number(item.total) || 0), 0);
     const economicGroupTotal = companySessionsSettled.status === 'fulfilled' ? companySessionsTotal : 0;
     const economicGroupTotalError = companySessionsError;
+    const kinshipError = kinshipSettled.status === 'rejected'
+      ? (kinshipSettled.reason instanceof Error ? kinshipSettled.reason.message : String(kinshipSettled.reason))
+      : null;
+    const kinshipRow = kinshipSettled.status === 'fulfilled' ? kinshipSettled.value[0] : null;
+    const titulares = kinshipRow ? toInt(kinshipRow[1]) : 0;
+    const dependentes = kinshipRow ? toInt(kinshipRow[2]) : 0;
+    const semCadastro = kinshipRow ? toInt(kinshipRow[3]) : 0;
     const topGroupsEvolutionError = topGroupsEvolutionSettled.status === 'rejected'
       ? (topGroupsEvolutionSettled.reason instanceof Error ? topGroupsEvolutionSettled.reason.message : String(topGroupsEvolutionSettled.reason))
       : null;
@@ -583,6 +652,10 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     res.status(200).json({
       economic_group_total: economicGroupTotal,
       economic_group_total_error: economicGroupTotalError,
+      titulares,
+      dependentes,
+      sem_cadastro: semCadastro,
+      kinship_error: kinshipError,
       company_sessions: companySessions,
       company_sessions_error: companySessionsError,
       company_sessions_mode: companySessionsMode,

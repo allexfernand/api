@@ -1,13 +1,23 @@
 <!-- Tab: Agendamentos -->
   <div class="tab-content" id="tab-agendamentos">
-    <div class="card-box" style="display:flex;align-items:center;gap:20px;padding:20px 28px">
-      <div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#6366f1,#4f46e5);display:flex;align-items:center;justify-content:center">
-        <i class="fa-solid fa-calendar-check" style="font-size:20px;color:#fff"></i>
+    <div class="card-box kpi-hero">
+      <div class="kpi-hero-icon" style="background:linear-gradient(135deg,#6366f1,#4f46e5)">
+        <i class="fa-solid fa-calendar-check"></i>
       </div>
-      <div>
-        <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;margin-bottom:3px">Total de Agendamentos</div>
-        <div style="font-size:34px;font-weight:700;color:#6366f1;letter-spacing:-1px;line-height:1" id="bullet-agend">—</div>
-        <div style="font-size:11px;color:#94a3b8;margin-top:3px" id="bullet-agend-periodo">Total de agendamentos · últimos 12 meses</div>
+      <div class="kpi-hero-body">
+        <div class="kpi-hero-kicker">Total de Agendamentos</div>
+        <div class="kpi-hero-value" style="color:#6366f1" id="bullet-agend">—</div>
+        <div class="kpi-hero-note" id="bullet-agend-periodo">Total de agendamentos · últimos 12 meses</div>
+      </div>
+      <div class="kpi-hero-split">
+        <div class="kpi-hero-pill">
+          <i class="fa-solid fa-user"></i>
+          <span>Titular <strong id="bullet-agend-tit">—</strong></span>
+        </div>
+        <div class="kpi-hero-pill">
+          <i class="fa-solid fa-users"></i>
+          <span>Dependente <strong id="bullet-agend-dep">—</strong></span>
+        </div>
       </div>
     </div>
 
