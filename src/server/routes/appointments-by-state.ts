@@ -10,7 +10,7 @@ import { CORE_DATA_MENUS } from "../../dashboard/menu-catalog";
 import { createSqlParams, getCell, getColumns, quoteIdent, resolveWarehouseId, runQuery, toInt, type SqlParams } from "../../../lib/databricks";
 import { setApiCors } from "../../../lib/http";
 
-const APPOINTMENTS_TABLE = `hive_metastore.sanus_prod.atendimento_summarized_gold_live`;
+const APPOINTMENTS_TABLE = `hive_metastore.sanus_prod.atendimento_gold_live`;
 const APPOINTMENTS_DATE_COLUMN = "hora_criacao_atendimento";
 const BENEFICIARIES_VIEW = `hive_metastore.sanus_prod.vw_beneficiarios`;
 const ORGANIZATIONS_TABLE = `hive_metastore.sanus_prod.organizations`;
@@ -375,7 +375,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       total,
       without_uf: withoutUf,
       states: states.filter((item) => item.uf !== "SEM UF"),
-      source: "atendimento_summarized_gold_live.cidade → UF (dicionário município + fallback)",
+      source: "atendimento_gold_live.cidade → UF (dicionário município + fallback)",
       filters: {
         group_name: groupName,
         company,
