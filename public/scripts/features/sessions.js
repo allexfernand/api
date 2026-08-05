@@ -429,7 +429,7 @@ function renderUtilizationCards(data, demographicsData, comparison, elements = {
   const deltaLabel = (selectedRatio, globalRatio, selectedValue, globalValue) => {
     if (useVolumeShareOfGlobal) {
       if (selectedRatio === null || !globalValue) return 'sem comparativo';
-      return `${pctLabel(selectedRatio)} do volume global · Δ ${fmt(selectedValue - globalValue)}`;
+      return `recorte = ${fmt(selectedValue)} · global = ${fmt(globalValue)} · participação ${pctLabel(selectedRatio)}`;
     }
     if (selectedRatio === null || globalRatio === null) return 'sem comparativo';
     const delta = selectedRatio - globalRatio;
