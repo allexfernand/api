@@ -146,6 +146,8 @@ function nextMonth(month: string) {
 }
 
 function assuntoExclusionSql() {
+  // Não usar regex de "nome próprio" em assunto: especialidades reais
+  // (ex.: "Neurologia Pediátrico", "Buco Maxilo Facial") caíam como falso positivo.
   const assuntoTextExpr = `UPPER(COALESCE(CAST(assunto AS STRING), ''))`;
   const assuntoNormalizedExpr = `UPPER(TRIM(REGEXP_REPLACE(COALESCE(CAST(assunto AS STRING), ''), '[^A-Za-z0-9]+', ' ')))`;
   return `
@@ -157,11 +159,6 @@ function assuntoExclusionSql() {
     AND LOWER(COALESCE(CAST(assunto AS STRING), '')) NOT LIKE '%http%'
     AND ${assuntoTextExpr} NOT LIKE '%ATENDIMENTO HUMANO%'
     AND ${assuntoNormalizedExpr} NOT LIKE '%ATENDIMENTO%HUMANO%'
-    AND NOT (
-      assunto RLIKE '^[A-Z][a-z]+ [A-Z]'
-      OR assunto RLIKE '^[A-Z][A-Z]+ [A-Z]'
-      OR assunto RLIKE '^ [A-Z]'
-    )
   `;
 }
 

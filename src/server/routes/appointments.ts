@@ -82,6 +82,8 @@ const appointmentRecordColumnCandidates = [
 ];
 
 function assuntoExclusionSql() {
+  // Não usar regex de "nome próprio" em assunto: especialidades reais
+  // (ex.: "Neurologia Pediátrico", "Buco Maxilo Facial") caíam como falso positivo.
   return `
     AND UPPER(assunto) NOT IN (
       'ATENDIMENTO WHATSAPP',
@@ -91,11 +93,6 @@ function assuntoExclusionSql() {
     AND LOWER(COALESCE(CAST(assunto AS STRING), '')) NOT LIKE '%http%'
     AND UPPER(COALESCE(CAST(assunto AS STRING), '')) NOT LIKE '%ATENDIMENTO HUMANO%'
     AND UPPER(TRIM(REGEXP_REPLACE(COALESCE(CAST(assunto AS STRING), ''), '[^A-Za-z0-9]+', ' '))) NOT LIKE '%ATENDIMENTO%HUMANO%'
-    AND NOT (
-      assunto RLIKE '^[A-Z][a-z]+ [A-Z]'
-      OR assunto RLIKE '^[A-Z][A-Z]+ [A-Z]'
-      OR assunto RLIKE '^ [A-Z]'
-    )
   `;
 }
 
