@@ -8,7 +8,7 @@ import {
 } from "../../../lib/basic-auth";
 import { CORE_DATA_MENUS } from "../../dashboard/menu-catalog";
 import { createSqlParams, getCell, resolveWarehouseId, runQuery, type SqlParams } from "../../../lib/databricks";
-import { setApiCors, setStableCache } from "../../../lib/http";
+import { setApiCors } from "../../../lib/http";
 
 type ApiRequest = { method?: string; query: Record<string, any> };
 type ApiResponse = {
@@ -26,6 +26,7 @@ function parseGroupNames(query: Record<string, any>) {
   return query.group_name ? [String(query.group_name).trim()].filter(Boolean) : [];
 }
 
+const BENEFICIARIES_TABLE = `hive_metastore.sanus_prod.beneficiaries`;
 const ORGANIZATIONS_TABLE = `hive_metastore.sanus_prod.organizations`;
 const PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.partner_brokers`;
 const ORGANIZATION_PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.organization_partner_brokers`;
@@ -69,22 +70,22 @@ function buildFilters(groupNames: string[], typeFilter: unknown, partnerBrokerId
   const conditions = [];
   if (groupNames.length) {
     const groupList = p.addAll(groupNames);
-    conditions.push(`b.ID_EMPRESA IN (
-      SELECT id FROM hive_metastore.sanus_prod.organizations WHERE TRIM(name) IN (${groupList})
+    conditions.push(`b.organization_id IN (
+      SELECT id FROM ${ORGANIZATIONS_TABLE} WHERE TRIM(name) IN (${groupList})
       UNION
-      SELECT id FROM hive_metastore.sanus_prod.organizations
-      WHERE matriz_id IN (SELECT id FROM hive_metastore.sanus_prod.organizations WHERE TRIM(name) IN (${groupList}))
+      SELECT id FROM ${ORGANIZATIONS_TABLE}
+      WHERE matriz_id IN (SELECT id FROM ${ORGANIZATIONS_TABLE} WHERE TRIM(name) IN (${groupList}))
     )`);
   }
   if (partnerBrokerId) {
-    conditions.push(`CAST(b.ID_EMPRESA AS STRING) IN ${partnerOrgIdsSubquery(partnerBrokerId, p)}`);
+    conditions.push(`CAST(b.organization_id AS STRING) IN ${partnerOrgIdsSubquery(partnerBrokerId, p)}`);
   }
   if (typeFilter === 'TITULAR') {
-    conditions.push(`UPPER(TRIM(COALESCE(b.GRAU_PARENTESCO,''))) = 'TITULAR'`);
+    conditions.push(`UPPER(TRIM(COALESCE(b.type_kinship,''))) = 'TITULAR'`);
   } else if (typeFilter === 'DEPENDENTE') {
-    conditions.push(`UPPER(TRIM(COALESCE(b.GRAU_PARENTESCO,''))) != 'TITULAR'`);
+    conditions.push(`UPPER(TRIM(COALESCE(b.type_kinship,''))) != 'TITULAR'`);
   }
-  return conditions.length ? `AND ${conditions.join(' AND ')}` : '';
+  return conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 }
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
@@ -97,36 +98,35 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   const typeFilter = req.query.type || null;
   const partnerBrokerId = await scopedPartnerBrokerId(req, req.query.partner_broker_id || null);
   const params = createSqlParams();
-  const extraFilter = buildFilters(groupNames, typeFilter, null, params);
-  const partnerCte = partnerBrokerId ? `WITH partner_orgs AS ${partnerOrgIdsSubquery(partnerBrokerId, params)}` : '';
-  const partnerJoin = partnerBrokerId
-    ? `INNER JOIN (SELECT DISTINCT organization_id FROM partner_orgs) po
-        ON CAST(b.ID_EMPRESA AS STRING) = po.organization_id`
-    : '';
+  // Mesma base do KPI demográfico (beneficiaries), para a soma por empresa fechar com o total.
+  const extraFilter = buildFilters(groupNames, typeFilter, partnerBrokerId, params);
 
   try {
     const warehouseId = await resolveWarehouseId();
 
     const rows = await runQuery(warehouseId, `
-      ${partnerCte}
       SELECT
-        NOME_CLIENTE AS empresa,
+        COALESCE(NULLIF(TRIM(CAST(o.name AS STRING)), ''), '(sem empresa)') AS empresa,
         COUNT(*) AS total
-      FROM hive_metastore.sanus_prod.vw_beneficiarios b
-      ${partnerJoin}
-      WHERE NOME_CLIENTE IS NOT NULL
-        ${extraFilter}
-      GROUP BY NOME_CLIENTE
+      FROM ${BENEFICIARIES_TABLE} b
+      LEFT JOIN ${ORGANIZATIONS_TABLE} o
+        ON CAST(b.organization_id AS STRING) = CAST(o.id AS STRING)
+      ${extraFilter}
+      GROUP BY COALESCE(NULLIF(TRIM(CAST(o.name AS STRING)), ''), '(sem empresa)')
       ORDER BY total DESC
     `, params.list);
 
     const companies = rows.map(r => ({
-      empresa: getCell(r[0]) ? String(getCell(r[0])).trim() : "—",
+      empresa: getCell(r[0]) ? String(getCell(r[0])).trim() : "(sem empresa)",
       total: parseInt(String(getCell(r[1]))) || 0,
     }));
 
-    setStableCache(res);
-    res.status(200).json({ companies });
+    res.setHeader("Cache-Control", "no-store, max-age=0");
+    res.status(200).json({
+      companies,
+      total: companies.reduce((acc, item) => acc + item.total, 0),
+      source: "beneficiaries+organizations",
+    });
   } catch (err) {
     res.status(500).json({ error: (err as { message?: string }).message });
   }
