@@ -638,6 +638,7 @@ async function loadSessions() {
   const economicGroupPeriodoLabel = document.getElementById('bullet-sessoes-eg-periodo');
   const sessionsTitEl = document.getElementById('bullet-sessoes-tit');
   const sessionsDepEl = document.getElementById('bullet-sessoes-dep');
+  const sessionsSemEl = document.getElementById('bullet-sessoes-sem');
   const messageFinishersLoading = document.getElementById('session-message-finishers-loading');
   const messageFinishersContent = document.getElementById('session-message-finishers-content');
   const sessionCompaniesLoading = document.getElementById('session-companies-loading');
@@ -650,6 +651,7 @@ async function loadSessions() {
   if (economicGroupBullet) economicGroupBullet.textContent = '…';
   if (sessionsTitEl) sessionsTitEl.textContent = '…';
   if (sessionsDepEl) sessionsDepEl.textContent = '…';
+  if (sessionsSemEl) sessionsSemEl.textContent = '…';
   if (messageFinishersLoading) {
     messageFinishersLoading.style.display = 'block';
     messageFinishersLoading.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...';
@@ -688,11 +690,20 @@ async function loadSessions() {
   if (requestId !== sessionsRequestId) return;
   if (sessions && !sessions.error) {
     if (economicGroupBullet) economicGroupBullet.textContent = sessions.economic_group_total_error ? 'Erro' : fmt(sessions.economic_group_total || 0);
-    if (sessionsTitEl) {
-      sessionsTitEl.textContent = sessions.kinship_error ? '—' : fmt(Number(sessions.titulares) || 0);
-    }
-    if (sessionsDepEl) {
-      sessionsDepEl.textContent = sessions.kinship_error ? '—' : fmt(Number(sessions.dependentes) || 0);
+    if (sessions.kinship_error) {
+      if (sessionsTitEl) sessionsTitEl.textContent = '—';
+      if (sessionsDepEl) sessionsDepEl.textContent = '—';
+      if (sessionsSemEl) sessionsSemEl.textContent = '—';
+    } else {
+      const total = Number(sessions.economic_group_total) || 0;
+      const tit = Number(sessions.titulares) || 0;
+      const dep = Number(sessions.dependentes) || 0;
+      const sem = Number.isFinite(Number(sessions.sem_cadastro))
+        ? Number(sessions.sem_cadastro)
+        : Math.max(0, total - tit - dep);
+      if (sessionsTitEl) sessionsTitEl.textContent = fmt(tit);
+      if (sessionsDepEl) sessionsDepEl.textContent = fmt(dep);
+      if (sessionsSemEl) sessionsSemEl.textContent = fmt(sem);
     }
     if (economicGroupPeriodoLabel) {
       economicGroupPeriodoLabel.style.display = 'none';
@@ -715,6 +726,7 @@ async function loadSessions() {
     if (economicGroupBullet) economicGroupBullet.textContent = 'Erro';
     if (sessionsTitEl) sessionsTitEl.textContent = '—';
     if (sessionsDepEl) sessionsDepEl.textContent = '—';
+    if (sessionsSemEl) sessionsSemEl.textContent = '—';
     const msg = sessions && sessions.error ? sessions.error : 'Erro ao carregar sessões';
     if (economicGroupPeriodoLabel) {
       economicGroupPeriodoLabel.style.display = 'block';

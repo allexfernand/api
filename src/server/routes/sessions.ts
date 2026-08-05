@@ -449,6 +449,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const kinshipPromise = runQuery(warehouseId, `
       WITH scoped AS (
         SELECT
+          CAST(s.${quoteIdent('beneficiary_key')} AS STRING) AS beneficiary_key_raw,
           CASE
             WHEN s.${quoteIdent('beneficiary_key')} LIKE 'cpf:%'
             THEN CONCAT(
@@ -459,6 +460,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
                 '0'
               )
             )
+            WHEN s.${quoteIdent('beneficiary_key')} LIKE 'beneficiary:%'
+            THEN CONCAT(
+              'beneficiary:',
+              LOWER(TRIM(REPLACE(CAST(s.${quoteIdent('beneficiary_key')} AS STRING), 'beneficiary:', '')))
+            )
             ELSE CAST(s.${quoteIdent('beneficiary_key')} AS STRING)
           END AS beneficiary_key
         FROM ${dashboardSessionsTable} s
@@ -466,7 +472,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       ),
       by_id AS (
         SELECT
-          CONCAT('beneficiary:', CAST(b.id AS STRING)) AS beneficiary_key,
+          CONCAT('beneficiary:', LOWER(TRIM(CAST(b.id AS STRING)))) AS beneficiary_key,
           CASE
             WHEN UPPER(TRIM(COALESCE(b.type_kinship, ''))) = 'TITULAR' THEN 'TITULAR'
             WHEN UPPER(TRIM(COALESCE(b.type_kinship, ''))) NOT IN ('TITULAR', '') THEN 'DEPENDENTE'
@@ -490,17 +496,44 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         WHERE b.cpf IS NOT NULL
           AND TRIM(CAST(b.cpf AS STRING)) != ''
         GROUP BY LPAD(REGEXP_REPLACE(CAST(b.cpf AS STRING), '[^0-9]', ''), 11, '0')
+      ),
+      by_deleted AS (
+        SELECT
+          CONCAT('beneficiary:', LOWER(TRIM(CAST(ud.beneficiary_id AS STRING)))) AS beneficiary_key,
+          CASE
+            WHEN MAX(CASE WHEN UPPER(TRIM(COALESCE(b.type_kinship, ''))) = 'TITULAR' THEN 1 ELSE 0 END) = 1 THEN 'TITULAR'
+            WHEN MAX(CASE WHEN UPPER(TRIM(COALESCE(b.type_kinship, ''))) NOT IN ('TITULAR', '') THEN 1 ELSE 0 END) = 1 THEN 'DEPENDENTE'
+            ELSE NULL
+          END AS tipo
+        FROM hive_metastore.sanus_prod.users_deleted ud
+        INNER JOIN ${BENEFICIARIES_KINSHIP_TABLE} b
+          ON LPAD(REGEXP_REPLACE(CAST(b.cpf AS STRING), '[^0-9]', ''), 11, '0')
+           = LPAD(REGEXP_REPLACE(CAST(ud.cpf AS STRING), '[^0-9]', ''), 11, '0')
+        WHERE ud.beneficiary_id IS NOT NULL
+          AND ud.cpf IS NOT NULL
+          AND TRIM(CAST(ud.cpf AS STRING)) != ''
+        GROUP BY LOWER(TRIM(CAST(ud.beneficiary_id AS STRING)))
+      ),
+      classified AS (
+        SELECT
+          s.beneficiary_key_raw,
+          COALESCE(bi.tipo, bc.tipo, bd.tipo) AS tipo
+        FROM scoped s
+        LEFT JOIN by_id bi ON bi.beneficiary_key = s.beneficiary_key
+        LEFT JOIN by_cpf bc
+          ON bc.beneficiary_key = s.beneficiary_key
+         AND bi.tipo IS NULL
+        LEFT JOIN by_deleted bd
+          ON bd.beneficiary_key = s.beneficiary_key
+         AND bi.tipo IS NULL
+         AND bc.tipo IS NULL
       )
       SELECT
         COUNT(*) AS total_sessions,
-        SUM(CASE WHEN COALESCE(bi.tipo, bc.tipo) = 'TITULAR' THEN 1 ELSE 0 END) AS titulares,
-        SUM(CASE WHEN COALESCE(bi.tipo, bc.tipo) = 'DEPENDENTE' THEN 1 ELSE 0 END) AS dependentes,
-        SUM(CASE WHEN COALESCE(bi.tipo, bc.tipo) IS NULL THEN 1 ELSE 0 END) AS sem_cadastro
-      FROM scoped s
-      LEFT JOIN by_id bi ON bi.beneficiary_key = s.beneficiary_key
-      LEFT JOIN by_cpf bc
-        ON bc.beneficiary_key = s.beneficiary_key
-       AND bi.beneficiary_key IS NULL
+        SUM(CASE WHEN tipo = 'TITULAR' THEN 1 ELSE 0 END) AS titulares,
+        SUM(CASE WHEN tipo = 'DEPENDENTE' THEN 1 ELSE 0 END) AS dependentes,
+        SUM(CASE WHEN tipo IS NULL THEN 1 ELSE 0 END) AS sem_cadastro
+      FROM classified
     `, params.list);
 
     const typificationsPromise = companySessionsMode === "company"
@@ -634,7 +667,10 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const kinshipRow = kinshipSettled.status === 'fulfilled' ? kinshipSettled.value[0] : null;
     const titulares = kinshipRow ? toInt(kinshipRow[1]) : 0;
     const dependentes = kinshipRow ? toInt(kinshipRow[2]) : 0;
-    const semCadastro = kinshipRow ? toInt(kinshipRow[3]) : 0;
+    // Residual reconciles to the KPI total so Titular + Dependente + Sem vínculo = total.
+    const semCadastro = kinshipRow
+      ? Math.max(0, economicGroupTotal - titulares - dependentes)
+      : Math.max(0, economicGroupTotal);
     const topGroupsEvolutionError = topGroupsEvolutionSettled.status === 'rejected'
       ? (topGroupsEvolutionSettled.reason instanceof Error ? topGroupsEvolutionSettled.reason.message : String(topGroupsEvolutionSettled.reason))
       : null;
