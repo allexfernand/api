@@ -1,4 +1,6 @@
 // api/appointments-by-state.ts
+// Universo = mesmo do KPI de agendamentos (summarized + filtros).
+// Cidade/UF = lookup em atendimento_gold_live pelo id do atendimento.
 import {
   MDS_PARTNER_SCOPE,
   requireBasicAuth,
@@ -10,7 +12,8 @@ import { CORE_DATA_MENUS } from "../../dashboard/menu-catalog";
 import { createSqlParams, getCell, getColumns, quoteIdent, resolveWarehouseId, runQuery, toInt, type SqlParams } from "../../../lib/databricks";
 import { setApiCors } from "../../../lib/http";
 
-const APPOINTMENTS_TABLE = `hive_metastore.sanus_prod.atendimento_gold_live`;
+const KPI_TABLE = `hive_metastore.sanus_prod.atendimento_summarized_gold_live`;
+const LOCATION_TABLE = `hive_metastore.sanus_prod.atendimento_gold_live`;
 const APPOINTMENTS_DATE_COLUMN = "hora_criacao_atendimento";
 const BENEFICIARIES_VIEW = `hive_metastore.sanus_prod.vw_beneficiarios`;
 const ORGANIZATIONS_TABLE = `hive_metastore.sanus_prod.organizations`;
@@ -249,7 +252,7 @@ function cityAsUfSql(cidadeExpr: string) {
 function cityToUfSql(cidadeExpr: string) {
   return `
     CASE
-      WHEN ${cidadeExpr} RLIKE '^(SAO PAULO|CAMPINAS|GUARULHOS|OSASCO|BARUERI|TABOAO|SANTO ANDRE|SAO BERNARDO|MOGI|INDAIATUBA|SOROCABA|JUNDIAI|SANTOS|RIBEIRAO PRETO|BRAGANCA PAULISTA|VALINHOS|SUMARE|ITATIBA|SAO JOSE DO RIO PRETO)$' THEN 'SP'
+      WHEN ${cidadeExpr} RLIKE '^(SAO PAULO|CAMPINAS|GUARULHOS|OSASCO|BARUERI|TABOAO|TABOAO DA SERRA|SANTO ANDRE|SAO BERNARDO|MOGI|MOGI DAS CRUZES|INDAIATUBA|SOROCABA|JUNDIAI|SANTOS|RIBEIRAO PRETO|BRAGANCA PAULISTA|VALINHOS|SUMARE|ITATIBA|SAO JOSE DO RIO PRETO)$' THEN 'SP'
       WHEN ${cidadeExpr} RLIKE '^(RIO DE JANEIRO|NITEROI|NOVA IGUACU|DUQUE DE CAXIAS|SAO GONCALO|MARICA)$' THEN 'RJ'
       WHEN ${cidadeExpr} RLIKE '^(BELO HORIZONTE|UBERLANDIA|CONTAGEM|JUIZ DE FORA|CONFINS|PAMPULHA|ITAUNA|LAGOA SANTA|POCOS DE CALDAS)$' THEN 'MG'
       WHEN ${cidadeExpr} RLIKE '^(CURITIBA|LONDRINA|MARINGA|SAO JOSE DOS PINHAIS|FOZ DO IGUACU)$' THEN 'PR'
@@ -269,6 +272,7 @@ function cityToUfSql(cidadeExpr: string) {
       WHEN ${cidadeExpr} = 'VITORIA' THEN 'ES'
       WHEN ${cidadeExpr} = 'CUIABA' THEN 'MT'
       WHEN ${cidadeExpr} = 'CAMPO GRANDE' THEN 'MS'
+      WHEN ${cidadeExpr} = 'PALMAS' THEN 'TO'
       WHEN ${cidadeExpr} RLIKE 'CAMPOS DOS GOYTACA' THEN 'RJ'
       WHEN ${cidadeExpr} RLIKE 'SAO JOAO DE MERITI|SAO JOAO DE MEITI' THEN 'RJ'
       ELSE NULL
@@ -302,7 +306,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
   try {
     const warehouseId = await resolveWarehouseId();
-    const columns = await getColumns(warehouseId, APPOINTMENTS_TABLE);
+    const columns = await getColumns(warehouseId, KPI_TABLE);
     const params = createSqlParams();
     const groupFilter = buildGroupFilter(columns, groupNames, params);
     const companyFilter = buildCompanyFilter(columns, company, params);
@@ -315,11 +319,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const rows = await runQuery(
       warehouseId,
       `
-      WITH filtered AS (
+      WITH kpi AS (
+        -- Mesmo universo/contagem do KPI principal de agendamentos.
         SELECT DISTINCT
-          ${recordKeyExpr} AS record_key,
-          ${normalizeCitySql("cidade")} AS cidade_norm
-        FROM ${APPOINTMENTS_TABLE}
+          ${recordKeyExpr} AS record_key
+        FROM ${KPI_TABLE}
         WHERE (${monthRangeFilter})
           ${assuntoExclusionSql()}
           ${groupFilter}
@@ -327,7 +331,19 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           ${partnerFilter}
           ${recordColumn ? `AND ${quoteIdent(recordColumn)} IS NOT NULL` : ""}
       ),
-      -- Dicionário município → UF (não amarra pelo CPF do beneficiário).
+      location AS (
+        -- Cidade do registro em atendimento_gold_live, amarrada pelo id do atendimento.
+        SELECT
+          CAST(${quoteIdent(recordColumn || "id_unico")} AS STRING) AS record_key,
+          ${normalizeCitySql("cidade")} AS cidade_norm,
+          ROW_NUMBER() OVER (
+            PARTITION BY CAST(${quoteIdent(recordColumn || "id_unico")} AS STRING)
+            ORDER BY COALESCE(${quoteIdent(APPOINTMENTS_DATE_COLUMN)}, TIMESTAMP('1970-01-01')) DESC
+          ) AS rn
+        FROM ${LOCATION_TABLE}
+        WHERE ${recordColumn ? `${quoteIdent(recordColumn)} IS NOT NULL` : "id_unico IS NOT NULL"}
+          AND CAST(${quoteIdent(recordColumn || "id_unico")} AS STRING) IN (SELECT record_key FROM kpi)
+      ),
       city_uf AS (
         SELECT
           ${normalizeCitySql("CIDADE")} AS cidade_norm,
@@ -342,16 +358,19 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       ),
       classified AS (
         SELECT
-          f.record_key,
+          k.record_key,
           COALESCE(
-            ${cityAsUfSql("f.cidade_norm")},
+            ${cityAsUfSql("l.cidade_norm")},
             NULLIF(cu.uf, ''),
-            ${cityToUfSql("f.cidade_norm")}
+            ${cityToUfSql("l.cidade_norm")}
           ) AS uf
-        FROM filtered f
+        FROM kpi k
+        LEFT JOIN location l
+          ON l.record_key = k.record_key
+         AND l.rn = 1
         LEFT JOIN city_uf cu
-          ON cu.cidade_norm = f.cidade_norm
-         AND f.cidade_norm IS NOT NULL
+          ON cu.cidade_norm = l.cidade_norm
+         AND l.cidade_norm IS NOT NULL
       )
       SELECT
         COALESCE(uf, 'SEM UF') AS uf,
@@ -375,7 +394,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       total,
       without_uf: withoutUf,
       states: states.filter((item) => item.uf !== "SEM UF"),
-      source: "atendimento_gold_live.cidade → UF (dicionário município + fallback)",
+      source: "KPI summarized (id) → atendimento_gold_live.cidade → UF",
       filters: {
         group_name: groupName,
         company,

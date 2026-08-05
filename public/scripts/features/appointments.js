@@ -850,15 +850,15 @@ async function loadAppointmentsByStateMap() {
   if (totalEl) totalEl.textContent = '—';
   if (contextEl) contextEl.textContent = '—';
 
-  const months = selectedMonths.size ? [...selectedMonths].sort() : recentMonthValues(12);
+  const months = [...selectedMonths].sort();
   const p = new URLSearchParams();
-  p.set('meses', months.join(','));
+  if (months.length > 0) p.set('meses', months.join(','));
   appendGroupParams(p);
   if (currentCompany) p.set('company', currentCompany);
 
   try {
     const [data, geojson] = await Promise.all([
-      safeGet('/api/appointments-by-state?' + p.toString()),
+      safeGet('/api/appointments-by-state' + (p.toString() ? '?' + p.toString() : '')),
       loadBrazilStatesGeo(),
     ]);
     if (requestId !== appointmentsMapRequestId) return;
@@ -876,16 +876,17 @@ async function loadAppointmentsByStateMap() {
     const total = Number(data.total) || 0;
     const withoutUf = Number(data.without_uf) || 0;
     const mapped = states.reduce((acc, item) => acc + (Number(item.total) || 0), 0);
+    const chartMonths = data.months || (months.length ? months : recentMonthValues(12));
     const scopeParts = [];
     if (currentGroups.length) scopeParts.push(selectedGroupsText());
     if (currentCompany) scopeParts.push(currentCompany);
     if (currentPartnerBrokerId) scopeParts.push(`Parceiro: ${selectedPartnerLabel()}`);
     const scopeLabel = scopeParts.length ? scopeParts.join(' · ') : 'global';
 
-    if (totalEl) totalEl.textContent = `${fmt(mapped)} com UF`;
+    if (totalEl) totalEl.textContent = `${fmt(total)} (= KPI)`;
     if (contextEl) contextEl.textContent = scopeLabel;
     if (meta) {
-      meta.textContent = `${months.length} meses · ${fmt(total)} total · ${fmt(withoutUf)} sem cidade/UF no atendimento`;
+      meta.textContent = `${chartMonths.length} meses · ${fmt(mapped)} com UF · ${fmt(withoutUf)} sem cidade/UF`;
     }
     renderAppointmentsStateRanking(states, mapped || total);
     renderAppointmentsBrazilMap(geojson, states);
