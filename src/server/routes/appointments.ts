@@ -13,12 +13,22 @@ import { setApiCors } from "../../../lib/http";
 const APPOINTMENTS_TABLE = `hive_metastore.sanus_prod.atendimento_summarized_gold_live`;
 const APPOINTMENTS_DATE_COLUMN = 'hora_criacao_atendimento';
 const BENEFICIARIES_TABLE = `hive_metastore.sanus_prod.beneficiaries`;
+const USERS_DELETED_TABLE = `hive_metastore.sanus_prod.users_deleted`;
 const ORGANIZATIONS_TABLE = `hive_metastore.sanus_prod.organizations`;
 const PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.partner_brokers`;
 const ORGANIZATION_PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.organization_partner_brokers`;
 
 function normalizeCpfSql(expr: string) {
   return `NULLIF(LPAD(REGEXP_REPLACE(CAST(${expr} AS STRING), '[^0-9]', ''), 11, '0'), '00000000000')`;
+}
+
+/** Extrai type_kinship do JSON em users_deleted.data (campo pode estar aninhado). */
+function deletedKinshipExpr(dataExpr = 'ud.data') {
+  return `UPPER(TRIM(COALESCE(
+    NULLIF(GET_JSON_OBJECT(CAST(${dataExpr} AS STRING), '$.type_kinship'), ''),
+    NULLIF(GET_JSON_OBJECT(CAST(${dataExpr} AS STRING), '$.typeKinship'), ''),
+    NULLIF(regexp_extract(CAST(${dataExpr} AS STRING), '(?i)"type_kinship"\\s*:\\s*"([^"]+)"', 1), '')
+  )))`;
 }
 
 type ApiRequest = { method?: string; query: Record<string, string | string[] | undefined> };
@@ -284,6 +294,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           ${recordColumn ? `AND ${quoteIdent(recordColumn)} IS NOT NULL` : ''}
       ),
       -- Mesma base da análise demográfica: beneficiaries.type_kinship via CPF.
+      -- Fallback: users_deleted.data.type_kinship para CPFs já excluídos.
       beneficiary_types AS (
         SELECT
           ${normalizeCpfSql('b.cpf')} AS cpf_norm,
@@ -297,27 +308,45 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           AND TRIM(CAST(b.cpf AS STRING)) != ''
         GROUP BY ${normalizeCpfSql('b.cpf')}
       ),
+      deleted_types AS (
+        SELECT
+          ${normalizeCpfSql('ud.cpf')} AS cpf_norm,
+          CASE
+            WHEN MAX(CASE WHEN ${deletedKinshipExpr('ud.data')} = 'TITULAR' THEN 1 ELSE 0 END) = 1 THEN 'TITULAR'
+            WHEN MAX(CASE WHEN ${deletedKinshipExpr('ud.data')} NOT IN ('TITULAR', '') THEN 1 ELSE 0 END) = 1 THEN 'DEPENDENTE'
+            ELSE NULL
+          END AS tipo
+        FROM ${USERS_DELETED_TABLE} ud
+        WHERE ud.cpf IS NOT NULL
+          AND TRIM(CAST(ud.cpf AS STRING)) != ''
+        GROUP BY ${normalizeCpfSql('ud.cpf')}
+      ),
       classified AS (
         SELECT
           f.record_key,
-          bt.tipo
+          -- Residual sem match em beneficiaries/users_deleted entra como titular.
+          COALESCE(bt.tipo, dt.tipo, 'TITULAR') AS tipo
         FROM filtered f
         LEFT JOIN beneficiary_types bt
           ON bt.cpf_norm = f.cpf_norm
          AND f.cpf_norm IS NOT NULL
+        LEFT JOIN deleted_types dt
+          ON dt.cpf_norm = f.cpf_norm
+         AND f.cpf_norm IS NOT NULL
+         AND bt.tipo IS NULL
       )
       SELECT
         COUNT(*) AS total_tickets,
         SUM(CASE WHEN tipo = 'TITULAR' THEN 1 ELSE 0 END) AS titulares,
         SUM(CASE WHEN tipo = 'DEPENDENTE' THEN 1 ELSE 0 END) AS dependentes,
-        SUM(CASE WHEN tipo IS NULL THEN 1 ELSE 0 END) AS sem_cadastro
+        0 AS sem_cadastro
       FROM classified
     `, params.list);
 
     const total = toInt(rows[0]?.[0]);
     const titulares = toInt(rows[0]?.[1]);
     const dependentes = toInt(rows[0]?.[2]);
-    const semCadastro = Math.max(0, total - titulares - dependentes);
+    const semCadastro = 0;
 
     res.status(200).json({
       total,
@@ -326,7 +355,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       sem_cadastro: semCadastro,
       months: monthList,
       source: "atendimento_summarized_gold_live",
-      kinship_source: "beneficiaries.type_kinship via cpf_atendido",
+      kinship_source: "beneficiaries.type_kinship + users_deleted.data.type_kinship via cpf_atendido (residual→titular)",
       filters: {
         group_name: groupName,
         company,
