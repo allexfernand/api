@@ -1,5 +1,5 @@
 (async function loadSanusDashboard() {
-  const CACHE = "20260804-ad06-minus-exits";
+  const CACHE = "20260804-hide-ad05";
 
   function loadScript(src) {
     return new Promise((resolve, reject) => {
