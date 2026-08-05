@@ -12,29 +12,13 @@ import { setApiCors } from "../../../lib/http";
 
 const APPOINTMENTS_TABLE = `hive_metastore.sanus_prod.atendimento_summarized_gold_live`;
 const APPOINTMENTS_DATE_COLUMN = 'hora_criacao_atendimento';
+const BENEFICIARIES_TABLE = `hive_metastore.sanus_prod.beneficiaries`;
 const ORGANIZATIONS_TABLE = `hive_metastore.sanus_prod.organizations`;
 const PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.partner_brokers`;
 const ORGANIZATION_PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.organization_partner_brokers`;
 
 function normalizeCpfSql(expr: string) {
   return `NULLIF(LPAD(REGEXP_REPLACE(CAST(${expr} AS STRING), '[^0-9]', ''), 11, '0'), '00000000000')`;
-}
-
-/** Classifica o agendamento pelos CPFs da própria linha (titular / atendido / dependente). */
-function appointmentKinshipTipoSql() {
-  const cpfA = 'cpf_a';
-  const cpfT = 'cpf_t';
-  const cpfD = 'cpf_d';
-  return `
-    CASE
-      WHEN ${cpfA} IS NOT NULL AND ${cpfT} IS NOT NULL AND ${cpfA} = ${cpfT} THEN 'TITULAR'
-      WHEN ${cpfA} IS NOT NULL AND ${cpfD} IS NOT NULL AND ${cpfA} = ${cpfD} THEN 'DEPENDENTE'
-      WHEN ${cpfA} IS NOT NULL AND ${cpfT} IS NOT NULL AND ${cpfA} != ${cpfT} THEN 'DEPENDENTE'
-      WHEN ${cpfA} IS NULL AND ${cpfT} IS NOT NULL AND ${cpfD} IS NULL THEN 'TITULAR'
-      WHEN ${cpfA} IS NULL AND ${cpfD} IS NOT NULL THEN 'DEPENDENTE'
-      ELSE NULL
-    END
-  `;
 }
 
 type ApiRequest = { method?: string; query: Record<string, string | string[] | undefined> };
@@ -290,9 +274,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
             ? `CAST(${quoteIdent(recordColumn)} AS STRING)`
             : `CONCAT(COALESCE(CAST(cpf_atendido AS STRING), ''), '|', COALESCE(CAST(${quoteIdent(APPOINTMENTS_DATE_COLUMN)} AS STRING), ''))`
           } AS record_key,
-          ${normalizeCpfSql('cpf_atendido')} AS cpf_a,
-          ${normalizeCpfSql('cpf_titular')} AS cpf_t,
-          ${normalizeCpfSql('cpf_dependente')} AS cpf_d
+          ${normalizeCpfSql('cpf_atendido')} AS cpf_norm
         FROM ${APPOINTMENTS_TABLE}
         WHERE (${monthRangeFilter})
           ${assuntoExclusionSql()}
@@ -301,11 +283,28 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           ${partnerFilter}
           ${recordColumn ? `AND ${quoteIdent(recordColumn)} IS NOT NULL` : ''}
       ),
+      -- Mesma base da análise demográfica: beneficiaries.type_kinship via CPF.
+      beneficiary_types AS (
+        SELECT
+          ${normalizeCpfSql('b.cpf')} AS cpf_norm,
+          CASE
+            WHEN MAX(CASE WHEN UPPER(TRIM(COALESCE(b.type_kinship, ''))) = 'TITULAR' THEN 1 ELSE 0 END) = 1 THEN 'TITULAR'
+            WHEN MAX(CASE WHEN UPPER(TRIM(COALESCE(b.type_kinship, ''))) NOT IN ('TITULAR', '') THEN 1 ELSE 0 END) = 1 THEN 'DEPENDENTE'
+            ELSE NULL
+          END AS tipo
+        FROM ${BENEFICIARIES_TABLE} b
+        WHERE b.cpf IS NOT NULL
+          AND TRIM(CAST(b.cpf AS STRING)) != ''
+        GROUP BY ${normalizeCpfSql('b.cpf')}
+      ),
       classified AS (
         SELECT
-          record_key,
-          ${appointmentKinshipTipoSql()} AS tipo
-        FROM filtered
+          f.record_key,
+          bt.tipo
+        FROM filtered f
+        LEFT JOIN beneficiary_types bt
+          ON bt.cpf_norm = f.cpf_norm
+         AND f.cpf_norm IS NOT NULL
       )
       SELECT
         COUNT(*) AS total_tickets,
@@ -327,7 +326,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       sem_cadastro: semCadastro,
       months: monthList,
       source: "atendimento_summarized_gold_live",
-      kinship_source: "cpf_titular/cpf_atendido/cpf_dependente",
+      kinship_source: "beneficiaries.type_kinship via cpf_atendido",
       filters: {
         group_name: groupName,
         company,
