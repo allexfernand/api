@@ -1,6 +1,5 @@
 // api/lives-net-evolution.ts
-// Evolução líquida de vidas: entradas (beneficiaries.created_at)
-// menos saídas (users_deleted.date_of_exclusion).
+// AD06: estoque ancorado no KPI de vidas ativas + saídas mensais (users_deleted).
 import {
   MDS_PARTNER_SCOPE,
   requireBasicAuth,
@@ -122,6 +121,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
   const entryOrgConds = orgScopeConditions("b", groupNames, company, partnerBrokerId, params);
   const exitOrgConds = orgScopeConditions("d", groupNames, company, partnerBrokerId, params);
+  const activeStockWhere = ["o.active = true", ...entryOrgConds].join(" AND ");
   const entryWhere = [
     "b.created_at IS NOT NULL",
     "o.active = true",
@@ -134,90 +134,91 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     `${exitDateExpr} >= TIMESTAMP('2022-01-01')`,
     ...exitOrgConds,
   ].join(" AND ");
+  const monthListSql = displayMonths.map((month) => `'${month}'`).join(",");
 
   try {
     const warehouseId = await resolveWarehouseId();
-    const rows = await runQuery(
-      warehouseId,
-      `
-      WITH entries AS (
-        SELECT
-          DATE_FORMAT(b.created_at, 'yyyy-MM') AS mes,
-          COUNT(*) AS entradas
+    const [stockRows, movementRows] = await Promise.all([
+      runQuery(
+        warehouseId,
+        `
+        SELECT COUNT(*) AS estoque_ativo
         FROM ${BENEFICIARIES_TABLE} b
         INNER JOIN ${ORGANIZATIONS_TABLE} o
           ON CAST(b.organization_id AS STRING) = CAST(o.id AS STRING)
-        WHERE ${entryWhere}
-        GROUP BY 1
+        WHERE ${activeStockWhere}
+      `,
+        params.list,
       ),
-      exits AS (
-        SELECT
-          DATE_FORMAT(${exitDateExpr}, 'yyyy-MM') AS mes,
-          COUNT(*) AS saidas
-        FROM ${USERS_DELETED_TABLE} d
-        WHERE ${exitWhere}
-        GROUP BY 1
-      ),
-      months AS (
-        SELECT mes FROM entries
-        UNION
-        SELECT mes FROM exits
-      ),
-      monthly AS (
+      runQuery(
+        warehouseId,
+        `
+        WITH entries AS (
+          SELECT
+            DATE_FORMAT(b.created_at, 'yyyy-MM') AS mes,
+            COUNT(*) AS entradas
+          FROM ${BENEFICIARIES_TABLE} b
+          INNER JOIN ${ORGANIZATIONS_TABLE} o
+            ON CAST(b.organization_id AS STRING) = CAST(o.id AS STRING)
+          WHERE ${entryWhere}
+            AND DATE_FORMAT(b.created_at, 'yyyy-MM') IN (${monthListSql})
+          GROUP BY 1
+        ),
+        exits AS (
+          SELECT
+            DATE_FORMAT(${exitDateExpr}, 'yyyy-MM') AS mes,
+            COUNT(*) AS saidas
+          FROM ${USERS_DELETED_TABLE} d
+          WHERE ${exitWhere}
+            AND DATE_FORMAT(${exitDateExpr}, 'yyyy-MM') IN (${monthListSql})
+          GROUP BY 1
+        )
         SELECT
           m.mes,
           COALESCE(e.entradas, 0) AS entradas,
-          COALESCE(x.saidas, 0) AS saidas,
-          COALESCE(e.entradas, 0) - COALESCE(x.saidas, 0) AS liquido
-        FROM months m
+          COALESCE(x.saidas, 0) AS saidas
+        FROM (
+          ${displayMonths.map((month) => `SELECT '${month}' AS mes`).join(" UNION ALL ")}
+        ) m
         LEFT JOIN entries e ON e.mes = m.mes
         LEFT JOIN exits x ON x.mes = m.mes
+        ORDER BY m.mes
+      `,
+        params.list,
       ),
-      with_stock AS (
-        SELECT
-          mes,
-          entradas,
-          saidas,
-          liquido,
-          SUM(liquido) OVER (ORDER BY mes ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS acumulado
-        FROM monthly
-      )
-      SELECT mes, entradas, saidas, liquido, acumulado
-      FROM with_stock
-      ORDER BY mes
-    `,
-      params.list,
-    );
+    ]);
 
-    const fullSeries = rows.map((row) => ({
+    const estoqueAtivo = toInt(stockRows[0]?.[0]);
+    const movements = movementRows.map((row) => ({
       mes: String(getCell(row[0]) || ""),
       entradas: toInt(row[1]),
       saidas: toInt(row[2]),
-      liquido: toInt(row[3]),
-      acumulado: toInt(row[4]),
+      liquido: toInt(row[1]) - toInt(row[2]),
     })).filter((item) => item.mes);
 
-    const byMes = new Map(fullSeries.map((item) => [item.mes, item]));
-    let running = 0;
-    for (const item of fullSeries) {
-      if (item.mes < displayMonths[0]) running = item.acumulado;
-    }
-    const padded = displayMonths.map((mes) => {
-      const found = byMes.get(mes);
-      if (found) {
-        running = found.acumulado;
-        return found;
-      }
-      return { mes, entradas: 0, saidas: 0, liquido: 0, acumulado: running };
+    // Ancora o estoque no KPI atual (vidas ativas) e reconstrói o histórico do recorte:
+    // estoque_fim = KPI; estoque[m] = estoque[m-1] + entradas[m] - saidas[m].
+    const netInWindow = movements.reduce((acc, item) => acc + item.liquido, 0);
+    let running = estoqueAtivo - netInWindow;
+    const series = movements.map((item) => {
+      running += item.liquido;
+      return {
+        mes: item.mes,
+        entradas: item.entradas,
+        saidas: item.saidas,
+        liquido: item.liquido,
+        acumulado: running,
+      };
     });
 
     res.status(200).json({
       months: displayMonths,
-      series: padded,
-      full_series_points: fullSeries.length,
+      series,
+      estoque_ativo: estoqueAtivo,
       exit_date_field: "COALESCE(date_of_exclusion, inactived_at, retired_at, created_at)",
       source: {
-        entries: "beneficiaries.created_at + organizations.active",
+        stock: "beneficiaries + organizations.active (mesmo KPI demográfico)",
+        entries: "beneficiaries.created_at",
         exits: "users_deleted",
       },
       filters: {

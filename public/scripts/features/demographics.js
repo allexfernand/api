@@ -65,8 +65,9 @@ function renderLivesNetEvolution(data) {
   const entradas = series.map((item) => Number(item.entradas) || 0);
   const saidas = series.map((item) => Number(item.saidas) || 0);
   const last = series[series.length - 1];
+  const estoqueAtivo = Number(data.estoque_ativo ?? last?.acumulado) || 0;
   if (meta && last) {
-    meta.textContent = `estoque ${fmt(Number(last.acumulado) || 0)} · Δ mês ${fmt(Number(last.liquido) || 0)}`;
+    meta.textContent = `vidas ativas ${fmt(estoqueAtivo)} · saídas no mês ${fmt(Number(last.saidas) || 0)}`;
   }
 
   if (livesNetChart) livesNetChart.destroy();
@@ -77,7 +78,7 @@ function renderLivesNetEvolution(data) {
       datasets: [
         {
           type: 'line',
-          label: 'Estoque líquido',
+          label: 'Vidas ativas',
           data: stock,
           borderColor: '#0f766e',
           backgroundColor: 'rgba(15,118,110,0.10)',
@@ -93,16 +94,16 @@ function renderLivesNetEvolution(data) {
           type: 'bar',
           label: 'Entradas',
           data: entradas,
-          backgroundColor: 'rgba(16,185,129,0.55)',
+          backgroundColor: 'rgba(16,185,129,0.45)',
           borderRadius: 4,
           yAxisID: 'yMov',
           order: 2,
         },
         {
           type: 'bar',
-          label: 'Saídas',
+          label: 'Saídas (users_deleted)',
           data: saidas,
-          backgroundColor: 'rgba(244,63,94,0.45)',
+          backgroundColor: 'rgba(244,63,94,0.65)',
           borderRadius: 4,
           yAxisID: 'yMov',
           order: 1,
@@ -128,6 +129,11 @@ function renderLivesNetEvolution(data) {
           bodyColor: '#f1f5f9',
           callbacks: {
             label: (c) => `${c.dataset.label}: ${fmt(c.parsed.y)}`,
+            footer: (items) => {
+              const point = series[items?.[0]?.dataIndex];
+              if (!point) return '';
+              return `Líquido do mês: ${fmt(Number(point.liquido) || 0)}`;
+            },
           },
         },
       },
@@ -143,7 +149,7 @@ function renderLivesNetEvolution(data) {
           ticks: { font: { size: 10 }, color: '#0f766e', callback: (v) => fmt(v) },
           grid: { color: 'rgba(0,0,0,0.04)' },
           border: { display: false },
-          title: { display: true, text: 'Estoque', color: '#94a3b8', font: { size: 10 } },
+          title: { display: true, text: 'Vidas ativas', color: '#94a3b8', font: { size: 10 } },
         },
         yMov: {
           position: 'right',

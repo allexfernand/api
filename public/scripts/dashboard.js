@@ -1,5 +1,5 @@
 (async function loadSanusDashboard() {
-  const CACHE = "20260804-ad06-net-lives";
+  const CACHE = "20260804-ad06-kpi-stock";
 
   function loadScript(src) {
     return new Promise((resolve, reject) => {
