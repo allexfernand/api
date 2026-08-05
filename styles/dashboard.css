@@ -398,6 +398,53 @@ body[data-sidebar="collapsed"] .sidebar-tab span{opacity:0;position:absolute;tra
   border-radius:999px;
   background:linear-gradient(90deg,#818cf8,#4f46e5);
 }
+.appointments-city-modal[hidden]{display:none!important}
+.appointments-city-modal{
+  position:fixed;
+  inset:0;
+  z-index:12000;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:24px;
+}
+.appointments-city-modal-backdrop{
+  position:absolute;
+  inset:0;
+  background:rgba(15,23,42,.45);
+  backdrop-filter:blur(2px);
+}
+.appointments-city-modal-card{
+  position:relative;
+  z-index:1;
+  width:min(520px,100%);
+  background:#fff;
+  border:1px solid #e2e8f0;
+  border-radius:16px;
+  box-shadow:0 24px 64px rgba(15,23,42,.28);
+  padding:18px 18px 16px;
+}
+.appointments-city-modal-head{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:12px;
+  margin-bottom:14px;
+}
+.appointments-city-modal-close{
+  border:0;
+  background:#f1f5f9;
+  color:#334155;
+  width:32px;
+  height:32px;
+  border-radius:10px;
+  font-size:20px;
+  line-height:1;
+  cursor:pointer;
+}
+.appointments-city-modal-close:hover{background:#e2e8f0}
+.appointments-map-rank-row.is-city{cursor:pointer}
+.appointments-map-rank-row.is-city:hover td{background:#eef2ff}
 .appointment-trend-meta{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px}
 .appointment-trend-pill{font-size:11px;font-weight:700;color:#4338ca;background:#eef2ff;border:1px solid #c7d2fe;border-radius:999px;padding:4px 10px}
 .sessions-utilization-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}

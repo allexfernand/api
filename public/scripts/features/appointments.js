@@ -889,7 +889,7 @@ function updateAppointmentsMapChrome() {
     crumbUf.disabled = true;
   }
   if (hint) {
-    hint.textContent = zoomed ? 'Volume por cidade' : 'Clique em um estado';
+    hint.textContent = zoomed ? 'Clique na cidade para ver tipos' : 'Clique em um estado';
   }
   if (title) title.textContent = zoomed ? `Cidades · ${appointmentsMapState.uf}` : 'Ranking';
   if (col) col.textContent = zoomed ? 'Cidade' : 'UF';
@@ -954,7 +954,7 @@ function renderAppointmentsCityRanking(cities, total) {
     const pct = total > 0 ? (value / total) * 100 : 0;
     const bar = Math.max(4, (value / max) * 100);
     const name = titleCaseCity(item.cidade);
-    return `<tr>
+    return `<tr class="appointments-map-rank-row is-city" data-cidade="${escapeAttr(item.cidade)}" title="Ver tipos de consulta">
       <td style="padding:10px;color:#334155">
         <strong>${escapeHtml(name)}</strong>
         <span class="appointments-map-bar"><span style="width:${bar.toFixed(1)}%"></span></span>
@@ -963,6 +963,83 @@ function renderAppointmentsCityRanking(cities, total) {
       <td style="padding:10px;text-align:right;color:#64748b;vertical-align:top">${pct.toFixed(1).replace('.', ',')}%</td>
     </tr>`;
   }).join('');
+  tbody.querySelectorAll('.appointments-map-rank-row.is-city').forEach((row) => {
+    row.addEventListener('click', () => openAppointmentsCityTypesPopup(row.dataset.cidade));
+  });
+}
+
+let appointmentsCityTypesRequestId = 0;
+
+function closeAppointmentsCityTypesPopup() {
+  const modal = document.getElementById('agend-city-types-modal');
+  if (modal) modal.hidden = true;
+}
+
+function bindAppointmentsCityTypesModalOnce() {
+  const modal = document.getElementById('agend-city-types-modal');
+  if (!modal || modal.dataset.bound) return;
+  modal.dataset.bound = '1';
+  modal.querySelectorAll('[data-close-city-modal]').forEach((el) => {
+    el.addEventListener('click', () => closeAppointmentsCityTypesPopup());
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !modal.hidden) closeAppointmentsCityTypesPopup();
+  });
+}
+
+async function openAppointmentsCityTypesPopup(cidade) {
+  const city = String(cidade || '').trim();
+  const uf = appointmentsMapState.uf;
+  if (!city || !uf) return;
+  bindAppointmentsCityTypesModalOnce();
+  const modal = document.getElementById('agend-city-types-modal');
+  const loading = document.getElementById('agend-city-types-loading');
+  const content = document.getElementById('agend-city-types-content');
+  const tbody = document.getElementById('agend-city-types-tbody');
+  const meta = document.getElementById('agend-city-types-meta');
+  const title = document.getElementById('agend-city-types-title');
+  const subtitle = document.getElementById('agend-city-types-subtitle');
+  if (!modal) return;
+
+  modal.hidden = false;
+  if (title) title.textContent = `Tipos de consulta · ${titleCaseCity(city)}`;
+  if (subtitle) subtitle.textContent = `${uf} · ${UF_NAME[uf] || uf} · mesmos filtros da tela`;
+  if (loading) {
+    loading.style.display = 'block';
+    loading.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...';
+  }
+  if (content) content.style.display = 'none';
+  if (meta) meta.textContent = '—';
+
+  const requestId = ++appointmentsCityTypesRequestId;
+  const { p } = appointmentsMapQueryParams();
+  p.set('uf', uf);
+  p.set('cidade', city);
+  const data = await safeGet('/api/appointments-city-types?' + p.toString());
+  if (requestId !== appointmentsCityTypesRequestId) return;
+  if (!data || data.error) {
+    if (loading) {
+      loading.style.display = 'block';
+      loading.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>' +
+        escapeHtml(String(data?.error || 'Erro ao carregar tipos').slice(0, 180));
+    }
+    return;
+  }
+
+  const items = data.items || [];
+  if (tbody) {
+    tbody.innerHTML = items.length ? items.map((item) => {
+      const pct = Number(item.percentual) || 0;
+      return `<tr style="border-bottom:1px solid #f1f5f9">
+        <td style="padding:10px;color:#334155;font-weight:600">${escapeHtml(item.tipo || 'Outros')}</td>
+        <td style="padding:10px;text-align:right;font-weight:700;color:#0f766e">${fmt(Number(item.total) || 0)}</td>
+        <td style="padding:10px;text-align:right;color:#64748b">${pct.toFixed(1).replace('.', ',')}%</td>
+      </tr>`;
+    }).join('') : '<tr><td colspan="3" style="padding:14px 10px;text-align:center;color:#94a3b8">Nenhum tipo encontrado.</td></tr>';
+  }
+  if (meta) meta.textContent = `${items.length} tipos · total ${fmt(data.total || 0)} agendamentos`;
+  if (loading) loading.style.display = 'none';
+  if (content) content.style.display = 'block';
 }
 
 function clearAppointmentsCityLayer() {
@@ -994,6 +1071,7 @@ function renderAppointmentsCityBubbles(cities, uf) {
     circle.setAttribute('r', radius.toFixed(1));
     circle.setAttribute('data-cidade', item.cidade);
     circle.setAttribute('data-total', String(total));
+    circle.style.cursor = 'pointer';
     group.appendChild(circle);
 
     const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
@@ -1014,12 +1092,18 @@ function renderAppointmentsCityBubbles(cities, uf) {
     const rect = wrap?.getBoundingClientRect();
     if (!rect) return;
     tooltip.style.display = 'block';
-    tooltip.innerHTML = `<strong>${escapeHtml(titleCaseCity(city.dataset.cidade))}</strong><br>${fmt(Number(city.dataset.total) || 0)} agendamentos`;
+    tooltip.innerHTML = `<strong>${escapeHtml(titleCaseCity(city.dataset.cidade))}</strong><br>${fmt(Number(city.dataset.total) || 0)} agendamentos<br><span style="opacity:.8">Clique para ver tipos</span>`;
     tooltip.style.left = `${event.clientX - rect.left}px`;
     tooltip.style.top = `${event.clientY - rect.top}px`;
   };
   group.onmouseleave = () => {
     if (tooltip) tooltip.style.display = 'none';
+  };
+  group.onclick = (event) => {
+    const city = event.target.closest('.appointments-map-city');
+    if (!city) return;
+    event.stopPropagation();
+    openAppointmentsCityTypesPopup(city.dataset.cidade);
   };
 }
 

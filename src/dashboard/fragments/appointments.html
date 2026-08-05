@@ -196,4 +196,33 @@
       <div style="font-size:11px;color:#64748b;margin-top:10px;text-align:right" id="agend-map-meta">—</div>
       <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="agend-map-error"></div>
     </div>
+
+    <div class="appointments-city-modal" id="agend-city-types-modal" hidden>
+      <div class="appointments-city-modal-backdrop" data-close-city-modal></div>
+      <div class="appointments-city-modal-card" role="dialog" aria-modal="true" aria-labelledby="agend-city-types-title">
+        <div class="appointments-city-modal-head">
+          <div>
+            <div class="section-title" style="margin-bottom:4px" id="agend-city-types-title">Tipos de consulta</div>
+            <div style="font-size:11px;color:#94a3b8" id="agend-city-types-subtitle">—</div>
+          </div>
+          <button type="button" class="appointments-city-modal-close" data-close-city-modal aria-label="Fechar">×</button>
+        </div>
+        <div class="loading-box" id="agend-city-types-loading"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...</div>
+        <div id="agend-city-types-content" style="display:none">
+          <div class="table-scroll" style="max-height:360px">
+            <table class="appointment-types-table">
+              <thead>
+                <tr style="border-bottom:1px solid #e2e8f0;color:#64748b">
+                  <th style="text-align:left;padding:9px 10px;font-weight:600">Tipo</th>
+                  <th style="text-align:right;padding:9px 10px;font-weight:600">Total</th>
+                  <th style="text-align:right;padding:9px 10px;font-weight:600">%</th>
+                </tr>
+              </thead>
+              <tbody id="agend-city-types-tbody"></tbody>
+            </table>
+          </div>
+          <div style="font-size:11px;color:#94a3b8;margin-top:10px;text-align:right" id="agend-city-types-meta">—</div>
+        </div>
+      </div>
+    </div>
   </div>
