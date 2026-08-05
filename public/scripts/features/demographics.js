@@ -21,6 +21,143 @@ function renderEvol() {
   });
 }
 
+async function loadLivesNetEvolution() {
+  const loading = document.getElementById('lives-net-loading');
+  const wrap = document.getElementById('lives-net-wrap');
+  const errorBox = document.getElementById('lives-net-error');
+  const meta = document.getElementById('lives-net-meta');
+  if (loading) loading.style.display = 'block';
+  if (wrap) wrap.style.display = 'none';
+  if (errorBox) {
+    errorBox.style.display = 'none';
+    errorBox.textContent = '';
+  }
+  if (meta) meta.textContent = 'Carregando...';
+
+  const data = await safeGet('/api/lives-net-evolution' + buildQS());
+  if (!data || data.error || !Array.isArray(data.series)) {
+    if (loading) loading.style.display = 'none';
+    if (errorBox) {
+      errorBox.style.display = 'block';
+      errorBox.textContent = data?.error ? String(data.error).slice(0, 220) : 'Erro ao carregar evolução líquida';
+    }
+    if (meta) meta.textContent = '';
+    return;
+  }
+  renderLivesNetEvolution(data);
+}
+
+function renderLivesNetEvolution(data) {
+  const loading = document.getElementById('lives-net-loading');
+  const wrap = document.getElementById('lives-net-wrap');
+  const cv = document.getElementById('livesNetChart');
+  const meta = document.getElementById('lives-net-meta');
+  const series = data.series || [];
+  if (loading) loading.style.display = 'none';
+  if (!cv || !wrap) return;
+  wrap.style.display = 'block';
+
+  const labels = series.map((item) => {
+    const [y, mm] = String(item.mes || '').split('-');
+    return `${mN[mm] || mm}/${String(y || '').slice(2)}`;
+  });
+  const stock = series.map((item) => Number(item.acumulado) || 0);
+  const entradas = series.map((item) => Number(item.entradas) || 0);
+  const saidas = series.map((item) => Number(item.saidas) || 0);
+  const last = series[series.length - 1];
+  if (meta && last) {
+    meta.textContent = `estoque ${fmt(Number(last.acumulado) || 0)} · Δ mês ${fmt(Number(last.liquido) || 0)}`;
+  }
+
+  if (livesNetChart) livesNetChart.destroy();
+  livesNetChart = new Chart(cv, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {
+          type: 'line',
+          label: 'Estoque líquido',
+          data: stock,
+          borderColor: '#0f766e',
+          backgroundColor: 'rgba(15,118,110,0.10)',
+          borderWidth: 2.5,
+          pointRadius: 3,
+          pointBackgroundColor: '#0f766e',
+          fill: true,
+          tension: 0.35,
+          yAxisID: 'y',
+          order: 0,
+        },
+        {
+          type: 'bar',
+          label: 'Entradas',
+          data: entradas,
+          backgroundColor: 'rgba(16,185,129,0.55)',
+          borderRadius: 4,
+          yAxisID: 'yMov',
+          order: 2,
+        },
+        {
+          type: 'bar',
+          label: 'Saídas',
+          data: saidas,
+          backgroundColor: 'rgba(244,63,94,0.45)',
+          borderRadius: 4,
+          yAxisID: 'yMov',
+          order: 1,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          display: true,
+          position: 'top',
+          align: 'end',
+          labels: { boxWidth: 10, boxHeight: 10, color: '#475569', font: { size: 11 } },
+        },
+        tooltip: {
+          backgroundColor: '#1e293b',
+          borderColor: '#334155',
+          borderWidth: 1,
+          titleColor: '#94a3b8',
+          bodyColor: '#f1f5f9',
+          callbacks: {
+            label: (c) => `${c.dataset.label}: ${fmt(c.parsed.y)}`,
+          },
+        },
+      },
+      scales: {
+        x: {
+          ticks: { font: { size: 10 }, color: '#94a3b8', maxRotation: 45, autoSkip: true, maxTicksLimit: 14 },
+          grid: { display: false },
+          border: { display: false },
+        },
+        y: {
+          position: 'left',
+          beginAtZero: false,
+          ticks: { font: { size: 10 }, color: '#0f766e', callback: (v) => fmt(v) },
+          grid: { color: 'rgba(0,0,0,0.04)' },
+          border: { display: false },
+          title: { display: true, text: 'Estoque', color: '#94a3b8', font: { size: 10 } },
+        },
+        yMov: {
+          position: 'right',
+          beginAtZero: true,
+          grid: { drawOnChartArea: false },
+          ticks: { font: { size: 10 }, color: '#94a3b8', callback: (v) => fmt(v) },
+          border: { display: false },
+          title: { display: true, text: 'Movimento', color: '#94a3b8', font: { size: 10 } },
+        },
+      },
+    },
+  });
+}
+
 // --- Demografia ---
 function renderDemographics(d) {
   document.getElementById('demo-loading').style.display = 'none';

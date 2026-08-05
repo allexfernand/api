@@ -154,9 +154,24 @@
       </div>
     </div>
 
-    <div class="chart-card" style="margin-top:16px">
+    <div class="chart-card" data-qtag="#AD05" style="margin-top:16px">
       <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:2px">Evolução acumulada de vidas</h2>
       <div style="font-size:11px;color:#94a3b8;margin-bottom:10px">Data de inclusão na carteira · últimos 12 meses</div>
       <div class="chart-wrap"><div class="skeleton" id="skel-e"></div><canvas id="evolChart" style="display:none"></canvas></div>
+    </div>
+
+    <div class="chart-card" data-qtag="#AD06" style="margin-top:16px">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px">
+        <div>
+          <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:2px">Evolução líquida de vidas</h2>
+          <div style="font-size:11px;color:#94a3b8">Entradas − saídas (users_deleted) · estoque acumulado · últimos 12 meses</div>
+        </div>
+        <div style="font-size:11px;color:#64748b;font-weight:700" id="lives-net-meta">—</div>
+      </div>
+      <div class="loading-box" id="lives-net-loading"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando evolução líquida...</div>
+      <div id="lives-net-error" style="font-size:11px;color:#f59e0b;margin-bottom:8px;display:none"></div>
+      <div class="chart-wrap" id="lives-net-wrap" style="display:none">
+        <canvas id="livesNetChart"></canvas>
+      </div>
     </div>
   </div>
