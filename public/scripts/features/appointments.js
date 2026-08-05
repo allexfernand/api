@@ -689,6 +689,22 @@ async function loadAppointmentsMonthlyEvolution() {
 
 let appointmentsBrazilGeoCache = null;
 let appointmentsMapRequestId = 0;
+let appointmentsCityRequestId = 0;
+let appointmentsMapState = {
+  mode: 'brazil',
+  uf: null,
+  geojson: null,
+  states: [],
+  extras: [],
+  total: 0,
+  online: 0,
+  withoutCity: 0,
+  months: [],
+  scopeLabel: 'global',
+  cities: [],
+  cityTotal: 0,
+  brazilViewBox: '0 0 800 780',
+};
 
 const UF_NAME = {
   AC: 'Acre', AL: 'Alagoas', AP: 'Amapá', AM: 'Amazonas', BA: 'Bahia', CE: 'Ceará',
@@ -698,6 +714,12 @@ const UF_NAME = {
   RS: 'Rio Grande do Sul', RO: 'Rondônia', RR: 'Roraima', SC: 'Santa Catarina',
   SP: 'São Paulo', SE: 'Sergipe', TO: 'Tocantins',
 };
+
+function titleCaseCity(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/(^|\s)\S/g, (char) => char.toUpperCase());
+}
 
 async function loadBrazilStatesGeo() {
   if (appointmentsBrazilGeoCache) return appointmentsBrazilGeoCache;
@@ -777,6 +799,69 @@ function buildBrazilProjector(geojson, width, height, pad = 16) {
   ];
 }
 
+function hashString(value) {
+  let hash = 2166136261;
+  const text = String(value || '');
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function placeCityInBBox(cidade, index, total, bbox) {
+  const golden = Math.PI * (3 - Math.sqrt(5));
+  const t = (index + 0.5) / Math.max(total, 1);
+  const radius = Math.sqrt(t) * 0.38;
+  const angle = index * golden + ((hashString(cidade) % 360) * Math.PI) / 180;
+  return [
+    bbox.x + bbox.width / 2 + Math.cos(angle) * radius * bbox.width,
+    bbox.y + bbox.height / 2 + Math.sin(angle) * radius * bbox.height,
+  ];
+}
+
+function appointmentsMapQueryParams() {
+  const months = [...selectedMonths].sort();
+  const p = new URLSearchParams();
+  if (months.length > 0) p.set('meses', months.join(','));
+  appendGroupParams(p);
+  if (currentCompany) p.set('company', currentCompany);
+  return { months, p };
+}
+
+function updateAppointmentsMapChrome() {
+  const back = document.getElementById('agend-map-back');
+  const hint = document.getElementById('agend-map-zoom-hint');
+  const title = document.getElementById('agend-map-ranking-title');
+  const col = document.getElementById('agend-map-col-label');
+  const totalEl = document.getElementById('agend-map-total');
+  const contextEl = document.getElementById('agend-map-context');
+  const meta = document.getElementById('agend-map-meta');
+  const zoomed = appointmentsMapState.mode === 'uf' && appointmentsMapState.uf;
+  if (back) back.style.display = zoomed ? 'inline-flex' : 'none';
+  if (hint) {
+    hint.textContent = zoomed
+      ? `${appointmentsMapState.uf} · ${UF_NAME[appointmentsMapState.uf] || appointmentsMapState.uf}`
+      : 'Clique no estado para ver cidades';
+  }
+  if (title) title.textContent = zoomed ? `Cidades · ${appointmentsMapState.uf}` : 'Ranking';
+  if (col) col.textContent = zoomed ? 'Cidade' : 'UF';
+  if (totalEl) {
+    totalEl.textContent = zoomed
+      ? `${fmt(appointmentsMapState.cityTotal)} em ${appointmentsMapState.uf}`
+      : `${fmt(appointmentsMapState.total)} (= KPI)`;
+  }
+  if (contextEl) contextEl.textContent = appointmentsMapState.scopeLabel;
+  if (meta) {
+    if (zoomed) {
+      meta.textContent = `${appointmentsMapState.months.length} meses · ${fmt(appointmentsMapState.cities.length)} cidades · clique em Brasil para voltar`;
+    } else {
+      const mapped = appointmentsMapState.states.reduce((acc, item) => acc + (Number(item.total) || 0), 0);
+      meta.textContent = `${appointmentsMapState.months.length} meses · ${fmt(mapped)} com UF · ${fmt(appointmentsMapState.online)} online · ${fmt(appointmentsMapState.withoutCity)} sem cidade`;
+    }
+  }
+}
+
 function renderAppointmentsStateRanking(states, total, extras = []) {
   const tbody = document.getElementById('agend-map-ranking-tbody');
   if (!tbody) return;
@@ -791,12 +876,166 @@ function renderAppointmentsStateRanking(states, total, extras = []) {
     const name = item.label || UF_NAME[item.uf] || item.uf;
     const code = isSpecial ? (item.uf === 'ONLINE' ? 'Online' : '—') : item.uf;
     const color = item.uf === 'ONLINE' ? '#7c3aed' : item.uf === 'SEM CIDADE' ? '#94a3b8' : '#334155';
-    return `<tr>
+    const clickable = !isSpecial && /^[A-Z]{2}$/.test(String(item.uf || ''));
+    return `<tr ${clickable ? `class="appointments-map-rank-row" data-uf="${escapeAttr(item.uf)}" style="cursor:pointer"` : ''}>
       <td style="padding:8px 10px;color:${color}"><strong>${escapeHtml(code)}</strong> <span style="color:#94a3b8">${escapeHtml(name)}</span></td>
       <td style="padding:8px 10px;text-align:right;color:#0f172a;font-weight:700">${fmt(item.total)}</td>
       <td style="padding:8px 10px;text-align:right;color:#64748b">${pct.toFixed(1).replace('.', ',')}%</td>
     </tr>`;
   }).join('');
+  tbody.querySelectorAll('.appointments-map-rank-row').forEach((row) => {
+    row.addEventListener('click', () => zoomAppointmentsMapToUf(row.dataset.uf));
+  });
+}
+
+function renderAppointmentsCityRanking(cities, total) {
+  const tbody = document.getElementById('agend-map-ranking-tbody');
+  if (!tbody) return;
+  if (!cities.length) {
+    tbody.innerHTML = '<tr><td colspan="3" style="padding:12px 10px;color:#94a3b8">Sem cidades com volume neste estado.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = cities.slice(0, 40).map((item) => {
+    const pct = total > 0 ? ((Number(item.total) || 0) / total) * 100 : 0;
+    const name = titleCaseCity(item.cidade);
+    return `<tr>
+      <td style="padding:8px 10px;color:#334155"><strong>${escapeHtml(name)}</strong></td>
+      <td style="padding:8px 10px;text-align:right;color:#0f172a;font-weight:700">${fmt(item.total)}</td>
+      <td style="padding:8px 10px;text-align:right;color:#64748b">${pct.toFixed(1).replace('.', ',')}%</td>
+    </tr>`;
+  }).join('');
+}
+
+function clearAppointmentsCityLayer() {
+  const svg = document.getElementById('appointments-map-svg');
+  svg?.querySelector('#appointments-map-cities')?.remove();
+}
+
+function renderAppointmentsCityBubbles(cities, uf) {
+  const svg = document.getElementById('appointments-map-svg');
+  const tooltip = document.getElementById('appointments-map-tooltip');
+  if (!svg) return;
+  clearAppointmentsCityLayer();
+  const focus = svg.querySelector(`.appointments-map-path[data-uf="${CSS.escape(uf)}"]`);
+  if (!focus || !cities.length) return;
+  const bbox = focus.getBBox();
+  const max = Math.max(...cities.map((item) => Number(item.total) || 0), 1);
+  const minSide = Math.min(bbox.width, bbox.height);
+  const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  group.setAttribute('id', 'appointments-map-cities');
+  cities.slice(0, 25).forEach((item, index) => {
+    const total = Number(item.total) || 0;
+    const [cx, cy] = placeCityInBBox(item.cidade, index, Math.min(cities.length, 25), bbox);
+    const radius = Math.max(minSide * 0.018, Math.sqrt(total / max) * minSide * 0.08);
+    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    circle.setAttribute('class', 'appointments-map-city');
+    circle.setAttribute('cx', cx.toFixed(1));
+    circle.setAttribute('cy', cy.toFixed(1));
+    circle.setAttribute('r', radius.toFixed(1));
+    circle.setAttribute('data-cidade', item.cidade);
+    circle.setAttribute('data-total', String(total));
+    group.appendChild(circle);
+    if (index < 8) {
+      const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      label.setAttribute('class', 'appointments-map-city-label');
+      label.setAttribute('x', cx.toFixed(1));
+      label.setAttribute('y', (cy - radius - 4).toFixed(1));
+      label.setAttribute('text-anchor', 'middle');
+      const fontSize = Math.max(8, Math.min(12, minSide * 0.035));
+      label.setAttribute('font-size', String(fontSize));
+      label.textContent = titleCaseCity(item.cidade);
+      group.appendChild(label);
+    }
+  });
+  svg.appendChild(group);
+
+  group.onmousemove = (event) => {
+    const city = event.target.closest('.appointments-map-city');
+    if (!city || !tooltip) return;
+    const wrap = document.querySelector('.appointments-map-canvas-wrap');
+    const rect = wrap?.getBoundingClientRect();
+    if (!rect) return;
+    tooltip.style.display = 'block';
+    tooltip.innerHTML = `<strong>${escapeHtml(titleCaseCity(city.dataset.cidade))}</strong><br>${fmt(Number(city.dataset.total) || 0)} agendamentos`;
+    tooltip.style.left = `${event.clientX - rect.left}px`;
+    tooltip.style.top = `${event.clientY - rect.top}px`;
+  };
+  group.onmouseleave = () => {
+    if (tooltip) tooltip.style.display = 'none';
+  };
+}
+
+function setAppointmentsMapViewBox(viewBox, animate = true) {
+  const svg = document.getElementById('appointments-map-svg');
+  if (!svg) return;
+  if (animate) svg.style.transition = 'all .35s ease';
+  svg.setAttribute('viewBox', viewBox);
+}
+
+function resetAppointmentsMapZoom() {
+  appointmentsMapState.mode = 'brazil';
+  appointmentsMapState.uf = null;
+  appointmentsMapState.cities = [];
+  appointmentsMapState.cityTotal = 0;
+  clearAppointmentsCityLayer();
+  const svg = document.getElementById('appointments-map-svg');
+  if (svg) {
+    setAppointmentsMapViewBox(appointmentsMapState.brazilViewBox);
+    svg.querySelectorAll('.appointments-map-path').forEach((path) => {
+      path.classList.remove('is-dimmed', 'is-focus');
+    });
+  }
+  renderAppointmentsStateRanking(
+    appointmentsMapState.states,
+    appointmentsMapState.total,
+    appointmentsMapState.extras,
+  );
+  updateAppointmentsMapChrome();
+}
+
+async function zoomAppointmentsMapToUf(uf) {
+  const targetUf = String(uf || '').toUpperCase();
+  if (!/^[A-Z]{2}$/.test(targetUf)) return;
+  const svg = document.getElementById('appointments-map-svg');
+  const path = svg?.querySelector(`.appointments-map-path[data-uf="${CSS.escape(targetUf)}"]`);
+  if (!svg || !path) return;
+
+  appointmentsMapState.mode = 'uf';
+  appointmentsMapState.uf = targetUf;
+  clearAppointmentsCityLayer();
+  svg.querySelectorAll('.appointments-map-path').forEach((node) => {
+    const match = node.dataset.uf === targetUf;
+    node.classList.toggle('is-dimmed', !match);
+    node.classList.toggle('is-focus', match);
+  });
+  const bbox = path.getBBox();
+  const pad = Math.max(bbox.width, bbox.height) * 0.16;
+  setAppointmentsMapViewBox(
+    `${bbox.x - pad} ${bbox.y - pad} ${bbox.width + pad * 2} ${bbox.height + pad * 2}`,
+  );
+  updateAppointmentsMapChrome();
+  renderAppointmentsCityRanking([], 0);
+  const tbody = document.getElementById('agend-map-ranking-tbody');
+  if (tbody) {
+    tbody.innerHTML = '<tr><td colspan="3" style="padding:12px 10px;color:#94a3b8">Carregando cidades...</td></tr>';
+  }
+
+  const requestId = ++appointmentsCityRequestId;
+  const { p } = appointmentsMapQueryParams();
+  p.set('uf', targetUf);
+  const data = await safeGet('/api/appointments-by-city?' + p.toString());
+  if (requestId !== appointmentsCityRequestId || appointmentsMapState.uf !== targetUf) return;
+  if (!data || data.error) {
+    if (tbody) {
+      tbody.innerHTML = `<tr><td colspan="3" style="padding:12px 10px;color:#f59e0b">${escapeHtml(String(data?.error || 'Erro ao carregar cidades').slice(0, 160))}</td></tr>`;
+    }
+    return;
+  }
+  appointmentsMapState.cities = data.cities || [];
+  appointmentsMapState.cityTotal = Number(data.total) || appointmentsMapState.cities.reduce((acc, item) => acc + (Number(item.total) || 0), 0);
+  renderAppointmentsCityRanking(appointmentsMapState.cities, appointmentsMapState.cityTotal || 1);
+  renderAppointmentsCityBubbles(appointmentsMapState.cities, targetUf);
+  updateAppointmentsMapChrome();
 }
 
 function renderAppointmentsBrazilMap(geojson, states) {
@@ -808,7 +1047,8 @@ function renderAppointmentsBrazilMap(geojson, states) {
   const width = 800;
   const height = 780;
   const project = buildBrazilProjector(geojson, width, height);
-  svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+  appointmentsMapState.brazilViewBox = `0 0 ${width} ${height}`;
+  svg.setAttribute('viewBox', appointmentsMapState.brazilViewBox);
   svg.innerHTML = (geojson.features || []).map((feature) => {
     const uf = String(feature.properties?.sigla || '').toUpperCase();
     const total = byUf[uf] || 0;
@@ -820,7 +1060,7 @@ function renderAppointmentsBrazilMap(geojson, states) {
 
   const showTip = (event) => {
     const path = event.target.closest('.appointments-map-path');
-    if (!path || !tooltip) return;
+    if (!path || !tooltip || path.classList.contains('is-dimmed')) return;
     const wrap = document.querySelector('.appointments-map-canvas-wrap');
     const rect = wrap?.getBoundingClientRect();
     if (!rect) return;
@@ -828,19 +1068,31 @@ function renderAppointmentsBrazilMap(geojson, states) {
     const name = path.dataset.name || uf;
     const total = Number(path.dataset.total) || 0;
     tooltip.style.display = 'block';
-    tooltip.innerHTML = `<strong>${escapeHtml(uf)} · ${escapeHtml(name)}</strong><br>${fmt(total)} agendamentos`;
+    tooltip.innerHTML = `<strong>${escapeHtml(uf)} · ${escapeHtml(name)}</strong><br>${fmt(total)} agendamentos<br><span style="opacity:.8">Clique para ver cidades</span>`;
     tooltip.style.left = `${event.clientX - rect.left}px`;
     tooltip.style.top = `${event.clientY - rect.top}px`;
   };
   const hideTip = () => {
     if (tooltip) tooltip.style.display = 'none';
   };
-  svg.onmousemove = showTip;
+  svg.onmousemove = (event) => {
+    if (event.target.closest('.appointments-map-city')) return;
+    showTip(event);
+  };
   svg.onmouseleave = hideTip;
+  svg.onclick = (event) => {
+    const path = event.target.closest('.appointments-map-path');
+    if (!path || path.classList.contains('is-dimmed')) return;
+    zoomAppointmentsMapToUf(path.dataset.uf);
+  };
 }
 
 async function loadAppointmentsByStateMap() {
   const requestId = ++appointmentsMapRequestId;
+  appointmentsCityRequestId += 1;
+  appointmentsMapState.mode = 'brazil';
+  appointmentsMapState.uf = null;
+  appointmentsMapState.cities = [];
   const skel = document.getElementById('skel-agend-map');
   const svg = document.getElementById('appointments-map-svg');
   const errorBox = document.getElementById('agend-map-error');
@@ -853,12 +1105,9 @@ async function loadAppointmentsByStateMap() {
   if (meta) meta.textContent = 'Carregando mapa...';
   if (totalEl) totalEl.textContent = '—';
   if (contextEl) contextEl.textContent = '—';
+  updateAppointmentsMapChrome();
 
-  const months = [...selectedMonths].sort();
-  const p = new URLSearchParams();
-  if (months.length > 0) p.set('meses', months.join(','));
-  appendGroupParams(p);
-  if (currentCompany) p.set('company', currentCompany);
+  const { months, p } = appointmentsMapQueryParams();
 
   try {
     const [data, geojson] = await Promise.all([
@@ -880,26 +1129,35 @@ async function loadAppointmentsByStateMap() {
     const total = Number(data.total) || 0;
     const online = Number(data.online) || 0;
     const withoutCity = Number(data.without_city) || 0;
-    const mapped = states.reduce((acc, item) => acc + (Number(item.total) || 0), 0);
     const chartMonths = data.months || (months.length ? months : recentMonthValues(12));
     const scopeParts = [];
     if (currentGroups.length) scopeParts.push(selectedGroupsText());
     if (currentCompany) scopeParts.push(currentCompany);
     if (currentPartnerBrokerId) scopeParts.push(`Parceiro: ${selectedPartnerLabel()}`);
-    const scopeLabel = scopeParts.length ? scopeParts.join(' · ') : 'global';
     const extras = [
       { uf: 'ONLINE', label: 'Online (Conexa)', total: online },
       { uf: 'SEM CIDADE', label: 'Sem cidade', total: withoutCity },
     ];
 
-    if (totalEl) totalEl.textContent = `${fmt(total)} (= KPI)`;
-    if (contextEl) contextEl.textContent = scopeLabel;
-    if (meta) {
-      meta.textContent = `${chartMonths.length} meses · ${fmt(mapped)} com UF · ${fmt(online)} online · ${fmt(withoutCity)} sem cidade`;
-    }
+    appointmentsMapState.geojson = geojson;
+    appointmentsMapState.states = states;
+    appointmentsMapState.extras = extras;
+    appointmentsMapState.total = total;
+    appointmentsMapState.online = online;
+    appointmentsMapState.withoutCity = withoutCity;
+    appointmentsMapState.months = chartMonths;
+    appointmentsMapState.scopeLabel = scopeParts.length ? scopeParts.join(' · ') : 'global';
+
     renderAppointmentsStateRanking(states, total, extras);
     renderAppointmentsBrazilMap(geojson, states);
+    updateAppointmentsMapChrome();
     if (skel) skel.style.display = 'none';
+
+    const back = document.getElementById('agend-map-back');
+    if (back && !back.dataset.bound) {
+      back.dataset.bound = '1';
+      back.addEventListener('click', () => resetAppointmentsMapZoom());
+    }
   } catch (err) {
     if (requestId !== appointmentsMapRequestId) return;
     if (errorBox) {
