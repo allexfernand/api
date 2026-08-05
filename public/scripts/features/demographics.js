@@ -64,10 +64,11 @@ function renderLivesNetEvolution(data) {
   const stock = series.map((item) => Number(item.acumulado) || 0);
   const entradas = series.map((item) => Number(item.entradas) || 0);
   const saidas = series.map((item) => Number(item.saidas) || 0);
+  const stockMinusExits = series.map((item) => (Number(item.acumulado) || 0) - (Number(item.saidas) || 0));
   const last = series[series.length - 1];
   const estoqueAtivo = Number(data.estoque_ativo ?? last?.acumulado) || 0;
   if (meta && last) {
-    meta.textContent = `vidas ativas ${fmt(estoqueAtivo)} · saídas no mês ${fmt(Number(last.saidas) || 0)}`;
+    meta.textContent = `vidas ativas ${fmt(estoqueAtivo)} · saídas no mês ${fmt(Number(last.saidas) || 0)} · total−saídas ${fmt(estoqueAtivo - (Number(last.saidas) || 0))}`;
   }
 
   if (livesNetChart) livesNetChart.destroy();
@@ -86,6 +87,21 @@ function renderLivesNetEvolution(data) {
           pointRadius: 3,
           pointBackgroundColor: '#0f766e',
           fill: true,
+          tension: 0.35,
+          yAxisID: 'y',
+          order: 0,
+        },
+        {
+          type: 'line',
+          label: 'Total − saídas',
+          data: stockMinusExits,
+          borderColor: '#b45309',
+          backgroundColor: 'rgba(180,83,9,0.06)',
+          borderWidth: 2,
+          borderDash: [6, 4],
+          pointRadius: 2.5,
+          pointBackgroundColor: '#b45309',
+          fill: false,
           tension: 0.35,
           yAxisID: 'y',
           order: 0,
