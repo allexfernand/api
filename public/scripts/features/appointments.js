@@ -885,7 +885,7 @@ async function loadAppointmentsByStateMap() {
     if (totalEl) totalEl.textContent = `${fmt(mapped)} com UF`;
     if (contextEl) contextEl.textContent = scopeLabel;
     if (meta) {
-      meta.textContent = `${months.length} meses · ${fmt(total)} total · ${fmt(withoutUf)} sem UF no cadastro`;
+      meta.textContent = `${months.length} meses · ${fmt(total)} total · ${fmt(withoutUf)} sem cidade/UF no atendimento`;
     }
     renderAppointmentsStateRanking(states, mapped || total);
     renderAppointmentsBrazilMap(geojson, states);

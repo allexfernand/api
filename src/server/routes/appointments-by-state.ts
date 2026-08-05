@@ -32,10 +32,6 @@ function pickColumn(columns: string[], candidates: string[]) {
   return null;
 }
 
-function normalizeCpfSql(expr: string) {
-  return `NULLIF(LPAD(REGEXP_REPLACE(CAST(${expr} AS STRING), '[^0-9]', ''), 11, '0'), '00000000000')`;
-}
-
 function orgNamesSubquery(groupName: unknown, p: SqlParams) {
   const groups = (Array.isArray(groupName) ? groupName : [groupName]).map((value) => String(value).trim()).filter(Boolean);
   const groupList = groups.map((group) => `UPPER(TRIM(${p.add(group)}))`).join(",");
@@ -190,30 +186,91 @@ function nextMonth(month: string) {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
-/** Fallback cidade → UF para agendamentos sem match em vw_beneficiarios. */
+/** Normaliza texto de cidade (maiúsculas, sem acento, sem sufixo de aeroporto). */
+function normalizeCitySql(expr: string) {
+  return `NULLIF(
+    TRIM(
+      REGEXP_REPLACE(
+        REGEXP_REPLACE(
+          TRANSLATE(
+            UPPER(TRIM(COALESCE(CAST(${expr} AS STRING), ''))),
+            'ÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇÑáàâãäéèêëíìîïóòôõöúùûüçñ',
+            'AAAAAEEEEIIIIOOOOOUUUUCNAAAAAEEEEIIIIOOOOOUUUUCN'
+          ),
+          ' - [A-Z]{3}$',
+          ''
+        ),
+        ' +',
+        ' '
+      )
+    ),
+    ''
+  )`;
+}
+
+/** Quando a própria cidade veio preenchida com nome/sigla de UF. */
+function cityAsUfSql(cidadeExpr: string) {
+  return `
+    CASE
+      WHEN ${cidadeExpr} RLIKE '^[A-Z]{2}$' THEN ${cidadeExpr}
+      WHEN ${cidadeExpr} IN ('SAO PAULO') THEN 'SP'
+      WHEN ${cidadeExpr} IN ('RIO DE JANEIRO') THEN 'RJ'
+      WHEN ${cidadeExpr} IN ('MINAS GERAIS') THEN 'MG'
+      WHEN ${cidadeExpr} IN ('PARANA') THEN 'PR'
+      WHEN ${cidadeExpr} IN ('RIO GRANDE DO SUL') THEN 'RS'
+      WHEN ${cidadeExpr} IN ('SANTA CATARINA') THEN 'SC'
+      WHEN ${cidadeExpr} IN ('BAHIA') THEN 'BA'
+      WHEN ${cidadeExpr} IN ('PERNAMBUCO') THEN 'PE'
+      WHEN ${cidadeExpr} IN ('CEARA') THEN 'CE'
+      WHEN ${cidadeExpr} IN ('DISTRITO FEDERAL') THEN 'DF'
+      WHEN ${cidadeExpr} IN ('GOIAS') THEN 'GO'
+      WHEN ${cidadeExpr} IN ('AMAZONAS') THEN 'AM'
+      WHEN ${cidadeExpr} IN ('PARA') THEN 'PA'
+      WHEN ${cidadeExpr} IN ('ALAGOAS') THEN 'AL'
+      WHEN ${cidadeExpr} IN ('SERGIPE') THEN 'SE'
+      WHEN ${cidadeExpr} IN ('RIO GRANDE DO NORTE') THEN 'RN'
+      WHEN ${cidadeExpr} IN ('PARAIBA') THEN 'PB'
+      WHEN ${cidadeExpr} IN ('ESPIRITO SANTO') THEN 'ES'
+      WHEN ${cidadeExpr} IN ('MATO GROSSO') THEN 'MT'
+      WHEN ${cidadeExpr} IN ('MATO GROSSO DO SUL') THEN 'MS'
+      WHEN ${cidadeExpr} IN ('PIAUI') THEN 'PI'
+      WHEN ${cidadeExpr} IN ('MARANHAO') THEN 'MA'
+      WHEN ${cidadeExpr} IN ('TOCANTINS') THEN 'TO'
+      WHEN ${cidadeExpr} IN ('ACRE') THEN 'AC'
+      WHEN ${cidadeExpr} IN ('RONDONIA') THEN 'RO'
+      WHEN ${cidadeExpr} IN ('RORAIMA') THEN 'RR'
+      WHEN ${cidadeExpr} IN ('AMAPA') THEN 'AP'
+      ELSE NULL
+    END
+  `;
+}
+
+/** Fallback cidade → UF para nomes sem match no dicionário de municípios. */
 function cityToUfSql(cidadeExpr: string) {
   return `
     CASE
-      WHEN ${cidadeExpr} RLIKE '(?i)^(s[aã]o\\s*paulo|campinas|guarulhos|osasco|barueri|tabo[aã]o|santo\\s*andr[eé]|s[aã]o\\s*bernardo|mogi|indaiatuba|sorocaba|jundia[ií]|santos|ribeir[aã]o\\s*preto)$' THEN 'SP'
-      WHEN ${cidadeExpr} RLIKE '(?i)^(rio\\s*de\\s*janeiro|niter[oó]i|nova\\s*igua[cç]u|duque\\s*de\\s*caxias|s[aã]o\\s*gon[cç]alo)$' THEN 'RJ'
-      WHEN ${cidadeExpr} RLIKE '(?i)^(belo\\s*horizonte|uberl[aâ]ndia|contagem|juiz\\s*de\\s*fora)$' THEN 'MG'
-      WHEN ${cidadeExpr} RLIKE '(?i)^(curitiba|londrina|maring[aá])$' THEN 'PR'
-      WHEN ${cidadeExpr} RLIKE '(?i)^(porto\\s*alegre|caxias\\s*do\\s*sul|s[aã]o\\s*leopoldo)$' THEN 'RS'
-      WHEN ${cidadeExpr} RLIKE '(?i)^(florian[oó]polis|joinville|blumenau)$' THEN 'SC'
-      WHEN ${cidadeExpr} RLIKE '(?i)^(salvador|feira\\s*de\\s*santana)$' THEN 'BA'
-      WHEN ${cidadeExpr} RLIKE '(?i)^(recife|olinda|jaboat[aã]o)$' THEN 'PE'
-      WHEN ${cidadeExpr} RLIKE '(?i)^(fortaleza)$' THEN 'CE'
-      WHEN ${cidadeExpr} RLIKE '(?i)^(bras[ií]lia|distrito\\s*federal)$' THEN 'DF'
-      WHEN ${cidadeExpr} RLIKE '(?i)^(goi[aâ]nia)$' THEN 'GO'
-      WHEN ${cidadeExpr} RLIKE '(?i)^(manaus)$' THEN 'AM'
-      WHEN ${cidadeExpr} RLIKE '(?i)^(bel[eé]m)$' THEN 'PA'
-      WHEN ${cidadeExpr} RLIKE '(?i)^(macei[oó])$' THEN 'AL'
-      WHEN ${cidadeExpr} RLIKE '(?i)^(aracaju)$' THEN 'SE'
-      WHEN ${cidadeExpr} RLIKE '(?i)^(natal)$' THEN 'RN'
-      WHEN ${cidadeExpr} RLIKE '(?i)^(jo[aã]o\\s*pessoa)$' THEN 'PB'
-      WHEN ${cidadeExpr} RLIKE '(?i)^(vit[oó]ria)$' THEN 'ES'
-      WHEN ${cidadeExpr} RLIKE '(?i)^(cuiab[aá])$' THEN 'MT'
-      WHEN ${cidadeExpr} RLIKE '(?i)^(campo\\s*grande)$' THEN 'MS'
+      WHEN ${cidadeExpr} RLIKE '^(SAO PAULO|CAMPINAS|GUARULHOS|OSASCO|BARUERI|TABOAO|SANTO ANDRE|SAO BERNARDO|MOGI|INDAIATUBA|SOROCABA|JUNDIAI|SANTOS|RIBEIRAO PRETO|BRAGANCA PAULISTA|VALINHOS|SUMARE|ITATIBA|SAO JOSE DO RIO PRETO)$' THEN 'SP'
+      WHEN ${cidadeExpr} RLIKE '^(RIO DE JANEIRO|NITEROI|NOVA IGUACU|DUQUE DE CAXIAS|SAO GONCALO|MARICA)$' THEN 'RJ'
+      WHEN ${cidadeExpr} RLIKE '^(BELO HORIZONTE|UBERLANDIA|CONTAGEM|JUIZ DE FORA|CONFINS|PAMPULHA|ITAUNA|LAGOA SANTA|POCOS DE CALDAS)$' THEN 'MG'
+      WHEN ${cidadeExpr} RLIKE '^(CURITIBA|LONDRINA|MARINGA|SAO JOSE DOS PINHAIS|FOZ DO IGUACU)$' THEN 'PR'
+      WHEN ${cidadeExpr} RLIKE '^(PORTO ALEGRE|CAXIAS DO SUL|SAO LEOPOLDO|GRAVATAI|CACHOEIRINHA|NOVO HAMBURGO)$' THEN 'RS'
+      WHEN ${cidadeExpr} RLIKE '^(FLORIANOPOLIS|JOINVILLE|BLUMENAU)$' THEN 'SC'
+      WHEN ${cidadeExpr} RLIKE '^(SALVADOR|FEIRA DE SANTANA|VITORIA DA CONQUISTA)$' THEN 'BA'
+      WHEN ${cidadeExpr} RLIKE '^(RECIFE|OLINDA|JABOATAO|JABOATAO DOS GUARARAPES)$' THEN 'PE'
+      WHEN ${cidadeExpr} = 'FORTALEZA' THEN 'CE'
+      WHEN ${cidadeExpr} IN ('BRASILIA', 'DISTRITO FEDERAL') THEN 'DF'
+      WHEN ${cidadeExpr} = 'GOIANIA' THEN 'GO'
+      WHEN ${cidadeExpr} = 'MANAUS' THEN 'AM'
+      WHEN ${cidadeExpr} RLIKE '^(BELEM|ABAETETUBA|ANANINDEUA|SANTAREM)$' THEN 'PA'
+      WHEN ${cidadeExpr} RLIKE '^(MACEIO|SAO MIGUEL DOS CAMPOS)$' THEN 'AL'
+      WHEN ${cidadeExpr} = 'ARACAJU' THEN 'SE'
+      WHEN ${cidadeExpr} = 'NATAL' THEN 'RN'
+      WHEN ${cidadeExpr} = 'JOAO PESSOA' THEN 'PB'
+      WHEN ${cidadeExpr} = 'VITORIA' THEN 'ES'
+      WHEN ${cidadeExpr} = 'CUIABA' THEN 'MT'
+      WHEN ${cidadeExpr} = 'CAMPO GRANDE' THEN 'MS'
+      WHEN ${cidadeExpr} RLIKE 'CAMPOS DOS GOYTACA' THEN 'RJ'
+      WHEN ${cidadeExpr} RLIKE 'SAO JOAO DE MERITI|SAO JOAO DE MEITI' THEN 'RJ'
       ELSE NULL
     END
   `;
@@ -261,8 +318,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       WITH filtered AS (
         SELECT DISTINCT
           ${recordKeyExpr} AS record_key,
-          ${normalizeCpfSql("cpf_atendido")} AS cpf_norm,
-          UPPER(TRIM(COALESCE(CAST(cidade AS STRING), ''))) AS cidade_norm
+          ${normalizeCitySql("cidade")} AS cidade_norm
         FROM ${APPOINTMENTS_TABLE}
         WHERE (${monthRangeFilter})
           ${assuntoExclusionSql()}
@@ -271,27 +327,31 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           ${partnerFilter}
           ${recordColumn ? `AND ${quoteIdent(recordColumn)} IS NOT NULL` : ""}
       ),
-      beneficiary_uf AS (
+      -- Dicionário município → UF (não amarra pelo CPF do beneficiário).
+      city_uf AS (
         SELECT
-          ${normalizeCpfSql("CPF_BENEFICIARIO")} AS cpf_norm,
+          ${normalizeCitySql("CIDADE")} AS cidade_norm,
           MAX(UPPER(TRIM(CAST(UF AS STRING)))) AS uf
         FROM ${BENEFICIARIES_VIEW}
-        WHERE CPF_BENEFICIARIO IS NOT NULL
+        WHERE CIDADE IS NOT NULL
+          AND TRIM(CAST(CIDADE AS STRING)) != ''
           AND UF IS NOT NULL
           AND TRIM(CAST(UF AS STRING)) != ''
-        GROUP BY ${normalizeCpfSql("CPF_BENEFICIARIO")}
+          AND UPPER(TRIM(CAST(UF AS STRING))) RLIKE '^[A-Z]{2}$'
+        GROUP BY ${normalizeCitySql("CIDADE")}
       ),
       classified AS (
         SELECT
           f.record_key,
           COALESCE(
-            NULLIF(bu.uf, ''),
+            ${cityAsUfSql("f.cidade_norm")},
+            NULLIF(cu.uf, ''),
             ${cityToUfSql("f.cidade_norm")}
           ) AS uf
         FROM filtered f
-        LEFT JOIN beneficiary_uf bu
-          ON bu.cpf_norm = f.cpf_norm
-         AND f.cpf_norm IS NOT NULL
+        LEFT JOIN city_uf cu
+          ON cu.cidade_norm = f.cidade_norm
+         AND f.cidade_norm IS NOT NULL
       )
       SELECT
         COALESCE(uf, 'SEM UF') AS uf,
@@ -315,7 +375,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       total,
       without_uf: withoutUf,
       states: states.filter((item) => item.uf !== "SEM UF"),
-      source: "atendimento_summarized_gold_live + vw_beneficiarios.UF (fallback cidade)",
+      source: "atendimento_summarized_gold_live.cidade → UF (dicionário município + fallback)",
       filters: {
         group_name: groupName,
         company,
