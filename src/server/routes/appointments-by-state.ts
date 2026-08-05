@@ -347,16 +347,24 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           AND CAST(${quoteIdent(recordColumn || "id_unico")} AS STRING) IN (SELECT record_key FROM kpi)
       ),
       city_uf AS (
-        SELECT
-          ${normalizeCitySql("CIDADE")} AS cidade_norm,
-          MAX(UPPER(TRIM(CAST(UF AS STRING)))) AS uf
-        FROM ${BENEFICIARIES_VIEW}
-        WHERE CIDADE IS NOT NULL
-          AND TRIM(CAST(CIDADE AS STRING)) != ''
-          AND UF IS NOT NULL
-          AND TRIM(CAST(UF AS STRING)) != ''
-          AND UPPER(TRIM(CAST(UF AS STRING))) RLIKE '^[A-Z]{2}$'
-        GROUP BY ${normalizeCitySql("CIDADE")}
+        SELECT cidade_norm, uf
+        FROM (
+          SELECT
+            ${normalizeCitySql("CIDADE")} AS cidade_norm,
+            UPPER(TRIM(CAST(UF AS STRING))) AS uf,
+            ROW_NUMBER() OVER (
+              PARTITION BY ${normalizeCitySql("CIDADE")}
+              ORDER BY COUNT(*) DESC, UPPER(TRIM(CAST(UF AS STRING))) ASC
+            ) AS rn
+          FROM ${BENEFICIARIES_VIEW}
+          WHERE CIDADE IS NOT NULL
+            AND TRIM(CAST(CIDADE AS STRING)) != ''
+            AND UF IS NOT NULL
+            AND TRIM(CAST(UF AS STRING)) != ''
+            AND UPPER(TRIM(CAST(UF AS STRING))) RLIKE '^[A-Z]{2}$'
+          GROUP BY ${normalizeCitySql("CIDADE")}, UPPER(TRIM(CAST(UF AS STRING)))
+        )
+        WHERE rn = 1
       ),
       classified AS (
         SELECT
@@ -364,13 +372,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           CASE
             WHEN COALESCE(
               ${cityAsUfSql("l.cidade_norm")},
-              NULLIF(cu.uf, ''),
-              ${cityToUfSql("l.cidade_norm")}
+              ${cityToUfSql("l.cidade_norm")},
+              NULLIF(cu.uf, '')
             ) IS NOT NULL
               THEN COALESCE(
                 ${cityAsUfSql("l.cidade_norm")},
-                NULLIF(cu.uf, ''),
-                ${cityToUfSql("l.cidade_norm")}
+                ${cityToUfSql("l.cidade_norm")},
+                NULLIF(cu.uf, '')
               )
             WHEN k.assunto LIKE '%CONEXA%'
               OR k.assunto LIKE '%TELE%'

@@ -166,10 +166,12 @@
       <div class="appointments-map-layout">
         <div class="appointments-map-canvas-wrap">
           <div class="appointments-map-toolbar">
-            <button type="button" class="appointments-map-back" id="agend-map-back" style="display:none" aria-label="Voltar ao mapa do Brasil">
-              <i class="fa-solid fa-arrow-left" style="margin-right:6px"></i>Brasil
-            </button>
-            <span class="appointments-map-zoom-hint" id="agend-map-zoom-hint">Clique no estado para ver cidades</span>
+            <nav class="appointments-map-breadcrumb" aria-label="Navegação do mapa">
+              <button type="button" class="appointments-map-crumb is-active" id="agend-map-crumb-brazil">Brasil</button>
+              <span class="appointments-map-crumb-sep" id="agend-map-crumb-sep" hidden>›</span>
+              <button type="button" class="appointments-map-crumb" id="agend-map-crumb-uf" hidden></button>
+            </nav>
+            <span class="appointments-map-zoom-hint" id="agend-map-zoom-hint">Clique em um estado</span>
           </div>
           <div class="skeleton" id="skel-agend-map" style="height:420px"></div>
           <svg id="appointments-map-svg" viewBox="0 0 800 780" role="img" aria-label="Mapa de agendamentos por UF" style="display:none;width:100%;height:auto;max-height:520px"></svg>

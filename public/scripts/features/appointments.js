@@ -810,14 +810,49 @@ function hashString(value) {
 }
 
 function placeCityInBBox(cidade, index, total, bbox) {
-  const golden = Math.PI * (3 - Math.sqrt(5));
-  const t = (index + 0.5) / Math.max(total, 1);
-  const radius = Math.sqrt(t) * 0.38;
-  const angle = index * golden + ((hashString(cidade) % 360) * Math.PI) / 180;
-  return [
-    bbox.x + bbox.width / 2 + Math.cos(angle) * radius * bbox.width,
-    bbox.y + bbox.height / 2 + Math.sin(angle) * radius * bbox.height,
-  ];
+  // Empilha as cidades à direita do estado (mais legível que espiral).
+  const count = Math.max(total, 1);
+  const row = index / Math.max(count - 1, 1);
+  const x = bbox.x + bbox.width * 0.62;
+  const y = bbox.y + bbox.height * (0.18 + row * 0.64);
+  const jitter = ((hashString(cidade) % 100) / 100 - 0.5) * bbox.width * 0.04;
+  return [x + jitter, y];
+}
+
+function parseViewBox(value) {
+  const parts = String(value || '0 0 800 780').split(/\s+/).map(Number);
+  return {
+    x: parts[0] || 0,
+    y: parts[1] || 0,
+    w: parts[2] || 800,
+    h: parts[3] || 780,
+  };
+}
+
+function setAppointmentsMapViewBox(viewBox, animate = true) {
+  const svg = document.getElementById('appointments-map-svg');
+  if (!svg) return;
+  const next = String(viewBox);
+  if (!animate) {
+    svg.setAttribute('viewBox', next);
+    return;
+  }
+  const from = parseViewBox(svg.getAttribute('viewBox'));
+  const to = parseViewBox(next);
+  const start = performance.now();
+  const duration = 320;
+  const ease = (t) => 1 - Math.pow(1 - t, 3);
+  const tick = (now) => {
+    const p = Math.min(1, (now - start) / duration);
+    const e = ease(p);
+    const x = from.x + (to.x - from.x) * e;
+    const y = from.y + (to.y - from.y) * e;
+    const w = from.w + (to.w - from.w) * e;
+    const h = from.h + (to.h - from.h) * e;
+    svg.setAttribute('viewBox', `${x} ${y} ${w} ${h}`);
+    if (p < 1) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
 }
 
 function appointmentsMapQueryParams() {
@@ -830,19 +865,31 @@ function appointmentsMapQueryParams() {
 }
 
 function updateAppointmentsMapChrome() {
-  const back = document.getElementById('agend-map-back');
   const hint = document.getElementById('agend-map-zoom-hint');
   const title = document.getElementById('agend-map-ranking-title');
   const col = document.getElementById('agend-map-col-label');
   const totalEl = document.getElementById('agend-map-total');
   const contextEl = document.getElementById('agend-map-context');
   const meta = document.getElementById('agend-map-meta');
+  const crumbBrazil = document.getElementById('agend-map-crumb-brazil');
+  const crumbUf = document.getElementById('agend-map-crumb-uf');
+  const crumbSep = document.getElementById('agend-map-crumb-sep');
   const zoomed = appointmentsMapState.mode === 'uf' && appointmentsMapState.uf;
-  if (back) back.style.display = zoomed ? 'inline-flex' : 'none';
-  if (hint) {
-    hint.textContent = zoomed
+  if (crumbBrazil) {
+    crumbBrazil.classList.toggle('is-active', !zoomed);
+    crumbBrazil.disabled = !zoomed;
+  }
+  if (crumbSep) crumbSep.hidden = !zoomed;
+  if (crumbUf) {
+    crumbUf.hidden = !zoomed;
+    crumbUf.textContent = zoomed
       ? `${appointmentsMapState.uf} · ${UF_NAME[appointmentsMapState.uf] || appointmentsMapState.uf}`
-      : 'Clique no estado para ver cidades';
+      : '';
+    crumbUf.classList.toggle('is-active', Boolean(zoomed));
+    crumbUf.disabled = true;
+  }
+  if (hint) {
+    hint.textContent = zoomed ? 'Volume por cidade' : 'Clique em um estado';
   }
   if (title) title.textContent = zoomed ? `Cidades · ${appointmentsMapState.uf}` : 'Ranking';
   if (col) col.textContent = zoomed ? 'Cidade' : 'UF';
@@ -854,7 +901,7 @@ function updateAppointmentsMapChrome() {
   if (contextEl) contextEl.textContent = appointmentsMapState.scopeLabel;
   if (meta) {
     if (zoomed) {
-      meta.textContent = `${appointmentsMapState.months.length} meses · ${fmt(appointmentsMapState.cities.length)} cidades · clique em Brasil para voltar`;
+      meta.textContent = `${appointmentsMapState.months.length} meses · ${fmt(appointmentsMapState.cities.length)} cidades`;
     } else {
       const mapped = appointmentsMapState.states.reduce((acc, item) => acc + (Number(item.total) || 0), 0);
       meta.textContent = `${appointmentsMapState.months.length} meses · ${fmt(mapped)} com UF · ${fmt(appointmentsMapState.online)} online · ${fmt(appointmentsMapState.withoutCity)} sem cidade`;
@@ -870,17 +917,23 @@ function renderAppointmentsStateRanking(states, total, extras = []) {
     tbody.innerHTML = '<tr><td colspan="3" style="padding:12px 10px;color:#94a3b8">Sem volume por UF no recorte.</td></tr>';
     return;
   }
+  const max = Math.max(...rows.map((item) => Number(item.total) || 0), 1);
   tbody.innerHTML = rows.slice(0, 30).map((item) => {
-    const pct = total > 0 ? ((Number(item.total) || 0) / total) * 100 : 0;
+    const value = Number(item.total) || 0;
+    const pct = total > 0 ? (value / total) * 100 : 0;
+    const bar = Math.max(4, (value / max) * 100);
     const isSpecial = item.uf === 'ONLINE' || item.uf === 'SEM CIDADE';
     const name = item.label || UF_NAME[item.uf] || item.uf;
     const code = isSpecial ? (item.uf === 'ONLINE' ? 'Online' : '—') : item.uf;
     const color = item.uf === 'ONLINE' ? '#7c3aed' : item.uf === 'SEM CIDADE' ? '#94a3b8' : '#334155';
     const clickable = !isSpecial && /^[A-Z]{2}$/.test(String(item.uf || ''));
     return `<tr ${clickable ? `class="appointments-map-rank-row" data-uf="${escapeAttr(item.uf)}" style="cursor:pointer"` : ''}>
-      <td style="padding:8px 10px;color:${color}"><strong>${escapeHtml(code)}</strong> <span style="color:#94a3b8">${escapeHtml(name)}</span></td>
-      <td style="padding:8px 10px;text-align:right;color:#0f172a;font-weight:700">${fmt(item.total)}</td>
-      <td style="padding:8px 10px;text-align:right;color:#64748b">${pct.toFixed(1).replace('.', ',')}%</td>
+      <td style="padding:10px;color:${color}">
+        <strong>${escapeHtml(code)}</strong> <span style="color:#94a3b8">${escapeHtml(name)}</span>
+        <span class="appointments-map-bar"><span style="width:${bar.toFixed(1)}%"></span></span>
+      </td>
+      <td style="padding:10px;text-align:right;color:#0f172a;font-weight:700;vertical-align:top">${fmt(item.total)}</td>
+      <td style="padding:10px;text-align:right;color:#64748b;vertical-align:top">${pct.toFixed(1).replace('.', ',')}%</td>
     </tr>`;
   }).join('');
   tbody.querySelectorAll('.appointments-map-rank-row').forEach((row) => {
@@ -895,13 +948,19 @@ function renderAppointmentsCityRanking(cities, total) {
     tbody.innerHTML = '<tr><td colspan="3" style="padding:12px 10px;color:#94a3b8">Sem cidades com volume neste estado.</td></tr>';
     return;
   }
+  const max = Math.max(...cities.map((item) => Number(item.total) || 0), 1);
   tbody.innerHTML = cities.slice(0, 40).map((item) => {
-    const pct = total > 0 ? ((Number(item.total) || 0) / total) * 100 : 0;
+    const value = Number(item.total) || 0;
+    const pct = total > 0 ? (value / total) * 100 : 0;
+    const bar = Math.max(4, (value / max) * 100);
     const name = titleCaseCity(item.cidade);
     return `<tr>
-      <td style="padding:8px 10px;color:#334155"><strong>${escapeHtml(name)}</strong></td>
-      <td style="padding:8px 10px;text-align:right;color:#0f172a;font-weight:700">${fmt(item.total)}</td>
-      <td style="padding:8px 10px;text-align:right;color:#64748b">${pct.toFixed(1).replace('.', ',')}%</td>
+      <td style="padding:10px;color:#334155">
+        <strong>${escapeHtml(name)}</strong>
+        <span class="appointments-map-bar"><span style="width:${bar.toFixed(1)}%"></span></span>
+      </td>
+      <td style="padding:10px;text-align:right;color:#0f172a;font-weight:700;vertical-align:top">${fmt(item.total)}</td>
+      <td style="padding:10px;text-align:right;color:#64748b;vertical-align:top">${pct.toFixed(1).replace('.', ',')}%</td>
     </tr>`;
   }).join('');
 }
@@ -923,10 +982,11 @@ function renderAppointmentsCityBubbles(cities, uf) {
   const minSide = Math.min(bbox.width, bbox.height);
   const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
   group.setAttribute('id', 'appointments-map-cities');
-  cities.slice(0, 25).forEach((item, index) => {
+  const topCities = cities.slice(0, 8);
+  topCities.forEach((item, index) => {
     const total = Number(item.total) || 0;
-    const [cx, cy] = placeCityInBBox(item.cidade, index, Math.min(cities.length, 25), bbox);
-    const radius = Math.max(minSide * 0.018, Math.sqrt(total / max) * minSide * 0.08);
+    const [cx, cy] = placeCityInBBox(item.cidade, index, topCities.length, bbox);
+    const radius = Math.max(minSide * 0.022, Math.sqrt(total / max) * minSide * 0.07);
     const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
     circle.setAttribute('class', 'appointments-map-city');
     circle.setAttribute('cx', cx.toFixed(1));
@@ -935,17 +995,15 @@ function renderAppointmentsCityBubbles(cities, uf) {
     circle.setAttribute('data-cidade', item.cidade);
     circle.setAttribute('data-total', String(total));
     group.appendChild(circle);
-    if (index < 8) {
-      const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-      label.setAttribute('class', 'appointments-map-city-label');
-      label.setAttribute('x', cx.toFixed(1));
-      label.setAttribute('y', (cy - radius - 4).toFixed(1));
-      label.setAttribute('text-anchor', 'middle');
-      const fontSize = Math.max(8, Math.min(12, minSide * 0.035));
-      label.setAttribute('font-size', String(fontSize));
-      label.textContent = titleCaseCity(item.cidade);
-      group.appendChild(label);
-    }
+
+    const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    label.setAttribute('class', 'appointments-map-city-label');
+    label.setAttribute('x', (cx + radius + 6).toFixed(1));
+    label.setAttribute('y', (cy + 3).toFixed(1));
+    label.setAttribute('text-anchor', 'start');
+    label.setAttribute('font-size', String(Math.max(9, Math.min(12, minSide * 0.04))));
+    label.textContent = titleCaseCity(item.cidade);
+    group.appendChild(label);
   });
   svg.appendChild(group);
 
@@ -963,13 +1021,6 @@ function renderAppointmentsCityBubbles(cities, uf) {
   group.onmouseleave = () => {
     if (tooltip) tooltip.style.display = 'none';
   };
-}
-
-function setAppointmentsMapViewBox(viewBox, animate = true) {
-  const svg = document.getElementById('appointments-map-svg');
-  if (!svg) return;
-  if (animate) svg.style.transition = 'all .35s ease';
-  svg.setAttribute('viewBox', viewBox);
 }
 
 function resetAppointmentsMapZoom() {
@@ -1009,12 +1060,12 @@ async function zoomAppointmentsMapToUf(uf) {
     node.classList.toggle('is-focus', match);
   });
   const bbox = path.getBBox();
-  const pad = Math.max(bbox.width, bbox.height) * 0.16;
+  const padX = bbox.width * 0.28;
+  const padY = bbox.height * 0.18;
   setAppointmentsMapViewBox(
-    `${bbox.x - pad} ${bbox.y - pad} ${bbox.width + pad * 2} ${bbox.height + pad * 2}`,
+    `${bbox.x - padX * 0.2} ${bbox.y - padY} ${bbox.width + padX} ${bbox.height + padY * 2}`,
   );
   updateAppointmentsMapChrome();
-  renderAppointmentsCityRanking([], 0);
   const tbody = document.getElementById('agend-map-ranking-tbody');
   if (tbody) {
     tbody.innerHTML = '<tr><td colspan="3" style="padding:12px 10px;color:#94a3b8">Carregando cidades...</td></tr>';
@@ -1036,6 +1087,14 @@ async function zoomAppointmentsMapToUf(uf) {
   renderAppointmentsCityRanking(appointmentsMapState.cities, appointmentsMapState.cityTotal || 1);
   renderAppointmentsCityBubbles(appointmentsMapState.cities, targetUf);
   updateAppointmentsMapChrome();
+}
+
+function bindAppointmentsMapChromeOnce() {
+  const crumbBrazil = document.getElementById('agend-map-crumb-brazil');
+  if (crumbBrazil && !crumbBrazil.dataset.bound) {
+    crumbBrazil.dataset.bound = '1';
+    crumbBrazil.addEventListener('click', () => resetAppointmentsMapZoom());
+  }
 }
 
 function renderAppointmentsBrazilMap(geojson, states) {
@@ -1068,7 +1127,7 @@ function renderAppointmentsBrazilMap(geojson, states) {
     const name = path.dataset.name || uf;
     const total = Number(path.dataset.total) || 0;
     tooltip.style.display = 'block';
-    tooltip.innerHTML = `<strong>${escapeHtml(uf)} · ${escapeHtml(name)}</strong><br>${fmt(total)} agendamentos<br><span style="opacity:.8">Clique para ver cidades</span>`;
+    tooltip.innerHTML = `<strong>${escapeHtml(uf)} · ${escapeHtml(name)}</strong><br>${fmt(total)} agendamentos`;
     tooltip.style.left = `${event.clientX - rect.left}px`;
     tooltip.style.top = `${event.clientY - rect.top}px`;
   };
@@ -1105,6 +1164,7 @@ async function loadAppointmentsByStateMap() {
   if (meta) meta.textContent = 'Carregando mapa...';
   if (totalEl) totalEl.textContent = '—';
   if (contextEl) contextEl.textContent = '—';
+  bindAppointmentsMapChromeOnce();
   updateAppointmentsMapChrome();
 
   const { months, p } = appointmentsMapQueryParams();
@@ -1152,12 +1212,6 @@ async function loadAppointmentsByStateMap() {
     renderAppointmentsBrazilMap(geojson, states);
     updateAppointmentsMapChrome();
     if (skel) skel.style.display = 'none';
-
-    const back = document.getElementById('agend-map-back');
-    if (back && !back.dataset.bound) {
-      back.dataset.bound = '1';
-      back.addEventListener('click', () => resetAppointmentsMapZoom());
-    }
   } catch (err) {
     if (requestId !== appointmentsMapRequestId) return;
     if (errorBox) {
