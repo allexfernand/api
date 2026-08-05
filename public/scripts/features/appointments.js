@@ -155,6 +155,7 @@ async function loadAppointments() {
   loadAppointmentTypesTrend();
   loadAppointmentsDailyEvolution();
   loadAppointmentsStatusEvolution();
+  loadAppointmentsMonthlyEvolution();
   loadAppointmentsUtilization();
 
   if (appt && !appt.error) {
@@ -580,5 +581,108 @@ async function loadAppointmentsStatusEvolution() {
       },
     });
   }
+}
+
+async function loadAppointmentsMonthlyEvolution() {
+  const skel = document.getElementById('skel-agend-monthly');
+  const cv = document.getElementById('appointmentsMonthlyChart');
+  const errorBox = document.getElementById('agend-monthly-error');
+  const meta = document.getElementById('agend-monthly-meta');
+  const totalEl = document.getElementById('agend-monthly-total');
+  if (skel) {
+    skel.style.display = 'block';
+    skel.innerHTML = '';
+  }
+  if (cv) cv.style.display = 'none';
+  if (errorBox) { errorBox.style.display = 'none'; errorBox.textContent = ''; }
+  if (meta) meta.textContent = 'Carregando evolução...';
+  if (totalEl) totalEl.textContent = '—';
+
+  const months = selectedMonths.size ? [...selectedMonths].sort() : recentMonthValues(12);
+  const p = new URLSearchParams();
+  p.set('meses', months.join(','));
+  p.set('include_beneficiaries', '1');
+  appendGroupParams(p);
+  if (currentCompany) p.set('company', currentCompany);
+
+  const data = await safeGet('/api/appointments-evolution?' + p.toString());
+  if (!data || data.error) {
+    if (errorBox) {
+      errorBox.style.display = 'block';
+      errorBox.textContent = String(data?.error || 'Erro ao carregar evolução mensal').slice(0, 220);
+    }
+    if (meta) meta.textContent = '';
+    if (skel) skel.style.display = 'none';
+    return;
+  }
+
+  const series = data.series || [];
+  const chartMonths = data.months || months;
+  const values = series.map((item) => {
+    if (data.beneficiaries_included) {
+      return Number(item.unique_beneficiaries ?? item.unique_cpfs) || 0;
+    }
+    return Number(item.total) || 0;
+  });
+  const total = values.reduce((acc, value) => acc + value, 0);
+  const scopeParts = [];
+  if (currentGroups.length) scopeParts.push(selectedGroupsText());
+  if (currentCompany) scopeParts.push(currentCompany);
+  if (currentPartnerBrokerId) scopeParts.push(`Parceiro: ${selectedPartnerLabel()}`);
+  const scopeLabel = scopeParts.length ? scopeParts.join(' · ') : 'global';
+
+  if (totalEl) totalEl.textContent = `${fmt(total)} agendamentos`;
+  if (meta) meta.textContent = `${chartMonths.length} meses · ${fmt(total)} · ${scopeLabel}`;
+
+  if (appointmentsMonthlyChart) appointmentsMonthlyChart.destroy();
+  if (skel) skel.style.display = 'none';
+  if (!cv) return;
+  cv.style.display = 'block';
+  appointmentsMonthlyChart = new Chart(cv, {
+    type: 'line',
+    data: {
+      labels: chartMonths.map(monthShortLabel),
+      datasets: [{
+        label: 'Agendamentos',
+        data: values,
+        borderColor: '#6366f1',
+        backgroundColor: 'rgba(99,102,241,0.12)',
+        borderWidth: 2.5,
+        pointRadius: 3.5,
+        pointHoverRadius: 5,
+        pointBackgroundColor: '#6366f1',
+        pointBorderColor: '#fff',
+        pointBorderWidth: 1.5,
+        tension: 0.3,
+        fill: true,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => `${fmt(ctx.parsed.y)} agendamentos`,
+          },
+        },
+      },
+      scales: {
+        x: {
+          ticks: { color: '#64748b', font: { size: 11, weight: '600' } },
+          grid: { display: false },
+          border: { display: false },
+        },
+        y: {
+          beginAtZero: true,
+          ticks: { color: '#94a3b8', font: { size: 10 }, callback: (v) => fmt(v) },
+          grid: { color: 'rgba(148,163,184,0.18)' },
+          border: { display: false },
+        },
+      },
+    },
+  });
 }
 

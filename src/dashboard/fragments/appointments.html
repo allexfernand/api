@@ -118,19 +118,37 @@
       <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="agend-daily-error"></div>
     </div>
 
-    <div class="chart-card" data-qtag="#A05">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap">
-        <div>
-          <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Volume mensal por status do agendamento</h2>
-          <div style="font-size:11px;color:#94a3b8">Considera sempre o último status atrelado ao card · últimos 12 meses</div>
+    <div class="fluid-grid" style="margin-bottom:16px">
+      <div class="chart-card" data-qtag="#A05">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap">
+          <div>
+            <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Volume mensal por status do agendamento</h2>
+            <div style="font-size:11px;color:#94a3b8">Considera sempre o último status atrelado ao card · últimos 12 meses</div>
+          </div>
+          <div style="font-size:11px;color:#64748b;text-align:right" id="agend-status-total">—</div>
         </div>
-        <div style="font-size:11px;color:#64748b;text-align:right" id="agend-status-total">—</div>
+        <div class="chart-wrap" style="height:clamp(300px,36vw,420px)">
+          <div class="skeleton" id="skel-agend-status"></div>
+          <canvas id="appointmentsStatusChart" style="display:none"></canvas>
+        </div>
+        <div style="font-size:11px;color:#64748b;margin-top:10px;text-align:right" id="agend-status-meta">—</div>
+        <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="agend-status-error"></div>
       </div>
-      <div class="chart-wrap" style="height:clamp(300px,36vw,420px)">
-        <div class="skeleton" id="skel-agend-status"></div>
-        <canvas id="appointmentsStatusChart" style="display:none"></canvas>
+
+      <div class="chart-card" data-qtag="#A06">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap">
+          <div>
+            <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Evolução mensal de agendamentos</h2>
+            <div style="font-size:11px;color:#94a3b8">Volume mês a mês · mesma regra do KPI · respeita grupo, empresa, parceiro e período</div>
+          </div>
+          <div style="font-size:11px;color:#64748b;text-align:right" id="agend-monthly-total">—</div>
+        </div>
+        <div class="chart-wrap" style="height:clamp(300px,36vw,420px)">
+          <div class="skeleton" id="skel-agend-monthly"></div>
+          <canvas id="appointmentsMonthlyChart" style="display:none"></canvas>
+        </div>
+        <div style="font-size:11px;color:#64748b;margin-top:10px;text-align:right" id="agend-monthly-meta">—</div>
+        <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="agend-monthly-error"></div>
       </div>
-      <div style="font-size:11px;color:#64748b;margin-top:10px;text-align:right" id="agend-status-meta">—</div>
-      <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="agend-status-error"></div>
     </div>
   </div>

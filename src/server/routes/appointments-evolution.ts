@@ -300,6 +300,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     let companyColumn = null;
     const needsColumns =
       granularity === "status_month" ||
+      granularity === "month" ||
       includeBeneficiaries ||
       groupNames.length ||
       company ||
@@ -316,6 +317,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     // Mesmo racional do KPI principal: volume de agendamentos (card/registro único),
     // sem deduplicar por CPF.
     const volumeKeyExpr = recordColumn ? `CAST(${quoteIdent(recordColumn)} AS STRING)` : null;
+    const volumeCountExpr = volumeKeyExpr
+      ? `COUNT(DISTINCT ${volumeKeyExpr})`
+      : `COUNT(*)`;
     const volumeCountInMonths = (months: string[]) => {
       const list = months.map((month) => `'${month}'`).join(',');
       return volumeKeyExpr
@@ -488,13 +492,14 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
             `
       SELECT
         ${monthExpr} AS mes,
-        COUNT(*) AS total
+        ${volumeCountExpr} AS total
       FROM ${APPOINTMENTS_TABLE}
       WHERE (${monthRangeFilter})
         ${assuntoExclusionSql()}
         ${groupFilter}
         ${companyFilter}
         ${partnerFilter}
+        ${volumeKeyExpr ? `AND ${volumeKeyExpr} IS NOT NULL` : ''}
       GROUP BY ${monthExpr}
       ORDER BY mes
     `,
