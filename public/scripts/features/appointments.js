@@ -44,7 +44,6 @@ async function loadAppointmentTypesTrend() {
   const p = new URLSearchParams();
   p.set('meses', months.join(','));
   p.set('group_by', 'month');
-  p.set('dedupe', 'distinct_cpf');
   appendGroupParams(p);
   if (currentCompany) p.set('company', currentCompany);
 
@@ -82,7 +81,7 @@ async function loadAppointmentTypesTrend() {
   }));
   const total = Object.values(totalsByType).reduce((acc, value) => acc + value, 0);
   if (period) period.textContent = `${monthShortLabel(months[0])} a ${monthShortLabel(months[months.length - 1])}`;
-  if (meta) meta.textContent = `${fmt(total)} CPFs distintos · ${types.length || 0} tipos · mesma regra de Tipos de consulta`;
+  if (meta) meta.textContent = `${fmt(total)} agendamentos · ${types.length || 0} tipos · mesma regra de Tipos de consulta`;
 
   if (appointmentTypesTrendChart) appointmentTypesTrendChart.destroy();
   if (skel) skel.style.display = 'none';
@@ -111,10 +110,10 @@ async function loadAppointmentTypesTrend() {
           titleColor: '#cbd5e1',
           bodyColor: '#f8fafc',
           callbacks: {
-            label: c => `${c.dataset.label}: ${fmt(c.parsed.y)} CPFs distintos`,
+            label: c => `${c.dataset.label}: ${fmt(c.parsed.y)}`,
             footer: (items) => {
               const totalMes = items.reduce((acc, item) => acc + (Number(item.parsed.y) || 0), 0);
-              return `Total do mês: ${fmt(totalMes)} CPFs distintos`;
+              return `Total do mês: ${fmt(totalMes)} agendamentos`;
             },
           },
         },

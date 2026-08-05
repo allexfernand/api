@@ -60,6 +60,28 @@ const companyColumnCandidates = [
   'company_name',
 ];
 
+const appointmentRecordColumnCandidates = [
+  'id_unico',
+  'identificacao_atendimento',
+  'record_id',
+  'registro_id',
+  'card_uuid',
+  'card_id',
+  'id_card',
+  'cardId',
+  'agendamento_id',
+  'id_agendamento',
+  'appointment_id',
+  'atendimento_id',
+  'id_atendimento',
+  'ticket_id',
+  'solicitacao_id',
+  'id_solicitacao',
+  'protocolo',
+  'protocol',
+  'id',
+];
+
 function parseGroupNames(query: Record<string, any>) {
   const raw = query.group_names;
   if (raw) {
@@ -193,11 +215,16 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
   try {
     const warehouseId = await resolveWarehouseId();
-    const columns = (groupNames.length || company || partnerBrokerId) ? await getColumns(warehouseId, APPOINTMENTS_TABLE) : [];
+    // Sempre resolve colunas: filtros de grupo/empresa e volume por id do registro.
+    const columns = await getColumns(warehouseId, APPOINTMENTS_TABLE);
     const params = createSqlParams();
     const groupFilter = buildGroupFilter(columns, groupNames, params);
     const companyFilter = buildCompanyFilter(columns, company, params);
     const partnerFilter = buildPartnerFilter(columns, partnerBrokerId, params);
+    const recordColumn = pickColumn(columns, appointmentRecordColumnCandidates);
+    const volumeExpr = recordColumn
+      ? `COUNT(DISTINCT CAST(${quoteIdent(recordColumn)} AS STRING))`
+      : `COUNT(*)`;
 
     const monthExpr = `DATE_FORMAT(${quoteIdent(APPOINTMENTS_DATE_COLUMN)}, 'yyyy-MM')`;
     const commonWhere = `
@@ -406,9 +433,10 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       SELECT
         ${groupByMonth ? `${monthExpr} AS mes,` : ''}
         ${typeExpr} AS tipo_agrupado,
-        COUNT(*) AS total
+        ${volumeExpr} AS total
       FROM ${APPOINTMENTS_TABLE}
       ${commonWhere}
+        ${recordColumn ? `AND ${quoteIdent(recordColumn)} IS NOT NULL` : ''}
       GROUP BY ${groupByMonth ? `${monthExpr}, ` : ''}${typeExpr}
       ORDER BY ${groupByMonth ? 'mes ASC, ' : ''}total DESC
     `, params.list);
@@ -422,7 +450,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         })),
         months: monthList,
         source: "atendimento_summarized_gold_live",
-        filters: { group_name: groupName, company, partner_broker_id: partnerBrokerId, dedupe: distinctCpf ? 'distinct_cpf' : null },
+        filters: {
+          group_name: groupName,
+          company,
+          partner_broker_id: partnerBrokerId,
+          dedupe: distinctCpf ? 'distinct_cpf' : (recordColumn ? 'distinct_record' : null),
+        },
+        record_column: recordColumn,
       });
       return;
     }
@@ -442,7 +476,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       total,
       months: monthList,
       source: "atendimento_summarized_gold_live",
-      filters: { group_name: groupName, company, partner_broker_id: partnerBrokerId, dedupe: distinctCpf ? 'distinct_cpf' : null },
+      filters: {
+        group_name: groupName,
+        company,
+        partner_broker_id: partnerBrokerId,
+        dedupe: distinctCpf ? 'distinct_cpf' : (recordColumn ? 'distinct_record' : null),
+      },
+      record_column: recordColumn,
     });
   } catch (err) {
     res.status(500).json({ error: (err as { message?: string }).message });

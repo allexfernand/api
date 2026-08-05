@@ -804,7 +804,6 @@ async function loadAppointmentTypes(monthValues, idPrefix='appointment-types') {
   if (monthValues && monthValues.length > 0) p.set('meses', monthValues.join(','));
   appendGroupParams(p);
   if (currentCompany && getActiveTab() !== 'sessoes') p.set('company', currentCompany);
-  if (idPrefix === 'agendamento-appointment-types' || idPrefix === 'appointment-types') p.set('dedupe', 'distinct_cpf');
 
   const data = await safeGet('/api/appointment-types' + (p.toString() ? '?' + p.toString() : ''));
   if (!data || data.error) {
@@ -830,7 +829,7 @@ async function loadAppointmentTypes(monthValues, idPrefix='appointment-types') {
   }
   if (meta) {
     const usesDistinctCpf = data.filters?.dedupe === 'distinct_cpf';
-    const totalLabel = usesDistinctCpf ? 'CPFs distintos' : 'solicitações';
+    const totalLabel = usesDistinctCpf ? 'CPFs distintos' : 'agendamentos';
     meta.textContent = `${items.length} tipos · total ${fmt(data.total || 0)} ${totalLabel}`;
   }
   if (loading) loading.style.display = 'none';
