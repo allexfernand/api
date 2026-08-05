@@ -151,4 +151,41 @@
         </div>
       </div>
     </div>
+
+    <div class="card-box" data-qtag="#A07">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap">
+        <div>
+          <div class="section-title" style="margin-bottom:4px"><i class="fa-solid fa-map-location-dot" style="margin-right:6px"></i>Distribuição de agendamentos por estado</div>
+          <div style="font-size:11px;color:#94a3b8">Volume por UF · via cadastro do beneficiário (CPF) · responde a grupo, empresa, parceiro e período</div>
+        </div>
+        <div style="font-size:11px;color:#64748b;text-align:right">
+          <div id="agend-map-total">—</div>
+          <div style="margin-top:2px;color:#94a3b8" id="agend-map-context">—</div>
+        </div>
+      </div>
+      <div class="appointments-map-layout">
+        <div class="appointments-map-canvas-wrap">
+          <div class="skeleton" id="skel-agend-map" style="height:420px"></div>
+          <svg id="appointments-map-svg" viewBox="0 0 800 780" role="img" aria-label="Mapa de agendamentos por UF" style="display:none;width:100%;height:auto;max-height:520px"></svg>
+          <div id="appointments-map-tooltip" class="appointments-map-tooltip" style="display:none"></div>
+        </div>
+        <div class="appointments-map-side">
+          <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Ranking</div>
+          <div class="table-scroll" style="max-height:420px">
+            <table class="appointment-types-table">
+              <thead>
+                <tr style="border-bottom:1px solid #e2e8f0;color:#64748b">
+                  <th style="text-align:left;padding:8px 10px;font-weight:600">UF</th>
+                  <th style="text-align:right;padding:8px 10px;font-weight:600">Volume</th>
+                  <th style="text-align:right;padding:8px 10px;font-weight:600">%</th>
+                </tr>
+              </thead>
+              <tbody id="agend-map-ranking-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div style="font-size:11px;color:#64748b;margin-top:10px;text-align:right" id="agend-map-meta">—</div>
+      <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="agend-map-error"></div>
+    </div>
   </div>

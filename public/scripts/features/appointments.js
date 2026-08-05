@@ -156,6 +156,7 @@ async function loadAppointments() {
   loadAppointmentsDailyEvolution();
   loadAppointmentsStatusEvolution();
   loadAppointmentsMonthlyEvolution();
+  loadAppointmentsByStateMap();
   loadAppointmentsUtilization();
 
   if (appt && !appt.error) {
@@ -684,5 +685,219 @@ async function loadAppointmentsMonthlyEvolution() {
       },
     },
   });
+}
+
+let appointmentsBrazilGeoCache = null;
+let appointmentsMapRequestId = 0;
+
+const UF_NAME = {
+  AC: 'Acre', AL: 'Alagoas', AP: 'Amapá', AM: 'Amazonas', BA: 'Bahia', CE: 'Ceará',
+  DF: 'Distrito Federal', ES: 'Espírito Santo', GO: 'Goiás', MA: 'Maranhão', MT: 'Mato Grosso',
+  MS: 'Mato Grosso do Sul', MG: 'Minas Gerais', PA: 'Pará', PB: 'Paraíba', PR: 'Paraná',
+  PE: 'Pernambuco', PI: 'Piauí', RJ: 'Rio de Janeiro', RN: 'Rio Grande do Norte',
+  RS: 'Rio Grande do Sul', RO: 'Rondônia', RR: 'Roraima', SC: 'Santa Catarina',
+  SP: 'São Paulo', SE: 'Sergipe', TO: 'Tocantins',
+};
+
+async function loadBrazilStatesGeo() {
+  if (appointmentsBrazilGeoCache) return appointmentsBrazilGeoCache;
+  const res = await fetch('/geo/brazil-states.geojson');
+  if (!res.ok) throw new Error('Falha ao carregar geometria do mapa');
+  appointmentsBrazilGeoCache = await res.json();
+  return appointmentsBrazilGeoCache;
+}
+
+function appointmentsMapColor(value, max) {
+  if (!value || max <= 0) return '#e2e8f0';
+  const t = Math.min(1, Math.sqrt(value / max));
+  const stops = [
+    [226, 232, 240],
+    [199, 210, 254],
+    [129, 140, 248],
+    [79, 70, 229],
+    [49, 46, 129],
+  ];
+  const scaled = t * (stops.length - 1);
+  const i = Math.min(stops.length - 2, Math.floor(scaled));
+  const local = scaled - i;
+  const a = stops[i];
+  const b = stops[i + 1];
+  const rgb = a.map((channel, idx) => Math.round(channel + (b[idx] - channel) * local));
+  return `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
+}
+
+function geoRingToPath(ring, project) {
+  return ring.map((point, index) => {
+    const [x, y] = project(point);
+    return `${index === 0 ? 'M' : 'L'}${x.toFixed(1)} ${y.toFixed(1)}`;
+  }).join(' ') + ' Z';
+}
+
+function geometryToSvgPath(geometry, project) {
+  if (!geometry) return '';
+  if (geometry.type === 'Polygon') {
+    return geometry.coordinates.map((ring) => geoRingToPath(ring, project)).join(' ');
+  }
+  if (geometry.type === 'MultiPolygon') {
+    return geometry.coordinates
+      .map((polygon) => polygon.map((ring) => geoRingToPath(ring, project)).join(' '))
+      .join(' ');
+  }
+  return '';
+}
+
+function buildBrazilProjector(geojson, width, height, pad = 16) {
+  let minLon = Infinity;
+  let maxLon = -Infinity;
+  let minLat = Infinity;
+  let maxLat = -Infinity;
+  const visit = (coords) => {
+    if (!Array.isArray(coords) || !coords.length) return;
+    if (typeof coords[0] === 'number') {
+      const [lon, lat] = coords;
+      minLon = Math.min(minLon, lon);
+      maxLon = Math.max(maxLon, lon);
+      minLat = Math.min(minLat, lat);
+      maxLat = Math.max(maxLat, lat);
+      return;
+    }
+    coords.forEach(visit);
+  };
+  (geojson.features || []).forEach((feature) => visit(feature.geometry?.coordinates));
+  const spanLon = Math.max(maxLon - minLon, 0.0001);
+  const spanLat = Math.max(maxLat - minLat, 0.0001);
+  const drawW = width - pad * 2;
+  const drawH = height - pad * 2;
+  const scale = Math.min(drawW / spanLon, drawH / spanLat);
+  const offsetX = pad + (drawW - spanLon * scale) / 2;
+  const offsetY = pad + (drawH - spanLat * scale) / 2;
+  return ([lon, lat]) => [
+    offsetX + (lon - minLon) * scale,
+    offsetY + (maxLat - lat) * scale,
+  ];
+}
+
+function renderAppointmentsStateRanking(states, total) {
+  const tbody = document.getElementById('agend-map-ranking-tbody');
+  if (!tbody) return;
+  if (!states.length) {
+    tbody.innerHTML = '<tr><td colspan="3" style="padding:12px 10px;color:#94a3b8">Sem volume por UF no recorte.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = states.slice(0, 27).map((item) => {
+    const pct = total > 0 ? ((Number(item.total) || 0) / total) * 100 : 0;
+    const name = UF_NAME[item.uf] || item.uf;
+    return `<tr>
+      <td style="padding:8px 10px;color:#334155"><strong>${escapeHtml(item.uf)}</strong> <span style="color:#94a3b8">${escapeHtml(name)}</span></td>
+      <td style="padding:8px 10px;text-align:right;color:#0f172a;font-weight:700">${fmt(item.total)}</td>
+      <td style="padding:8px 10px;text-align:right;color:#64748b">${pct.toFixed(1).replace('.', ',')}%</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderAppointmentsBrazilMap(geojson, states) {
+  const svg = document.getElementById('appointments-map-svg');
+  const tooltip = document.getElementById('appointments-map-tooltip');
+  if (!svg) return;
+  const byUf = Object.fromEntries((states || []).map((item) => [String(item.uf).toUpperCase(), Number(item.total) || 0]));
+  const max = Math.max(0, ...Object.values(byUf));
+  const width = 800;
+  const height = 780;
+  const project = buildBrazilProjector(geojson, width, height);
+  svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+  svg.innerHTML = (geojson.features || []).map((feature) => {
+    const uf = String(feature.properties?.sigla || '').toUpperCase();
+    const total = byUf[uf] || 0;
+    const path = geometryToSvgPath(feature.geometry, project);
+    const name = feature.properties?.name || UF_NAME[uf] || uf;
+    return `<path class="appointments-map-path" data-uf="${escapeAttr(uf)}" data-name="${escapeAttr(name)}" data-total="${total}" d="${path}" fill="${appointmentsMapColor(total, max)}"></path>`;
+  }).join('');
+  svg.style.display = 'block';
+
+  const showTip = (event) => {
+    const path = event.target.closest('.appointments-map-path');
+    if (!path || !tooltip) return;
+    const wrap = document.querySelector('.appointments-map-canvas-wrap');
+    const rect = wrap?.getBoundingClientRect();
+    if (!rect) return;
+    const uf = path.dataset.uf || '';
+    const name = path.dataset.name || uf;
+    const total = Number(path.dataset.total) || 0;
+    tooltip.style.display = 'block';
+    tooltip.innerHTML = `<strong>${escapeHtml(uf)} · ${escapeHtml(name)}</strong><br>${fmt(total)} agendamentos`;
+    tooltip.style.left = `${event.clientX - rect.left}px`;
+    tooltip.style.top = `${event.clientY - rect.top}px`;
+  };
+  const hideTip = () => {
+    if (tooltip) tooltip.style.display = 'none';
+  };
+  svg.onmousemove = showTip;
+  svg.onmouseleave = hideTip;
+}
+
+async function loadAppointmentsByStateMap() {
+  const requestId = ++appointmentsMapRequestId;
+  const skel = document.getElementById('skel-agend-map');
+  const svg = document.getElementById('appointments-map-svg');
+  const errorBox = document.getElementById('agend-map-error');
+  const meta = document.getElementById('agend-map-meta');
+  const totalEl = document.getElementById('agend-map-total');
+  const contextEl = document.getElementById('agend-map-context');
+  if (skel) skel.style.display = 'block';
+  if (svg) svg.style.display = 'none';
+  if (errorBox) { errorBox.style.display = 'none'; errorBox.textContent = ''; }
+  if (meta) meta.textContent = 'Carregando mapa...';
+  if (totalEl) totalEl.textContent = '—';
+  if (contextEl) contextEl.textContent = '—';
+
+  const months = selectedMonths.size ? [...selectedMonths].sort() : recentMonthValues(12);
+  const p = new URLSearchParams();
+  p.set('meses', months.join(','));
+  appendGroupParams(p);
+  if (currentCompany) p.set('company', currentCompany);
+
+  try {
+    const [data, geojson] = await Promise.all([
+      safeGet('/api/appointments-by-state?' + p.toString()),
+      loadBrazilStatesGeo(),
+    ]);
+    if (requestId !== appointmentsMapRequestId) return;
+    if (!data || data.error) {
+      if (errorBox) {
+        errorBox.style.display = 'block';
+        errorBox.textContent = String(data?.error || 'Erro ao carregar mapa por estado').slice(0, 220);
+      }
+      if (meta) meta.textContent = '';
+      if (skel) skel.style.display = 'none';
+      return;
+    }
+
+    const states = data.states || [];
+    const total = Number(data.total) || 0;
+    const withoutUf = Number(data.without_uf) || 0;
+    const mapped = states.reduce((acc, item) => acc + (Number(item.total) || 0), 0);
+    const scopeParts = [];
+    if (currentGroups.length) scopeParts.push(selectedGroupsText());
+    if (currentCompany) scopeParts.push(currentCompany);
+    if (currentPartnerBrokerId) scopeParts.push(`Parceiro: ${selectedPartnerLabel()}`);
+    const scopeLabel = scopeParts.length ? scopeParts.join(' · ') : 'global';
+
+    if (totalEl) totalEl.textContent = `${fmt(mapped)} com UF`;
+    if (contextEl) contextEl.textContent = scopeLabel;
+    if (meta) {
+      meta.textContent = `${months.length} meses · ${fmt(total)} total · ${fmt(withoutUf)} sem UF no cadastro`;
+    }
+    renderAppointmentsStateRanking(states, mapped || total);
+    renderAppointmentsBrazilMap(geojson, states);
+    if (skel) skel.style.display = 'none';
+  } catch (err) {
+    if (requestId !== appointmentsMapRequestId) return;
+    if (errorBox) {
+      errorBox.style.display = 'block';
+      errorBox.textContent = String(err?.message || err).slice(0, 220);
+    }
+    if (meta) meta.textContent = '';
+    if (skel) skel.style.display = 'none';
+  }
 }
 
