@@ -321,8 +321,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       `
       WITH kpi AS (
         -- Mesmo universo/contagem do KPI principal de agendamentos.
-        SELECT DISTINCT
-          ${recordKeyExpr} AS record_key
+        SELECT
+          ${recordKeyExpr} AS record_key,
+          MAX(UPPER(TRIM(COALESCE(CAST(assunto AS STRING), '')))) AS assunto
         FROM ${KPI_TABLE}
         WHERE (${monthRangeFilter})
           ${assuntoExclusionSql()}
@@ -330,6 +331,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           ${companyFilter}
           ${partnerFilter}
           ${recordColumn ? `AND ${quoteIdent(recordColumn)} IS NOT NULL` : ""}
+        GROUP BY ${recordKeyExpr}
       ),
       location AS (
         -- Cidade do registro em atendimento_gold_live, amarrada pelo id do atendimento.
@@ -359,11 +361,25 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       classified AS (
         SELECT
           k.record_key,
-          COALESCE(
-            ${cityAsUfSql("l.cidade_norm")},
-            NULLIF(cu.uf, ''),
-            ${cityToUfSql("l.cidade_norm")}
-          ) AS uf
+          CASE
+            WHEN COALESCE(
+              ${cityAsUfSql("l.cidade_norm")},
+              NULLIF(cu.uf, ''),
+              ${cityToUfSql("l.cidade_norm")}
+            ) IS NOT NULL
+              THEN COALESCE(
+                ${cityAsUfSql("l.cidade_norm")},
+                NULLIF(cu.uf, ''),
+                ${cityToUfSql("l.cidade_norm")}
+              )
+            WHEN k.assunto LIKE '%CONEXA%'
+              OR k.assunto LIKE '%TELE%'
+              OR k.assunto LIKE '%ONLINE%'
+              OR k.assunto LIKE '%VIRTUAL%'
+              OR k.assunto LIKE '%PA DIGITAL%'
+              THEN 'ONLINE'
+            ELSE 'SEM CIDADE'
+          END AS uf
         FROM kpi k
         LEFT JOIN location l
           ON l.record_key = k.record_key
@@ -373,28 +389,33 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
          AND l.cidade_norm IS NOT NULL
       )
       SELECT
-        COALESCE(uf, 'SEM UF') AS uf,
+        uf,
         COUNT(*) AS total
       FROM classified
-      GROUP BY COALESCE(uf, 'SEM UF')
+      GROUP BY uf
       ORDER BY total DESC
     `,
       params.list,
     );
 
-    const states = rows.map((row) => ({
-      uf: String(getCell(row[0]) || "SEM UF"),
+    const allBuckets = rows.map((row) => ({
+      uf: String(getCell(row[0]) || "SEM CIDADE"),
       total: toInt(row[1]),
     }));
-    const total = states.reduce((acc, item) => acc + (Number(item.total) || 0), 0);
-    const withoutUf = states.find((item) => item.uf === "SEM UF")?.total || 0;
+    const total = allBuckets.reduce((acc, item) => acc + (Number(item.total) || 0), 0);
+    const online = allBuckets.find((item) => item.uf === "ONLINE")?.total || 0;
+    const withoutCity = allBuckets.find((item) => item.uf === "SEM CIDADE")?.total || 0;
+    const specialKeys = new Set(["ONLINE", "SEM CIDADE", "SEM UF"]);
+    const states = allBuckets.filter((item) => !specialKeys.has(item.uf));
 
     res.status(200).json({
       months: monthList,
       total,
-      without_uf: withoutUf,
-      states: states.filter((item) => item.uf !== "SEM UF"),
-      source: "KPI summarized (id) → atendimento_gold_live.cidade → UF",
+      online,
+      without_city: withoutCity,
+      without_uf: online + withoutCity,
+      states,
+      source: "KPI summarized (id) → atendimento_gold_live.cidade → UF; residual = ONLINE (Conexa) | SEM CIDADE",
       filters: {
         group_name: groupName,
         company,

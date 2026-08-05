@@ -777,18 +777,22 @@ function buildBrazilProjector(geojson, width, height, pad = 16) {
   ];
 }
 
-function renderAppointmentsStateRanking(states, total) {
+function renderAppointmentsStateRanking(states, total, extras = []) {
   const tbody = document.getElementById('agend-map-ranking-tbody');
   if (!tbody) return;
-  if (!states.length) {
+  const rows = [...(states || []), ...(extras || []).filter((item) => (Number(item.total) || 0) > 0)];
+  if (!rows.length) {
     tbody.innerHTML = '<tr><td colspan="3" style="padding:12px 10px;color:#94a3b8">Sem volume por UF no recorte.</td></tr>';
     return;
   }
-  tbody.innerHTML = states.slice(0, 27).map((item) => {
+  tbody.innerHTML = rows.slice(0, 30).map((item) => {
     const pct = total > 0 ? ((Number(item.total) || 0) / total) * 100 : 0;
-    const name = UF_NAME[item.uf] || item.uf;
+    const isSpecial = item.uf === 'ONLINE' || item.uf === 'SEM CIDADE';
+    const name = item.label || UF_NAME[item.uf] || item.uf;
+    const code = isSpecial ? (item.uf === 'ONLINE' ? 'Online' : '—') : item.uf;
+    const color = item.uf === 'ONLINE' ? '#7c3aed' : item.uf === 'SEM CIDADE' ? '#94a3b8' : '#334155';
     return `<tr>
-      <td style="padding:8px 10px;color:#334155"><strong>${escapeHtml(item.uf)}</strong> <span style="color:#94a3b8">${escapeHtml(name)}</span></td>
+      <td style="padding:8px 10px;color:${color}"><strong>${escapeHtml(code)}</strong> <span style="color:#94a3b8">${escapeHtml(name)}</span></td>
       <td style="padding:8px 10px;text-align:right;color:#0f172a;font-weight:700">${fmt(item.total)}</td>
       <td style="padding:8px 10px;text-align:right;color:#64748b">${pct.toFixed(1).replace('.', ',')}%</td>
     </tr>`;
@@ -874,7 +878,8 @@ async function loadAppointmentsByStateMap() {
 
     const states = data.states || [];
     const total = Number(data.total) || 0;
-    const withoutUf = Number(data.without_uf) || 0;
+    const online = Number(data.online) || 0;
+    const withoutCity = Number(data.without_city) || 0;
     const mapped = states.reduce((acc, item) => acc + (Number(item.total) || 0), 0);
     const chartMonths = data.months || (months.length ? months : recentMonthValues(12));
     const scopeParts = [];
@@ -882,13 +887,17 @@ async function loadAppointmentsByStateMap() {
     if (currentCompany) scopeParts.push(currentCompany);
     if (currentPartnerBrokerId) scopeParts.push(`Parceiro: ${selectedPartnerLabel()}`);
     const scopeLabel = scopeParts.length ? scopeParts.join(' · ') : 'global';
+    const extras = [
+      { uf: 'ONLINE', label: 'Online (Conexa)', total: online },
+      { uf: 'SEM CIDADE', label: 'Sem cidade', total: withoutCity },
+    ];
 
     if (totalEl) totalEl.textContent = `${fmt(total)} (= KPI)`;
     if (contextEl) contextEl.textContent = scopeLabel;
     if (meta) {
-      meta.textContent = `${chartMonths.length} meses · ${fmt(mapped)} com UF · ${fmt(withoutUf)} sem cidade/UF`;
+      meta.textContent = `${chartMonths.length} meses · ${fmt(mapped)} com UF · ${fmt(online)} online · ${fmt(withoutCity)} sem cidade`;
     }
-    renderAppointmentsStateRanking(states, mapped || total);
+    renderAppointmentsStateRanking(states, total, extras);
     renderAppointmentsBrazilMap(geojson, states);
     if (skel) skel.style.display = 'none';
   } catch (err) {
