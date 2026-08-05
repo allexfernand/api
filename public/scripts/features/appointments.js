@@ -324,11 +324,6 @@ async function loadAppointmentsDailyEvolution() {
   const conexaPeakValue = conexaValues.reduce((max, value) => Math.max(max, value), 0);
   const conexaPeakIndex = conexaValues.findIndex((value) => value === conexaPeakValue);
   const conexaPeakDay = conexaPeakIndex >= 0 ? String(series[conexaPeakIndex]?.dia || '') : '';
-  const movingAvg = physicalValues.map((_, index) => {
-    const start = Math.max(0, index - 6);
-    const values = physicalValues.slice(start, index + 1);
-    return Math.round(values.reduce((acc, value) => acc + value, 0) / values.length);
-  });
   const setText = (id, value) => {
     const el = document.getElementById(id);
     if (el) el.textContent = value;
@@ -366,20 +361,6 @@ async function loadAppointmentsDailyEvolution() {
       tension: 0.32,
       fill: false,
       yAxisID: 'yConexa',
-      order: 1,
-    },
-    {
-      type: 'line',
-      label: 'Média móvel física (7d)',
-      data: movingAvg,
-      borderColor: '#0f172a',
-      backgroundColor: '#0f172a',
-      borderWidth: 2,
-      borderDash: [5, 4],
-      pointRadius: 0,
-      pointHoverRadius: 3,
-      tension: 0.35,
-      fill: false,
       order: 1,
     },
   ];

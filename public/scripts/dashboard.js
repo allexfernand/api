@@ -1,5 +1,5 @@
 (async function loadSanusDashboard() {
-  const CACHE = "20260804-types-volume";
+  const CACHE = "20260804-ag04-no-ma";
 
   function loadScript(src) {
     return new Promise((resolve, reject) => {
