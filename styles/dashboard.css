@@ -681,6 +681,124 @@ body[data-sidebar="collapsed"] .sidebar-tab span{opacity:0;position:absolute;tra
 @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
 .tab-content{display:none}
 .tab-content.active{display:block}
+
+/* Análise Demográfica — layout mais denso */
+#tab-demografica .demo-hero{
+  display:flex;
+  align-items:center;
+  gap:16px;
+  padding:16px 20px;
+  margin-bottom:12px;
+  flex-wrap:wrap;
+}
+#tab-demografica .demo-hero-icon{
+  width:40px;height:40px;border-radius:12px;flex:0 0 auto;
+  background:linear-gradient(135deg,#00A69C,#2E7D9A);
+  display:grid;place-items:center;color:#fff;font-size:16px;
+}
+#tab-demografica .demo-hero-body{min-width:0;flex:1 1 180px}
+#tab-demografica .demo-hero-kicker{
+  font-size:10px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.55px;margin-bottom:2px;
+}
+#tab-demografica .demo-hero-value{
+  font-size:28px;font-weight:800;color:#00A69C;letter-spacing:-.6px;line-height:1.05;
+}
+#tab-demografica .demo-hero-note{font-size:11px;color:#94a3b8;margin-top:2px}
+#tab-demografica .demo-hero-split{display:flex;gap:8px;flex-wrap:wrap;margin-left:auto}
+#tab-demografica .demo-hero-pill{
+  display:inline-flex;align-items:center;gap:8px;
+  padding:8px 12px;border-radius:10px;background:#f8fafc;border:1px solid #eef2f7;
+  font-size:12px;color:#64748b;
+}
+#tab-demografica .demo-hero-pill i{font-size:11px;color:#94a3b8}
+#tab-demografica .demo-hero-pill strong{color:#0f172a;font-weight:700}
+
+#tab-demografica .demo-profile-card{padding:16px 18px;margin-bottom:12px}
+#tab-demografica .demo-section-title{margin-bottom:12px}
+#tab-demografica .demo-kpi-row{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:8px;
+  margin-bottom:12px;
+}
+#tab-demografica .demo-kpi{
+  display:flex;align-items:center;gap:10px;
+  padding:10px 12px;border-radius:10px;background:#f8fafc;border:1px solid #eef2f7;min-width:0;
+}
+#tab-demografica .demo-kpi-icon{
+  width:32px;height:32px;border-radius:9px;flex:0 0 auto;
+  background:#fff;border:1px solid #e2e8f0;
+  display:grid;place-items:center;color:#64748b;font-size:13px;
+}
+#tab-demografica .demo-kpi-value{font-size:20px;font-weight:800;color:#0f172a;letter-spacing:-.3px;line-height:1.1}
+#tab-demografica .demo-kpi-label{font-size:11px;color:#94a3b8;margin-top:2px}
+
+#tab-demografica .demo-panels{
+  display:grid;
+  grid-template-columns:1.1fr 1.4fr .9fr;
+  gap:8px;
+}
+#tab-demografica .demo-panel{
+  padding:12px;border-radius:10px;background:#fff;border:1px solid #eef2f7;min-width:0;
+}
+#tab-demografica .demo-panel-accent{background:linear-gradient(180deg,#fff 0%,#fdf2f8 100%)}
+#tab-demografica .demo-panel-head{
+  display:flex;align-items:center;gap:8px;
+  font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.4px;
+  margin-bottom:10px;
+}
+#tab-demografica .demo-panel-head i{font-size:12px;color:#94a3b8}
+#tab-demografica .demo-gender-icons{display:inline-flex;gap:6px}
+#tab-demografica .demo-pair{
+  display:grid;grid-template-columns:1fr 1fr;gap:8px;
+}
+#tab-demografica .demo-pair-3{grid-template-columns:repeat(3,minmax(0,1fr))}
+#tab-demografica .demo-pair-value{font-size:18px;font-weight:800;color:#0f172a;letter-spacing:-.2px;line-height:1.1}
+#tab-demografica .demo-pair-value.lg{font-size:28px;margin:4px 0 8px}
+#tab-demografica .demo-pair-label{font-size:11px;color:#94a3b8;margin-top:2px}
+#tab-demografica .demo-pair-pct{font-size:12px;font-weight:700;margin-top:2px}
+#tab-demografica .demo-pair-pct.brand{color:#00A69C}
+#tab-demografica .demo-panel-foot{font-size:11px;color:#94a3b8;margin-top:10px}
+#tab-demografica .demo-panel-foot strong{color:#475569}
+#tab-demografica .demo-gender-bar{
+  margin-top:10px;background:#f1f5f9;border-radius:999px;overflow:hidden;height:6px;display:flex;
+}
+
+#tab-demografica .demo-bottom-grid{
+  display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:0;
+}
+#tab-demografica .demo-bottom-grid > .card-box{padding:16px 18px}
+#tab-demografica .demo-card-head{
+  display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:10px;
+}
+#tab-demografica .demo-search{
+  font-size:12px;padding:6px 10px;border-radius:8px;border:1px solid #e2e8f0;outline:none;width:160px;color:#334155;background:#fff;
+}
+#tab-demografica .demo-search:focus{border-color:#99f6e4;box-shadow:0 0 0 3px rgba(0,166,156,.12)}
+#tab-demografica .demo-companies-table{width:100%;border-collapse:collapse;font-size:12px}
+#tab-demografica .demo-companies-table thead{position:sticky;top:0;background:#fff;z-index:1}
+#tab-demografica .demo-companies-table th{
+  text-align:left;padding:6px 8px;font-size:10px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.4px;
+  border-bottom:1px solid #eef2f7;
+}
+#tab-demografica .demo-companies-footer{margin-top:8px;font-size:10px;color:#94a3b8;text-align:right}
+#tab-demografica .demo-age-legend{
+  display:flex;justify-content:flex-end;gap:12px;margin-bottom:6px;font-size:11px;color:#64748b;
+}
+#tab-demografica .demo-age-legend .swatch{
+  display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px;
+}
+
+@media (max-width:1100px){
+  #tab-demografica .demo-kpi-row{grid-template-columns:repeat(2,minmax(0,1fr))}
+  #tab-demografica .demo-panels{grid-template-columns:1fr}
+  #tab-demografica .demo-bottom-grid{grid-template-columns:1fr}
+}
+@media (max-width:640px){
+  #tab-demografica .demo-kpi-row{grid-template-columns:1fr}
+  #tab-demografica .demo-hero-split{margin-left:0;width:100%}
+}
+
 body[data-active-tab="sessoes"] #filter-company-group{display:none!important}
 body[data-active-tab="qualidade-operacional"] #filter-group-group,
 body[data-active-tab="qualidade-operacional"] #filter-company-group{display:none!important}
