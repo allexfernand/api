@@ -139,8 +139,12 @@ async function loadAppointments() {
   document.getElementById('bullet-agend').textContent = '…';
   const titEl = document.getElementById('bullet-agend-tit');
   const depEl = document.getElementById('bullet-agend-dep');
+  const semEl = document.getElementById('bullet-agend-sem');
+  const semWrap = document.getElementById('bullet-agend-sem-wrap');
   if (titEl) titEl.textContent = '…';
   if (depEl) depEl.textContent = '…';
+  if (semEl) semEl.textContent = '…';
+  if (semWrap) semWrap.style.display = 'none';
   const meses = [...selectedMonths].sort();
   const p = new URLSearchParams();
   if (meses.length > 0)  p.set('meses', meses.join(','));
@@ -158,9 +162,17 @@ async function loadAppointments() {
   loadAppointmentsUtilization();
 
   if (appt && !appt.error) {
-    document.getElementById('bullet-agend').textContent = fmt(appt.total);
-    if (titEl) titEl.textContent = fmt(Number(appt.titulares) || 0);
-    if (depEl) depEl.textContent = fmt(Number(appt.dependentes) || 0);
+    const total = Number(appt.total) || 0;
+    const tit = Number(appt.titulares) || 0;
+    const dep = Number(appt.dependentes) || 0;
+    const sem = Number.isFinite(Number(appt.sem_cadastro))
+      ? Number(appt.sem_cadastro)
+      : Math.max(0, total - tit - dep);
+    document.getElementById('bullet-agend').textContent = fmt(total);
+    if (titEl) titEl.textContent = fmt(tit);
+    if (depEl) depEl.textContent = fmt(dep);
+    if (semEl) semEl.textContent = fmt(sem);
+    if (semWrap) semWrap.style.display = sem > 0 ? '' : 'none';
     let label = 'Total de agendamentos · últimos 12 meses';
     if (meses.length === 1) { const [y,mm] = meses[0].split('-'); label = `Total de agendamentos · ${mN[mm]}/${y}`; }
     else if (meses.length > 1) label = `Total de agendamentos · ${meses.length} meses selecionados`;
@@ -169,6 +181,8 @@ async function loadAppointments() {
     document.getElementById('bullet-agend').textContent = 'Erro';
     if (titEl) titEl.textContent = '—';
     if (depEl) depEl.textContent = '—';
+    if (semEl) semEl.textContent = '—';
+    if (semWrap) semWrap.style.display = 'none';
   }
 }
 
