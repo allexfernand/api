@@ -27,6 +27,129 @@
   max-width: 640px;
 }
 
+.subnav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px;
+  width: fit-content;
+  max-width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.subnavItem {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background var(--t) var(--ease), color var(--t) var(--ease), border-color var(--t) var(--ease);
+}
+
+.subnavItem:hover {
+  color: var(--text);
+  background: var(--surface);
+}
+
+.subnavItemActive {
+  color: var(--text);
+  background: var(--surface);
+  border-color: color-mix(in srgb, var(--brand) 28%, var(--border));
+  box-shadow: var(--shadow-sm);
+}
+
+.sectionIntro {
+  display: grid;
+  gap: 4px;
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.logsPanel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  padding: 20px;
+  display: grid;
+  gap: 16px;
+}
+
+.logsTableWrap {
+  overflow-x: auto;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+}
+
+.logsTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.logsTable th {
+  text-align: left;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+  padding: 10px 12px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border-light);
+  white-space: nowrap;
+}
+
+.logsTable td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-light);
+  color: var(--text-2);
+  vertical-align: top;
+}
+
+.logsTable tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.logsTable tbody tr:hover td {
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
+}
+
+.logsWhen {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.logsUser {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.logsIp {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.logsUa {
+  max-width: 280px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .fullAccessNotice {
   margin-top: 4px;
   padding: 12px 14px;

@@ -8,11 +8,14 @@
 
 import { FormEvent, useMemo, useState } from "react";
 import styles from "./SettingsTab.module.css";
+import { ActivityLogsPanel } from "./ActivityLogsPanel";
 import { useManagedUsers, type PartnerGroupMap, type PartnerOption } from "./hooks/useManagedUsers";
 import { MENU_SECTIONS, FULL_DEFAULT_ALLOWED_MENUS, MDS_DEFAULT_ALLOWED_MENUS, type MenuId } from "../../dashboard/menu-catalog";
 import type { DashboardRole } from "../../contracts/common";
 import type { ManagedDashboardUserPublic } from "../../contracts/dashboard-users";
 import { PASSWORD_RULES, validateStrongPassword } from "../../lib/password-policy";
+
+type SettingsSection = "access" | "activity";
 
 function defaultMenusFor(role: DashboardRole): MenuId[] {
   return role === "mds" ? [...MDS_DEFAULT_ALLOWED_MENUS] : [...FULL_DEFAULT_ALLOWED_MENUS];
@@ -52,6 +55,7 @@ function PasswordRulesHint({ password }: { password: string }) {
 }
 
 export function SettingsTab() {
+  const [section, setSection] = useState<SettingsSection>("access");
   const { users, economicGroups, partners, partnerGroupMap, status, error, createUser, updateUser, deleteUser } =
     useManagedUsers();
   const [selected, setSelected] = useState<string | null>(null);
@@ -69,61 +73,95 @@ export function SettingsTab() {
   return (
     <section id="tab-configuracoes" className={`tab-content ${styles.root}`}>
       <header className={styles.header}>
-        <h2 className={styles.title}>Configurações de acesso</h2>
+        <h2 className={styles.title}>Configurações</h2>
         <p className={styles.subtitle}>
-          Perfil <strong>Completo</strong> libera tudo. <strong>Personalizado</strong> também é
-          acesso amplo (não MDS), mas você escolhe menus, parceiros e grupos. <strong>MDS</strong>{" "}
-          usa recorte por parceiro.
+          Gerencie acesso dos usuários e acompanhe os últimos logins da plataforma.
         </p>
       </header>
 
-      {status === "loading" ? <p className={styles.subtitle}>Carregando usuários…</p> : null}
-      {status === "forbidden" ? <p className={styles.notice}>Acesso restrito a administradores.</p> : null}
-      {status === "error" ? <p className={styles.notice}>{error ?? "Não foi possível carregar os usuários."}</p> : null}
+      <nav className={styles.subnav} aria-label="Seções de configurações">
+        <button
+          type="button"
+          className={`${styles.subnavItem} ${section === "access" ? styles.subnavItemActive : ""}`}
+          onClick={() => setSection("access")}
+          aria-current={section === "access" ? "page" : undefined}
+        >
+          Acesso
+        </button>
+        <button
+          type="button"
+          className={`${styles.subnavItem} ${section === "activity" ? styles.subnavItemActive : ""}`}
+          onClick={() => setSection("activity")}
+          aria-current={section === "activity" ? "page" : undefined}
+        >
+          Logs de atividade
+        </button>
+      </nav>
 
-      {status === "ready" && users ? (
-        <div className={styles.layout}>
-          <UserList
-            users={users}
-            selected={selectedUser?.user ?? null}
-            creating={creating}
-            onSelect={(user) => {
-              setCreating(false);
-              setSelected(user);
-            }}
-            onCreateNew={() => {
-              setCreating(true);
-              setSelected(null);
-            }}
-          />
-          {creating ? (
-            <CreateUserPanel
-              economicGroups={economicGroups}
-              partners={partners}
-              partnerGroupMap={partnerGroupMap}
-              onCancel={() => setCreating(false)}
-              onCreate={async (input) => {
-                const created = await createUser(input);
-                setCreating(false);
-                setSelected(created.user);
-              }}
-            />
-          ) : selectedUser ? (
-            <UserEditorPanel
-              key={selectedUser.user}
-              user={selectedUser}
-              economicGroups={economicGroups}
-              partners={partners}
-              partnerGroupMap={partnerGroupMap}
-              onSave={(input) => updateUser(selectedUser.user, input)}
-              onDelete={selectedUser.isLegacy ? undefined : () => deleteUser(selectedUser.user)}
-            />
-          ) : (
-            <div className={styles.panel}>
-              <div className={styles.emptyPanel}>Selecione um usuário na lista ao lado.</div>
+      {section === "activity" ? <ActivityLogsPanel /> : null}
+
+      {section === "access" ? (
+        <>
+          <div className={styles.sectionIntro}>
+            <h3 className={styles.sectionTitle}>Configurações de acesso</h3>
+            <p className={styles.subtitle}>
+              Perfil <strong>Completo</strong> libera tudo. <strong>Personalizado</strong> também é
+              acesso amplo (não MDS), mas você escolhe menus, parceiros e grupos. <strong>MDS</strong>{" "}
+              usa recorte por parceiro.
+            </p>
+          </div>
+
+          {status === "loading" ? <p className={styles.subtitle}>Carregando usuários…</p> : null}
+          {status === "forbidden" ? <p className={styles.notice}>Acesso restrito a administradores.</p> : null}
+          {status === "error" ? (
+            <p className={styles.notice}>{error ?? "Não foi possível carregar os usuários."}</p>
+          ) : null}
+
+          {status === "ready" && users ? (
+            <div className={styles.layout}>
+              <UserList
+                users={users}
+                selected={selectedUser?.user ?? null}
+                creating={creating}
+                onSelect={(user) => {
+                  setCreating(false);
+                  setSelected(user);
+                }}
+                onCreateNew={() => {
+                  setCreating(true);
+                  setSelected(null);
+                }}
+              />
+              {creating ? (
+                <CreateUserPanel
+                  economicGroups={economicGroups}
+                  partners={partners}
+                  partnerGroupMap={partnerGroupMap}
+                  onCancel={() => setCreating(false)}
+                  onCreate={async (input) => {
+                    const created = await createUser(input);
+                    setCreating(false);
+                    setSelected(created.user);
+                  }}
+                />
+              ) : selectedUser ? (
+                <UserEditorPanel
+                  key={selectedUser.user}
+                  user={selectedUser}
+                  economicGroups={economicGroups}
+                  partners={partners}
+                  partnerGroupMap={partnerGroupMap}
+                  onSave={(input) => updateUser(selectedUser.user, input)}
+                  onDelete={selectedUser.isLegacy ? undefined : () => deleteUser(selectedUser.user)}
+                />
+              ) : (
+                <div className={styles.panel}>
+                  <div className={styles.emptyPanel}>Selecione um usuário na lista ao lado.</div>
+                </div>
+              )}
             </div>
-          )}
-        </div>
+          ) : null}
+        </>
       ) : null}
     </section>
   );

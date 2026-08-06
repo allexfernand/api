@@ -11,7 +11,7 @@ export async function POST(request: Request) {
   if (!auth) return NextResponse.json({ error: "Usuário ou senha inválidos." }, { status: 401 });
 
   try {
-    return await continueAfterPasswordAuth(auth);
+    return await continueAfterPasswordAuth(auth, request);
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : "Não foi possível concluir o login.";
     return NextResponse.json({ error: message }, { status: 400 });

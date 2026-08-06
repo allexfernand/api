@@ -21,7 +21,7 @@ export async function POST(request: Request) {
 
   try {
     const auth = await completeTotpChallenge(pending.user, parsed.data.code);
-    return sessionResponse(auth);
+    return sessionResponse(auth, request, "totp");
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : "Não foi possível validar o autenticador.";
     const status = /inválido|expirado|não está|não encontrado/i.test(message) ? 401 : 400;

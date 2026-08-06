@@ -7,6 +7,8 @@ import {
   MFA_PENDING_COOKIE,
   SESSION_COOKIE,
 } from "../auth/session";
+import type { LoginActivityVia } from "../../contracts/activity-logs";
+import { recordLoginActivity } from "../config/activity-log-store";
 
 const SESSION_TTL_SECONDS = 8 * 60 * 60;
 const MFA_PENDING_TTL_SECONDS = 10 * 60;
@@ -53,7 +55,14 @@ function setMfaPendingCookie(response: NextResponse, user: string, stage: "setup
   return response;
 }
 
-export function sessionResponse(auth: EffectiveDashboardAuth) {
+export async function sessionResponse(
+  auth: EffectiveDashboardAuth,
+  request?: Request,
+  via: LoginActivityVia = "password",
+) {
+  if (request) {
+    await recordLoginActivity({ user: auth.user, request, via });
+  }
   return setSessionCookie(
     jsonWithCookies({
       ok: true,
@@ -67,7 +76,7 @@ export function sessionResponse(auth: EffectiveDashboardAuth) {
 }
 
 /** Depois da senha (ou troca de senha), decide: sessão, setup 2FA ou código 2FA. */
-export async function continueAfterPasswordAuth(auth: EffectiveDashboardAuth) {
+export async function continueAfterPasswordAuth(auth: EffectiveDashboardAuth, request?: Request) {
   if (auth.mustChangePassword) {
     return jsonWithCookies({ ok: true, mustChangePassword: true, user: auth.user });
   }
@@ -94,5 +103,5 @@ export async function continueAfterPasswordAuth(auth: EffectiveDashboardAuth) {
     );
   }
 
-  return sessionResponse(auth);
+  return sessionResponse(auth, request, "password");
 }

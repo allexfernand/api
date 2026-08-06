@@ -17,7 +17,7 @@ export async function POST(request: Request) {
       parsed.data.newPassword,
     );
     // Pode ainda precisar configurar/validar 2FA depois da troca.
-    return await continueAfterPasswordAuth(auth);
+    return await continueAfterPasswordAuth(auth, request);
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : "Não foi possível trocar a senha.";
     const status = /inválidos|não encontrado|não está marcado|não permite/i.test(message) ? 401 : 400;
