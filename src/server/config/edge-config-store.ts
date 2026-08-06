@@ -19,11 +19,13 @@ function trimEnv(name: string) {
 }
 
 function writeToken() {
-  return trimEnv("EDGE_CONFIG_WRITE_TOKEN") || trimEnv("VERCEL_API_TOKEN");
+  // Só EDGE_CONFIG_WRITE_TOKEN: vars com prefixo VERCEL_ são reservadas
+  // na plataforma e não devem ser usadas como fallback de escrita.
+  return trimEnv("EDGE_CONFIG_WRITE_TOKEN");
 }
 
 function writeTeamId() {
-  return trimEnv("EDGE_CONFIG_TEAM_ID") || trimEnv("VERCEL_TEAM_ID");
+  return trimEnv("EDGE_CONFIG_TEAM_ID");
 }
 
 function writeEdgeConfigId() {
@@ -98,7 +100,7 @@ export async function writeManagedUsers(users: ManagedDashboardUser[]): Promise<
   const apiToken = writeToken();
   if (!edgeConfigId || !apiToken) {
     throw new Error(
-      "Edge Config não está configurado para escrita. Defina EDGE_CONFIG_ID e EDGE_CONFIG_WRITE_TOKEN (e EDGE_CONFIG_TEAM_ID se o projeto for de time).",
+      "Edge Config sem credencial de escrita. Defina EDGE_CONFIG_ID, EDGE_CONFIG_WRITE_TOKEN e EDGE_CONFIG_TEAM_ID (token de conta em vercel.com/account/tokens, escopo do time). Depois faça redeploy.",
     );
   }
 
