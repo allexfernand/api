@@ -191,6 +191,7 @@ function buildSessionsDailyMonthOptions() {
 
 function onSessionsDailyMonthChange(value) {
   selectedSessionsDailyMonth = value || currentMonthValue();
+  selectedSessionsDailyIndexes = new Set();
   loadSessionsDailyEvolution();
 }
 

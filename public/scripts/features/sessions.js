@@ -1115,6 +1115,9 @@ async function loadSessionsDailyEvolution() {
       errorBox.textContent = data && data.error ? String(data.error).slice(0, 220) : 'Erro ao carregar evolução diária';
     }
     if (skel) skel.style.display = 'none';
+    sessionsDailySeriesCache = [];
+    selectedSessionsDailyIndexes = new Set();
+    updateSessionsDailySelectionSummary();
     return;
   }
 
@@ -1130,6 +1133,11 @@ async function loadSessionsDailyEvolution() {
 
   const weekdayFmt = new Intl.DateTimeFormat('pt-BR', { weekday: 'short', timeZone: 'UTC' });
   const series = data.series || [];
+  sessionsDailySeriesCache = series.map((it) => ({
+    dia: String(it.dia || ''),
+    total: Number(it.total) || 0,
+  }));
+  selectedSessionsDailyIndexes = new Set();
   const labels = series.map((it) => {
     const day = String(it.dia || '');
     const date = new Date(`${day}T00:00:00Z`);
@@ -1138,7 +1146,7 @@ async function loadSessionsDailyEvolution() {
       : weekdayFmt.format(date).replace('.', '').replace(/^./, c => c.toUpperCase());
     return [day.slice(8, 10), weekday];
   });
-  const totalValues = series.map((it) => Number(it.total) || 0);
+  const totalValues = sessionsDailySeriesCache.map((it) => it.total);
   if (sessionsDailyChart) sessionsDailyChart.destroy();
   if (skel) skel.style.display = 'none';
   if (cv) {
@@ -1153,8 +1161,11 @@ async function loadSessionsDailyEvolution() {
           borderColor: '#0f766e',
           backgroundColor: 'rgba(15,118,110,0.08)',
           borderWidth: 2,
-          pointRadius: 3,
-          pointBackgroundColor: '#0f766e',
+          pointRadius: sessionsDailyPointRadii(),
+          pointHoverRadius: 6,
+          pointBackgroundColor: sessionsDailyPointColors(),
+          pointBorderColor: sessionsDailyPointBorderColors(),
+          pointBorderWidth: sessionsDailyPointBorderWidths(),
           fill: true,
           tension: 0.35,
         }],
@@ -1162,6 +1173,11 @@ async function loadSessionsDailyEvolution() {
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        onClick: onSessionsDailyChartClick,
+        onHover: (event, elements) => {
+          const target = event?.native?.target || event?.chart?.canvas;
+          if (target) target.style.cursor = elements?.length ? 'pointer' : 'default';
+        },
         plugins: {
           legend: { display: false },
           tooltip: {
@@ -1170,13 +1186,18 @@ async function loadSessionsDailyEvolution() {
             callbacks: {
               title: items => {
                 const idx = items[0]?.dataIndex ?? 0;
-                const raw = series[idx]?.dia;
+                const raw = sessionsDailySeriesCache[idx]?.dia;
                 if (!raw) return '';
                 const date = new Date(`${raw}T00:00:00Z`);
                 const weekday = Number.isNaN(date.getTime()) ? '' : weekdayFmt.format(date);
-                return `${raw.split('-').reverse().join('/')} · ${weekday}`;
+                const selected = selectedSessionsDailyIndexes.has(idx) ? ' · selecionado' : '';
+                return `${raw.split('-').reverse().join('/')} · ${weekday}${selected}`;
               },
               label: c => `${fmt(c.parsed.y)} sessões`,
+              afterBody: () => {
+                if (!selectedSessionsDailyIndexes.size) return ['Clique para selecionar este dia'];
+                return [`Seleção: ${fmt(sessionsDailySelectedTotal())} sessões`];
+              },
             },
           },
         },
@@ -1194,6 +1215,103 @@ async function loadSessionsDailyEvolution() {
       },
     });
   }
+  updateSessionsDailySelectionSummary();
+}
+
+function sessionsDailySelectedTotal() {
+  let total = 0;
+  selectedSessionsDailyIndexes.forEach((idx) => {
+    total += Number(sessionsDailySeriesCache[idx]?.total) || 0;
+  });
+  return total;
+}
+
+function sessionsDailyPointRadii() {
+  const hasSelection = selectedSessionsDailyIndexes.size > 0;
+  return sessionsDailySeriesCache.map((_, idx) => {
+    if (selectedSessionsDailyIndexes.has(idx)) return 6;
+    return hasSelection ? 2.5 : 3;
+  });
+}
+
+function sessionsDailyPointColors() {
+  const hasSelection = selectedSessionsDailyIndexes.size > 0;
+  return sessionsDailySeriesCache.map((_, idx) => {
+    if (selectedSessionsDailyIndexes.has(idx)) return '#0f766e';
+    return hasSelection ? 'rgba(15,118,110,0.35)' : '#0f766e';
+  });
+}
+
+function sessionsDailyPointBorderColors() {
+  return sessionsDailySeriesCache.map((_, idx) => (
+    selectedSessionsDailyIndexes.has(idx) ? '#99f6e4' : '#0f766e'
+  ));
+}
+
+function sessionsDailyPointBorderWidths() {
+  return sessionsDailySeriesCache.map((_, idx) => (
+    selectedSessionsDailyIndexes.has(idx) ? 2 : 0
+  ));
+}
+
+function applySessionsDailySelectionStyles() {
+  if (!sessionsDailyChart?.data?.datasets?.[0]) {
+    updateSessionsDailySelectionSummary();
+    return;
+  }
+  const dataset = sessionsDailyChart.data.datasets[0];
+  dataset.pointRadius = sessionsDailyPointRadii();
+  dataset.pointBackgroundColor = sessionsDailyPointColors();
+  dataset.pointBorderColor = sessionsDailyPointBorderColors();
+  dataset.pointBorderWidth = sessionsDailyPointBorderWidths();
+  sessionsDailyChart.update('none');
+  updateSessionsDailySelectionSummary();
+}
+
+function updateSessionsDailySelectionSummary() {
+  const wrap = document.getElementById('s-daily-selection');
+  const label = document.getElementById('s-daily-selection-label');
+  const totalEl = document.getElementById('s-daily-selection-total');
+  const clearBtn = document.getElementById('s-daily-selection-clear');
+  const count = selectedSessionsDailyIndexes.size;
+  const total = sessionsDailySelectedTotal();
+  if (wrap) wrap.classList.toggle('is-active', count > 0);
+  if (clearBtn) clearBtn.hidden = count === 0;
+  if (!count) {
+    if (label) label.textContent = 'Nenhum dia selecionado';
+    if (totalEl) totalEl.textContent = '—';
+    return;
+  }
+  const sorted = [...selectedSessionsDailyIndexes].sort((a, b) => a - b);
+  const days = sorted
+    .map((idx) => String(sessionsDailySeriesCache[idx]?.dia || '').slice(8, 10))
+    .filter(Boolean);
+  const daysPreview = days.length <= 6
+    ? days.join(', ')
+    : `${days.slice(0, 5).join(', ')}… (+${days.length - 5})`;
+  if (label) {
+    label.textContent = count === 1
+      ? `1 dia selecionado (${daysPreview})`
+      : `${count} dias selecionados (${daysPreview})`;
+  }
+  if (totalEl) totalEl.textContent = `${fmt(total)} sessões`;
+}
+
+function onSessionsDailyChartClick(event, elements, chart) {
+  const active = elements?.length
+    ? elements
+    : (chart?.getElementsAtEventForMode?.(event, 'nearest', { intersect: false }, true) || []);
+  if (!active.length) return;
+  const idx = active[0].index;
+  if (idx == null || idx < 0 || idx >= sessionsDailySeriesCache.length) return;
+  if (selectedSessionsDailyIndexes.has(idx)) selectedSessionsDailyIndexes.delete(idx);
+  else selectedSessionsDailyIndexes.add(idx);
+  applySessionsDailySelectionStyles();
+}
+
+function clearSessionsDailySelection() {
+  selectedSessionsDailyIndexes = new Set();
+  applySessionsDailySelectionStyles();
 }
 
 function renderSessionsFinalizationsEvolutionChart(cv, chartInstance, labels, totalValues, humanoValues, iaValues, options = {}) {

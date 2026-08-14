@@ -153,12 +153,19 @@
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap">
         <div>
           <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Evolução diária do total de sessões</h2>
-          <div style="font-size:11px;color:#94a3b8">Dias do mês · <span id="s-daily-mode">mês atual</span></div>
+          <div style="font-size:11px;color:#94a3b8">Dias do mês · <span id="s-daily-mode">mês atual</span> · clique nos pontos para selecionar</div>
         </div>
         <div class="filter-group">
           <label for="sessions-daily-month-select">📅 Mês</label>
           <select class="filter-select" id="sessions-daily-month-select" onchange="onSessionsDailyMonthChange(this.value)" style="min-width:160px"></select>
         </div>
+      </div>
+      <div class="sessions-daily-selection" id="s-daily-selection">
+        <div class="sessions-daily-selection-meta">
+          <span id="s-daily-selection-label">Nenhum dia selecionado</span>
+          <strong id="s-daily-selection-total">—</strong>
+        </div>
+        <button type="button" class="sessions-daily-clear-btn" id="s-daily-selection-clear" onclick="clearSessionsDailySelection()" hidden>Limpar seleção</button>
       </div>
       <div class="chart-wrap">
         <div class="skeleton" id="skel-s-daily"></div>

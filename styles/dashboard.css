@@ -467,6 +467,13 @@ body[data-sidebar="collapsed"] .sidebar-tab span{opacity:0;position:absolute;tra
 .sessions-utilization-delta{justify-self:start;font-size:10px;font-weight:800;border-radius:999px;padding:3px 8px;background:#f8fafc;border:1px solid #e2e8f0;color:#64748b}
 .sessions-utilization-delta.positive{background:#ecfdf5;border-color:#bbf7d0;color:#047857}
 .sessions-utilization-delta.negative{background:#fff7ed;border-color:#fed7aa;color:#c2410c}
+.sessions-daily-selection{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:0 0 12px;padding:10px 12px;border:1px solid #e2e8f0;border-radius:var(--radius-sm);background:#f8fafc}
+.sessions-daily-selection.is-active{border-color:#99f6e4;background:#f0fdfa}
+.sessions-daily-selection-meta{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;min-width:0}
+.sessions-daily-selection-meta span{font-size:11px;color:#64748b;font-weight:600}
+.sessions-daily-selection-meta strong{font-size:18px;font-weight:800;color:#0f766e;letter-spacing:-.4px}
+.sessions-daily-clear-btn{border:1px solid #cbd5e1;background:#fff;color:#475569;border-radius:8px;padding:6px 10px;font-size:11px;font-weight:700;cursor:pointer}
+.sessions-daily-clear-btn:hover{border-color:#94a3b8;color:#0f172a}
 .card-box[data-qtag="#Q11"],
 .card-box[data-qtag="#Q11B"]{display:flex;flex-direction:column;max-height:clamp(360px,60vh,560px)}
 .card-box[data-qtag="#Q11"] #session-typifications-content,
