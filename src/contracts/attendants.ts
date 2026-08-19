@@ -32,6 +32,8 @@ export const attendantsListResponseSchema = z.object({
   departments: z.array(attendantDepartmentSchema),
   candidates: z.array(attendantCandidateSchema),
   mappings: z.array(attendantMappingSchema),
+  candidatesError: z.string().nullable().optional(),
+  candidatesMonths: z.number().int().positive().optional(),
 });
 export type AttendantsListResponse = z.infer<typeof attendantsListResponseSchema>;
 

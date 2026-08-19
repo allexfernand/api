@@ -18,12 +18,26 @@ function normalizeKey(value: string) {
 }
 
 export function AttendantsPanel() {
-  const { status, error, candidates, mappings, departments, saving, reload, saveMapping } = useAttendants();
+  const {
+    status,
+    error,
+    candidates,
+    mappings,
+    departments,
+    candidatesError,
+    candidatesLoading,
+    saving,
+    reload,
+    saveMapping,
+  } = useAttendants();
   const [search, setSearch] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState<"" | AttendantDepartment>("");
   const [statusFilter, setStatusFilter] = useState<"" | AttendantStatus>("");
   const [drafts, setDrafts] = useState<Record<string, { department: AttendantDepartment; status: AttendantStatus }>>({});
   const [notice, setNotice] = useState<string | null>(null);
+  const [manualName, setManualName] = useState("");
+  const [manualDepartment, setManualDepartment] = useState<AttendantDepartment>("Outros");
+  const [manualStatus, setManualStatus] = useState<AttendantStatus>("Ativo");
 
   const mappingByName = useMemo(() => {
     const map = new Map<string, (typeof mappings)[number]>();
@@ -71,24 +85,77 @@ export function AttendantsPanel() {
     }
   }
 
+  async function persistManual() {
+    const name = manualName.trim();
+    if (!name) {
+      setNotice("Informe o nome do atendente (finished_by).");
+      return;
+    }
+    await persist(name, manualDepartment, manualStatus);
+    setManualName("");
+  }
+
   return (
     <div className={styles.attendantsPanel}>
       <div className={styles.sectionIntro}>
         <h3 className={styles.sectionTitle}>Atendentes e departamentos</h3>
         <p className={styles.subtitle}>
-          Lista baseada em <code>finished_by</code> do Databricks. Associe cada atendente a um setor
-          (Enfermagem, Agendamento, Tech, Outros) e marque Ativo/Inativo. Inativos continuam na conta
-          por departamento.
+          Lista baseada em <code>finished_by</code> dos últimos 12 meses. Associe cada atendente a um
+          setor (Enfermagem, Agendamento, Tech, Outros) e marque Ativo/Inativo. Inativos continuam na
+          conta por departamento.
         </p>
       </div>
 
-      {status === "loading" ? <p className={styles.subtitle}>Carregando atendentes…</p> : null}
+      {status === "loading" ? <p className={styles.subtitle}>Carregando mapeamentos…</p> : null}
       {status === "forbidden" ? <p className={styles.notice}>Acesso restrito a administradores.</p> : null}
       {status === "error" ? <p className={styles.notice}>{error ?? "Não foi possível carregar."}</p> : null}
       {notice ? <p className={styles.subtitle}>{notice}</p> : null}
+      {status === "ready" && candidatesLoading ? (
+        <p className={styles.subtitle}>Buscando finished_by no Databricks (últimos 12 meses)…</p>
+      ) : null}
+      {status === "ready" && candidatesError ? (
+        <p className={styles.notice}>
+          Não foi possível carregar finished_by agora: {candidatesError}. Você ainda pode cadastrar
+          nomes manualmente abaixo.
+        </p>
+      ) : null}
 
       {status === "ready" ? (
         <>
+          <div className={styles.attendantsToolbar}>
+            <input
+              className={styles.attendantsSearch}
+              type="text"
+              placeholder="Adicionar finished_by manualmente…"
+              value={manualName}
+              onChange={(event) => setManualName(event.target.value)}
+            />
+            <select
+              className={styles.attendantsSelect}
+              value={manualDepartment}
+              onChange={(event) => setManualDepartment(event.target.value as AttendantDepartment)}
+              aria-label="Departamento do novo atendente"
+            >
+              {ATTENDANT_DEPARTMENTS.map((department) => (
+                <option key={department} value={department}>
+                  {department}
+                </option>
+              ))}
+            </select>
+            <select
+              className={styles.attendantsSelect}
+              value={manualStatus}
+              onChange={(event) => setManualStatus(event.target.value as AttendantStatus)}
+              aria-label="Status do novo atendente"
+            >
+              <option value="Ativo">Ativo</option>
+              <option value="Inativo">Inativo</option>
+            </select>
+            <button type="button" className={styles.primaryBtn} onClick={() => void persistManual()}>
+              Adicionar
+            </button>
+          </div>
+
           <div className={styles.attendantsToolbar}>
             <input
               className={styles.attendantsSearch}
@@ -128,6 +195,7 @@ export function AttendantsPanel() {
           <div className={styles.attendantsMeta}>
             {rows.length} atendente{rows.length === 1 ? "" : "s"} · {mappings.length} mapeado
             {mappings.length === 1 ? "" : "s"}
+            {candidatesLoading ? " · sincronizando Databricks…" : ""}
           </div>
 
           <div className={styles.attendantsTableWrap}>
@@ -206,7 +274,9 @@ export function AttendantsPanel() {
                 {!rows.length ? (
                   <tr>
                     <td colSpan={6} className={styles.subtitle}>
-                      Nenhum atendente encontrado com os filtros atuais.
+                      {candidatesLoading
+                        ? "Aguardando finished_by do Databricks…"
+                        : "Nenhum atendente encontrado. Use o campo de adicionar manualmente ou atualize a lista."}
                     </td>
                   </tr>
                 ) : null}

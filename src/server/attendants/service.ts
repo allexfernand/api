@@ -120,10 +120,11 @@ export async function deleteAttendantMapping(name: string) {
   return name.trim();
 }
 
-/** Lista finished_by distintos em botmaker_session (fonte A). */
-export async function listFinishedByCandidates(): Promise<AttendantCandidate[]> {
+/** Lista finished_by distintos em botmaker_session (fonte A), só nos últimos N meses. */
+export async function listFinishedByCandidates(monthsBack = 12): Promise<AttendantCandidate[]> {
   const warehouseId = await resolveWarehouseId();
   const params = createSqlParams();
+  const windowMonths = Math.max(1, Math.min(36, Number(monthsBack) || 12));
   const rows = await runQuery(
     warehouseId,
     `
@@ -134,9 +135,10 @@ export async function listFinishedByCandidates(): Promise<AttendantCandidate[]> 
       FROM ${SESSION_TABLE}
       WHERE ${quoteIdent("finished_by")} IS NOT NULL
         AND TRIM(CAST(${quoteIdent("finished_by")} AS STRING)) != ''
+        AND try_cast(${quoteIdent("creation_time")} AS TIMESTAMP) >= add_months(current_timestamp(), -${windowMonths})
       GROUP BY 1
       ORDER BY sessions DESC
-      LIMIT 2000
+      LIMIT 1000
     `,
     params.list,
   );
@@ -148,6 +150,29 @@ export async function listFinishedByCandidates(): Promise<AttendantCandidate[]> 
       lastSeen: getCell(row[2]) ? String(getCell(row[2])) : null,
     }))
     .filter((item) => item.name);
+}
+
+export function mergeCandidatesWithMappings(
+  candidates: AttendantCandidate[],
+  mappings: AttendantMapping[],
+): AttendantCandidate[] {
+  const byKey = new Map<string, AttendantCandidate>();
+  for (const candidate of candidates) {
+    byKey.set(normalizeAttendantKey(candidate.name), candidate);
+  }
+  for (const mapping of mappings) {
+    const key = normalizeAttendantKey(mapping.name);
+    if (byKey.has(key)) continue;
+    byKey.set(key, {
+      name: mapping.name,
+      sessions: 0,
+      lastSeen: null,
+    });
+  }
+  return [...byKey.values()].sort((a, b) => {
+    if (b.sessions !== a.sessions) return b.sessions - a.sessions;
+    return a.name.localeCompare(b.name, "pt-BR", { sensitivity: "base" });
+  });
 }
 
 export function groupSessionsByDepartment(

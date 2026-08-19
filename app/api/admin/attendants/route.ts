@@ -8,6 +8,7 @@ import { authFromNextRequest } from "../../../../src/server/auth/request-auth";
 import {
   listAttendantMappings,
   listFinishedByCandidates,
+  mergeCandidatesWithMappings,
   upsertAttendantMapping,
 } from "../../../../src/server/attendants/service";
 
@@ -17,19 +18,43 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Acesso restrito a administradores." }, { status: 403 });
   }
 
+  const lite = ["1", "true", "yes"].includes(
+    String(request.nextUrl.searchParams.get("lite") || "").toLowerCase(),
+  );
+  const months = Number(request.nextUrl.searchParams.get("months") || 12);
+
   try {
-    const [candidates, mappings] = await Promise.all([
-      listFinishedByCandidates().catch((cause) => {
-        console.error("[admin/attendants] candidates", cause);
-        return [];
-      }),
-      listAttendantMappings(),
-    ]);
+    // Mapeamentos no Edge Config são rápidos — devolve logo no modo lite.
+    const mappings = await listAttendantMappings();
+    if (lite) {
+      const body = attendantsListResponseSchema.parse({
+        departments: [...ATTENDANT_DEPARTMENTS],
+        candidates: mergeCandidatesWithMappings([], mappings),
+        mappings,
+        candidatesError: null,
+        candidatesMonths: months,
+      });
+      return NextResponse.json(body, { headers: { "Cache-Control": "no-store, max-age=0" } });
+    }
+
+    let candidates = [];
+    let candidatesError: string | null = null;
+    try {
+      candidates = await listFinishedByCandidates(months);
+    } catch (cause) {
+      console.error("[admin/attendants] candidates", cause);
+      candidatesError =
+        cause instanceof Error
+          ? cause.message
+          : "Não foi possível carregar finished_by no Databricks.";
+    }
 
     const body = attendantsListResponseSchema.parse({
       departments: [...ATTENDANT_DEPARTMENTS],
-      candidates,
+      candidates: mergeCandidatesWithMappings(candidates, mappings),
       mappings,
+      candidatesError,
+      candidatesMonths: months,
     });
     return NextResponse.json(body, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (cause) {
