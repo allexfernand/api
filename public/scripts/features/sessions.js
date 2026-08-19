@@ -210,14 +210,30 @@ function renderSessionsDepartmentEvolution(data) {
     ? departmentsFromApi
     : ['Enfermagem', 'Agendamento', 'Tech', 'Outros'];
   const labels = months.map(monthShortLabel);
-  const datasets = departments.map((department) => {
+
+  const deptSeries = departments.map((department) =>
+    months.map((month) => {
+      const found = series.find((item) => item.mes === month && item.departamento === department);
+      return found ? Number(found.total) || 0 : 0;
+    })
+  );
+  const totalByMonth = months.map((_, monthIndex) =>
+    deptSeries.reduce((sum, values) => sum + (Number(values[monthIndex]) || 0), 0)
+  );
+  const deptPeriodTotals = deptSeries.map((values) => values.reduce((sum, value) => sum + (Number(value) || 0), 0));
+  const periodGrandTotal = deptPeriodTotals.reduce((sum, value) => sum + value, 0);
+  const pctLabel = (value) => {
+    if (!(periodGrandTotal > 0)) return '0,0%';
+    return `${((value / periodGrandTotal) * 100).toFixed(1).replace('.', ',')}%`;
+  };
+
+  const datasets = departments.map((department, index) => {
     const color = SESSION_DEPT_COLORS[department] || '#6366f1';
+    const total = deptPeriodTotals[index] || 0;
     return {
-      label: department,
-      data: months.map((month) => {
-        const found = series.find((item) => item.mes === month && item.departamento === department);
-        return found ? Number(found.total) || 0 : 0;
-      }),
+      label: `${department} · ${pctLabel(total)}`,
+      department,
+      data: deptSeries[index],
       borderColor: color,
       backgroundColor: color + '22',
       borderWidth: 2,
@@ -225,7 +241,23 @@ function renderSessionsDepartmentEvolution(data) {
       pointHoverRadius: 5,
       tension: 0.32,
       fill: false,
+      order: 2,
     };
+  });
+
+  datasets.push({
+    label: 'Total do mês',
+    department: 'Total',
+    data: totalByMonth,
+    borderColor: '#0f172a',
+    backgroundColor: 'rgba(15,23,42,0.08)',
+    borderWidth: 2.5,
+    borderDash: [6, 4],
+    pointRadius: 2,
+    pointHoverRadius: 4,
+    tension: 0.28,
+    fill: false,
+    order: 1,
   });
 
   if (title) title.textContent = 'Evolução humana · por departamento';
@@ -240,7 +272,7 @@ function renderSessionsDepartmentEvolution(data) {
     mode.textContent = parts.join(' · ');
   }
 
-  const hasData = datasets.some((dataset) => dataset.data.some((value) => Number(value) > 0));
+  const hasData = totalByMonth.some((value) => Number(value) > 0);
   if (!hasData) {
     if (skel) {
       skel.style.display = 'block';
@@ -260,14 +292,31 @@ function renderSessionsDepartmentEvolution(data) {
       maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
       plugins: {
-        legend: { position: 'bottom', labels: { boxWidth: 10, usePointStyle: true, font: { size: 10 }, color: '#64748b' } },
+        legend: {
+          position: 'bottom',
+          labels: { boxWidth: 10, usePointStyle: true, font: { size: 10 }, color: '#64748b' },
+        },
         tooltip: {
           backgroundColor: '#1e293b',
           borderColor: '#334155',
           borderWidth: 1,
           titleColor: '#cbd5e1',
           bodyColor: '#f8fafc',
-          callbacks: { label: c => `${c.dataset.label}: ${fmt(c.parsed.y)} sessões` },
+          callbacks: {
+            label(c) {
+              const dataset = c.dataset || {};
+              const value = Number(c.parsed.y) || 0;
+              if (dataset.department === 'Total') {
+                return `Total do mês: ${fmt(value)} sessões`;
+              }
+              const monthTotal = Number(totalByMonth[c.dataIndex]) || 0;
+              const share = monthTotal > 0
+                ? `${((value / monthTotal) * 100).toFixed(1).replace('.', ',')}%`
+                : '0,0%';
+              const name = dataset.department || String(dataset.label || '').split(' · ')[0] || 'Setor';
+              return `${name}: ${fmt(value)} (${share})`;
+            },
+          },
         },
       },
       scales: {
