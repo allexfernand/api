@@ -232,7 +232,7 @@ function renderSessionsDepartmentEvolution(data) {
   if (source) source.textContent = '';
   if (mode) {
     const parts = [];
-    parts.push(selectedMonths.size ? `${selectedMonths.size} meses selecionados` : 'últimos 12 meses');
+    parts.push('últimos 12 meses');
     parts.push('universo Q12B Humano');
     parts.push('setor via finished_by');
     if (selectedSessionScopeText()) parts.push(`recorte: ${selectedSessionScopeText()}`);

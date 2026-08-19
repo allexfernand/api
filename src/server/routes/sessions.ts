@@ -462,7 +462,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       }
     }
 
-    const topGroupMonths = meses.length ? [...meses].sort() : lastNMonthsList(12);
+    // Q15: janela fixa dos últimos 12 meses (igual Q3), sem impacto do filtro de data.
+    const topGroupMonths = lastNMonthsList(12);
     const topGroupDateFilter = `s.${quoteIdent('mes')} IN (${topGroupMonths.map((m) => `'${m}'`).join(',')})`;
     const humanDeptEvolWhere = companySessionsMode === "company"
       ? [topGroupDateFilter, companySessionsScopeFilter].filter(Boolean).join(' AND ')
