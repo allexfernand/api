@@ -346,53 +346,46 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
     if (scope === 'human_by_department') {
       const { groupSessionsByDepartment, listAttendantMappings } = await import("../attendants/service");
-      const deptParams = createSqlParams();
-      const dateFilter = meses.length > 0
-        ? `s.${quoteIdent('mes')} IN (${meses.map((m: string) => `'${m}'`).join(',')})`
-        : null;
-      const deptScopeFilters = [
-        company ? companySessionCondition(company, deptParams, 's') : economicGroupNamesCondition(groupNames, deptParams, 's'),
-        partnerBrokerCondition(partnerBrokerId, deptParams, 's'),
-      ].filter(Boolean);
-      const deptWhere = [
-        `s.${quoteIdent('attendant')} IS NOT NULL`,
-        dateFilter,
-        ...deptScopeFilters,
-      ].filter(Boolean).join(' AND ');
+      // Mesma base do Q12B: só sessões Humano por tipo_atendimento_agent + mesmos filtros.
+      const q12bWhere = companySessionsMode === "company"
+        ? [companySessionsDateFilter, companySessionsScopeFilter].filter(Boolean).join(' AND ')
+        : (companySessionsDateFilter || '');
 
       try {
         const [mappingRows, attendantRows] = await Promise.all([
           listAttendantMappings(),
           runQuery(warehouseId, `
-            WITH base AS (
+            WITH human_sessions AS (
               SELECT
-                NULLIF(TRIM(CAST(raw.${quoteIdent('finished_by')} AS STRING)), '') AS attendant,
-                CAST(raw.${quoteIdent('organization_id')} AS STRING) AS organization_id,
+                CAST(s.${quoteIdent('session_id')} AS STRING) AS session_id
+              FROM ${dashboardSessionsTable} s
+              WHERE s.${quoteIdent('tipo_atendimento_agent')} = 'Humano'
+                ${q12bWhere ? `AND ${q12bWhere}` : ''}
+            ),
+            with_attendant AS (
+              SELECT
+                h.session_id,
                 COALESCE(
-                  NULLIF(TRIM(CAST(o.${quoteIdent('name_economic_group')} AS STRING)), ''),
-                  NULLIF(TRIM(CAST(raw.${quoteIdent('economic_group_name')} AS STRING)), ''),
-                  'Nulos'
-                ) AS economic_group_canonical,
-                DATE_FORMAT(try_cast(raw.${quoteIdent('creation_time')} AS TIMESTAMP), 'yyyy-MM') AS mes
-              FROM ${SESSION_TABLE} raw
-              LEFT JOIN ${ORGANIZATIONS_TABLE} o
-                ON CAST(raw.${quoteIdent('organization_id')} AS STRING) = CAST(o.${quoteIdent('id')} AS STRING)
-              WHERE raw.${quoteIdent('finished_by')} IS NOT NULL
-                AND TRIM(CAST(raw.${quoteIdent('finished_by')} AS STRING)) != ''
+                  NULLIF(TRIM(CAST(MAX(b.${quoteIdent('finished_by')}) AS STRING)), ''),
+                  '(Sem finished_by)'
+                ) AS attendant
+              FROM human_sessions h
+              LEFT JOIN ${SESSION_TABLE} b
+                ON CAST(b.${quoteIdent('session_id')} AS STRING) = h.session_id
+              GROUP BY h.session_id
             )
             SELECT
-              s.${quoteIdent('attendant')} AS attendant,
+              w.attendant AS attendant,
               COUNT(*) AS total_sessions
-            FROM base s
-            WHERE ${deptWhere}
-            GROUP BY s.${quoteIdent('attendant')}
+            FROM with_attendant w
+            GROUP BY w.attendant
             ORDER BY total_sessions DESC
             LIMIT 2000
-          `, deptParams.list),
+          `, companySessionsMode === "company" ? params.list : undefined),
         ]);
 
         const attendants = attendantRows.map((row) => ({
-          attendant: String(getCell(row[0]) || '').trim(),
+          attendant: String(getCell(row[0]) || '').trim() || '(Sem finished_by)',
           total: toInt(row[1]),
         })).filter((row) => row.attendant);
 
@@ -406,7 +399,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
             period: meses.length > 0,
             organization: Boolean(groupNames.length || company || partnerBrokerId),
           },
-          source: 'botmaker_session.finished_by + attendant_departments',
+          source: 'dashboard_sessions_base_gold.tipo_atendimento_agent + botmaker_session.finished_by',
+          rule: 'Universo = Q12B Humano (tipo_atendimento_agent); departamento via finished_by',
         });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);

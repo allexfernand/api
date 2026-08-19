@@ -33,7 +33,7 @@ function renderSessionMessageAgentFinishers(items, opts) {
   if (note) {
     const messages = [];
     if (selectedSessionScopeText()) messages.push(`recorte: ${selectedSessionScopeText()}`);
-    messages.push("fonte: botmaker_session.finished_by");
+    messages.push("fonte: Q12B = tipo_atendimento_agent (interação humana)");
     note.style.display = messages.length ? 'block' : 'none';
     note.textContent = messages.join(' · ');
   }
@@ -62,7 +62,7 @@ function renderSessionHumanDepartments(data, opts) {
   if (!list) return;
   const departments = Array.isArray(data?.departments) ? data.departments : [];
   const total = Number(data?.total) || departments.reduce((sum, item) => sum + (Number(item.total) || 0), 0);
-  if (meta) meta.textContent = total > 0 ? `${fmt(total)} sessões humanas mapeadas` : 'sem sessões humanas no período';
+  if (meta) meta.textContent = total > 0 ? `${fmt(total)} sessões do Q12B Humano` : 'sem sessões humanas no período';
   if (!departments.length) {
     list.innerHTML = '<div style="font-size:12px;color:#94a3b8">Sem dados por departamento neste recorte.</div>';
     return;
