@@ -3,8 +3,6 @@ function renderSessionMessageAgentFinishers(items, opts) {
   const loading = document.getElementById('session-message-finishers-loading');
   const content = document.getElementById('session-message-finishers-content');
   const note = document.getElementById('s-msg-fin-note');
-  const kinshipList = document.getElementById('session-kinship-list');
-  const kinshipMeta = document.getElementById('s-msg-kinship-meta');
   opts = opts || {};
   if (opts.error) {
     if (loading) {
@@ -32,60 +30,10 @@ function renderSessionMessageAgentFinishers(items, opts) {
   const barIa = document.getElementById('bar-msg-fin-ia');
   if (barHumano) barHumano.style.width = width(humano);
   if (barIa) barIa.style.width = width(ia);
-
-  const kinship = opts.kinship;
-  const kinshipLoading = kinship == null;
-  const titular = Number(kinship?.titular) || 0;
-  const dependente = Number(kinship?.dependente) || 0;
-  const semCpf = Number(kinship?.sem_cpf) || 0;
-  const kinshipTotal = titular + dependente + semCpf;
-  const kinshipBase = kinshipTotal > 0 ? kinshipTotal : total;
-  const kinshipPct = (n) => kinshipBase > 0 ? ((n / kinshipBase) * 100).toFixed(1).replace('.', ',') + '%' : '—';
-  const kinshipWidth = (n) => kinshipBase > 0 ? ((n / kinshipBase) * 100).toFixed(1) + '%' : '0%';
-  const kinshipRows = [
-    { label: 'Titular', total: titular, color: '#4f46e5' },
-    { label: 'Dependente', total: dependente, color: '#0ea5e9' },
-    { label: 'Sem CPF', total: semCpf, color: '#94a3b8' },
-  ];
-  if (kinshipList) {
-    if (kinshipLoading) {
-      kinshipList.innerHTML = '<div style="font-size:12px;color:#94a3b8">Carregando titular/dependente...</div>';
-    } else if (kinship?.error) {
-      kinshipList.innerHTML = `<div style="font-size:12px;color:#f87171">${escapeHtml(String(kinship.error).slice(0, 180))}</div>`;
-    } else {
-      kinshipList.innerHTML = kinshipRows.map((item) => `
-        <div class="sessions-dept-row">
-          <div>
-            <div class="sessions-dept-label">${item.label}</div>
-          </div>
-          <div class="sessions-dept-track"><div class="sessions-dept-fill" style="width:${kinshipWidth(item.total)};background:${item.color}"></div></div>
-          <div class="sessions-dept-value">${fmt(item.total)} <span class="sessions-dept-note">${kinshipPct(item.total)}</span></div>
-        </div>
-      `).join('');
-    }
-  }
-  const barTitular = document.getElementById('bar-msg-kin-titular');
-  const barDependente = document.getElementById('bar-msg-kin-dependente');
-  const barSemCpf = document.getElementById('bar-msg-kin-sem-cpf');
-  if (barTitular) barTitular.style.width = kinshipLoading ? '0%' : kinshipWidth(titular);
-  if (barDependente) barDependente.style.width = kinshipLoading ? '0%' : kinshipWidth(dependente);
-  if (barSemCpf) barSemCpf.style.width = kinshipLoading ? '0%' : kinshipWidth(semCpf);
-  if (kinshipMeta) {
-    if (kinshipLoading) kinshipMeta.textContent = 'carregando…';
-    else if (kinship?.error) kinshipMeta.textContent = 'falha no recorte titular/dependente';
-    else {
-      const delta = total - kinshipTotal;
-      kinshipMeta.textContent = Math.abs(delta) <= 1
-        ? `soma ${fmt(kinshipTotal)} = total Q12B`
-        : `soma ${fmt(kinshipTotal)} · total Q12B ${fmt(total)} (Δ ${fmt(delta)})`;
-    }
-  }
-
   if (note) {
     const messages = [];
     if (selectedSessionScopeText()) messages.push(`recorte: ${selectedSessionScopeText()}`);
-    messages.push('Q12B = tipo_atendimento_agent');
-    messages.push('parentesco via beneficiary_id/CPF → beneficiaries (residual = Sem CPF)');
+    messages.push('fonte: Q12B = tipo_atendimento_agent');
     note.style.display = messages.length ? 'block' : 'none';
     note.textContent = messages.join(' · ');
   }
@@ -808,24 +756,6 @@ async function loadSessionsBeneficiaryUtilization(baseParams, demographicsData, 
   } : null);
 }
 
-async function loadSessionKinship(requestId) {
-  const kinshipList = document.getElementById('session-kinship-list');
-  const kinshipMeta = document.getElementById('s-msg-kinship-meta');
-  if (kinshipList) kinshipList.innerHTML = '<div style="font-size:12px;color:#94a3b8">Carregando titular/dependente...</div>';
-  if (kinshipMeta) kinshipMeta.textContent = 'carregando…';
-  const meses = [...selectedMonths].sort();
-  const p = new URLSearchParams();
-  p.set('scope', 'kinship');
-  if (meses.length > 0) p.set('meses', meses.join(','));
-  appendGroupParams(p);
-  const data = await safeGet('/api/sessions?' + p.toString());
-  if (requestId !== sessionsRequestId) return;
-  const finishers = window.__sessionsLastFinishers || [];
-  renderSessionMessageAgentFinishers(finishers, {
-    kinship: data?.error ? { error: data.error } : data,
-  });
-}
-
 function sessionsDeptEvolutionScopeKey() {
   return JSON.stringify({
     groups: Array.isArray(currentGroups) ? [...currentGroups].sort() : [],
@@ -919,9 +849,7 @@ async function loadSessions() {
     window.__sessionsLastFinishers = sessions.message_agent_finishers || [];
     renderSessionMessageAgentFinishers(window.__sessionsLastFinishers, {
       error: sessions.message_agent_finishers_error,
-      kinship: null,
     });
-    loadSessionKinship(requestId);
     renderSessionCompanies(sessions.company_sessions || [], {
       error: sessions.company_sessions_error,
       mode: sessions.company_sessions_mode,

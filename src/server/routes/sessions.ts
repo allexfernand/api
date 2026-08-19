@@ -342,9 +342,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     }
 
     if (scope === 'kinship') {
-      const kinshipWhere = companySessionsMode === "company"
-        ? [companySessionsDateFilter, companySessionsScopeFilter].filter(Boolean).join(' AND ')
-        : (companySessionsDateFilter || '');
+      // Sempre aplica filtros de período + parceiro/grupo quando presentes (Visão Parceiros e Sessões).
+      const kinshipWhere = [companySessionsDateFilter, companySessionsScopeFilter].filter(Boolean).join(' AND ');
       try {
         const rows = await runQuery(warehouseId, `
           WITH scoped AS (

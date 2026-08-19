@@ -534,6 +534,7 @@ async function loadPartnerVision() {
   loadPartnerVisionEvolution();
   loadPartnerVisionSummary();
   loadPartnerEconomicGroupSessions();
+  loadPartnerSessionsKinship();
   const p = partnerVisionParams();
   const data = await safeGet('/api/demographics' + (p.toString() ? '?' + p.toString() : ''));
   if (requestId !== partnerVisionRequestId) return;
@@ -671,6 +672,162 @@ async function loadPartnerEconomicGroupSessions() {
     return;
   }
   renderPartnerEconomicGroupSessions(data);
+}
+
+function ensurePartnerSessionsKinshipMonthSelect() {
+  const select = document.getElementById('partner-sessions-kinship-month');
+  if (!select) return '';
+  const options = partnerEgSessionsMonthOptions();
+  const previous = partnerSessionsKinshipMonth || String(select.value || '').trim();
+  const next = options.includes(previous) ? previous : options[0];
+  if (!select.dataset.built || select.options.length !== options.length) {
+    select.innerHTML = options.map((month) =>
+      `<option value="${escapeAttr(month)}">${escapeHtml(partnerVisionMonthLabel(month))}</option>`
+    ).join('');
+    select.dataset.built = '1';
+  }
+  partnerSessionsKinshipMonth = next;
+  select.value = next;
+  return next;
+}
+
+function onPartnerSessionsKinshipMonthChange(value) {
+  partnerSessionsKinshipMonth = String(value || '').trim();
+  loadPartnerSessionsKinship();
+}
+
+function renderPartnerSessionsKinship(finishers, kinship, opts) {
+  const loading = document.getElementById('partner-sessions-kinship-loading');
+  const content = document.getElementById('partner-sessions-kinship-content');
+  const error = document.getElementById('partner-sessions-kinship-error');
+  const context = document.getElementById('partner-sessions-kinship-context');
+  const kinshipList = document.getElementById('partner-sk-kinship-list');
+  const kinshipMeta = document.getElementById('partner-sk-kinship-meta');
+  opts = opts || {};
+  if (loading) loading.style.display = 'none';
+  if (error) {
+    error.style.display = opts.error ? 'block' : 'none';
+    error.textContent = opts.error ? String(opts.error).slice(0, 220) : '';
+  }
+  if (opts.error) {
+    if (content) content.style.display = 'none';
+    return;
+  }
+
+  const byTipo = Object.fromEntries((finishers || []).map((it) => [String(it.tipo || '').toUpperCase(), Number(it.total) || 0]));
+  const humano = byTipo.HUMANO || 0;
+  const ia = byTipo.IA || 0;
+  const total = humano + ia;
+  const pct = (n) => total > 0 ? ((n / total) * 100).toFixed(1).replace('.', ',') + '%' : '—';
+  const width = (n) => total > 0 ? ((n / total) * 100).toFixed(1) + '%' : '0%';
+  const s = (id, value) => { const el = document.getElementById(id); if (el) el.textContent = value; };
+
+  s('partner-sk-humano', fmt(humano));
+  s('partner-sk-ia', fmt(ia));
+  s('partner-sk-total', fmt(total));
+  s('partner-sk-humano-pct', pct(humano));
+  s('partner-sk-ia-pct', pct(ia));
+  const barHumano = document.getElementById('bar-partner-sk-humano');
+  const barIa = document.getElementById('bar-partner-sk-ia');
+  if (barHumano) barHumano.style.width = width(humano);
+  if (barIa) barIa.style.width = width(ia);
+
+  const titular = Number(kinship?.titular) || 0;
+  const dependente = Number(kinship?.dependente) || 0;
+  const semCpf = Number(kinship?.sem_cpf) || 0;
+  const kinshipTotal = titular + dependente + semCpf;
+  const kinshipBase = kinshipTotal > 0 ? kinshipTotal : total;
+  const kinshipPct = (n) => kinshipBase > 0 ? ((n / kinshipBase) * 100).toFixed(1).replace('.', ',') + '%' : '—';
+  const kinshipWidth = (n) => kinshipBase > 0 ? ((n / kinshipBase) * 100).toFixed(1) + '%' : '0%';
+  const kinshipRows = [
+    { label: 'Titular', total: titular, color: '#4f46e5' },
+    { label: 'Dependente', total: dependente, color: '#0ea5e9' },
+    { label: 'Sem CPF', total: semCpf, color: '#94a3b8' },
+  ];
+  if (kinshipList) {
+    if (kinship?.error) {
+      kinshipList.innerHTML = `<div style="font-size:12px;color:#f87171">${escapeHtml(String(kinship.error).slice(0, 180))}</div>`;
+    } else {
+      kinshipList.innerHTML = kinshipRows.map((item) => `
+        <div class="sessions-dept-row">
+          <div>
+            <div class="sessions-dept-label">${item.label}</div>
+          </div>
+          <div class="sessions-dept-track"><div class="sessions-dept-fill" style="width:${kinshipWidth(item.total)};background:${item.color}"></div></div>
+          <div class="sessions-dept-value">${fmt(item.total)} <span class="sessions-dept-note">${kinshipPct(item.total)}</span></div>
+        </div>
+      `).join('');
+    }
+  }
+  const barTitular = document.getElementById('bar-partner-sk-titular');
+  const barDependente = document.getElementById('bar-partner-sk-dependente');
+  const barSemCpf = document.getElementById('bar-partner-sk-sem-cpf');
+  if (barTitular) barTitular.style.width = kinship?.error ? '0%' : kinshipWidth(titular);
+  if (barDependente) barDependente.style.width = kinship?.error ? '0%' : kinshipWidth(dependente);
+  if (barSemCpf) barSemCpf.style.width = kinship?.error ? '0%' : kinshipWidth(semCpf);
+  if (kinshipMeta) {
+    if (kinship?.error) kinshipMeta.textContent = 'falha no recorte titular/dependente';
+    else {
+      const delta = total - kinshipTotal;
+      kinshipMeta.textContent = Math.abs(delta) <= 1
+        ? `soma ${fmt(kinshipTotal)} = total`
+        : `soma ${fmt(kinshipTotal)} · total ${fmt(total)} (Δ ${fmt(delta)})`;
+    }
+  }
+
+  if (context) {
+    const parts = [
+      `mês ${partnerVisionMonthLabel(partnerSessionsKinshipMonth)}`,
+      'Q12B = tipo_atendimento_agent',
+      'parentesco via beneficiary_id/CPF',
+    ];
+    if (currentPartnerBrokerIds.length) parts.push(`parceiro: ${selectedPartnerVisionLabel()}`);
+    else parts.push('todos os parceiros');
+    context.textContent = parts.join(' · ');
+  }
+  if (content) content.style.display = 'block';
+}
+
+async function loadPartnerSessionsKinship() {
+  const loading = document.getElementById('partner-sessions-kinship-loading');
+  const content = document.getElementById('partner-sessions-kinship-content');
+  const error = document.getElementById('partner-sessions-kinship-error');
+  const kinshipList = document.getElementById('partner-sk-kinship-list');
+  if (!document.getElementById('partner-sk-humano')) return;
+
+  const month = ensurePartnerSessionsKinshipMonthSelect();
+  const requestId = ++partnerSessionsKinshipRequestId;
+  if (loading) loading.style.display = 'block';
+  if (error) {
+    error.style.display = 'none';
+    error.textContent = '';
+  }
+  if (content) content.style.display = 'none';
+  if (kinshipList) kinshipList.innerHTML = '<div style="font-size:12px;color:#94a3b8">Carregando titular/dependente...</div>';
+
+  const pHuman = partnerVisionParams();
+  pHuman.set('scope', 'human_interaction');
+  if (month) pHuman.set('meses', month);
+  const pKin = partnerVisionParams();
+  pKin.set('scope', 'kinship');
+  if (month) pKin.set('meses', month);
+
+  const [humanData, kinshipData] = await Promise.all([
+    safeGet('/api/sessions?' + pHuman.toString()),
+    safeGet('/api/sessions?' + pKin.toString()),
+  ]);
+  if (requestId !== partnerSessionsKinshipRequestId) return;
+
+  if (!humanData || humanData.error) {
+    renderPartnerSessionsKinship([], null, {
+      error: humanData?.error || 'Erro ao carregar Humano/IA',
+    });
+    return;
+  }
+  renderPartnerSessionsKinship(
+    humanData.message_agent_finishers || [],
+    kinshipData?.error ? { error: kinshipData.error } : kinshipData,
+  );
 }
 
 // --- Empresas (quadro Beneficiários por Empresa) ---
