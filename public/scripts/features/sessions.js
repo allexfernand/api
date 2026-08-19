@@ -33,10 +33,11 @@ function renderSessionMessageAgentFinishers(items, opts) {
   if (barHumano) barHumano.style.width = width(humano);
   if (barIa) barIa.style.width = width(ia);
 
-  const kinship = opts.kinship || {};
-  const titular = Number(kinship.titular) || 0;
-  const dependente = Number(kinship.dependente) || 0;
-  const semCpf = Number(kinship.sem_cpf) || 0;
+  const kinship = opts.kinship;
+  const kinshipLoading = kinship == null;
+  const titular = Number(kinship?.titular) || 0;
+  const dependente = Number(kinship?.dependente) || 0;
+  const semCpf = Number(kinship?.sem_cpf) || 0;
   const kinshipTotal = titular + dependente + semCpf;
   const kinshipBase = kinshipTotal > 0 ? kinshipTotal : total;
   const kinshipPct = (n) => kinshipBase > 0 ? ((n / kinshipBase) * 100).toFixed(1).replace('.', ',') + '%' : '—';
@@ -47,7 +48,9 @@ function renderSessionMessageAgentFinishers(items, opts) {
     { label: 'Sem CPF', total: semCpf, color: '#94a3b8' },
   ];
   if (kinshipList) {
-    if (kinship.error) {
+    if (kinshipLoading) {
+      kinshipList.innerHTML = '<div style="font-size:12px;color:#94a3b8">Carregando titular/dependente...</div>';
+    } else if (kinship?.error) {
       kinshipList.innerHTML = `<div style="font-size:12px;color:#f87171">${escapeHtml(String(kinship.error).slice(0, 180))}</div>`;
     } else {
       kinshipList.innerHTML = kinshipRows.map((item) => `
@@ -64,16 +67,18 @@ function renderSessionMessageAgentFinishers(items, opts) {
   const barTitular = document.getElementById('bar-msg-kin-titular');
   const barDependente = document.getElementById('bar-msg-kin-dependente');
   const barSemCpf = document.getElementById('bar-msg-kin-sem-cpf');
-  if (barTitular) barTitular.style.width = kinshipWidth(titular);
-  if (barDependente) barDependente.style.width = kinshipWidth(dependente);
-  if (barSemCpf) barSemCpf.style.width = kinshipWidth(semCpf);
+  if (barTitular) barTitular.style.width = kinshipLoading ? '0%' : kinshipWidth(titular);
+  if (barDependente) barDependente.style.width = kinshipLoading ? '0%' : kinshipWidth(dependente);
+  if (barSemCpf) barSemCpf.style.width = kinshipLoading ? '0%' : kinshipWidth(semCpf);
   if (kinshipMeta) {
-    const delta = total - kinshipTotal;
-    kinshipMeta.textContent = kinship.error
-      ? 'falha no recorte titular/dependente'
-      : (Math.abs(delta) <= 1
+    if (kinshipLoading) kinshipMeta.textContent = 'carregando…';
+    else if (kinship?.error) kinshipMeta.textContent = 'falha no recorte titular/dependente';
+    else {
+      const delta = total - kinshipTotal;
+      kinshipMeta.textContent = Math.abs(delta) <= 1
         ? `soma ${fmt(kinshipTotal)} = total Q12B`
-        : `soma ${fmt(kinshipTotal)} · total Q12B ${fmt(total)} (Δ ${fmt(delta)})`);
+        : `soma ${fmt(kinshipTotal)} · total Q12B ${fmt(total)} (Δ ${fmt(delta)})`;
+    }
   }
 
   if (note) {
@@ -803,6 +808,52 @@ async function loadSessionsBeneficiaryUtilization(baseParams, demographicsData, 
   } : null);
 }
 
+async function loadSessionKinship(requestId) {
+  const kinshipList = document.getElementById('session-kinship-list');
+  const kinshipMeta = document.getElementById('s-msg-kinship-meta');
+  if (kinshipList) kinshipList.innerHTML = '<div style="font-size:12px;color:#94a3b8">Carregando titular/dependente...</div>';
+  if (kinshipMeta) kinshipMeta.textContent = 'carregando…';
+  const meses = [...selectedMonths].sort();
+  const p = new URLSearchParams();
+  p.set('scope', 'kinship');
+  if (meses.length > 0) p.set('meses', meses.join(','));
+  appendGroupParams(p);
+  const data = await safeGet('/api/sessions?' + p.toString());
+  if (requestId !== sessionsRequestId) return;
+  const finishers = window.__sessionsLastFinishers || [];
+  renderSessionMessageAgentFinishers(finishers, {
+    kinship: data?.error ? { error: data.error } : data,
+  });
+}
+
+function sessionsDeptEvolutionScopeKey() {
+  return JSON.stringify({
+    groups: Array.isArray(currentGroups) ? [...currentGroups].sort() : [],
+    partners: Array.isArray(currentPartnerBrokerIds) ? [...currentPartnerBrokerIds].map(String).sort() : [],
+    company: currentCompany || null,
+    partner: currentPartnerBrokerId || null,
+  });
+}
+
+async function loadSessionsDepartmentEvolution(requestId) {
+  const scopeKey = sessionsDeptEvolutionScopeKey();
+  if (sessionsDeptEvolutionCache.key === scopeKey && sessionsDeptEvolutionCache.data) {
+    renderSessionsDepartmentEvolution(sessionsDeptEvolutionCache.data);
+    return;
+  }
+  const p = new URLSearchParams();
+  p.set('scope', 'human_department_evolution');
+  appendGroupParams(p);
+  const data = await safeGet('/api/sessions?' + p.toString());
+  if (requestId !== sessionsRequestId) return;
+  if (!data || data.error) {
+    renderSessionsDepartmentEvolution({ error: data?.error || 'Erro ao carregar evolução por departamento' });
+    return;
+  }
+  sessionsDeptEvolutionCache = { key: scopeKey, data };
+  renderSessionsDepartmentEvolution(data);
+}
+
 async function loadSessions() {
   const requestId = ++sessionsRequestId;
   resetTypificationGroupsCard('reload');
@@ -854,6 +905,7 @@ async function loadSessions() {
   loadSessionsEvolution();
   loadSessionsDailyEvolution();
   loadSessionHumanDepartments(requestId);
+  loadSessionsDepartmentEvolution(requestId);
 
   const sessions = await safeGet('/api/sessions' + qs);
   if (requestId !== sessionsRequestId) return;
@@ -864,10 +916,12 @@ async function loadSessions() {
       economicGroupPeriodoLabel.textContent = '';
       economicGroupPeriodoLabel.title = '';
     }
-    renderSessionMessageAgentFinishers(sessions.message_agent_finishers || [], {
+    window.__sessionsLastFinishers = sessions.message_agent_finishers || [];
+    renderSessionMessageAgentFinishers(window.__sessionsLastFinishers, {
       error: sessions.message_agent_finishers_error,
-      kinship: sessions.message_agent_kinship,
+      kinship: null,
     });
+    loadSessionKinship(requestId);
     renderSessionCompanies(sessions.company_sessions || [], {
       error: sessions.company_sessions_error,
       mode: sessions.company_sessions_mode,
@@ -876,7 +930,6 @@ async function loadSessions() {
     renderSessionTypifications(sessions.typifications || [], {
       error: sessions.typifications_error,
     });
-    renderSessionsDepartmentEvolution(sessions.human_department_evolution);
   } else {
     if (economicGroupBullet) economicGroupBullet.textContent = 'Erro';
     const msg = sessions && sessions.error ? sessions.error : 'Erro ao carregar sessões';

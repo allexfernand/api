@@ -41,6 +41,7 @@ let selectedTypification = null;
 let typificationGroupsRequestId = 0;
 let sessionsRequestId = 0;
 let sessionsEvolutionRequestId = 0;
+let sessionsDeptEvolutionCache = { key: '', data: null };
 let petitComiteRequestId = 0;
 let petitMdsInitialized = false;
 let petitRenderVariant = 'default';
