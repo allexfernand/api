@@ -205,6 +205,7 @@ function renderSessionsDepartmentEvolution(data) {
 
   const months = Array.isArray(data.months) ? data.months : [];
   const series = Array.isArray(data.series) ? data.series : [];
+  const monthlyTotals = Array.isArray(data.monthly_totals) ? data.monthly_totals : [];
   const departmentsFromApi = Array.isArray(data.departments) ? data.departments.filter(Boolean) : [];
   const departments = departmentsFromApi.length
     ? departmentsFromApi
@@ -217,11 +218,12 @@ function renderSessionsDepartmentEvolution(data) {
       return found ? Number(found.total) || 0 : 0;
     })
   );
-  const totalByMonth = months.map((_, monthIndex) =>
-    deptSeries.reduce((sum, values) => sum + (Number(values[monthIndex]) || 0), 0)
-  );
+  const totalByMonth = months.map((month) => {
+    const found = monthlyTotals.find((item) => item.mes === month);
+    return found ? Number(found.total) || 0 : 0;
+  });
   const deptPeriodTotals = deptSeries.map((values) => values.reduce((sum, value) => sum + (Number(value) || 0), 0));
-  const periodGrandTotal = deptPeriodTotals.reduce((sum, value) => sum + value, 0);
+  const periodGrandTotal = totalByMonth.reduce((sum, value) => sum + (Number(value) || 0), 0);
   const pctLabel = (value) => {
     if (!(periodGrandTotal > 0)) return '0,0%';
     return `${((value / periodGrandTotal) * 100).toFixed(1).replace('.', ',')}%`;
@@ -265,14 +267,15 @@ function renderSessionsDepartmentEvolution(data) {
   if (mode) {
     const parts = [];
     parts.push('últimos 12 meses');
-    parts.push('universo Q12B Humano');
-    parts.push('setor via finished_by');
+    parts.push('setores = Q12B Humano');
+    parts.push('total = Humano + IA');
     if (selectedSessionScopeText()) parts.push(`recorte: ${selectedSessionScopeText()}`);
     if (currentCompany) parts.push(`empresa: ${currentCompany}`);
     mode.textContent = parts.join(' · ');
   }
 
-  const hasData = totalByMonth.some((value) => Number(value) > 0);
+  const hasData = totalByMonth.some((value) => Number(value) > 0)
+    || deptSeries.some((values) => values.some((value) => Number(value) > 0));
   if (!hasData) {
     if (skel) {
       skel.style.display = 'block';
@@ -307,14 +310,14 @@ function renderSessionsDepartmentEvolution(data) {
               const dataset = c.dataset || {};
               const value = Number(c.parsed.y) || 0;
               if (dataset.department === 'Total') {
-                return `Total do mês: ${fmt(value)} sessões`;
+                return `Total do mês (Humano + IA): ${fmt(value)} sessões`;
               }
               const monthTotal = Number(totalByMonth[c.dataIndex]) || 0;
               const share = monthTotal > 0
                 ? `${((value / monthTotal) * 100).toFixed(1).replace('.', ',')}%`
                 : '0,0%';
               const name = dataset.department || String(dataset.label || '').split(' · ')[0] || 'Setor';
-              return `${name}: ${fmt(value)} (${share})`;
+              return `${name}: ${fmt(value)} (${share} do total)`;
             },
           },
         },

@@ -533,7 +533,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
     const humanDepartmentEvolutionPromise = (async () => {
       const { groupSessionsEvolutionByDepartment, listAttendantMappings } = await import("../attendants/service");
-      const [mappingRows, attendantRows] = await Promise.all([
+      const queryParams = companySessionsMode === "company" ? params.list : undefined;
+      const [mappingRows, attendantRows, monthlyTotalRows] = await Promise.all([
         listAttendantMappings(),
         runQuery(warehouseId, `
           WITH human_sessions AS (
@@ -564,7 +565,16 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           FROM with_attendant w
           GROUP BY w.mes, w.attendant
           ORDER BY w.mes, total_sessions DESC
-        `, companySessionsMode === "company" ? params.list : undefined),
+        `, queryParams),
+        runQuery(warehouseId, `
+          SELECT
+            s.${quoteIdent('mes')} AS mes,
+            COUNT(*) AS total_sessions
+          FROM ${dashboardSessionsTable} s
+          ${humanDeptEvolWhere ? `WHERE ${humanDeptEvolWhere}` : ''}
+          GROUP BY s.${quoteIdent('mes')}
+          ORDER BY s.${quoteIdent('mes')}
+        `, queryParams),
       ]);
 
       const attendantSeries = attendantRows.map((row) => ({
@@ -573,13 +583,19 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         total: toInt(row[2]),
       })).filter((row) => row.mes && row.attendant);
 
+      const monthlyTotals = monthlyTotalRows.map((row) => ({
+        mes: String(getCell(row[0]) || '').trim(),
+        total: toInt(row[1]),
+      })).filter((row) => row.mes);
+
       const grouped = groupSessionsEvolutionByDepartment(attendantSeries, mappingRows);
       return {
         months: topGroupMonths,
         departments: grouped.departments,
         series: grouped.series,
+        monthly_totals: monthlyTotals,
         source: 'dashboard_sessions_base_gold.tipo_atendimento_agent + botmaker_session.finished_by',
-        rule: 'Universo = Q12B Humano; linhas = departamento via finished_by',
+        rule: 'Linhas de setor = Q12B Humano; Total do mês = todas as sessões (Humano + IA)',
       };
     })();
 
@@ -631,8 +647,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           months: topGroupMonths,
           departments: [],
           series: [],
+          monthly_totals: [],
           source: 'dashboard_sessions_base_gold.tipo_atendimento_agent + botmaker_session.finished_by',
-          rule: 'Universo = Q12B Humano; linhas = departamento via finished_by',
+          rule: 'Linhas de setor = Q12B Humano; Total do mês = todas as sessões (Humano + IA)',
         };
 
     setStableCache(res);
