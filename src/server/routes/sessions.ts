@@ -593,9 +593,14 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         FROM ${dashboardSessionsTable} s
         ${q12bKinshipWhere ? `WHERE ${q12bKinshipWhere}` : ''}
       ),
-      with_cpf AS (
+      with_identity AS (
         SELECT
           sc.session_id,
+          CASE
+            WHEN sc.beneficiary_key LIKE 'beneficiary:%'
+            THEN NULLIF(TRIM(SUBSTRING(sc.beneficiary_key, 13)), '')
+            ELSE NULL
+          END AS beneficiary_id,
           COALESCE(
             CASE
               WHEN sc.beneficiary_key LIKE 'cpf:%'
@@ -607,6 +612,30 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         FROM scoped sc
         LEFT JOIN ${SESSION_TABLE} raw
           ON CAST(raw.${quoteIdent('session_id')} AS STRING) = sc.session_id
+      ),
+      beneficiary_by_id AS (
+        SELECT
+          key_id AS beneficiary_id,
+          CASE
+            WHEN MAX(CASE WHEN UPPER(TRIM(COALESCE(type_kinship, ''))) = 'TITULAR' THEN 1 ELSE 0 END) = 1 THEN 'Titular'
+            WHEN MAX(CASE WHEN UPPER(TRIM(COALESCE(type_kinship, ''))) NOT IN ('TITULAR', '') THEN 1 ELSE 0 END) = 1 THEN 'Dependente'
+            ELSE NULL
+          END AS tipo
+        FROM (
+          SELECT CAST(b.${quoteIdent('id')} AS STRING) AS key_id, b.type_kinship
+          FROM ${BENEFICIARIES_KINSHIP_TABLE} b
+          WHERE b.${quoteIdent('id')} IS NOT NULL
+          UNION ALL
+          SELECT CAST(b.${quoteIdent('beneficiary_id')} AS STRING) AS key_id, b.type_kinship
+          FROM ${BENEFICIARIES_KINSHIP_TABLE} b
+          WHERE b.${quoteIdent('beneficiary_id')} IS NOT NULL
+          UNION ALL
+          SELECT CAST(b.${quoteIdent('user_id')} AS STRING) AS key_id, b.type_kinship
+          FROM ${BENEFICIARIES_KINSHIP_TABLE} b
+          WHERE b.${quoteIdent('user_id')} IS NOT NULL
+        ) keys
+        WHERE key_id IS NOT NULL AND TRIM(key_id) != ''
+        GROUP BY key_id
       ),
       beneficiary_types AS (
         SELECT
@@ -637,16 +666,22 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       classified AS (
         SELECT
           CASE
-            WHEN COALESCE(bt.tipo, dt.tipo) IN ('Titular', 'Dependente') THEN COALESCE(bt.tipo, dt.tipo)
+            WHEN COALESCE(bi.tipo, bt.tipo, dt.tipo) IN ('Titular', 'Dependente')
+              THEN COALESCE(bi.tipo, bt.tipo, dt.tipo)
             ELSE 'Sem CPF'
           END AS classe
-        FROM with_cpf w
+        FROM with_identity w
+        LEFT JOIN beneficiary_by_id bi
+          ON bi.beneficiary_id = w.beneficiary_id
+         AND w.beneficiary_id IS NOT NULL
         LEFT JOIN beneficiary_types bt
           ON bt.cpf_norm = w.cpf_norm
          AND w.cpf_norm IS NOT NULL
+         AND bi.tipo IS NULL
         LEFT JOIN deleted_types dt
           ON dt.cpf_norm = w.cpf_norm
          AND w.cpf_norm IS NOT NULL
+         AND bi.tipo IS NULL
          AND bt.tipo IS NULL
       )
       SELECT
@@ -814,7 +849,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         { tipo: 'Sem CPF', total: Number(kinshipByTipo['Sem CPF']) || 0 },
       ],
       error: kinshipError,
-      source: 'beneficiaries.type_kinship + users_deleted via CPF da sessão (residual → Sem CPF)',
+      source: 'beneficiaries.type_kinship via beneficiary_id/CPF (+ users_deleted; residual → Sem CPF)',
     };
     const companySessionsError = companySessionsSettled.status === 'rejected'
       ? (companySessionsSettled.reason instanceof Error ? companySessionsSettled.reason.message : String(companySessionsSettled.reason))

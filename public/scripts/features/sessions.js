@@ -80,7 +80,7 @@ function renderSessionMessageAgentFinishers(items, opts) {
     const messages = [];
     if (selectedSessionScopeText()) messages.push(`recorte: ${selectedSessionScopeText()}`);
     messages.push('Q12B = tipo_atendimento_agent');
-    messages.push('parentesco via CPF → beneficiaries (residual = Sem CPF)');
+    messages.push('parentesco via beneficiary_id/CPF → beneficiaries (residual = Sem CPF)');
     note.style.display = messages.length ? 'block' : 'none';
     note.textContent = messages.join(' · ');
   }
