@@ -94,6 +94,28 @@
     </div>
 
     <div class="fluid-grid">
+      <div class="chart-card" data-qtag="#Q3">
+        <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Evolução mensal de finalizações</h2>
+        <div style="font-size:11px;color:#94a3b8;margin-bottom:14px">Últimos 12 meses · <span id="s-evol-mode">global</span></div>
+        <div class="chart-wrap">
+          <div class="skeleton" id="skel-s-evol"></div>
+          <canvas id="sessionsEvolChart" style="display:none"></canvas>
+        </div>
+        <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="s-evol-error"></div>
+      </div>
+
+      <div class="chart-card" data-qtag="#Q4">
+        <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Evolução mensal do total de sessões</h2>
+        <div style="font-size:11px;color:#94a3b8;margin-bottom:14px">Sessões e beneficiários únicos · últimos 12 meses · <span id="s-total-evol-mode">global</span></div>
+        <div class="chart-wrap">
+          <div class="skeleton" id="skel-s-total-evol"></div>
+          <canvas id="sessionsTotalEvolChart" style="display:none"></canvas>
+        </div>
+        <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="s-total-evol-error"></div>
+      </div>
+    </div>
+
+    <div class="fluid-grid">
       <div class="card-box" data-qtag="#Q11">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap">
           <div class="section-title" style="margin-bottom:0"><i class="fa-solid fa-tags" style="margin-right:6px"></i>Tipos de encerramento de conversas</div>
@@ -127,28 +149,6 @@
           <div style="font-size:11px;color:#94a3b8;margin-top:12px;text-align:right" id="typification-groups-meta">—</div>
           <div style="font-size:11px;color:#f59e0b;margin-top:6px;text-align:right;display:none" id="typification-groups-note"></div>
         </div>
-      </div>
-    </div>
-
-    <div class="fluid-grid">
-      <div class="chart-card" data-qtag="#Q3">
-        <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Evolução mensal de finalizações</h2>
-        <div style="font-size:11px;color:#94a3b8;margin-bottom:14px">Últimos 12 meses · <span id="s-evol-mode">global</span></div>
-        <div class="chart-wrap">
-          <div class="skeleton" id="skel-s-evol"></div>
-          <canvas id="sessionsEvolChart" style="display:none"></canvas>
-        </div>
-        <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="s-evol-error"></div>
-      </div>
-
-      <div class="chart-card" data-qtag="#Q4">
-        <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Evolução mensal do total de sessões</h2>
-        <div style="font-size:11px;color:#94a3b8;margin-bottom:14px">Sessões e beneficiários únicos · últimos 12 meses · <span id="s-total-evol-mode">global</span></div>
-        <div class="chart-wrap">
-          <div class="skeleton" id="skel-s-total-evol"></div>
-          <canvas id="sessionsTotalEvolChart" style="display:none"></canvas>
-        </div>
-        <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="s-total-evol-error"></div>
       </div>
     </div>
 
