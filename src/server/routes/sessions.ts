@@ -45,9 +45,37 @@ const SESSION_TABLE = `hive_metastore.sanus_prod.botmaker_session`;
 const MESSAGE_TABLE = `hive_metastore.sanus_prod.botmaker_message`;
 const DASHBOARD_SESSIONS_TABLE = `hive_metastore.sanus_prod.dashboard_sessions_base_gold`;
 const BENEFICIARIES_TABLE = `hive_metastore.sanus_prod.vw_beneficiarios`;
+const BENEFICIARIES_KINSHIP_TABLE = `hive_metastore.sanus_prod.beneficiaries`;
+const USERS_DELETED_TABLE = `hive_metastore.sanus_prod.users_deleted`;
 const ORGANIZATIONS_TABLE = `hive_metastore.sanus_prod.organizations`;
 const PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.partner_brokers`;
 const ORGANIZATION_PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.organization_partner_brokers`;
+
+function normalizeCpfSql(expr: string) {
+  return `NULLIF(LPAD(REGEXP_REPLACE(CAST(${expr} AS STRING), '[^0-9]', ''), 11, '0'), '00000000000')`;
+}
+
+function deletedKinshipExpr(dataExpr = 'ud.data') {
+  return `UPPER(TRIM(COALESCE(
+    NULLIF(GET_JSON_OBJECT(CAST(${dataExpr} AS STRING), '$.type_kinship'), ''),
+    NULLIF(GET_JSON_OBJECT(CAST(${dataExpr} AS STRING), '$.typeKinship'), ''),
+    NULLIF(regexp_extract(CAST(${dataExpr} AS STRING), '(?i)"type_kinship"\\s*:\\s*"([^"]+)"', 1), '')
+  )))`;
+}
+
+function sessionCpfFromVariablesExpr(alias = 'raw') {
+  return `COALESCE(
+    ${alias}.${quoteIdent('variables')}['cpf'],
+    ${alias}.${quoteIdent('variables')}['CPF'],
+    ${alias}.${quoteIdent('variables')}['document'],
+    ${alias}.${quoteIdent('variables')}['documento'],
+    ${alias}.${quoteIdent('variables')}['cpf_cnpj'],
+    ${alias}.${quoteIdent('variables')}['document_number'],
+    ${alias}.${quoteIdent('variables')}['beneficiary_cpf'],
+    ${alias}.${quoteIdent('variables')}['cpf_beneficiario'],
+    ${alias}.${quoteIdent('variables')}['cpf_beneficiary']
+  )`;
+}
 
 function dashboardSessionsInlineSql() {
   return `(
@@ -554,6 +582,81 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         ORDER BY total_sessions DESC
       `);
 
+    const q12bKinshipWhere = companySessionsMode === "company"
+      ? (companySessionsWhere || '')
+      : (companySessionsDateFilter || '');
+    const kinshipPromise = runQuery(warehouseId, `
+      WITH scoped AS (
+        SELECT
+          CAST(s.${quoteIdent('session_id')} AS STRING) AS session_id,
+          CAST(s.${quoteIdent('beneficiary_key')} AS STRING) AS beneficiary_key
+        FROM ${dashboardSessionsTable} s
+        ${q12bKinshipWhere ? `WHERE ${q12bKinshipWhere}` : ''}
+      ),
+      with_cpf AS (
+        SELECT
+          sc.session_id,
+          COALESCE(
+            CASE
+              WHEN sc.beneficiary_key LIKE 'cpf:%'
+              THEN ${normalizeCpfSql("SUBSTRING(sc.beneficiary_key, 5)")}
+              ELSE NULL
+            END,
+            ${normalizeCpfSql(sessionCpfFromVariablesExpr('raw'))}
+          ) AS cpf_norm
+        FROM scoped sc
+        LEFT JOIN ${SESSION_TABLE} raw
+          ON CAST(raw.${quoteIdent('session_id')} AS STRING) = sc.session_id
+      ),
+      beneficiary_types AS (
+        SELECT
+          ${normalizeCpfSql('b.cpf')} AS cpf_norm,
+          CASE
+            WHEN MAX(CASE WHEN UPPER(TRIM(COALESCE(b.type_kinship, ''))) = 'TITULAR' THEN 1 ELSE 0 END) = 1 THEN 'Titular'
+            WHEN MAX(CASE WHEN UPPER(TRIM(COALESCE(b.type_kinship, ''))) NOT IN ('TITULAR', '') THEN 1 ELSE 0 END) = 1 THEN 'Dependente'
+            ELSE NULL
+          END AS tipo
+        FROM ${BENEFICIARIES_KINSHIP_TABLE} b
+        WHERE b.cpf IS NOT NULL
+          AND TRIM(CAST(b.cpf AS STRING)) != ''
+        GROUP BY ${normalizeCpfSql('b.cpf')}
+      ),
+      deleted_types AS (
+        SELECT
+          ${normalizeCpfSql('ud.cpf')} AS cpf_norm,
+          CASE
+            WHEN MAX(CASE WHEN ${deletedKinshipExpr('ud.data')} = 'TITULAR' THEN 1 ELSE 0 END) = 1 THEN 'Titular'
+            WHEN MAX(CASE WHEN ${deletedKinshipExpr('ud.data')} NOT IN ('TITULAR', '') THEN 1 ELSE 0 END) = 1 THEN 'Dependente'
+            ELSE NULL
+          END AS tipo
+        FROM ${USERS_DELETED_TABLE} ud
+        WHERE ud.cpf IS NOT NULL
+          AND TRIM(CAST(ud.cpf AS STRING)) != ''
+        GROUP BY ${normalizeCpfSql('ud.cpf')}
+      ),
+      classified AS (
+        SELECT
+          CASE
+            WHEN COALESCE(bt.tipo, dt.tipo) IN ('Titular', 'Dependente') THEN COALESCE(bt.tipo, dt.tipo)
+            ELSE 'Sem CPF'
+          END AS classe
+        FROM with_cpf w
+        LEFT JOIN beneficiary_types bt
+          ON bt.cpf_norm = w.cpf_norm
+         AND w.cpf_norm IS NOT NULL
+        LEFT JOIN deleted_types dt
+          ON dt.cpf_norm = w.cpf_norm
+         AND w.cpf_norm IS NOT NULL
+         AND bt.tipo IS NULL
+      )
+      SELECT
+        classe,
+        COUNT(*) AS total_sessions
+      FROM classified
+      GROUP BY classe
+      ORDER BY total_sessions DESC
+    `, companySessionsMode === "company" ? params.list : undefined);
+
     const companySessionsPromise = companySessionsMode === "company"
       ? runQuery(warehouseId, `
         SELECT
@@ -664,9 +767,10 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       };
     })();
 
-    const [typificationsSettled, messageAgentFinishersSettled, companySessionsSettled, humanDepartmentEvolutionSettled] = await Promise.allSettled([
+    const [typificationsSettled, messageAgentFinishersSettled, kinshipSettled, companySessionsSettled, humanDepartmentEvolutionSettled] = await Promise.allSettled([
       typificationsPromise,
       messageAgentFinishersPromise,
+      kinshipPromise,
       companySessionsPromise,
       humanDepartmentEvolutionPromise,
     ]);
@@ -689,6 +793,29 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           total: toInt(r[1]),
         }))
       : [];
+    const kinshipError = kinshipSettled.status === 'rejected'
+      ? (kinshipSettled.reason instanceof Error ? kinshipSettled.reason.message : String(kinshipSettled.reason))
+      : null;
+    const kinshipRows = kinshipSettled.status === 'fulfilled'
+      ? kinshipSettled.value.map((r) => ({
+          tipo: String(getCell(r[0]) || 'Sem CPF'),
+          total: toInt(r[1]),
+        }))
+      : [];
+    const kinshipByTipo = Object.fromEntries(kinshipRows.map((row) => [row.tipo, row.total]));
+    const kinshipBreakdown = {
+      titular: Number(kinshipByTipo.Titular) || 0,
+      dependente: Number(kinshipByTipo.Dependente) || 0,
+      sem_cpf: Number(kinshipByTipo['Sem CPF']) || 0,
+      total: kinshipRows.reduce((sum, row) => sum + (Number(row.total) || 0), 0),
+      items: [
+        { tipo: 'Titular', total: Number(kinshipByTipo.Titular) || 0 },
+        { tipo: 'Dependente', total: Number(kinshipByTipo.Dependente) || 0 },
+        { tipo: 'Sem CPF', total: Number(kinshipByTipo['Sem CPF']) || 0 },
+      ],
+      error: kinshipError,
+      source: 'beneficiaries.type_kinship + users_deleted via CPF da sessão (residual → Sem CPF)',
+    };
     const companySessionsError = companySessionsSettled.status === 'rejected'
       ? (companySessionsSettled.reason instanceof Error ? companySessionsSettled.reason.message : String(companySessionsSettled.reason))
       : null;
@@ -728,6 +855,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       message_agent_finishers: messageAgentFinishers,
       message_agent_finishers_error: messageAgentFinishersError,
       message_agent_finishers_filter_applied: { period: true, organization: true },
+      message_agent_kinship: kinshipBreakdown,
       typifications,
       typifications_error: typificationsError,
       typifications_finisher: typificationFinisher,
