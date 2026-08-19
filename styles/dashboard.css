@@ -289,6 +289,9 @@ body[data-sidebar="collapsed"] .sidebar-tab span{opacity:0;position:absolute;tra
 
 .fluid-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:16px;align-items:stretch;margin-bottom:16px}
 .fluid-grid>.card-box,.fluid-grid>.chart-card{margin-bottom:0}
+.sessions-q15-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+@media (max-width:900px){.sessions-q15-grid{grid-template-columns:1fr}}
+.sessions-q15-grid>.card-box,.sessions-q15-grid>.chart-card{min-height:360px}
 
 .table-scroll{width:100%;overflow-x:auto}
 

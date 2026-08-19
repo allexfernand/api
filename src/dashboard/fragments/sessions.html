@@ -41,18 +41,6 @@
         </div>
         <div style="font-size:11px;color:#94a3b8;margin-top:10px;text-align:right">Total: <strong id="s-msg-fin-total" style="color:#64748b">—</strong> sessões</div>
         <div style="font-size:11px;color:#f59e0b;margin-top:6px;text-align:right;display:none" id="s-msg-fin-note"></div>
-        <div class="sessions-dept-block" id="session-human-departments" style="margin-top:18px;padding-top:16px;border-top:1px solid #e2e8f0">
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px;flex-wrap:wrap">
-            <div>
-              <div style="font-size:12px;font-weight:700;color:#334155">Humano por departamento</div>
-              <div style="font-size:10px;color:#94a3b8;margin-top:2px">Mesmo universo do Q12B Humano · setor via finished_by</div>
-            </div>
-            <div style="font-size:11px;color:#94a3b8" id="s-human-dept-meta">—</div>
-          </div>
-          <div class="loading-box" id="session-human-dept-loading" style="display:none;padding:16px"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando departamentos...</div>
-          <div id="session-human-dept-list" class="sessions-dept-list"></div>
-          <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="session-human-dept-error"></div>
-        </div>
       </div>
     </div>
 
@@ -80,14 +68,29 @@
       </div>
     </div>
 
-    <div class="chart-card" data-qtag="#Q15">
-      <h2 id="s-top-groups-title" style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Evolução de sessões · top 5 grupos/empresas</h2>
-      <div style="font-size:11px;color:#94a3b8;margin-bottom:14px"><span id="s-top-groups-source"></span><span id="s-top-groups-mode">Últimos 12 meses</span></div>
-      <div class="chart-wrap">
-        <div class="skeleton" id="skel-s-top-groups"></div>
-        <canvas id="sessionsTopGroupsChart" style="display:none"></canvas>
+    <div class="fluid-grid sessions-q15-grid">
+      <div class="chart-card" data-qtag="#Q15">
+        <h2 id="s-top-groups-title" style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Evolução humana · por departamento</h2>
+        <div style="font-size:11px;color:#94a3b8;margin-bottom:14px"><span id="s-top-groups-source"></span><span id="s-top-groups-mode">Últimos 12 meses</span></div>
+        <div class="chart-wrap">
+          <div class="skeleton" id="skel-s-top-groups"></div>
+          <canvas id="sessionsTopGroupsChart" style="display:none"></canvas>
+        </div>
+        <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="s-top-groups-error"></div>
       </div>
-      <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="s-top-groups-error"></div>
+
+      <div class="card-box" data-qtag="#Q15B">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+          <div>
+            <div class="section-title" style="margin-bottom:2px"><i class="fa-solid fa-sitemap" style="margin-right:6px"></i>Humano por departamento</div>
+            <div style="font-size:10px;color:#94a3b8">Mesmo universo do Q12B Humano · setor via finished_by</div>
+          </div>
+          <div style="font-size:11px;color:#94a3b8" id="s-human-dept-meta">—</div>
+        </div>
+        <div class="loading-box" id="session-human-dept-loading" style="display:none;padding:16px"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando departamentos...</div>
+        <div id="session-human-dept-list" class="sessions-dept-list"></div>
+        <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="session-human-dept-error"></div>
+      </div>
     </div>
 
     <div class="fluid-grid">

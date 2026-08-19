@@ -218,4 +218,37 @@ export function groupSessionsByDepartment(
   };
 }
 
+export function groupSessionsEvolutionByDepartment(
+  rows: Array<{ mes: string; attendant: string; total: number }>,
+  mappings: AttendantMapping[],
+) {
+  const byKey = new Map<string, number>();
+  for (const row of rows) {
+    const mes = String(row.mes || "").trim();
+    if (!mes) continue;
+    const meta = resolveAttendantMeta(row.attendant, mappings);
+    const key = `${mes}|${meta.department}`;
+    byKey.set(key, (byKey.get(key) || 0) + (Number(row.total) || 0));
+  }
+
+  const series = [...byKey.entries()]
+    .map(([key, total]) => {
+      const [mes, departamento] = key.split("|");
+      return {
+        mes,
+        departamento: departamento as AttendantDepartment,
+        total,
+      };
+    })
+    .sort((a, b) => {
+      if (a.mes !== b.mes) return a.mes.localeCompare(b.mes);
+      return a.departamento.localeCompare(b.departamento, "pt-BR", { sensitivity: "base" });
+    });
+
+  return {
+    departments: [...ATTENDANT_DEPARTMENTS],
+    series,
+  };
+}
+
 export { ATTENDANT_DEPARTMENTS };

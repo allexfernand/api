@@ -464,13 +464,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
     const topGroupMonths = meses.length ? [...meses].sort() : lastNMonthsList(12);
     const topGroupDateFilter = `s.${quoteIdent('mes')} IN (${topGroupMonths.map((m) => `'${m}'`).join(',')})`;
-    const topGroupByCompany = Boolean(groupNames.length || company || partnerBrokerId);
-    const topGroupNameExpr = topGroupByCompany
-      ? `COALESCE(NULLIF(TRIM(CAST(s.${quoteIdent('organization_name')} AS STRING)), ''), 'Sem empresa')`
-      : `TRIM(CAST(s.${quoteIdent('economic_group_canonical')} AS STRING))`;
-    const topGroupValidFilter = `${topGroupNameExpr} IS NOT NULL AND ${topGroupNameExpr} != ''`;
-    const topGroupWhere = [topGroupDateFilter, companySessionsScopeFilter, topGroupValidFilter].filter(Boolean).join(' AND ');
-    const topGroupFromSql = `${dashboardSessionsTable} s`;
+    const humanDeptEvolWhere = companySessionsMode === "company"
+      ? [topGroupDateFilter, companySessionsScopeFilter].filter(Boolean).join(' AND ')
+      : topGroupDateFilter;
 
     const messageAgentFinishersPromise = companySessionsMode === "company"
       ? runQuery(warehouseId, `
@@ -534,76 +530,63 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         LIMIT 30
       `, params.list);
 
-    const topGroupsEvolutionPromise = topGroupByCompany ? runQuery(warehouseId, `
-      WITH scoped_sessions AS (
-        SELECT
-          s.${quoteIdent('mes')} AS mes,
-          COALESCE(NULLIF(TRIM(CAST(s.${quoteIdent('organization_name')} AS STRING)), ''), 'Sem empresa') AS grupo
-        FROM ${dashboardSessionsTable} s
-        WHERE ${[topGroupDateFilter, companySessionsScopeFilter].filter(Boolean).join(' AND ')}
-      ),
-      latest_month AS (
-        SELECT MAX(mes) AS mes
-        FROM scoped_sessions
-      ),
-      top_groups AS (
-        SELECT
-          ss.grupo,
-          COUNT(*) AS current_sessions
-        FROM scoped_sessions ss
-        INNER JOIN latest_month lm ON lm.mes = ss.mes
-        WHERE ss.grupo IS NOT NULL AND ss.grupo != ''
-        GROUP BY ss.grupo
-        ORDER BY current_sessions DESC
-        LIMIT 5
-      )
-      SELECT
-        ss.mes,
-        ss.grupo,
-        COUNT(*) AS total_sessions,
-        tg.current_sessions
-      FROM scoped_sessions ss
-      INNER JOIN top_groups tg ON tg.grupo = ss.grupo
-      GROUP BY ss.mes, ss.grupo, tg.current_sessions
-      ORDER BY tg.current_sessions DESC, ss.grupo, ss.mes
-    `, params.list) : runQuery(warehouseId, `
-      WITH scoped_sessions AS (
-        SELECT
-          s.${quoteIdent('mes')} AS mes,
-          ${topGroupNameExpr} AS grupo
-        FROM ${topGroupFromSql}
-        WHERE ${topGroupWhere}
-      ),
-      latest_month AS (
-        SELECT MAX(mes) AS mes
-        FROM scoped_sessions
-      ),
-      top_groups AS (
-        SELECT
-          ss.grupo,
-          COUNT(*) AS current_sessions
-        FROM scoped_sessions ss
-        INNER JOIN latest_month lm ON lm.mes = ss.mes
-        GROUP BY ss.grupo
-        ORDER BY current_sessions DESC
-        LIMIT 5
-      )
-      SELECT
-        s.mes,
-        s.grupo,
-        COUNT(*) AS total_sessions,
-        tg.current_sessions
-      FROM scoped_sessions s
-      INNER JOIN top_groups tg ON tg.grupo = s.grupo
-      GROUP BY s.mes, s.grupo, tg.current_sessions
-      ORDER BY tg.current_sessions DESC, s.grupo, s.mes
-    `, params.list);
+    const humanDepartmentEvolutionPromise = (async () => {
+      const { groupSessionsEvolutionByDepartment, listAttendantMappings } = await import("../attendants/service");
+      const [mappingRows, attendantRows] = await Promise.all([
+        listAttendantMappings(),
+        runQuery(warehouseId, `
+          WITH human_sessions AS (
+            SELECT
+              CAST(s.${quoteIdent('session_id')} AS STRING) AS session_id,
+              s.${quoteIdent('mes')} AS mes
+            FROM ${dashboardSessionsTable} s
+            WHERE s.${quoteIdent('tipo_atendimento_agent')} = 'Humano'
+              ${humanDeptEvolWhere ? `AND ${humanDeptEvolWhere}` : ''}
+          ),
+          with_attendant AS (
+            SELECT
+              h.session_id,
+              h.mes,
+              COALESCE(
+                NULLIF(TRIM(CAST(MAX(b.${quoteIdent('finished_by')}) AS STRING)), ''),
+                '(Sem finished_by)'
+              ) AS attendant
+            FROM human_sessions h
+            LEFT JOIN ${SESSION_TABLE} b
+              ON CAST(b.${quoteIdent('session_id')} AS STRING) = h.session_id
+            GROUP BY h.session_id, h.mes
+          )
+          SELECT
+            w.mes AS mes,
+            w.attendant AS attendant,
+            COUNT(*) AS total_sessions
+          FROM with_attendant w
+          GROUP BY w.mes, w.attendant
+          ORDER BY w.mes, total_sessions DESC
+        `, companySessionsMode === "company" ? params.list : undefined),
+      ]);
 
-    const [typificationsSettled, messageAgentFinishersSettled, companySessionsSettled, topGroupsEvolutionSettled] = await Promise.allSettled([
+      const attendantSeries = attendantRows.map((row) => ({
+        mes: String(getCell(row[0]) || '').trim(),
+        attendant: String(getCell(row[1]) || '').trim() || '(Sem finished_by)',
+        total: toInt(row[2]),
+      })).filter((row) => row.mes && row.attendant);
+
+      const grouped = groupSessionsEvolutionByDepartment(attendantSeries, mappingRows);
+      return {
+        months: topGroupMonths,
+        departments: grouped.departments,
+        series: grouped.series,
+        source: 'dashboard_sessions_base_gold.tipo_atendimento_agent + botmaker_session.finished_by',
+        rule: 'Universo = Q12B Humano; linhas = departamento via finished_by',
+      };
+    })();
+
+    const [typificationsSettled, messageAgentFinishersSettled, companySessionsSettled, humanDepartmentEvolutionSettled] = await Promise.allSettled([
       typificationsPromise,
       messageAgentFinishersPromise,
       companySessionsPromise,
-      topGroupsEvolutionPromise,
+      humanDepartmentEvolutionPromise,
     ]);
 
     const typificationsError = typificationsSettled.status === 'rejected'
@@ -636,18 +619,20 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const companySessionsTotal = companySessions.reduce((acc, item) => acc + (Number(item.total) || 0), 0);
     const economicGroupTotal = companySessionsSettled.status === 'fulfilled' ? companySessionsTotal : 0;
     const economicGroupTotalError = companySessionsError;
-    const topGroupsEvolutionError = topGroupsEvolutionSettled.status === 'rejected'
-      ? (topGroupsEvolutionSettled.reason instanceof Error ? topGroupsEvolutionSettled.reason.message : String(topGroupsEvolutionSettled.reason))
+    const humanDepartmentEvolutionError = humanDepartmentEvolutionSettled.status === 'rejected'
+      ? (humanDepartmentEvolutionSettled.reason instanceof Error
+        ? humanDepartmentEvolutionSettled.reason.message
+        : String(humanDepartmentEvolutionSettled.reason))
       : null;
-    const topGroupsEvolutionRows = topGroupsEvolutionSettled.status === 'fulfilled'
-      ? topGroupsEvolutionSettled.value.map((r) => ({
-          mes: String(getCell(r[0]) || ''),
-          grupo: String(getCell(r[1]) || ''),
-          total: toInt(r[2]),
-          current_total: toInt(r[3]),
-        }))
-      : [];
-    const topGroups = [...new Set(topGroupsEvolutionRows.map((row) => row.grupo))];
+    const humanDepartmentEvolution = humanDepartmentEvolutionSettled.status === 'fulfilled'
+      ? humanDepartmentEvolutionSettled.value
+      : {
+          months: topGroupMonths,
+          departments: [],
+          series: [],
+          source: 'dashboard_sessions_base_gold.tipo_atendimento_agent + botmaker_session.finished_by',
+          rule: 'Universo = Q12B Humano; linhas = departamento via finished_by',
+        };
 
     setStableCache(res);
     res.status(200).json({
@@ -664,14 +649,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       typifications_error: typificationsError,
       typifications_finisher: typificationFinisher,
       typifications_filter_applied: { period: true, organization: true, finisher: Boolean(typificationFinisher) },
-      top_groups_evolution: {
-        months: topGroupMonths,
-        groups: topGroups,
-        series: topGroupsEvolutionRows,
-        error: topGroupsEvolutionError,
-        source: topGroupByCompany ? "botmaker_session.economic_group_name + organizations.name" : "botmaker_session.economic_group_name",
-        dimension: topGroupByCompany ? "company" : "economic_group",
-        ranking: topGroupByCompany ? "top_5_companies_latest_month_non_null" : "top_5_latest_month_non_null",
+      human_department_evolution: {
+        ...humanDepartmentEvolution,
+        error: humanDepartmentEvolutionError,
       },
       period_filter_applied: meses.length > 0,
     });

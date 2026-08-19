@@ -171,7 +171,7 @@ function renderSessionCompanies(items, opts) {
   if (wrap) wrap.style.display = 'block';
 }
 
-function renderSessionsTopGroupsEvolution(data) {
+function renderSessionsDepartmentEvolution(data) {
   const skel = document.getElementById('skel-s-top-groups');
   const cv = document.getElementById('sessionsTopGroupsChart');
   const title = document.getElementById('s-top-groups-title');
@@ -193,7 +193,7 @@ function renderSessionsTopGroupsEvolution(data) {
   if (!data || data.error) {
     if (skel) {
       skel.style.display = 'block';
-      skel.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>Erro ao carregar evolução por grupo econômico';
+      skel.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>Erro ao carregar evolução por departamento';
     }
     if (errorBox && data?.error) {
       errorBox.style.display = 'block';
@@ -205,42 +205,46 @@ function renderSessionsTopGroupsEvolution(data) {
 
   const months = Array.isArray(data.months) ? data.months : [];
   const series = Array.isArray(data.series) ? data.series : [];
-  const isCompanyEvolution = data.dimension === 'company';
-  const groupsFromApi = Array.isArray(data.groups) ? data.groups.filter(Boolean) : [];
-  const groups = groupsFromApi.length ? groupsFromApi.slice(0, 5) : [...new Set(series.map((item) => item.grupo).filter(Boolean))].slice(0, 5);
+  const departmentsFromApi = Array.isArray(data.departments) ? data.departments.filter(Boolean) : [];
+  const departments = departmentsFromApi.length
+    ? departmentsFromApi
+    : ['Enfermagem', 'Agendamento', 'Tech', 'Outros'];
   const labels = months.map(monthShortLabel);
-  const colors = ['#0f766e', '#2563eb', '#7c3aed', '#f97316', '#db2777'];
-  const datasets = groups.map((group, index) => ({
-    label: group,
-    data: months.map((month) => {
-      const found = series.find((item) => item.mes === month && item.grupo === group);
-      return found ? Number(found.total) || 0 : 0;
-    }),
-    borderColor: colors[index % colors.length],
-    backgroundColor: colors[index % colors.length] + '22',
-    borderWidth: 2,
-    pointRadius: 3,
-    pointHoverRadius: 5,
-    tension: 0.32,
-    fill: false,
-  }));
+  const datasets = departments.map((department) => {
+    const color = SESSION_DEPT_COLORS[department] || '#6366f1';
+    return {
+      label: department,
+      data: months.map((month) => {
+        const found = series.find((item) => item.mes === month && item.departamento === department);
+        return found ? Number(found.total) || 0 : 0;
+      }),
+      borderColor: color,
+      backgroundColor: color + '22',
+      borderWidth: 2,
+      pointRadius: 3,
+      pointHoverRadius: 5,
+      tension: 0.32,
+      fill: false,
+    };
+  });
 
+  if (title) title.textContent = 'Evolução humana · por departamento';
+  if (source) source.textContent = '';
   if (mode) {
     const parts = [];
-    if (title) title.textContent = isCompanyEvolution ? 'Evolução de sessões · top 5 empresas' : 'Evolução de sessões · top 5 grupos econômicos';
-    if (source) source.textContent = '';
     parts.push(selectedMonths.size ? `${selectedMonths.size} meses selecionados` : 'últimos 12 meses');
-    parts.push('top 5 pelo mês mais recente');
-    parts.push('sem nulos');
-    if (selectedSessionScopeText()) parts.push(isCompanyEvolution ? `empresas do recorte: ${selectedSessionScopeText()}` : `recorte: ${selectedSessionScopeText()}`);
+    parts.push('universo Q12B Humano');
+    parts.push('setor via finished_by');
+    if (selectedSessionScopeText()) parts.push(`recorte: ${selectedSessionScopeText()}`);
     if (currentCompany) parts.push(`empresa: ${currentCompany}`);
     mode.textContent = parts.join(' · ');
   }
 
-  if (!datasets.length) {
+  const hasData = datasets.some((dataset) => dataset.data.some((value) => Number(value) > 0));
+  if (!hasData) {
     if (skel) {
       skel.style.display = 'block';
-      skel.innerHTML = isCompanyEvolution ? 'Sem sessões por empresa para o filtro atual.' : 'Sem sessões por grupo econômico para o filtro atual.';
+      skel.innerHTML = 'Sem sessões humanas por departamento para o filtro atual.';
     }
     cv.style.display = 'none';
     return;
@@ -772,7 +776,7 @@ async function loadSessions() {
     renderSessionTypifications(sessions.typifications || [], {
       error: sessions.typifications_error,
     });
-    renderSessionsTopGroupsEvolution(sessions.top_groups_evolution);
+    renderSessionsDepartmentEvolution(sessions.human_department_evolution);
   } else {
     if (economicGroupBullet) economicGroupBullet.textContent = 'Erro';
     const msg = sessions && sessions.error ? sessions.error : 'Erro ao carregar sessões';
@@ -784,7 +788,7 @@ async function loadSessions() {
     if (messageFinishersLoading) messageFinishersLoading.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>Erro ao carregar interações por mensagem';
     if (sessionCompaniesLoading) sessionCompaniesLoading.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>Erro ao carregar sessões por empresa';
     if (typificationsLoading) typificationsLoading.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>Erro ao carregar encerramentos';
-    if (topGroupsSkel) topGroupsSkel.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>Erro ao carregar evolução por grupo econômico';
+    if (topGroupsSkel) topGroupsSkel.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>Erro ao carregar evolução por departamento';
   }
 }
 
