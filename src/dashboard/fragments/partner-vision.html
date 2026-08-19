@@ -74,80 +74,41 @@
       </div>
     </div>
 
-    <div class="card-box partner-reactivation-card" data-qtag="#VP04" style="padding:20px 24px;margin-top:0">
+    <div class="card-box" data-qtag="#VP05" style="padding:20px 24px;margin-top:0">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:16px">
         <div>
-          <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px">#VP04 · Reativação e engajamento</div>
-          <div style="font-size:18px;font-weight:700;color:#1e293b;line-height:1.2">Tendência do grupo e empresas prioritárias</div>
-          <div style="font-size:12px;color:#64748b;margin-top:4px" id="partner-reactivation-context">
-            Selecione um grupo econômico para ver a evolução de sessões e onde reativar engajamento.
+          <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px">#VP05 · Sessões por grupo econômico</div>
+          <div style="font-size:18px;font-weight:700;color:#1e293b;line-height:1.2">Ranking do mês · mais sessões → menos</div>
+          <div style="font-size:12px;color:#64748b;margin-top:4px" id="partner-eg-sessions-context">
+            Selecione o mês para ver os grupos econômicos ordenados por volume de sessões.
           </div>
         </div>
-        <div class="partner-reactivation-controls">
+        <div style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap">
           <label class="partner-reactivation-field">
-            <span>Grupo econômico</span>
-            <select id="partner-reactivation-group">
-              <option value="">Selecione…</option>
-            </select>
+            <span>Mês</span>
+            <select id="partner-eg-sessions-month" onchange="onPartnerEgSessionsMonthChange(this.value)"></select>
           </label>
-          <div class="partner-reactivation-windows" role="group" aria-label="Janela de análise">
-            <button type="button" class="partner-reactivation-window" data-window="3">3 meses</button>
-            <button type="button" class="partner-reactivation-window is-active" data-window="6">6 meses</button>
-            <button type="button" class="partner-reactivation-window" data-window="12">12 meses</button>
+          <div class="loading-box" id="partner-eg-sessions-loading" style="display:none;padding:0">
+            <i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...
           </div>
         </div>
       </div>
-
-      <div class="loading-box" id="partner-reactivation-loading" style="display:none;padding:0;margin-bottom:12px">
-        <i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Analisando grupo…
+      <div class="table-scroll" style="max-height:420px">
+        <table class="partner-vision-summary-table">
+          <thead>
+            <tr>
+              <th style="width:48px">#</th>
+              <th>Grupo econômico</th>
+              <th>Sessões</th>
+              <th style="width:120px">Share</th>
+            </tr>
+          </thead>
+          <tbody id="partner-eg-sessions-body">
+            <tr><td colspan="4">Carregando ranking...</td></tr>
+          </tbody>
+        </table>
       </div>
-      <div style="font-size:11px;color:#f59e0b;margin-bottom:12px;display:none" id="partner-reactivation-error"></div>
-
-      <div class="partner-reactivation-grid" id="partner-reactivation-body" style="display:none">
-        <div class="partner-reactivation-chart-panel">
-          <div style="font-size:12px;font-weight:700;color:#334155;margin-bottom:4px">Evolução de sessões do grupo</div>
-          <div style="font-size:11px;color:#94a3b8;margin-bottom:12px" id="partner-reactivation-chart-meta">—</div>
-          <div class="partner-reactivation-kpis">
-            <div class="partner-reactivation-kpi">
-              <div class="partner-reactivation-kpi-label">Sessões no período</div>
-              <div class="partner-reactivation-kpi-value" id="partner-reactivation-sessions">—</div>
-            </div>
-            <div class="partner-reactivation-kpi">
-              <div class="partner-reactivation-kpi-label">Vidas do grupo</div>
-              <div class="partner-reactivation-kpi-value" id="partner-reactivation-lives">—</div>
-            </div>
-            <div class="partner-reactivation-kpi">
-              <div class="partner-reactivation-kpi-label">Engajamento</div>
-              <div class="partner-reactivation-kpi-value" id="partner-reactivation-engagement">—</div>
-              <div class="partner-reactivation-kpi-note">sessões / vidas</div>
-            </div>
-          </div>
-          <div id="skel-partner-reactivation" class="skeleton" style="height:240px"></div>
-          <div style="height:240px;display:none" id="partner-reactivation-chart-wrap">
-            <canvas id="partnerReactivationChart"></canvas>
-          </div>
-        </div>
-        <div class="partner-reactivation-list-panel">
-          <div style="font-size:12px;font-weight:700;color:#334155;margin-bottom:4px">Empresas para reativar</div>
-          <div style="font-size:11px;color:#94a3b8;margin-bottom:12px">Prioriza queda de sessões + potencial (vidas com baixo engajamento).</div>
-          <div class="table-scroll">
-            <table class="partner-vision-summary-table partner-reactivation-table">
-              <thead>
-                <tr>
-                  <th>Empresa</th>
-                  <th>Vidas</th>
-                  <th>Sessões</th>
-                  <th>Engaj.</th>
-                  <th>Queda</th>
-                  <th>Por quê</th>
-                </tr>
-              </thead>
-              <tbody id="partner-reactivation-body-rows">
-                <tr><td colspan="6">Selecione um grupo econômico.</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
+      <div style="font-size:11px;color:#94a3b8;margin-top:10px;text-align:right" id="partner-eg-sessions-meta">—</div>
+      <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="partner-eg-sessions-error"></div>
     </div>
   </div>

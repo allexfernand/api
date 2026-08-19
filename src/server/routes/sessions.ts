@@ -5,6 +5,7 @@ import {
   requireMenuAccess,
   scopedGroupNames,
   scopedPartnerBrokerId,
+  scopedPartnerBrokerIds,
 } from "../../../lib/basic-auth";
 import { CORE_DATA_MENUS } from "../../dashboard/menu-catalog";
 import { createSqlParams, getCell, quoteIdent, resolveWarehouseId, runQuery, toInt, type SqlParams } from "../../../lib/databricks";
@@ -24,6 +25,20 @@ function parseGroupNames(query: Record<string, any>) {
     } catch {}
   }
   return query.group_name ? [String(query.group_name).trim()].filter(Boolean) : [];
+}
+
+async function parsePartnerBrokerSelection(req: ApiRequest, fallback: unknown) {
+  if (fallback === MDS_PARTNER_SCOPE) return fallback;
+  if (req.query.partner_broker_ids) {
+    try {
+      const parsed = JSON.parse(String(req.query.partner_broker_ids));
+      if (Array.isArray(parsed)) {
+        const requested = [...new Set(parsed.map((value) => String(value).trim()).filter(Boolean))];
+        if (requested.length) return await scopedPartnerBrokerIds(req, requested);
+      }
+    } catch {}
+  }
+  return fallback ? fallback : null;
 }
 
 const SESSION_TABLE = `hive_metastore.sanus_prod.botmaker_session`;
@@ -245,7 +260,10 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   const meses = req.query.meses ? req.query.meses.split(',').filter((m: string) => /^\d{4}-\d{2}$/.test(m)) : [];
   const groupNames = await scopedGroupNames(req, parseGroupNames(req.query));
   const company = req.query.company || null;
-  const partnerBrokerId = await scopedPartnerBrokerId(req, req.query.partner_broker_id || null);
+  const partnerBrokerId = await parsePartnerBrokerSelection(
+    req,
+    await scopedPartnerBrokerId(req, req.query.partner_broker_id || null),
+  );
   const typificationFinisher = ['humano', 'ia'].includes(String(req.query.typification_finisher || '').toLowerCase())
     ? String(req.query.typification_finisher).toLowerCase()
     : '';
@@ -409,6 +427,53 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           departments: [],
           total: 0,
           attendants: [],
+          error: msg,
+        });
+      }
+    }
+
+    if (scope === 'economic_groups_ranking') {
+      const month = meses[0] && /^\d{4}-\d{2}$/.test(meses[0])
+        ? meses[0]
+        : lastNMonthsList(1)[0];
+      const dateFilter = `s.${quoteIdent('mes')} = '${month}'`;
+      const groupExpr = `COALESCE(NULLIF(TRIM(CAST(s.${quoteIdent('economic_group_canonical')} AS STRING)), ''), 'Sem grupo')`;
+      const where = [dateFilter, companySessionsScopeFilter].filter(Boolean).join(' AND ');
+      try {
+        const rows = await runQuery(warehouseId, `
+          SELECT
+            ${groupExpr} AS grupo,
+            COUNT(*) AS total_sessions
+          FROM ${dashboardSessionsTable} s
+          ${where ? `WHERE ${where}` : ''}
+          GROUP BY ${groupExpr}
+          ORDER BY total_sessions DESC, grupo ASC
+          LIMIT 300
+        `, params.list);
+        const groups = rows.map((row) => ({
+          grupo: String(getCell(row[0]) || 'Sem grupo'),
+          total: toInt(row[1]),
+        })).filter((row) => row.total > 0);
+        const total = groups.reduce((sum, item) => sum + item.total, 0);
+        setStableCache(res);
+        return res.status(200).json({
+          scope: 'economic_groups_ranking',
+          month,
+          groups,
+          total,
+          filters_applied: {
+            period: true,
+            organization: Boolean(groupNames.length || company || partnerBrokerId),
+          },
+          source: 'dashboard_sessions_base_gold.economic_group_canonical',
+        });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        return res.status(200).json({
+          scope: 'economic_groups_ranking',
+          month,
+          groups: [],
+          total: 0,
           error: msg,
         });
       }

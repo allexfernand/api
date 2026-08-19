@@ -533,8 +533,7 @@ async function loadPartnerVision() {
 
   loadPartnerVisionEvolution();
   loadPartnerVisionSummary();
-  loadPartnerReactivationGroups();
-  loadPartnerReactivation();
+  loadPartnerEconomicGroupSessions();
   const p = partnerVisionParams();
   const data = await safeGet('/api/demographics' + (p.toString() ? '?' + p.toString() : ''));
   if (requestId !== partnerVisionRequestId) return;
@@ -560,205 +559,118 @@ async function loadPartnerVision() {
   if (loading) loading.style.display = 'none';
 }
 
-function partnerReactivationMonthLabel(month) {
-  return partnerVisionMonthLabel(month);
+function partnerEgSessionsMonthOptions() {
+  const out = [];
+  const d = new Date();
+  d.setDate(1);
+  for (let i = 0; i < 12; i++) {
+    const dd = new Date(d.getFullYear(), d.getMonth() - i, 1);
+    out.push(`${dd.getFullYear()}-${String(dd.getMonth() + 1).padStart(2, '0')}`);
+  }
+  return out;
 }
 
-function initPartnerReactivationControls() {
-  const groupSelect = document.getElementById('partner-reactivation-group');
-  const windowButtons = document.querySelectorAll('.partner-reactivation-window');
-  if (groupSelect && !groupSelect.dataset.bound) {
-    groupSelect.dataset.bound = '1';
-    groupSelect.addEventListener('change', () => {
-      partnerReactivationGroup = String(groupSelect.value || '').trim();
-      loadPartnerReactivation();
-    });
+function ensurePartnerEgSessionsMonthSelect() {
+  const select = document.getElementById('partner-eg-sessions-month');
+  if (!select) return '';
+  const options = partnerEgSessionsMonthOptions();
+  const previous = partnerEgSessionsMonth || String(select.value || '').trim();
+  const next = options.includes(previous) ? previous : options[0];
+  if (!select.dataset.built || select.options.length !== options.length) {
+    select.innerHTML = options.map((month) =>
+      `<option value="${escapeAttr(month)}">${escapeHtml(partnerVisionMonthLabel(month))}</option>`
+    ).join('');
+    select.dataset.built = '1';
   }
-  windowButtons.forEach((button) => {
-    if (button.dataset.bound) return;
-    button.dataset.bound = '1';
-    button.addEventListener('click', () => {
-      const next = Number(button.dataset.window || 6);
-      partnerReactivationWindow = next === 3 || next === 12 ? next : 6;
-      windowButtons.forEach((item) => item.classList.toggle('is-active', Number(item.dataset.window) === partnerReactivationWindow));
-      loadPartnerReactivation();
-    });
-  });
+  partnerEgSessionsMonth = next;
+  select.value = next;
+  return next;
 }
 
-async function loadPartnerReactivationGroups() {
-  initPartnerReactivationControls();
-  const select = document.getElementById('partner-reactivation-group');
-  if (!select) return;
-  const requestId = ++partnerReactivationGroupsRequestId;
-  const previous = partnerReactivationGroup || String(select.value || '').trim();
-
-  let groupRows = [];
-  if (currentPartnerBrokerIds.length > 1) {
-    const results = await Promise.all(currentPartnerBrokerIds.map(async (id) => {
-      const data = await safeGet('/api/data?' + partnerVisionSingleParams(id).toString());
-      return Array.isArray(data?.groups) ? data.groups : [];
-    }));
-    groupRows = results.flat();
-  } else {
-    const p = partnerVisionParams();
-    const data = await safeGet('/api/data' + (p.toString() ? '?' + p.toString() : ''));
-    groupRows = Array.isArray(data?.groups) ? data.groups : [];
-  }
-  if (requestId !== partnerReactivationGroupsRequestId) return;
-
-  const unique = [...new Set(groupRows.map((item) => String(item.economic_group || '').trim()).filter(Boolean))]
-    .sort((a, b) => a.localeCompare(b, 'pt-BR'));
-  select.innerHTML = `<option value="">Selecione…</option>${unique.map((name) =>
-    `<option value="${escapeAttr(name)}"${previous === name ? ' selected' : ''}>${escapeHtml(name)}</option>`
-  ).join('')}`;
-  if (previous && unique.includes(previous)) {
-    partnerReactivationGroup = previous;
-    select.value = previous;
-  } else {
-    partnerReactivationGroup = '';
-    select.value = '';
-  }
+function onPartnerEgSessionsMonthChange(value) {
+  partnerEgSessionsMonth = String(value || '').trim();
+  loadPartnerEconomicGroupSessions();
 }
 
-function renderPartnerReactivationEmpty(message) {
-  const body = document.getElementById('partner-reactivation-body');
-  const rows = document.getElementById('partner-reactivation-body-rows');
-  const context = document.getElementById('partner-reactivation-context');
-  const skel = document.getElementById('skel-partner-reactivation');
-  const wrap = document.getElementById('partner-reactivation-chart-wrap');
-  if (body) body.style.display = 'none';
-  if (rows) rows.innerHTML = `<tr><td colspan="6">${escapeHtml(message)}</td></tr>`;
-  if (context) context.textContent = message;
-  if (skel) skel.style.display = 'none';
-  if (wrap) wrap.style.display = 'none';
-  if (partnerReactivationChart) {
-    partnerReactivationChart.destroy();
-    partnerReactivationChart = null;
+function renderPartnerEconomicGroupSessions(data, opts) {
+  const body = document.getElementById('partner-eg-sessions-body');
+  const meta = document.getElementById('partner-eg-sessions-meta');
+  const context = document.getElementById('partner-eg-sessions-context');
+  const error = document.getElementById('partner-eg-sessions-error');
+  const loading = document.getElementById('partner-eg-sessions-loading');
+  opts = opts || {};
+  if (loading) loading.style.display = 'none';
+  if (error) {
+    error.style.display = opts.error ? 'block' : 'none';
+    error.textContent = opts.error ? String(opts.error).slice(0, 220) : '';
   }
-}
+  if (!body) return;
 
-async function loadPartnerReactivation() {
-  initPartnerReactivationControls();
-  const loading = document.getElementById('partner-reactivation-loading');
-  const error = document.getElementById('partner-reactivation-error');
-  const body = document.getElementById('partner-reactivation-body');
-  const context = document.getElementById('partner-reactivation-context');
-  const groupSelect = document.getElementById('partner-reactivation-group');
-  const groupName = partnerReactivationGroup || String(groupSelect?.value || '').trim();
-  partnerReactivationGroup = groupName;
+  const month = data?.month || partnerEgSessionsMonth;
+  const groups = Array.isArray(data?.groups) ? data.groups : [];
+  const total = Number(data?.total) || groups.reduce((sum, item) => sum + (Number(item.total) || 0), 0);
+  const max = groups[0]?.total > 0 ? Number(groups[0].total) : 0;
 
-  if (!groupName) {
-    if (loading) loading.style.display = 'none';
-    if (error) {
-      error.style.display = 'none';
-      error.textContent = '';
-    }
-    renderPartnerReactivationEmpty('Selecione um grupo econômico para ver a evolução de sessões e onde reativar engajamento.');
+  if (context) {
+    const parts = [`mês ${partnerVisionMonthLabel(month)}`, 'ordenado do maior para o menor'];
+    if (currentPartnerBrokerIds.length) parts.push(`parceiro: ${selectedPartnerVisionLabel()}`);
+    else parts.push('todos os parceiros');
+    context.textContent = parts.join(' · ');
+  }
+
+  if (!groups.length) {
+    body.innerHTML = '<tr><td colspan="4">Nenhum grupo econômico com sessões neste mês.</td></tr>';
+    if (meta) meta.textContent = '0 grupos · 0 sessões';
     return;
   }
 
-  const requestId = ++partnerReactivationRequestId;
+  body.innerHTML = groups.map((item, index) => {
+    const value = Number(item.total) || 0;
+    const pct = total > 0 ? ((value / total) * 100).toFixed(1).replace('.', ',') : '0,0';
+    const bar = max > 0 ? Math.max(Math.round((value / max) * 100), 2) : 0;
+    return `<tr>
+      <td style="color:#cbd5e1;font-size:10px;font-weight:700">${index + 1}</td>
+      <td style="text-align:left;font-weight:600">${escapeHtml(item.grupo || 'Sem grupo')}</td>
+      <td>${fmt(value)}</td>
+      <td>
+        <div style="background:#f1f5f9;border-radius:3px;height:5px;overflow:hidden;margin-bottom:4px">
+          <div style="height:100%;width:${bar}%;background:linear-gradient(90deg,#00A69C,#2E7D9A);border-radius:3px"></div>
+        </div>
+        <div style="font-size:10px;color:#94a3b8;text-align:right">${pct}%</div>
+      </td>
+    </tr>`;
+  }).join('');
+
+  if (meta) meta.textContent = `${groups.length} grupos · ${fmt(total)} sessões`;
+}
+
+async function loadPartnerEconomicGroupSessions() {
+  const loading = document.getElementById('partner-eg-sessions-loading');
+  const body = document.getElementById('partner-eg-sessions-body');
+  const error = document.getElementById('partner-eg-sessions-error');
+  if (!body) return;
+
+  const month = ensurePartnerEgSessionsMonthSelect();
+  const requestId = ++partnerEgSessionsRequestId;
   if (loading) loading.style.display = 'block';
   if (error) {
     error.style.display = 'none';
     error.textContent = '';
   }
-  if (body) body.style.display = 'none';
+  body.innerHTML = '<tr><td colspan="4">Carregando ranking...</td></tr>';
 
   const p = partnerVisionParams();
-  p.set('group_name', groupName);
-  p.set('window', String(partnerReactivationWindow || 6));
-  const data = await safeGet('/api/partner-reactivation?' + p.toString());
-  if (requestId !== partnerReactivationRequestId) return;
-
+  p.set('scope', 'economic_groups_ranking');
+  if (month) p.set('meses', month);
+  const data = await safeGet('/api/sessions?' + p.toString());
+  if (requestId !== partnerEgSessionsRequestId) return;
   if (!data || data.error) {
-    if (loading) loading.style.display = 'none';
-    if (error) {
-      error.style.display = 'block';
-      error.textContent = data?.error ? String(data.error).slice(0, 220) : 'Erro ao carregar análise de reativação.';
-    }
-    renderPartnerReactivationEmpty('Não foi possível analisar este grupo.');
+    renderPartnerEconomicGroupSessions(null, {
+      error: data?.error || 'Erro ao carregar ranking por grupo econômico',
+    });
     return;
   }
-
-  const sessionsEl = document.getElementById('partner-reactivation-sessions');
-  const livesEl = document.getElementById('partner-reactivation-lives');
-  const engagementEl = document.getElementById('partner-reactivation-engagement');
-  const chartMeta = document.getElementById('partner-reactivation-chart-meta');
-  const rows = document.getElementById('partner-reactivation-body-rows');
-  const skel = document.getElementById('skel-partner-reactivation');
-  const wrap = document.getElementById('partner-reactivation-chart-wrap');
-  const cv = document.getElementById('partnerReactivationChart');
-
-  if (sessionsEl) sessionsEl.textContent = fmt(Number(data.group_sessions) || 0);
-  if (livesEl) livesEl.textContent = fmt(Number(data.group_lives) || 0);
-  if (engagementEl) engagementEl.textContent = Number(data.group_engagement || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  if (chartMeta) {
-    chartMeta.textContent = `${groupName} · últimos ${data.window_months || partnerReactivationWindow} meses${currentPartnerBrokerIds.length ? ` · ${selectedPartnerVisionLabel()}` : ''}`;
-  }
-  if (context) {
-    context.textContent = `${groupName} · janela de ${data.window_months || partnerReactivationWindow} meses · engajamento = sessões / vidas`;
-  }
-
-  const recommendations = Array.isArray(data.recommendations) ? data.recommendations : [];
-  if (rows) {
-    rows.innerHTML = recommendations.length
-      ? recommendations.map((item) => `<tr>
-          <td style="text-align:left;font-weight:600">${escapeHtml(item.company || '—')}</td>
-          <td>${fmt(Number(item.lives) || 0)}</td>
-          <td>${fmt(Number(item.sessions_total) || 0)}</td>
-          <td>${Number(item.engagement || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-          <td>${Number(item.decline_pct || 0).toLocaleString('pt-BR', { maximumFractionDigits: 0 })}%</td>
-          <td>${escapeHtml(item.reason || '—')}</td>
-        </tr>`).join('')
-      : `<tr><td colspan="6">Nenhuma empresa com sinal claro de reativação nesta janela.</td></tr>`;
-  }
-
-  const series = Array.isArray(data.series) ? data.series : [];
-  const labels = series.map((item) => partnerReactivationMonthLabel(item.mes));
-  const values = series.map((item) => Number(item.sessions) || 0);
-  if (skel) skel.style.display = 'none';
-  if (wrap) wrap.style.display = 'block';
-  if (cv) {
-    if (partnerReactivationChart) partnerReactivationChart.destroy();
-    partnerReactivationChart = new Chart(cv, {
-      type: 'line',
-      data: {
-        labels,
-        datasets: [{
-          label: 'Sessões',
-          data: values,
-          borderColor: '#0f766e',
-          backgroundColor: 'rgba(15,118,110,0.12)',
-          borderWidth: 2.5,
-          pointRadius: 3,
-          pointBackgroundColor: '#0f766e',
-          tension: 0.35,
-          fill: true,
-        }],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { display: false },
-          tooltip: {
-            callbacks: {
-              label: (ctx) => `Sessões: ${fmt(ctx.parsed.y || 0)}`,
-            },
-          },
-        },
-        scales: {
-          x: { ticks: { font: { size: 10 }, color: '#94a3b8' }, grid: { display: false }, border: { display: false } },
-          y: { beginAtZero: true, ticks: { font: { size: 10 }, color: '#94a3b8', callback: (v) => fmt(v) }, grid: { color: 'rgba(0,0,0,0.04)' }, border: { display: false } },
-        },
-      },
-    });
-  }
-
-  if (body) body.style.display = 'grid';
-  if (loading) loading.style.display = 'none';
+  renderPartnerEconomicGroupSessions(data);
 }
 
 // --- Empresas (quadro Beneficiários por Empresa) ---
