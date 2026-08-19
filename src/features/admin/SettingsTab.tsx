@@ -9,13 +9,14 @@
 import { FormEvent, useMemo, useState } from "react";
 import styles from "./SettingsTab.module.css";
 import { ActivityLogsPanel } from "./ActivityLogsPanel";
+import { AttendantsPanel } from "./AttendantsPanel";
 import { useManagedUsers, type PartnerGroupMap, type PartnerOption } from "./hooks/useManagedUsers";
 import { MENU_SECTIONS, FULL_DEFAULT_ALLOWED_MENUS, MDS_DEFAULT_ALLOWED_MENUS, type MenuId } from "../../dashboard/menu-catalog";
 import type { DashboardRole } from "../../contracts/common";
 import type { ManagedDashboardUserPublic } from "../../contracts/dashboard-users";
 import { PASSWORD_RULES, validateStrongPassword } from "../../lib/password-policy";
 
-type SettingsSection = "access" | "activity";
+type SettingsSection = "access" | "activity" | "attendants";
 
 function defaultMenusFor(role: DashboardRole): MenuId[] {
   return role === "mds" ? [...MDS_DEFAULT_ALLOWED_MENUS] : [...FULL_DEFAULT_ALLOWED_MENUS];
@@ -96,9 +97,18 @@ export function SettingsTab() {
         >
           Logs de atividade
         </button>
+        <button
+          type="button"
+          className={`${styles.subnavItem} ${section === "attendants" ? styles.subnavItemActive : ""}`}
+          onClick={() => setSection("attendants")}
+          aria-current={section === "attendants" ? "page" : undefined}
+        >
+          Atendentes
+        </button>
       </nav>
 
       {section === "activity" ? <ActivityLogsPanel /> : null}
+      {section === "attendants" ? <AttendantsPanel /> : null}
 
       {section === "access" ? (
         <>

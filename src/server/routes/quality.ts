@@ -118,45 +118,104 @@ const toNumber = (value) => {
 const escapeSql = escape;
 const qcol = (alias, column) => `${alias}.${quoteIdent(column)}`;
 
+function legacyDepartmentName(setor: string) {
+  const raw = String(setor || "").trim();
+  const key = raw.toLowerCase();
+  if (key === "enfermagem" || key.includes("enferm")) return "Enfermagem";
+  if (key === "agendamento") return "Agendamento";
+  if (key === "tech" || key === "tecnologia") return "Tech";
+  if (key === "outros" || key === "gestão" || key === "gestao" || key === "ia" || key === "não mapeado" || key === "nao mapeado") {
+    return "Outros";
+  }
+  if (["Enfermagem", "Agendamento", "Tech", "Outros"].includes(raw)) return raw;
+  return "Outros";
+}
+
 const DEFAULT_COLLABORATOR_DEPARTMENTS = [
-  { name: "Antonia", aliases: ["Sem close_by preenchido", "Sem close By preenchido"], setor: "IA", status: "Ativo" },
-  { name: "Allex", setor: "Gestão", status: "Ativo" },
-  { name: "Joanna", aliases: ["joanna.pedrolongo"], setor: "Gestão", status: "Ativo" },
-  { name: "Joao Magalhaes", aliases: ["joao.magalhaes"], setor: "Gestão", status: "Ativo" },
-  { name: "Felipe", setor: "Gestão", status: "Inativo" },
-  { name: "Mikael", setor: "Gestão", status: "Ativo" },
-  { name: "Talita Ermini", aliases: ["talita.ermini"], setor: "Gestão", status: "Ativo" },
-  { name: "Ana Pacheco", aliases: ["ana.pacheco"], setor: "Gestão", status: "Ativo" },
-  { name: "Guilherme Dourado", aliases: ["guilherme.dourado"], setor: "Gestão", status: "Ativo" },
+  { name: "Antonia", aliases: ["Sem close_by preenchido", "Sem close By preenchido"], setor: "Outros", status: "Ativo" },
+  { name: "Allex", setor: "Outros", status: "Ativo" },
+  { name: "Joanna", aliases: ["joanna.pedrolongo"], setor: "Outros", status: "Ativo" },
+  { name: "Joao Magalhaes", aliases: ["joao.magalhaes"], setor: "Outros", status: "Ativo" },
+  { name: "Felipe", setor: "Outros", status: "Inativo" },
+  { name: "Mikael", setor: "Outros", status: "Ativo" },
+  { name: "Talita Ermini", aliases: ["talita.ermini"], setor: "Outros", status: "Ativo" },
+  { name: "Ana Pacheco", aliases: ["ana.pacheco"], setor: "Outros", status: "Ativo" },
+  { name: "Guilherme Dourado", aliases: ["guilherme.dourado"], setor: "Outros", status: "Ativo" },
   { name: "wendel", aliases: ["wendel.melo"], setor: "Agendamento", status: "Ativo" },
   { name: "cilene", setor: "Agendamento", status: "Ativo" },
   { name: "diovanna", setor: "Agendamento", status: "Ativo" },
   { name: "leila", setor: "Agendamento", status: "Ativo" },
-  { name: "bianca.mendes", setor: "Atendimento (enfermagem)", status: "Inativo" },
-  { name: "giovanna.solon", setor: "Atendimento (enfermagem)", status: "Inativo" },
-  { name: "gabriela", setor: "Atendimento (enfermagem)", status: "Ativo" },
-  { name: "ramon", setor: "Atendimento (enfermagem)", status: "Ativo" },
-  { name: "ramon.ila", canonical: "ramon", setor: "Atendimento (enfermagem)", status: "Ativo" },
-  { name: "karoline.oliveira", setor: "Atendimento (enfermagem)", status: "Inativo" },
-  { name: "beatriz.jesus", setor: "Atendimento (enfermagem)", status: "Inativo" },
-  { name: "thayna.sillig", setor: "Atendimento (enfermagem)", status: "Ativo" },
-  { name: "beatriz.ribeiro", setor: "Atendimento (enfermagem)", status: "Ativo" },
-  { name: "sabrina.damin", setor: "Atendimento (enfermagem)", status: "Ativo" },
-  { name: "kellen.santos", setor: "Atendimento (enfermagem)", status: "Inativo" },
-  { name: "milene.santana", setor: "Atendimento (enfermagem)", status: "Ativo" },
-  { name: "thais.silva", setor: "Atendimento (enfermagem)", status: "Ativo" },
-  { name: "clara.carvalho", setor: "Atendimento (enfermagem)", status: "Ativo" },
-  { name: "Kathleen Evaristo", aliases: ["kathleen.evaristo", "kahleen.evaristo"], setor: "Atendimento (enfermagem)", status: "Inativo" },
-  { name: "lais.oliveira", setor: "Atendimento (enfermagem)", status: "Ativo" },
-  { name: "amanda.klen", setor: "Atendimento (enfermagem)", status: "Inativo" },
-  { name: "Vitoria.silva", setor: "Atendimento (enfermagem)", status: "Ativo" },
-  { name: "daniela.teixeira", setor: "Atendimento (enfermagem)", status: "Ativo" },
-  { name: "amanda.silva", setor: "Atendimento (enfermagem)", status: "Inativo" },
-  { name: "gabriela.damasio", setor: "Atendimento (enfermagem)", status: "Ativo" },
-  { name: "stephanie.santos", setor: "Atendimento (enfermagem)", status: "Ativo" },
-  { name: "maria.alves", setor: "Atendimento (enfermagem)", status: "Inativo" },
-  { name: "tomas.brito", setor: "Atendimento (enfermagem)", status: "Inativo" },
-];
+  { name: "bianca.mendes", setor: "Enfermagem", status: "Inativo" },
+  { name: "giovanna.solon", setor: "Enfermagem", status: "Inativo" },
+  { name: "gabriela", setor: "Enfermagem", status: "Ativo" },
+  { name: "ramon", setor: "Enfermagem", status: "Ativo" },
+  { name: "ramon.ila", canonical: "ramon", setor: "Enfermagem", status: "Ativo" },
+  { name: "karoline.oliveira", setor: "Enfermagem", status: "Inativo" },
+  { name: "beatriz.jesus", setor: "Enfermagem", status: "Inativo" },
+  { name: "thayna.sillig", setor: "Enfermagem", status: "Ativo" },
+  { name: "beatriz.ribeiro", setor: "Enfermagem", status: "Ativo" },
+  { name: "sabrina.damin", setor: "Enfermagem", status: "Ativo" },
+  { name: "kellen.santos", setor: "Enfermagem", status: "Inativo" },
+  { name: "milene.santana", setor: "Enfermagem", status: "Ativo" },
+  { name: "thais.silva", setor: "Enfermagem", status: "Ativo" },
+  { name: "clara.carvalho", setor: "Enfermagem", status: "Ativo" },
+  { name: "Kathleen Evaristo", aliases: ["kathleen.evaristo", "kahleen.evaristo"], setor: "Enfermagem", status: "Inativo" },
+  { name: "lais.oliveira", setor: "Enfermagem", status: "Ativo" },
+  { name: "amanda.klen", setor: "Enfermagem", status: "Inativo" },
+  { name: "Vitoria.silva", setor: "Enfermagem", status: "Ativo" },
+  { name: "daniela.teixeira", setor: "Enfermagem", status: "Ativo" },
+  { name: "amanda.silva", setor: "Enfermagem", status: "Inativo" },
+  { name: "gabriela.damasio", setor: "Enfermagem", status: "Ativo" },
+  { name: "stephanie.santos", setor: "Enfermagem", status: "Ativo" },
+  { name: "maria.alves", setor: "Enfermagem", status: "Inativo" },
+  { name: "tomas.brito", setor: "Enfermagem", status: "Inativo" },
+].map((item) => ({ ...item, setor: legacyDepartmentName(item.setor) }));
+
+let activeCollaboratorConfig = DEFAULT_COLLABORATOR_DEPARTMENTS;
+
+async function loadCollaboratorDepartmentConfig() {
+  try {
+    const { listAttendantMappings } = await import("../attendants/service");
+    const mappings = await listAttendantMappings();
+    if (mappings.length) {
+      return mappings.map((item) => ({
+        name: item.name,
+        canonical: item.name,
+        setor: legacyDepartmentName(item.department),
+        status: item.status === "Inativo" ? "Inativo" : "Ativo",
+        aliases: Array.isArray(item.aliases) ? item.aliases : [],
+      }));
+    }
+  } catch (error) {
+    console.warn("[quality] attendant map fallback", error);
+  }
+
+  const rawValue = String(process.env.QUALITY_COLLABORATOR_DEPARTMENTS || "").trim();
+  if (!rawValue) return DEFAULT_COLLABORATOR_DEPARTMENTS;
+  try {
+    const raw = rawValue.replace(/^(['"])(.*)\1$/, "$2");
+    const parsed = JSON.parse(raw);
+    const items = Array.isArray(parsed)
+      ? parsed
+      : Object.entries(parsed || {}).map(([name, value]) => ({ name, ...(typeof value === "object" && value ? value : {}) }));
+    const mapped = items
+      .map((item) => ({
+        name: String(item.name || "").trim(),
+        canonical: String(item.canonical || item.name || "").trim(),
+        setor: legacyDepartmentName(String(item.setor || "").trim()),
+        status: String(item.status || "").trim() || "Ativo",
+        aliases: Array.isArray(item.aliases) ? item.aliases.map((alias) => String(alias || "").trim()).filter(Boolean) : [],
+      }))
+      .filter((item) => item.name);
+    return mapped.length ? mapped : DEFAULT_COLLABORATOR_DEPARTMENTS;
+  } catch {
+    return DEFAULT_COLLABORATOR_DEPARTMENTS;
+  }
+}
+
+function collaboratorDepartmentConfig() {
+  return activeCollaboratorConfig;
+}
 
 function normalizeCollaboratorKey(value) {
   return String(value || "")
@@ -184,29 +243,6 @@ function collaboratorDisplayName(value) {
   return parts.map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase()).join(" ");
 }
 
-function collaboratorDepartmentConfig() {
-  const rawValue = String(process.env.QUALITY_COLLABORATOR_DEPARTMENTS || "").trim();
-  try {
-    const raw = rawValue.replace(/^(['"])(.*)\1$/, "$2");
-    const parsed = JSON.parse(raw);
-    const items = Array.isArray(parsed)
-      ? parsed
-      : Object.entries(parsed || {}).map(([name, value]) => ({ name, ...(typeof value === "object" && value ? value : {}) }));
-    const mapped = items
-      .map((item) => ({
-        name: String(item.name || "").trim(),
-        canonical: String(item.canonical || item.name || "").trim(),
-        setor: String(item.setor || "").trim(),
-        status: String(item.status || "").trim(),
-        aliases: Array.isArray(item.aliases) ? item.aliases.map((alias) => String(alias || "").trim()).filter(Boolean) : [],
-      }))
-      .filter((item) => item.name);
-    return mapped.length ? mapped : DEFAULT_COLLABORATOR_DEPARTMENTS;
-  } catch {
-    return DEFAULT_COLLABORATOR_DEPARTMENTS;
-  }
-}
-
 function collaboratorMeta(name) {
   const rawName = String(name || "").trim();
   const config: any[] = collaboratorDepartmentConfig();
@@ -227,8 +263,8 @@ function collaboratorMeta(name) {
   return {
     name: canonicalName || rawName || MISSING_COLLABORATOR_LABEL,
     display_name: collaboratorDisplayName(canonicalName || rawName || MISSING_COLLABORATOR_LABEL),
-    setor: canonical?.setor || direct?.setor || "Não mapeado",
-    status: canonical?.status || direct?.status || "Não mapeado",
+    setor: legacyDepartmentName(canonical?.setor || direct?.setor || "Outros"),
+    status: canonical?.status || direct?.status || "Ativo",
     aliases: [...new Set(aliases.filter(Boolean))],
   };
 }
@@ -1554,6 +1590,7 @@ export default async function handler(req, res) {
   if (!requireMenuAccess(req, res, ["qualidade-estrategica", "qualidade-operacional"])) return;
 
   try {
+    activeCollaboratorConfig = await loadCollaboratorDepartmentConfig();
     const criteriaFinisher = ["humano", "ia"].includes(String(req.query.criteria_finisher || "").toLowerCase())
       ? String(req.query.criteria_finisher).toLowerCase()
       : "";

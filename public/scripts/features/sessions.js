@@ -33,12 +33,83 @@ function renderSessionMessageAgentFinishers(items, opts) {
   if (note) {
     const messages = [];
     if (selectedSessionScopeText()) messages.push(`recorte: ${selectedSessionScopeText()}`);
-    messages.push("fonte: botmaker_message.sender_type='agent'");
+    messages.push("fonte: botmaker_session.finished_by");
     note.style.display = messages.length ? 'block' : 'none';
     note.textContent = messages.join(' · ');
   }
   if (loading) loading.style.display = 'none';
   if (content) content.style.display = 'block';
+}
+
+const SESSION_DEPT_COLORS = {
+  Enfermagem: '#0f766e',
+  Agendamento: '#6366f1',
+  Tech: '#0369a1',
+  Outros: '#94a3b8',
+};
+
+function renderSessionHumanDepartments(data, opts) {
+  const loading = document.getElementById('session-human-dept-loading');
+  const list = document.getElementById('session-human-dept-list');
+  const meta = document.getElementById('s-human-dept-meta');
+  const errorBox = document.getElementById('session-human-dept-error');
+  opts = opts || {};
+  if (loading) loading.style.display = 'none';
+  if (errorBox) {
+    errorBox.style.display = opts.error ? 'block' : 'none';
+    errorBox.textContent = opts.error ? String(opts.error).slice(0, 220) : '';
+  }
+  if (!list) return;
+  const departments = Array.isArray(data?.departments) ? data.departments : [];
+  const total = Number(data?.total) || departments.reduce((sum, item) => sum + (Number(item.total) || 0), 0);
+  if (meta) meta.textContent = total > 0 ? `${fmt(total)} sessões humanas mapeadas` : 'sem sessões humanas no período';
+  if (!departments.length) {
+    list.innerHTML = '<div style="font-size:12px;color:#94a3b8">Sem dados por departamento neste recorte.</div>';
+    return;
+  }
+  list.innerHTML = departments.map((item) => {
+    const name = escapeHtml(item.department || 'Outros');
+    const value = Number(item.total) || 0;
+    const pct = total > 0 ? (value / total) * 100 : 0;
+    const pctLabel = Number.isFinite(item.pct) ? String(item.pct).replace('.', ',') : pct.toFixed(1).replace('.', ',');
+    const color = SESSION_DEPT_COLORS[item.department] || '#6366f1';
+    const active = Number(item.active) || 0;
+    const inactive = Number(item.inactive) || 0;
+    return `<div class="sessions-dept-row">
+      <div>
+        <div class="sessions-dept-label">${name}</div>
+        <span class="sessions-dept-note">${active} ativos · ${inactive} inativos</span>
+      </div>
+      <div class="sessions-dept-track"><div class="sessions-dept-fill" style="width:${pct.toFixed(1)}%;background:${color}"></div></div>
+      <div class="sessions-dept-value">${fmt(value)} <span class="sessions-dept-note">${pctLabel}%</span></div>
+    </div>`;
+  }).join('');
+}
+
+async function loadSessionHumanDepartments(requestId) {
+  const loading = document.getElementById('session-human-dept-loading');
+  const list = document.getElementById('session-human-dept-list');
+  const errorBox = document.getElementById('session-human-dept-error');
+  if (loading) loading.style.display = 'block';
+  if (list) list.innerHTML = '';
+  if (errorBox) {
+    errorBox.style.display = 'none';
+    errorBox.textContent = '';
+  }
+  const meses = [...selectedMonths].sort();
+  const p = new URLSearchParams();
+  p.set('scope', 'human_by_department');
+  if (meses.length > 0) p.set('meses', meses.join(','));
+  appendGroupParams(p);
+  const data = await safeGet('/api/sessions?' + p.toString());
+  if (requestId !== sessionsRequestId) return;
+  if (!data || data.error) {
+    renderSessionHumanDepartments(null, {
+      error: data?.error || 'Erro ao carregar humano por departamento',
+    });
+    return;
+  }
+  renderSessionHumanDepartments(data, { error: data.error });
 }
 
 function filterSessionCompanies() {
@@ -679,6 +750,7 @@ async function loadSessions() {
 
   loadSessionsEvolution();
   loadSessionsDailyEvolution();
+  loadSessionHumanDepartments(requestId);
 
   const sessions = await safeGet('/api/sessions' + qs);
   if (requestId !== sessionsRequestId) return;

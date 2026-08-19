@@ -474,6 +474,13 @@ body[data-sidebar="collapsed"] .sidebar-tab span{opacity:0;position:absolute;tra
 .sessions-daily-selection-meta strong{font-size:18px;font-weight:800;color:#0f766e;letter-spacing:-.4px}
 .sessions-daily-clear-btn{border:1px solid #cbd5e1;background:#fff;color:#475569;border-radius:8px;padding:6px 10px;font-size:11px;font-weight:700;cursor:pointer}
 .sessions-daily-clear-btn:hover{border-color:#94a3b8;color:#0f172a}
+.sessions-dept-list{display:grid;gap:10px}
+.sessions-dept-row{display:grid;grid-template-columns:minmax(96px,120px) minmax(0,1fr) auto;gap:10px;align-items:center}
+.sessions-dept-label{font-size:12px;font-weight:700;color:#334155}
+.sessions-dept-track{height:8px;background:#f1f5f9;border-radius:999px;overflow:hidden}
+.sessions-dept-fill{height:100%;border-radius:999px;background:linear-gradient(90deg,#6366f1,#818cf8)}
+.sessions-dept-value{font-size:12px;font-weight:800;color:#0f172a;white-space:nowrap;text-align:right}
+.sessions-dept-note{display:block;font-size:10px;color:#94a3b8;font-weight:600;margin-top:2px}
 .card-box[data-qtag="#Q11"],
 .card-box[data-qtag="#Q11B"]{display:flex;flex-direction:column;max-height:clamp(360px,60vh,560px)}
 .card-box[data-qtag="#Q11"] #session-typifications-content,

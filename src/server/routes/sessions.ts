@@ -344,6 +344,82 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       });
     }
 
+    if (scope === 'human_by_department') {
+      const { groupSessionsByDepartment, listAttendantMappings } = await import("../attendants/service");
+      const deptParams = createSqlParams();
+      const dateFilter = meses.length > 0
+        ? `s.${quoteIdent('mes')} IN (${meses.map((m: string) => `'${m}'`).join(',')})`
+        : null;
+      const deptScopeFilters = [
+        company ? companySessionCondition(company, deptParams, 's') : economicGroupNamesCondition(groupNames, deptParams, 's'),
+        partnerBrokerCondition(partnerBrokerId, deptParams, 's'),
+      ].filter(Boolean);
+      const deptWhere = [
+        `s.${quoteIdent('attendant')} IS NOT NULL`,
+        dateFilter,
+        ...deptScopeFilters,
+      ].filter(Boolean).join(' AND ');
+
+      try {
+        const [mappingRows, attendantRows] = await Promise.all([
+          listAttendantMappings(),
+          runQuery(warehouseId, `
+            WITH base AS (
+              SELECT
+                NULLIF(TRIM(CAST(raw.${quoteIdent('finished_by')} AS STRING)), '') AS attendant,
+                CAST(raw.${quoteIdent('organization_id')} AS STRING) AS organization_id,
+                COALESCE(
+                  NULLIF(TRIM(CAST(o.${quoteIdent('name_economic_group')} AS STRING)), ''),
+                  NULLIF(TRIM(CAST(raw.${quoteIdent('economic_group_name')} AS STRING)), ''),
+                  'Nulos'
+                ) AS economic_group_canonical,
+                DATE_FORMAT(try_cast(raw.${quoteIdent('creation_time')} AS TIMESTAMP), 'yyyy-MM') AS mes
+              FROM ${SESSION_TABLE} raw
+              LEFT JOIN ${ORGANIZATIONS_TABLE} o
+                ON CAST(raw.${quoteIdent('organization_id')} AS STRING) = CAST(o.${quoteIdent('id')} AS STRING)
+              WHERE raw.${quoteIdent('finished_by')} IS NOT NULL
+                AND TRIM(CAST(raw.${quoteIdent('finished_by')} AS STRING)) != ''
+            )
+            SELECT
+              s.${quoteIdent('attendant')} AS attendant,
+              COUNT(*) AS total_sessions
+            FROM base s
+            WHERE ${deptWhere}
+            GROUP BY s.${quoteIdent('attendant')}
+            ORDER BY total_sessions DESC
+            LIMIT 2000
+          `, deptParams.list),
+        ]);
+
+        const attendants = attendantRows.map((row) => ({
+          attendant: String(getCell(row[0]) || '').trim(),
+          total: toInt(row[1]),
+        })).filter((row) => row.attendant);
+
+        const grouped = groupSessionsByDepartment(attendants, mappingRows);
+        setStableCache(res);
+        return res.status(200).json({
+          scope: 'human_by_department',
+          ...grouped,
+          attendants: attendants.slice(0, 50),
+          filters_applied: {
+            period: meses.length > 0,
+            organization: Boolean(groupNames.length || company || partnerBrokerId),
+          },
+          source: 'botmaker_session.finished_by + attendant_departments',
+        });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        return res.status(200).json({
+          scope: 'human_by_department',
+          departments: [],
+          total: 0,
+          attendants: [],
+          error: msg,
+        });
+      }
+    }
+
     if (scope === 'typification_groups' && typificationValue) {
       const tipFilter = `s.${quoteIdent('tipificacao')} = ${params.add(typificationValue)}`;
       const where = [companySessionsDateFilter, companySessionsScopeFilter, typificationFinisherFilter, tipFilter]
