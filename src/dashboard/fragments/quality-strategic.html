@@ -182,7 +182,18 @@
 
     <div class="quality-grid-2">
       <div class="card-box" style="margin-bottom:0">
-        <div class="section-title"><i class="fa-solid fa-ranking-star" style="margin-right:6px"></i>Ranking de colaboradores</div>
+        <div class="section-title" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+          <span><i class="fa-solid fa-ranking-star" style="margin-right:6px"></i>Ranking de colaboradores</span>
+          <label style="display:flex;align-items:center;gap:8px;font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.4px;font-weight:600">
+            Status
+            <select class="filter-select" id="quality-strategic-status-filter" onchange="onQualityStrategicStatusChange(this.value)" style="min-width:120px;text-transform:none;letter-spacing:0;font-weight:600">
+              <option value="Ativo">Ativos</option>
+              <option value="">Todos</option>
+              <option value="Inativo">Inativos</option>
+            </select>
+          </label>
+        </div>
+        <div style="font-size:11px;color:#94a3b8;margin:0 0 12px">Setor e status vêm de Configurações → Atendentes. O filtro de departamento do topo também recorta esta lista.</div>
         <div class="table-scroll quality-collab-scroll">
           <table class="quality-table">
             <thead>

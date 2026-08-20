@@ -1,5 +1,5 @@
 (async function loadSanusDashboard() {
-  const CACHE = "20260820-kpi-depto";
+  const CACHE = "20260820-rank-depto";
 
   function loadScript(src, { ordered = false } = {}) {
     return new Promise((resolve, reject) => {

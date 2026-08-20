@@ -21,6 +21,24 @@ function onQualityStrategicDepartmentChange(value) {
   loadQuality();
 }
 
+function onQualityStrategicStatusChange(value) {
+  const allowed = ['Ativo', 'Inativo'];
+  selectedQualityStrategicStatus = allowed.includes(value) ? value : '';
+  const select = document.getElementById('quality-strategic-status-filter');
+  if (select) select.value = selectedQualityStrategicStatus;
+  renderQualityStrategic();
+}
+
+function filterQualityStrategicCollaborators(collaborators) {
+  return (collaborators || []).filter((item) => {
+    const setor = String(item.setor || 'Outros');
+    const status = String(item.status || 'Ativo');
+    if (selectedQualityStrategicDepartment && setor !== selectedQualityStrategicDepartment) return false;
+    if (selectedQualityStrategicStatus && status !== selectedQualityStrategicStatus) return false;
+    return true;
+  });
+}
+
 function onQualityCollaboratorSortChange(value) {
   const allowed = ['name', 'setor', 'status', 'score', 'attendance'];
   const nextSort = allowed.includes(value) ? value : 'score';
@@ -1264,6 +1282,12 @@ function renderQualityStrategic() {
   syncQualityDistributionHeights();
 
   const collaborators = strategic.collaborators || [];
+  const strategicCollaborators = filterQualityStrategicCollaborators(collaborators);
+  const statusFilterSelect = document.getElementById('quality-strategic-status-filter');
+  if (statusFilterSelect) statusFilterSelect.value = selectedQualityStrategicStatus;
+  if (selectedQualityCollaboratorName && !strategicCollaborators.some((item) => item.name === selectedQualityCollaboratorName)) {
+    selectedQualityCollaboratorName = '';
+  }
   renderQualityOperationalFilterOptions(collaborators);
   const sortArrow = (key) => selectedQualityCollaboratorSort === key ? (selectedQualityCollaboratorSortDir === 'desc' ? '↓' : '↑') : '';
   ['name', 'setor', 'status', 'score', 'attendance'].forEach((key) => {
@@ -1321,7 +1345,7 @@ function renderQualityStrategic() {
           <td style="text-align:right;font-weight:800;color:#0f172a">${fmt(totalAttendances)}</td>
         </tr>`;
     } else {
-      collabTbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#94a3b8;padding:16px">Ranking indisponível no schema atual.</td></tr>';
+      collabTbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#94a3b8;padding:16px">Nenhum colaborador no recorte atual (departamento/status).</td></tr>';
     }
   };
   const operationalCollaborators = filterQualityOperationalCollaborators(collaborators);
@@ -1331,7 +1355,7 @@ function renderQualityStrategic() {
     : (selectedQualityOperationalCollaborators.size || selectedQualityOperationalSetor || selectedQualityOperationalStatus ? [] : (strategic.evaluated_criteria || []));
   renderQualityOperationalScoreCard(operationalCollaborators);
   renderQualityOperationalCriteriaBullets(operationalCriteria);
-  renderCollaboratorRankingRows(document.getElementById('quality-collab-tbody'));
+  renderCollaboratorRankingRows(document.getElementById('quality-collab-tbody'), strategicCollaborators);
   renderCollaboratorRankingRows(document.getElementById('quality-operational-collab-tbody'), operationalCollaborators);
   if (!selectedQualityCollaboratorName) {
     const detailEl = document.getElementById('quality-collab-detail');
@@ -1655,6 +1679,8 @@ window.SanusDashboard = {
   closeQualityOperationalCollaboratorDropdown,
   onQualityOperationalSetorFilterChange,
   onQualityOperationalStatusFilterChange,
+  onQualityStrategicDepartmentChange,
+  onQualityStrategicStatusChange,
   clearFilters,
   downloadDashboardPdf,
 };

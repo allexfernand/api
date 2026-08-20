@@ -62,6 +62,7 @@ let selectedQualityOperationalCollaborators = new Set();
 let selectedQualityOperationalSetor = '';
 let selectedQualityOperationalStatus = '';
 let selectedQualityStrategicDepartment = '';
+let selectedQualityStrategicStatus = 'Ativo';
 let qualityData = null, selectedQualityKey = null;
 let pdfReadinessTimer = null;
 let isPdfGenerating = false;

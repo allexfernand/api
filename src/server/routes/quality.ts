@@ -186,6 +186,7 @@ async function loadCollaboratorDepartmentConfig() {
       return mappings.map((item) => ({
         name: item.name,
         canonical: item.name,
+        display_name: item.displayName || "",
         setor: legacyDepartmentName(item.department),
         status: item.status === "Inativo" ? "Inativo" : "Ativo",
         aliases: Array.isArray(item.aliases) ? item.aliases : [],
@@ -267,7 +268,8 @@ function collaboratorMeta(name) {
   collaboratorNameAliases(canonicalName).forEach((alias) => aliases.push(alias));
   return {
     name: canonicalName || rawName || MISSING_COLLABORATOR_LABEL,
-    display_name: collaboratorDisplayName(canonicalName || rawName || MISSING_COLLABORATOR_LABEL),
+    display_name: String(canonical?.display_name || direct?.display_name || "").trim()
+      || collaboratorDisplayName(canonicalName || rawName || MISSING_COLLABORATOR_LABEL),
     setor: legacyDepartmentName(canonical?.setor || direct?.setor || "Outros"),
     status: canonical?.status || direct?.status || "Ativo",
     aliases: [...new Set(aliases.filter(Boolean))],
@@ -1556,7 +1558,10 @@ async function loadStrategic(warehouseId, columns, criteriaColumns, scope, share
     total: toInt(row[1]),
     total_avaliacoes: toInt(row[2]),
     score_pct: toNumber(row[3]),
-  })));
+  }))).filter((item) => {
+    if (departmentFilter && String(item.setor || "") !== departmentFilter) return false;
+    return true;
+  });
 
   const careLines = (careLineRows || []).map((row) => ({
     name: String(getCell(row[0]) || "Sem linha"),
