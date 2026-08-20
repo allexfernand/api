@@ -1001,6 +1001,8 @@ async function loadQuality() {
   } else {
     renderQualityStrategic();
     loadQualityFactualInsight();
+    loadQualityScoreEvolution();
+    loadQualityVolumeEvolutionAsync();
     loadQualityDailyVolumeEvolution();
   }
   setStatus('ok', '✓ Dados ao vivo');
@@ -1024,6 +1026,7 @@ async function loadQualityDailyVolumeEvolution() {
   p.set('quality_daily_month', selectedQualityDailyMonth || currentMonthValue());
   appendGroupParams(p);
   if (currentCompany) p.set('company', currentCompany);
+  if (selectedQualityStrategicDepartment) p.set('department', selectedQualityStrategicDepartment);
   const data = await safeGet('/api/quality?' + p.toString());
   if (requestId !== qualityDailyVolumeRequestId) return;
 
@@ -1039,6 +1042,55 @@ async function loadQualityDailyVolumeEvolution() {
   if (!qualityData.strategic) qualityData.strategic = {};
   qualityData.strategic.daily_volume_evolution = data.daily_volume_evolution || {};
   renderQualityDailyVolumeEvolutionChart(qualityData.strategic.daily_volume_evolution);
+}
+
+async function loadQualityScoreEvolution() {
+  if (getActiveTab() !== 'qualidade-estrategica') return;
+  const empty = document.getElementById('quality-evolution-empty');
+  if (empty) {
+    empty.style.display = 'block';
+    empty.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando evolução...';
+  }
+  const meses = [...selectedMonths].sort();
+  const p = new URLSearchParams();
+  p.set('mode', 'quality_score_evolution');
+  if (meses.length > 0) p.set('meses', meses.join(','));
+  appendGroupParams(p);
+  if (currentCompany) p.set('company', currentCompany);
+  if (selectedQualityStrategicDepartment) p.set('department', selectedQualityStrategicDepartment);
+  const data = await safeGet('/api/quality?' + p.toString());
+  if (!data || data.error) {
+    if (empty) empty.innerHTML = String(data?.error || 'Erro ao carregar evolução').slice(0, 180);
+    return;
+  }
+  if (!qualityData) qualityData = { strategic: {} };
+  if (!qualityData.strategic) qualityData.strategic = {};
+  qualityData.strategic.evolution = data.evolution || { monthly: [], by_criterion: [] };
+  renderQualityEvolutionCharts(qualityData.strategic.evolution);
+}
+
+async function loadQualityVolumeEvolutionAsync() {
+  if (getActiveTab() !== 'qualidade-estrategica') return;
+  const empty = document.getElementById('quality-volume-evolution-empty');
+  if (empty) {
+    empty.style.display = 'block';
+    empty.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando volume...';
+  }
+  const meses = [...selectedMonths].sort();
+  const p = new URLSearchParams();
+  p.set('mode', 'quality_volume_evolution');
+  if (meses.length > 0) p.set('meses', meses.join(','));
+  appendGroupParams(p);
+  if (currentCompany) p.set('company', currentCompany);
+  const data = await safeGet('/api/quality?' + p.toString());
+  if (!data || data.error) {
+    if (empty) empty.innerHTML = String(data?.error || 'Erro ao carregar volume').slice(0, 180);
+    return;
+  }
+  if (!qualityData) qualityData = { strategic: {} };
+  if (!qualityData.strategic) qualityData.strategic = {};
+  qualityData.strategic.volume_evolution = data.volume_evolution || { monthly: [] };
+  renderQualityVolumeEvolutionChart(qualityData.strategic.volume_evolution);
 }
 
 function renderQualityStrategic() {

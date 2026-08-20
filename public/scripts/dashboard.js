@@ -1,5 +1,5 @@
 (async function loadSanusDashboard() {
-  const CACHE = "20260820-perf-boot";
+  const CACHE = "20260820-perf-ad06";
 
   function loadScript(src, { ordered = false } = {}) {
     return new Promise((resolve, reject) => {

@@ -1383,6 +1383,9 @@ async function loadCollaboratorCriteriaDetail(warehouseId, criteriaColumns, scop
 
 async function loadStrategic(warehouseId, columns, criteriaColumns, scope, sharedKey, criteriaFinisher, summarySessionJoin, summaryFinishedByColumn, criteriaFinishedByColumn, qualityDailyMonth, criterionIds, departmentFilter, options = {}) {
   const includeDailyVolume = Boolean(options.includeDailyVolume);
+  const includeScoreEvolution = Boolean(options.includeScoreEvolution);
+  const includeVolumeEvolution = Boolean(options.includeVolumeEvolution);
+  const includeCriteriaByCollaborator = Boolean(options.includeCriteriaByCollaborator);
   const summaryScoreColumn = pickColumn(columns, SCORE_CANDIDATES);
   const resolvedColumn = pickColumn(columns, RESOLVED_CANDIDATES);
   const careLineColumn = pickColumn(columns, CARE_LINE_CANDIDATES);
@@ -1405,6 +1408,8 @@ async function loadStrategic(warehouseId, columns, criteriaColumns, scope, share
     qualityEvolution,
     volumeEvolution,
     dailyVolumeEvolution,
+    collaboratorRows,
+    careLineRows,
   ] = await Promise.all([
     runQuery(warehouseId, `
       SELECT
@@ -1430,13 +1435,45 @@ async function loadStrategic(warehouseId, columns, criteriaColumns, scope, share
     `),
     loadEvaluatedVolume(warehouseId, scope),
     loadEvaluatedCriteriaBullets(warehouseId, scope, criteriaFinisher, summarySessionJoin, summaryFinishedByColumn, criteriaFinishedByColumn, criterionIds),
-    loadEvaluatedCriteriaByCollaborator(warehouseId, scope, criteriaFinisher, summarySessionJoin, summaryFinishedByColumn, criteriaFinishedByColumn, criteriaCollaboratorColumn, criterionIds),
+    includeCriteriaByCollaborator
+      ? loadEvaluatedCriteriaByCollaborator(warehouseId, scope, criteriaFinisher, summarySessionJoin, summaryFinishedByColumn, criteriaFinishedByColumn, criteriaCollaboratorColumn, criterionIds)
+      : Promise.resolve([]),
     loadOverallCriteriaScore(warehouseId, scope, criterionIds),
-    loadQualityEvolution(warehouseId, criteriaColumns, criterionIds),
-    loadQualityVolumeEvolution(warehouseId, criteriaColumns, scope),
+    includeScoreEvolution
+      ? loadQualityEvolution(warehouseId, criteriaColumns, criterionIds)
+      : Promise.resolve({ monthly: [], by_criterion: [] }),
+    includeVolumeEvolution
+      ? loadQualityVolumeEvolution(warehouseId, criteriaColumns, scope)
+      : Promise.resolve({ months: [], monthly: [] }),
     includeDailyVolume
       ? loadQualityDailyVolumeEvolution(warehouseId, criteriaColumns, scope, qualityDailyMonth)
       : Promise.resolve(null),
+    (criteriaCollaboratorColumn && criteriaScoreColumn)
+      ? runQuery(warehouseId, `
+          SELECT
+            ${stringExpr("c", criteriaCollaboratorColumn, "Sem close_by preenchido")} AS collaborator,
+            ${criteriaAttendanceColumn ? `COUNT(DISTINCT CAST(${qcol("c", criteriaAttendanceColumn)} AS STRING))` : "COUNT(*)"} AS total_atendimentos,
+            COUNT(*) AS total_avaliacoes,
+            COALESCE(SUM(COALESCE(${numberExpr("c", criteriaScoreColumn)}, 0)), 0) / NULLIF(COUNT(*) * ${CRITERION_MAX_SCORE}, 0) * 100 AS score_pct
+          FROM ${EVALUATED_CRITERIA_TABLE} c
+          ${strategicCriteriaWhere}
+          GROUP BY 1
+          ORDER BY score_pct DESC, total_atendimentos DESC
+        `)
+      : Promise.resolve([]),
+    careLineColumn
+      ? runQuery(warehouseId, `
+          SELECT
+            ${stringExpr("s", careLineColumn, "Sem linha")} AS care_line,
+            COUNT(*) AS total,
+            AVG(${numberExpr("s", summaryScoreColumn)}) AS avg_score
+          FROM ${SUMMARY_TABLE} s
+          WHERE ${scope.sql}
+          GROUP BY 1
+          ORDER BY total DESC
+          LIMIT 8
+        `)
+      : Promise.resolve([]),
   ]);
 
   const criteriaAgg = aggregateCriteria(criteriaRows);
@@ -1448,46 +1485,18 @@ async function loadStrategic(warehouseId, columns, criteriaColumns, scope, share
     .filter((item) => item.applicable > 0 && item.score_pct !== null)
     .sort((a, b) => a.score_pct - b.score_pct)[0] || null;
 
-  let collaborators = [];
-  if (criteriaCollaboratorColumn && criteriaScoreColumn) {
-    const rows = await runQuery(warehouseId, `
-      SELECT
-        ${stringExpr("c", criteriaCollaboratorColumn, "Sem close_by preenchido")} AS collaborator,
-        ${criteriaAttendanceColumn ? `COUNT(DISTINCT CAST(${qcol("c", criteriaAttendanceColumn)} AS STRING))` : "COUNT(*)"} AS total_atendimentos,
-        COUNT(*) AS total_avaliacoes,
-        COALESCE(SUM(COALESCE(${numberExpr("c", criteriaScoreColumn)}, 0)), 0) / NULLIF(COUNT(*) * ${CRITERION_MAX_SCORE}, 0) * 100 AS score_pct
-      FROM ${EVALUATED_CRITERIA_TABLE} c
-      ${strategicCriteriaWhere}
-      GROUP BY 1
-      ORDER BY score_pct DESC, total_atendimentos DESC
-    `);
-    collaborators = mergeCollaboratorsWithMeta(rows.map((row) => ({
-      name: String(getCell(row[0]) || "Sem colaborador"),
-      total: toInt(row[1]),
-      total_avaliacoes: toInt(row[2]),
-      score_pct: toNumber(row[3]),
-    })));
-  }
+  const collaborators = mergeCollaboratorsWithMeta((collaboratorRows || []).map((row) => ({
+    name: String(getCell(row[0]) || "Sem colaborador"),
+    total: toInt(row[1]),
+    total_avaliacoes: toInt(row[2]),
+    score_pct: toNumber(row[3]),
+  })));
 
-  let careLines = [];
-  if (careLineColumn) {
-    const rows = await runQuery(warehouseId, `
-      SELECT
-        ${stringExpr("s", careLineColumn, "Sem linha")} AS care_line,
-        COUNT(*) AS total,
-        AVG(${numberExpr("s", summaryScoreColumn)}) AS avg_score
-      FROM ${SUMMARY_TABLE} s
-      WHERE ${scope.sql}
-      GROUP BY 1
-      ORDER BY total DESC
-      LIMIT 8
-    `);
-    careLines = rows.map((row) => ({
-      name: String(getCell(row[0]) || "Sem linha"),
-      total: toInt(row[1]),
-      score_pct: normalizeSummaryScore(row[2]),
-    }));
-  }
+  const careLines = (careLineRows || []).map((row) => ({
+    name: String(getCell(row[0]) || "Sem linha"),
+    total: toInt(row[1]),
+    score_pct: normalizeSummaryScore(row[2]),
+  }));
 
   return {
     kpis: {
@@ -1647,11 +1656,12 @@ export default async function handler(req, res) {
       criterionIds = criterionIdsForDepartment(mappings, departmentFilter);
     }
     const warehouseId = await resolveWarehouseId();
+    const mode = String(req.query.mode || "").toLowerCase();
     const viewRaw = String(req.query.view || "").toLowerCase();
     const view = ["strategic", "operational", "all"].includes(viewRaw) ? viewRaw : "all";
-    const needOperational = view === "operational" || view === "all";
-    const needStrategic = view === "strategic" || view === "all";
-    const needSessionColumns = needStrategic; // finisher / daily paths
+    const needOperational = !mode && (view === "operational" || view === "all");
+    const needStrategic = !mode && (view === "strategic" || view === "all");
+    const needSessionColumns = needStrategic || mode === "quality_volume_evolution" || mode === "quality_daily_volume";
 
     const columnJobs = [
       getColumns(warehouseId, SUMMARY_TABLE),
@@ -1666,11 +1676,19 @@ export default async function handler(req, res) {
     const qualityDailyMonth = /^\d{4}-\d{2}$/.test(String(req.query.quality_daily_month || ""))
       ? String(req.query.quality_daily_month)
       : lastNMonthsList(1)[0];
-    if (String(req.query.mode || "") === "quality_daily_volume") {
+    if (mode === "quality_daily_volume") {
       const dailyVolumeEvolution = await loadQualityDailyVolumeEvolution(warehouseId, criteriaColumns, scope, qualityDailyMonth);
       return res.status(200).json({ daily_volume_evolution: dailyVolumeEvolution, updatedAt: new Date().toISOString() });
     }
-    if (String(req.query.mode || "") === "collaborator_criteria") {
+    if (mode === "quality_score_evolution") {
+      const evolution = await loadQualityEvolution(warehouseId, criteriaColumns, criterionIds);
+      return res.status(200).json({ evolution, updatedAt: new Date().toISOString() });
+    }
+    if (mode === "quality_volume_evolution") {
+      const volumeEvolution = await loadQualityVolumeEvolution(warehouseId, criteriaColumns, scope);
+      return res.status(200).json({ volume_evolution: volumeEvolution, updatedAt: new Date().toISOString() });
+    }
+    if (mode === "collaborator_criteria") {
       const detail = await loadCollaboratorCriteriaDetail(warehouseId, criteriaColumns, scope, req.query, criterionIds);
       return res.status(200).json(detail);
     }
@@ -1700,7 +1718,12 @@ export default async function handler(req, res) {
             qualityDailyMonth,
             criterionIds,
             departmentFilter,
-            { includeDailyVolume: false },
+            {
+              includeDailyVolume: false,
+              includeScoreEvolution: false,
+              includeVolumeEvolution: false,
+              includeCriteriaByCollaborator: false,
+            },
           )
         : Promise.resolve(null),
       needOperational

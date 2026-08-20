@@ -105,6 +105,22 @@ function lastNMonthsList(n: number, includeCurrent = true) {
   return out;
 }
 
+/** Bounds inclusivo/exclusivo para permitir predicate pushdown (evita DATE_FORMAT no filtro). */
+function monthWindowBounds(months: string[]) {
+  if (!months.length) return null;
+  const first = months[0];
+  const last = months[months.length - 1];
+  const [ly, lm] = last.split("-").map(Number);
+  const endExclusive =
+    lm === 12
+      ? `${ly + 1}-01-01`
+      : `${ly}-${String(lm + 1).padStart(2, "0")}-01`;
+  return {
+    start: `${first}-01`,
+    endExclusive,
+  };
+}
+
 export default async function handler(req: ApiRequest, res: ApiResponse) {
   setApiCors(res);
   res.setHeader("Cache-Control", "no-store, max-age=0");
@@ -117,79 +133,87 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   const partnerBrokerId = await scopedPartnerBrokerId(req, req.query.partner_broker_id || null);
   const monthsWindow = Math.min(Math.max(parseInt(String(req.query.months || "12"), 10) || 12, 3), 36);
   const displayMonths = lastNMonthsList(monthsWindow, true);
+  const bounds = monthWindowBounds(displayMonths);
   const params = createSqlParams();
 
   const entryOrgConds = orgScopeConditions("b", groupNames, company, partnerBrokerId, params);
   const exitOrgConds = orgScopeConditions("d", groupNames, company, partnerBrokerId, params);
   const activeStockWhere = ["o.active = true", ...entryOrgConds].join(" AND ");
+  const exitDateExpr = `COALESCE(d.date_of_exclusion, d.inactived_at, d.retired_at, d.created_at)`;
   const entryWhere = [
     "b.created_at IS NOT NULL",
     "o.active = true",
+    ...(bounds
+      ? [
+          `b.created_at >= TIMESTAMP('${bounds.start}')`,
+          `b.created_at < TIMESTAMP('${bounds.endExclusive}')`,
+        ]
+      : []),
     ...entryOrgConds,
   ].join(" AND ");
-  const exitDateExpr = `COALESCE(d.date_of_exclusion, d.inactived_at, d.retired_at, d.created_at)`;
   const exitWhere = [
     `${exitDateExpr} IS NOT NULL`,
-    `${exitDateExpr} <= CURRENT_TIMESTAMP()`,
-    `${exitDateExpr} >= TIMESTAMP('2022-01-01')`,
+    ...(bounds
+      ? [
+          `${exitDateExpr} >= TIMESTAMP('${bounds.start}')`,
+          `${exitDateExpr} < TIMESTAMP('${bounds.endExclusive}')`,
+        ]
+      : [
+          `${exitDateExpr} <= CURRENT_TIMESTAMP()`,
+          `${exitDateExpr} >= TIMESTAMP('2022-01-01')`,
+        ]),
     ...exitOrgConds,
   ].join(" AND ");
-  const monthListSql = displayMonths.map((month) => `'${month}'`).join(",");
 
   try {
     const warehouseId = await resolveWarehouseId();
-    const [stockRows, movementRows] = await Promise.all([
-      runQuery(
-        warehouseId,
-        `
+    // Uma query só: estoque atual + movimentos do recorte (menos round-trip no warehouse).
+    const rows = await runQuery(
+      warehouseId,
+      `
+      WITH stock AS (
         SELECT COUNT(*) AS estoque_ativo
         FROM ${BENEFICIARIES_TABLE} b
         INNER JOIN ${ORGANIZATIONS_TABLE} o
           ON CAST(b.organization_id AS STRING) = CAST(o.id AS STRING)
         WHERE ${activeStockWhere}
-      `,
-        params.list,
       ),
-      runQuery(
-        warehouseId,
-        `
-        WITH entries AS (
-          SELECT
-            DATE_FORMAT(b.created_at, 'yyyy-MM') AS mes,
-            COUNT(*) AS entradas
-          FROM ${BENEFICIARIES_TABLE} b
-          INNER JOIN ${ORGANIZATIONS_TABLE} o
-            ON CAST(b.organization_id AS STRING) = CAST(o.id AS STRING)
-          WHERE ${entryWhere}
-            AND DATE_FORMAT(b.created_at, 'yyyy-MM') IN (${monthListSql})
-          GROUP BY 1
-        ),
-        exits AS (
-          SELECT
-            DATE_FORMAT(${exitDateExpr}, 'yyyy-MM') AS mes,
-            COUNT(*) AS saidas
-          FROM ${USERS_DELETED_TABLE} d
-          WHERE ${exitWhere}
-            AND DATE_FORMAT(${exitDateExpr}, 'yyyy-MM') IN (${monthListSql})
-          GROUP BY 1
-        )
+      entries AS (
         SELECT
-          m.mes,
-          COALESCE(e.entradas, 0) AS entradas,
-          COALESCE(x.saidas, 0) AS saidas
-        FROM (
-          ${displayMonths.map((month) => `SELECT '${month}' AS mes`).join(" UNION ALL ")}
-        ) m
-        LEFT JOIN entries e ON e.mes = m.mes
-        LEFT JOIN exits x ON x.mes = m.mes
-        ORDER BY m.mes
-      `,
-        params.list,
+          DATE_FORMAT(b.created_at, 'yyyy-MM') AS mes,
+          COUNT(*) AS entradas
+        FROM ${BENEFICIARIES_TABLE} b
+        INNER JOIN ${ORGANIZATIONS_TABLE} o
+          ON CAST(b.organization_id AS STRING) = CAST(o.id AS STRING)
+        WHERE ${entryWhere}
+        GROUP BY 1
       ),
-    ]);
+      exits AS (
+        SELECT
+          DATE_FORMAT(${exitDateExpr}, 'yyyy-MM') AS mes,
+          COUNT(*) AS saidas
+        FROM ${USERS_DELETED_TABLE} d
+        WHERE ${exitWhere}
+        GROUP BY 1
+      ),
+      months AS (
+        ${displayMonths.map((month) => `SELECT '${month}' AS mes`).join(" UNION ALL ")}
+      )
+      SELECT
+        m.mes,
+        COALESCE(e.entradas, 0) AS entradas,
+        COALESCE(x.saidas, 0) AS saidas,
+        (SELECT estoque_ativo FROM stock) AS estoque_ativo
+      FROM months m
+      LEFT JOIN entries e ON e.mes = m.mes
+      LEFT JOIN exits x ON x.mes = m.mes
+      ORDER BY m.mes
+    `,
+      params.list,
+    );
 
-    const estoqueAtivo = toInt(stockRows[0]?.[0]);
-    const movements = movementRows.map((row) => ({
+    const estoqueAtivo = toInt(rows[0]?.[3]);
+    const movements = rows.map((row) => ({
       mes: String(getCell(row[0]) || ""),
       entradas: toInt(row[1]),
       saidas: toInt(row[2]),
@@ -226,6 +250,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         company,
         partner_broker_id: partnerBrokerId,
         months: monthsWindow,
+        window_start: bounds?.start || null,
+        window_end_exclusive: bounds?.endExclusive || null,
       },
     });
   } catch (err) {
