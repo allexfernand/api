@@ -27,13 +27,16 @@ import { SanusImpact } from "./components/SanusImpact";
 import { SanusJourney } from "./components/SanusJourney";
 import { useGoldPreview } from "./hooks/useGoldPreview";
 import { useGoldPreviewFilters } from "./hooks/useGoldPreviewFilters";
+import { useTabActivated } from "../dashboard/hooks/useTabActivated";
 import type { GoldPreview } from "../../contracts/gold-preview";
 import { LineageDrawer } from "../sinistralidade/components/LineageDrawer";
 import { LineageProvider } from "../sinistralidade/components/LineageProvider";
 
 export function ClaimsTab() {
+  // Não disputa warehouse/conexões no boot: só busca ao abrir Análise Sinistro.
+  const enabled = useTabActivated("analise-sinistro");
   const filtros = useGoldPreviewFilters();
-  const { status, data, error, retry } = useGoldPreview(filtros.querystring);
+  const { status, data, error, retry } = useGoldPreview(filtros.querystring, enabled);
   const temFiltroAplicado = Object.values(filtros.aplicados).some((valores) => valores.length > 0);
 
   return (

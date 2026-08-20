@@ -158,6 +158,9 @@ async function activateTab(tabName) {
   updateFilterInfo();
   schedulePdfReadinessUpdate();
   if (activeTab === 'visao-parceiros') loadPartnerVision();
+  if (activeTab === 'demografica' || activeTab === 'visao-parceiros') {
+    if (typeof loadLivesNetEvolution === 'function') loadLivesNetEvolution();
+  }
   if (hasPeriodo) { buildPeriodoOptions(); loadPeriodFilteredTab(); }
   document.dispatchEvent(new CustomEvent('sanus:tabchange', { detail: tabName }));
 }

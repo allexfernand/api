@@ -28,6 +28,15 @@ const SNAPSHOT = `hive_metastore.sanus_prod.beneficiary_eligibility_snapshot_v2`
 const SILVER_FINAL = `hive_metastore.sanus_prod.utilizacao_silver_final`;
 const MONTH_STATUS = `hive_metastore.sanus_prod.sinistralidade_month_status_v2`;
 
+async function waveAll<T>(factories: Array<() => Promise<T>>, waveSize: number): Promise<T[]> {
+  const results: T[] = [];
+  for (let i = 0; i < factories.length; i += waveSize) {
+    const wave = factories.slice(i, i + waveSize).map((factory) => factory());
+    results.push(...(await Promise.all(wave)));
+  }
+  return results;
+}
+
 const BASE_FILTER = `NOT flag_data_suspeita`;
 const JANELA_2024 = `month_key >= '2024-01'`;
 const SERIE_INICIO = `'2025-01'`;
@@ -284,19 +293,20 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     }
 
     // ---- Fase 2: KPIs, blocos e impacto (dependem da janela 12m)
-    const [kpiRows, total24Rows, lotacaoRows, prestadorRows, concRows, intAgrupRows, intStatsRows, intSaudeMentalRows, smTemaRows, impactoMesRows, impactoEventoRows, triRows, carteiraRows, topUtiRows, facetRows, cidadeRows, maduro2Rows, maduro4Rows, maduro6Rows, servicoRows, proximidadeRows, competenciaRows] = await Promise.all([
-      q(`SELECT round(sum(g.custo_assistencial_bruto), 2), count(DISTINCT g.person_key),
+    // Em ondas de 6 para não estourar o warehouse/gateway (504) com 22 queries paralelas.
+    const [kpiRows, total24Rows, lotacaoRows, prestadorRows, concRows, intAgrupRows, intStatsRows, intSaudeMentalRows, smTemaRows, impactoMesRows, impactoEventoRows, triRows, carteiraRows, topUtiRows, facetRows, cidadeRows, maduro2Rows, maduro4Rows, maduro6Rows, servicoRows, proximidadeRows, competenciaRows] = await waveAll([
+      () => q(`SELECT round(sum(g.custo_assistencial_bruto), 2), count(DISTINCT g.person_key),
                 round(sum(CASE WHEN g.flag_reembolso THEN g.custo_assistencial_bruto END), 2),
                 count(DISTINCT CASE WHEN g.month_key = '${ultimoFechadoMes ?? ""}' THEN g.person_key END)
          FROM ${GOLD} g
          WHERE NOT g.flag_data_suspeita AND g.month_key IN (${janela12Sql})${filtroSql}`),
-      q(`SELECT round(sum(g.custo_assistencial_bruto), 2),
+      () => q(`SELECT round(sum(g.custo_assistencial_bruto), 2),
                 round(sum(CASE WHEN g.flag_saude_mental THEN g.custo_assistencial_bruto ELSE 0 END), 2),
                 count(DISTINCT CASE WHEN g.flag_saude_mental THEN g.person_key END),
                 sum(CASE WHEN g.flag_saude_mental THEN coalesce(g.quantidade_servicos, 0) ELSE 0 END),
                 round(sum(CASE WHEN g.flag_saude_mental AND g.flag_reembolso THEN g.custo_assistencial_bruto ELSE 0 END), 2)
          FROM ${GOLD} g WHERE NOT g.flag_data_suspeita AND g.${JANELA_2024}${filtroSql}`),
-      q(`SELECT lot, sin, benef, tot FROM (
+      () => q(`SELECT lot, sin, benef, tot FROM (
            SELECT COALESCE(NULLIF(trim(g.nome_lotacao), ''), 'Sem lotação') AS lot,
                   round(sum(g.custo_assistencial_bruto), 2) AS sin,
                   count(DISTINCT g.person_key) AS benef,
@@ -305,7 +315,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
            FROM ${GOLD} g WHERE NOT g.flag_data_suspeita AND g.${JANELA_2024}${filtroSql}
            GROUP BY 1
          ) WHERE rn <= 12 ORDER BY sin DESC`),
-      q(filtroAtivo
+      () => q(filtroAtivo
         ? `SELECT p, sin, tot, nprest FROM (
              SELECT g.prestador AS p,
                     round(sum(g.custo_assistencial_bruto), 2) AS sin,
@@ -324,9 +334,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
              FROM ${MART_PRESTADOR} WHERE month_key >= '2024-01'${escopoMart}
              GROUP BY 1
            ) WHERE rn <= 10 ORDER BY sin DESC`),
-      // Concentração direta na Gold v2: person_key já é identidade resolvida,
-      // sem reconstrução manual de IDs corrompidos.
-      q(`WITH u AS (
+      () => q(`WITH u AS (
            SELECT g.person_key AS usuario, sum(g.custo_assistencial_bruto) AS c
            FROM ${GOLD} g
            WHERE NOT g.flag_data_suspeita AND g.month_key IN (${janela12Sql})${filtroSql}
@@ -341,49 +349,47 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
                 round(100 * sum(CASE WHEN rn <= ceil(n * 0.01) THEN c END) / max(tot), 1),
                 round(100 * sum(CASE WHEN rn <= ceil(n * 0.05) THEN c END) / max(tot), 1)
          FROM r`),
-      q(`SELECT COALESCE(NULLIF(trim(g.acomodacao_internacao), ''), 'Outras diárias') AS agr,
+      () => q(`SELECT COALESCE(NULLIF(trim(g.acomodacao_internacao), ''), 'Outras diárias') AS agr,
                 round(sum(g.custo_assistencial_bruto) / 1e6, 2)
          FROM ${GOLD} g WHERE NOT g.flag_data_suspeita AND g.flag_internacao AND g.${JANELA_2024}${filtroSql}
          GROUP BY 1 ORDER BY 2 DESC LIMIT 8`),
-      q(`${continuousHospitalizationCte(filtroSql)}
+      () => q(`${continuousHospitalizationCte(filtroSql)}
          SELECT sum(linhas), count(*), count(DISTINCT person_key), sum(coalesce(duracao_dias, 0)),
            round(sum(custo) / count(*), 0), percentile(duracao_dias, 0.5), percentile(duracao_dias, 0.9)
          FROM episodes WHERE admission_month >= '2024-01'`),
-      q(`${continuousHospitalizationCte(filtroSql)}
+      () => q(`${continuousHospitalizationCte(filtroSql)}
          SELECT saude_mental, count(*), count(DISTINCT person_key), round(sum(custo), 2),
            round(sum(custo) / count(*), 2), percentile(duracao_dias, 0.5), percentile(duracao_dias, 0.9),
            round(avg(CASE WHEN duracao_dias IS NOT NULL THEN 1.0 ELSE 0.0 END), 4), round(sum(custo_reembolso), 2)
          FROM episodes WHERE admission_month >= '2024-01'
          GROUP BY 1 ORDER BY 1 DESC`),
-      q(`SELECT COALESCE(NULLIF(trim(g.tema_saude_mental), ''), 'Sem tema') AS tema,
+      () => q(`SELECT COALESCE(NULLIF(trim(g.tema_saude_mental), ''), 'Sem tema') AS tema,
                 round(sum(g.custo_assistencial_bruto), 2), count(DISTINCT g.person_key),
                 sum(coalesce(g.quantidade_servicos, 0)),
                 round(100 * sum(g.custo_assistencial_bruto) / nullif(sum(sum(g.custo_assistencial_bruto)) OVER (), 0), 2)
          FROM ${GOLD} g WHERE NOT g.flag_data_suspeita AND g.flag_saude_mental AND g.${JANELA_2024}${filtroSql}
          GROUP BY 1 ORDER BY 2 DESC LIMIT 5`),
-      q(`SELECT g.month_key, count(*), round(sum(g.custo_assistencial_bruto), 2), count(DISTINCT g.person_key)
+      () => q(`SELECT g.month_key, count(*), round(sum(g.custo_assistencial_bruto), 2), count(DISTINCT g.person_key)
          FROM ${GOLD} g
          WHERE NOT g.flag_data_suspeita AND g.month_key IN (${MESES_COMPARACAO.map((mes) => `'${mes}'`).join(",")})${filtroSql}
          GROUP BY 1`),
-      q(`SELECT g.month_key, g.tipo_evento, count(*)
+      () => q(`SELECT g.month_key, g.tipo_evento, count(*)
          FROM ${GOLD} g
          WHERE NOT g.flag_data_suspeita
            AND g.month_key IN (${MESES_COMPARACAO.map((mes) => `'${mes}'`).join(",")})
            AND g.tipo_evento IN (${EVENTOS_COMPARAVEIS.map((tipo) => `'${tipo}'`).join(",")})${filtroSql}
          GROUP BY 1, 2 ORDER BY 1, 2`),
-      q(`SELECT concat('T', quarter(to_date(concat(g.month_key, '-01'))), '/', substr(g.month_key, 3, 2)) AS tri,
+      () => q(`SELECT concat('T', quarter(to_date(concat(g.month_key, '-01'))), '/', substr(g.month_key, 3, 2)) AS tri,
                 min(g.month_key) AS m0,
                 count(DISTINCT g.person_key)
          FROM ${GOLD} g WHERE NOT g.flag_data_suspeita AND g.month_key >= '2025-07'${filtroSql}
          GROUP BY 1 ORDER BY m0`),
-      q(`SELECT g.operadora, g.nome_empresa_canonico,
+      () => q(`SELECT g.operadora, g.nome_empresa_canonico,
                 round(sum(g.custo_assistencial_bruto), 2) AS sin,
                 count(DISTINCT g.person_key) AS benef
          FROM ${GOLD} g WHERE ${BASE_FILTER} AND g.${JANELA_2024}${escopo}
          GROUP BY 1, 2 ORDER BY sin DESC`),
-      // Dado sensível (LGPD): ranking individual mascarado por person_key opaco;
-      // sem atributos clínicos individuais; endpoint já recusa credencial MDS.
-      q(`${continuousHospitalizationCte(filtroSql)}, episode_counts AS (
+      () => q(`${continuousHospitalizationCte(filtroSql)}, episode_counts AS (
            SELECT company_key, person_key, count(*) AS internacoes
            FROM episodes
            WHERE admission_month IN (${janela12Sql})
@@ -400,8 +406,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
          LEFT JOIN episode_counts e ON g.company_key = e.company_key AND g.person_key = e.person_key
          WHERE NOT g.flag_data_suspeita AND g.month_key IN (${janela12Sql})${filtroSql}
          GROUP BY 1 ORDER BY custo DESC, g.person_key LIMIT 10`),
-      // Facets pros multiselects (universo completo dentro do company scope)
-      q(`SELECT 'faixa_etaria' AS dim, g.faixa_etaria_usuario AS valor, count(*) AS n
+      () => q(`SELECT 'faixa_etaria' AS dim, g.faixa_etaria_usuario AS valor, count(*) AS n
          FROM ${GOLD} g WHERE ${BASE_FILTER} AND g.${JANELA_2024} AND NULLIF(trim(g.faixa_etaria_usuario), '') IS NOT NULL${escopo} GROUP BY 1, 2
          UNION ALL
          SELECT 'sexo', g.genero_usuario, count(*)
@@ -410,16 +415,14 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
          SELECT 'tipo_plano', g.tipo_acomodacao, count(*)
          FROM ${GOLD} g WHERE ${BASE_FILTER} AND g.${JANELA_2024} AND NULLIF(trim(g.tipo_acomodacao), '') IS NOT NULL${escopo} GROUP BY 1, 2
          ORDER BY dim, valor`),
-      // Cidades/estados do snapshot de elegibilidade, sem literal de empresa.
-      q(`SELECT upper(trim(g.state)) AS uf, upper(trim(g.city)) AS cidade, count(*) AS n
+      () => q(`SELECT upper(trim(g.state)) AS uf, upper(trim(g.city)) AS cidade, count(*) AS n
          FROM ${SNAPSHOT} g
          WHERE NULLIF(trim(g.city), '') IS NOT NULL${companyScopeSql(auth, "g.company_key")}
          GROUP BY 1, 2 ORDER BY n DESC LIMIT 60`),
-      queryComparacaoMadura(JANELAS_COMPARACAO[2]),
-      queryComparacaoMadura(JANELAS_COMPARACAO[4]),
-      queryComparacaoMadura(JANELAS_COMPARACAO[6]),
-      // Alcance dos canais digitais dentro das famílias utilizantes da janela corrente.
-      q(`WITH cohort AS (
+      () => queryComparacaoMadura(JANELAS_COMPARACAO[2]),
+      () => queryComparacaoMadura(JANELAS_COMPARACAO[4]),
+      () => queryComparacaoMadura(JANELAS_COMPARACAO[6]),
+      () => q(`WITH cohort AS (
            SELECT DISTINCT g.family_key AS familia
            FROM ${GOLD} g
            WHERE NOT g.flag_data_suspeita AND g.month_key IN (${janela12Sql})${filtroSql}
@@ -447,8 +450,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
          )
          SELECT p.servico, p.eventos, p.familias, (SELECT count(*) FROM cohort) AS familias_cohort
          FROM por_servico p ORDER BY CASE WHEN servico = 'qualquer_servico' THEN 0 ELSE 1 END, servico`),
-      // Proximidade não causal: utilização ocorrida até 40 dias depois do contato digital mais próximo.
-      q(`WITH eventos AS (
+      () => q(`WITH eventos AS (
            SELECT g.row_sha256, g.family_key AS familia, g.data_atendimento
            FROM ${GOLD} g
            WHERE NOT g.flag_data_suspeita AND g.month_key IN (${janela12Sql})${filtroSql}
@@ -474,18 +476,15 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
                 sum(CASE WHEN dias <= 15 THEN 1 ELSE 0 END),
                 count(*), round(avg(dias), 1), count(DISTINCT familia)
          FROM proximos`),
-      // Série por COMPETÊNCIA DE COBRANÇA: "quanto foi faturado no mês",
-      // contra o "quanto foi atendido no mês" da série `mensal`. Mesmo
-      // recorte de filtros; o eixo é que muda.
-      q(`SELECT date_format(to_date(g.competencia_cobranca, 'dd/MM/yyyy'), 'yyyy-MM') AS competencia,
+      () => q(`SELECT date_format(to_date(g.competencia_cobranca, 'dd/MM/yyyy'), 'yyyy-MM') AS competencia,
            round(sum(g.custo_assistencial_bruto), 2) AS sinistro,
            sum(g.quantidade_servicos) AS servicos,
            count(*) AS linhas
          FROM ${GOLD} g
          WHERE NOT g.flag_data_suspeita
            AND date_format(to_date(g.competencia_cobranca, 'dd/MM/yyyy'), 'yyyy-MM') >= ${SERIE_INICIO}${filtroSql}
-         GROUP BY 1 ORDER BY 1`),
-    ]);
+         GROUP BY 1 ORDER BY 1`)
+    ], 6);
 
     const kpi = kpiRows[0] || [];
     const total24 = total24Rows[0] || [];

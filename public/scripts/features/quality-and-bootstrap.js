@@ -1546,7 +1546,10 @@ async function loadAll(fetchOrgs=true) {
     loadDemographics();
     loadCompanies();
     loadAgeGroups();
-    loadLivesNetEvolution();
+    // AD06 só na Demográfica/Parceiros — não disputa warehouse com sinistro no boot.
+    if (getActiveTab() === 'demografica' || getActiveTab() === 'visao-parceiros') {
+      loadLivesNetEvolution();
+    }
     if (getActiveTab() === 'visao-parceiros') loadPartnerVision();
   } catch(err) {
     setStatus('error','✗ Erro: '+err.message);

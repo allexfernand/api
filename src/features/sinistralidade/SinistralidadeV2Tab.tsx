@@ -25,6 +25,7 @@ import { ProviderAnalysis } from "./components/ProviderAnalysis";
 import { PsItemAnalysis } from "./components/PsItemAnalysis";
 import { TopUsersTable, type RankingBy } from "./components/TopUsersTable";
 import { UserDetailDrawer } from "./components/UserDetailDrawer";
+import { useTabActivated } from "../dashboard/hooks/useTabActivated";
 import { useSinistralidadeFilters } from "./hooks/useSinistralidadeFilters";
 import { scopeUrl, useSinistralidadeScope } from "./hooks/useSinistralidadeScope";
 import type {
@@ -46,15 +47,19 @@ import type {
 import { monthLabel } from "./types";
 
 export function SinistralidadeV2Tab() {
+  // Escopos pesados (overview/timeline/event-mix/top-users) só após abrir a aba.
+  const enabled = useTabActivated("sinistralidade-v2");
   const [companies, setCompanies] = useState<Company[]>([]);
   const [features, setFeatures] = useState<Features | null>(null);
   const [role, setRole] = useState<DashboardRole | null>(null);
   const [metadataError, setMetadataError] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const { filters, update, windowOptions } = useSinistralidadeFilters();
 
   useEffect(() => {
+    if (!enabled) return;
     let cancelled = false;
+    setLoading(true);
     fetch("/api/sinistralidade/v2?scope=metadata", { cache: "no-store", credentials: "same-origin" })
       .then(async (response) => {
         const body = await response.json().catch(() => ({}));
@@ -74,16 +79,16 @@ export function SinistralidadeV2Tab() {
       .finally(() => !cancelled && setLoading(false));
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [enabled]);
 
   return (
     <section id="tab-sinistralidade-v2" className={`tab-content ${styles.root}`}>
-      {metadataError ? <div className={styles.error}><strong>Não foi possível carregar a visão.</strong><span>{metadataError}</span></div> : null}
-      {loading ? <div className={styles.empty}>Preparando a visão multiempresa…</div> : null}
-      {!loading && !companies.length && !metadataError ? (
+      {!enabled ? null : metadataError ? <div className={styles.error}><strong>Não foi possível carregar a visão.</strong><span>{metadataError}</span></div> : null}
+      {enabled && loading ? <div className={styles.empty}>Preparando a visão multiempresa…</div> : null}
+      {enabled && !loading && !companies.length && !metadataError ? (
         <div className={styles.empty}><strong>Nenhuma empresa liberada.</strong><span>O usuário atual não possui escopo de sinistralidade.</span></div>
       ) : null}
-      {!loading && companies.length ? (
+      {enabled && !loading && companies.length ? (
         features?.longitudinal ? (
           <LongitudinalExperience
             companies={companies}

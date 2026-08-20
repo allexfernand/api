@@ -27,14 +27,16 @@ type Loaded = {
   error: string | null;
 };
 
-export function useGoldPreview(query: string): GoldPreviewResult {
+export function useGoldPreview(query: string, enabled = true): GoldPreviewResult {
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
+    if (!enabled) return;
     let cancelled = false;
+    const controller = new AbortController();
     const path = `/api/gold-preview${query ? `?${query}` : ""}`;
-    fetch(path, { cache: "no-store", credentials: "same-origin" })
+    fetch(path, { cache: "no-store", credentials: "same-origin", signal: controller.signal })
       .then(async (response) => {
         if (cancelled) return;
         const body = (await response.json().catch(() => ({}))) as { error?: string };
@@ -60,7 +62,7 @@ export function useGoldPreview(query: string): GoldPreviewResult {
         setLoaded({ ...base, kind: "ready", data: parsed.data, error: null });
       })
       .catch((cause) => {
-        if (cancelled) return;
+        if (cancelled || (cause instanceof DOMException && cause.name === "AbortError")) return;
         setLoaded({
           query,
           attempt,
@@ -71,11 +73,15 @@ export function useGoldPreview(query: string): GoldPreviewResult {
       });
     return () => {
       cancelled = true;
+      controller.abort();
     };
-  }, [query, attempt]);
+  }, [query, attempt, enabled]);
 
   const retry = useCallback(() => setAttempt((value) => value + 1), []);
 
+  if (!enabled) {
+    return { status: "loading", data: null, error: null, retry };
+  }
   if (!loaded || loaded.query !== query || loaded.attempt !== attempt) {
     return { status: "loading", data: null, error: null, retry };
   }
