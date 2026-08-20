@@ -1,5 +1,5 @@
 (async function loadSanusDashboard() {
-  const CACHE = "20260820-unify-subcrit";
+  const CACHE = "20260820-kpi-depto";
 
   function loadScript(src, { ordered = false } = {}) {
     return new Promise((resolve, reject) => {

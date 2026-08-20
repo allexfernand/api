@@ -708,7 +708,23 @@ function buildEvaluatedVolumeWhere(scope) {
   return conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
 }
 
-async function loadEvaluatedVolume(warehouseId, scope) {
+async function loadEvaluatedVolume(warehouseId, scope, criterionIds = null) {
+  if (Array.isArray(criterionIds)) {
+    const rows = await runQuery(warehouseId, `
+      SELECT
+        COUNT(DISTINCT CAST(q.${quoteIdent("attendance_id")} AS STRING)) AS total,
+        MAX(try_cast(q.${quoteIdent("event_timestamp")} AS TIMESTAMP)) AS latest_at
+      FROM ${EVALUATED_CRITERIA_TABLE} q
+      ${buildEvaluatedCriteriaWhere(scope, "", null, criterionIds)}
+    `);
+    const row = rows[0] || [];
+    return {
+      monthly: [],
+      total: toInt(row[0]),
+      latest_at: getCell(row[1]),
+    };
+  }
+
   const rows = await runQuery(warehouseId, `
     SELECT
       DATE_FORMAT(try_cast(q.${quoteIdent("event_timestamp")} AS TIMESTAMP), 'yyyy-MM') AS mes,
@@ -747,12 +763,26 @@ function buildFinisherCondition(alias, column, criteriaFinisher) {
 function buildCriterionIdsCondition(alias, criterionIds) {
   if (!Array.isArray(criterionIds)) return null;
   if (!criterionIds.length) return "1 = 0";
-  const list = criterionIds
-    .map((id) => `'${escapeSql(String(id).trim())}'`)
-    .filter((id) => id !== "''")
+  const expanded = new Set<string>();
+  for (const raw of criterionIds) {
+    const trimmed = String(raw || "").trim();
+    if (!trimmed) continue;
+    expanded.add(trimmed);
+    expanded.add(trimmed.replace(/,/g, "."));
+    expanded.add(normalizeSubcriterionId(trimmed));
+  }
+  const list = [...expanded]
+    .map((id) => `'${escapeSql(id)}'`)
     .join(",");
   if (!list) return "1 = 0";
-  return `CAST(${alias}.${quoteIdent("criterio_id")} AS STRING) IN (${list})`;
+  const col = `TRIM(CAST(${alias}.${quoteIdent("criterio_id")} AS STRING))`;
+  const normalizedCol = `regexp_replace(${col}, ',', '.')`;
+  // Aceita id canônico e variantes (3,3 / 3.3 / prefixo "3.3 - texto").
+  return `(
+    ${col} IN (${list})
+    OR ${normalizedCol} IN (${list})
+    OR regexp_extract(${normalizedCol}, '^(\\\\d+(?:\\\\.\\\\d+)+)', 1) IN (${list})
+  )`;
 }
 
 function buildEvaluatedCriteriaWhere(scope, criteriaFinisher, criteriaFinishedByColumn, criterionIds) {
@@ -1463,7 +1493,7 @@ async function loadStrategic(warehouseId, columns, criteriaColumns, scope, share
       ${strategicCriteriaWhere}
       GROUP BY 1, 2, 3, 4, 5
     `),
-    loadEvaluatedVolume(warehouseId, scope),
+    loadEvaluatedVolume(warehouseId, scope, criterionIds),
     loadEvaluatedCriteriaBullets(warehouseId, scope, criteriaFinisher, summarySessionJoin, summaryFinishedByColumn, criteriaFinishedByColumn, criterionIds),
     includeCriteriaByCollaborator
       ? loadEvaluatedCriteriaByCollaborator(warehouseId, scope, criteriaFinisher, summarySessionJoin, summaryFinishedByColumn, criteriaFinishedByColumn, criteriaCollaboratorColumn, criterionIds)
@@ -1514,6 +1544,12 @@ async function loadStrategic(warehouseId, columns, criteriaColumns, scope, share
   const weakestPillar = criteriaAgg.pillars
     .filter((item) => item.applicable > 0 && item.score_pct !== null)
     .sort((a, b) => a.score_pct - b.score_pct)[0] || null;
+  const weakestCriterion = criteriaAgg.criteria
+    .filter((item) => item.applicable > 0 && item.score_pct !== null)
+    .sort((a, b) => {
+      const scoreSort = a.score_pct - b.score_pct;
+      return scoreSort || String(a.criterion_id).localeCompare(String(b.criterion_id), "pt-BR", { numeric: true });
+    })[0] || null;
 
   const collaborators = mergeCollaboratorsWithMeta((collaboratorRows || []).map((row) => ({
     name: String(getCell(row[0]) || "Sem colaborador"),
@@ -1539,6 +1575,15 @@ async function loadStrategic(warehouseId, columns, criteriaColumns, scope, share
       available_criteria: overallCriteriaScore.total_criterios_disponiveis || overallCriteriaScore.total_criterios || criteriaAgg.totals.total,
       na_pct: criteriaAgg.totals.total > 0 ? criteriaAgg.totals.pct_na : null,
       weakest_pillar: weakestPillar,
+      weakest_criterion: weakestCriterion
+        ? {
+            criterion_id: weakestCriterion.criterion_id,
+            criterion_name: weakestCriterion.criterion_name,
+            score_pct: weakestCriterion.score_pct,
+            total_atendimentos: weakestCriterion.total_atendimentos,
+            pillar_id: weakestCriterion.pillar_id,
+          }
+        : null,
       latest_at: evaluatedVolume.latest_at || getCell(summary[1]),
     },
     pillars: criteriaAgg.pillars,

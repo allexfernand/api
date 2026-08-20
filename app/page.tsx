@@ -7,7 +7,7 @@ export default function Page() {
   return (
     <>
       <DashboardPage fragments={fragments} />
-      <Script src="/scripts/dashboard.js?v=20260820-unify-subcrit" strategy="afterInteractive" />
+      <Script src="/scripts/dashboard.js?v=20260820-kpi-depto" strategy="afterInteractive" />
     </>
   );
 }

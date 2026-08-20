@@ -330,14 +330,14 @@ function aggregateQualityCriteria(items) {
   });
 }
 
-function aggregateQualitySubcriteria(items) {
+function aggregateQualitySubcriteria(items, { ignoreCriterionFilter = false } = {}) {
   const grouped = new Map();
   (items || []).filter((item) => item.total > 0).forEach((item) => {
     const name = String(item.criterion_name || 'Sem subcritério').trim() || 'Sem subcritério';
     const rawId = String(item.criterion_id || '').trim();
     const canonicalId = normalizeQualitySubcriterionId(rawId);
     const criterionGroupId = qualityCriterionGroupId(canonicalId || rawId);
-    if (selectedQualitySubcriteriaCriterion && criterionGroupId !== selectedQualitySubcriteriaCriterion) return;
+    if (!ignoreCriterionFilter && selectedQualitySubcriteriaCriterion && criterionGroupId !== selectedQualitySubcriteriaCriterion) return;
     const normalizedName = name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
     const groupKey = canonicalId || normalizedName;
     const current = grouped.get(groupKey) || {
@@ -1109,28 +1109,59 @@ function renderQualityStrategic() {
   const score = Number(kpis.overall_score);
   const scoreLabel = Number.isFinite(score) ? fmtPct(score) : '—';
   const criteriaGroups = aggregateQualityCriteria(strategic.criteria || []);
-  const weakCriterion = [...criteriaGroups]
-    .filter((item) => Number.isFinite(Number(item.score_pct)))
-    .sort((a, b) => (Number(a.score_pct) || 0) - (Number(b.score_pct) || 0))[0] || null;
+  const weakFromApi = kpis.weakest_criterion;
+  const weakCriterion = weakFromApi && Number.isFinite(Number(weakFromApi.score_pct))
+    ? weakFromApi
+    : [...aggregateQualitySubcriteria(strategic.criteria || [], { ignoreCriterionFilter: true })]
+      .filter((item) => Number.isFinite(Number(item.score_pct)))
+      .sort((a, b) => (Number(a.score_pct) || 0) - (Number(b.score_pct) || 0))[0] || null;
   const period = qualityPeriodLabel();
+  const departmentActive = Boolean(selectedQualityStrategicDepartment);
 
   setText('quality-head-score', scoreLabel);
-  const departmentNote = selectedQualityStrategicDepartment
+  const departmentNote = departmentActive
     ? ` · depto ${selectedQualityStrategicDepartment}`
     : '';
   setText('quality-head-period', `Pipeline de avaliação · ${period}${departmentNote}`);
   setText('q-kpi-score', scoreLabel);
   setText('q-kpi-total', fmt(Number(kpis.evaluated) || 0));
-  setText('q-kpi-resolved', fmtPct(kpis.resolved_pct));
+  const resolved = Number(kpis.resolved_pct);
+  if (departmentActive) {
+    // Resolvido vem do summary global; com depto o recorte é por critérios.
+    setText('q-kpi-resolved', Number.isFinite(resolved) ? fmtPct(resolved) : '—');
+    const resolvedNote = document.querySelector('#q-kpi-resolved')?.closest('.quality-kpi')?.querySelector('.quality-kpi-note');
+    if (resolvedNote) resolvedNote.textContent = 'summary global do período (não filtra por depto)';
+  } else {
+    setText('q-kpi-resolved', fmtPct(kpis.resolved_pct));
+    const resolvedNote = document.querySelector('#q-kpi-resolved')?.closest('.quality-kpi')?.querySelector('.quality-kpi-note');
+    if (resolvedNote) resolvedNote.textContent = 'quando disponível no summary';
+  }
   const applicableCriteria = Number(kpis.applicable_criteria) || 0;
   const availableCriteria = Number(kpis.available_criteria) || 0;
   setText('q-kpi-na', `${fmt(applicableCriteria)} / ${fmt(availableCriteria)}`);
   setText('q-kpi-applicable-note', `aplicáveis / disponíveis · ${availableCriteria ? fmtPct((applicableCriteria / availableCriteria) * 100) : '—'}`);
-  setText('q-kpi-weak', weakCriterion ? `${weakCriterion.criterion_name} (${fmtPct(weakCriterion.score_pct)})` : '—');
-  setText('q-kpi-weak-note', weakCriterion
-    ? `${weakCriterion.criterion_description || 'Menor aproveitamento entre os critérios avaliados.'} ${fmt(Number(weakCriterion.total_atendimentos) || 0)} atend. avaliados.`
-    : 'menor score por critério');
+  if (weakCriterion) {
+    const weakId = String(weakCriterion.criterion_id || '').trim();
+    const weakName = String(weakCriterion.criterion_name || '').trim();
+    const weakLabel = weakId && weakName && !weakName.startsWith(weakId)
+      ? `${weakId} ${weakName}`
+      : (weakName || weakId || '—');
+    setText('q-kpi-weak', `${weakLabel} (${fmtPct(weakCriterion.score_pct)})`);
+    setText(
+      'q-kpi-weak-note',
+      departmentActive
+        ? `menor score no depto ${selectedQualityStrategicDepartment} · ${fmt(Number(weakCriterion.total_atendimentos) || 0)} atend.`
+        : `menor score por subcritério · ${fmt(Number(weakCriterion.total_atendimentos) || 0)} atend.`,
+    );
+  } else {
+    setText('q-kpi-weak', '—');
+    setText('q-kpi-weak-note', departmentActive ? 'sem subcritério no depto selecionado' : 'menor score por subcritério');
+  }
   setText('q-kpi-latest', `último registro: ${formatQualityDate(kpis.latest_at)}`);
+  const latestNote = document.getElementById('q-kpi-latest');
+  if (latestNote && departmentActive) {
+    latestNote.textContent = `último registro: ${formatQualityDate(kpis.latest_at)} · recorte do depto`;
+  }
   const deptFilterMeta = strategic.department_filter || {};
   const mappedCount = Array.isArray(deptFilterMeta.criterion_ids) ? deptFilterMeta.criterion_ids.length : null;
   setText(
