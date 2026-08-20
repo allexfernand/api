@@ -1153,6 +1153,17 @@ function emptyScoreGroup(extra) {
   };
 }
 
+function normalizeSubcriterionId(value) {
+  const raw = String(value || "").trim().replace(/,/g, ".");
+  if (!raw) return "Critério";
+  const match = raw.match(/^(\d+(?:\.\d+)+)/) || raw.match(/^(\d+)/);
+  if (!match) return raw.replace(/\s+/g, " ");
+  return match[1]
+    .split(".")
+    .map((part) => String(Number(part)))
+    .join(".");
+}
+
 function aggregateCriteria(rows) {
   const criteriaMap = new Map();
   const pillarMap = new Map();
@@ -1160,7 +1171,8 @@ function aggregateCriteria(rows) {
   rows.forEach((row) => {
     const pillarId = String(getCell(row[0]) || "Pilar");
     const pillarName = String(getCell(row[1]) || pillarId);
-    const criterionId = String(getCell(row[2]) || "Critério");
+    const criterionIdRaw = String(getCell(row[2]) || "Critério");
+    const criterionId = normalizeSubcriterionId(criterionIdRaw);
     const criterionName = String(getCell(row[3]) || criterionId);
     const score = normalizeCriterionScore(row[4]);
     const count = toInt(row[5]);
@@ -1173,14 +1185,24 @@ function aggregateCriteria(rows) {
     addScore(pillarMap.get(pillarKey), score, count);
     addAttendanceCount(pillarMap.get(pillarKey), attendanceCount);
 
-    const criterionKey = `${pillarId}|${criterionId}|${criterionName}`;
+    // Agrupa só pelo ID canônico do subcritério (3.3 / 3,3 / nomes distintos → uma linha).
+    const criterionKey = criterionId;
     if (!criteriaMap.has(criterionKey)) {
       criteriaMap.set(criterionKey, emptyScoreGroup({
         pillar_id: pillarId,
         pillar_name: pillarName,
         criterion_id: criterionId,
         criterion_name: criterionName,
+        _nameVotes: new Map([[criterionName, count]]),
       }));
+    } else {
+      const group = criteriaMap.get(criterionKey);
+      const votes = group._nameVotes || new Map();
+      votes.set(criterionName, (votes.get(criterionName) || 0) + count);
+      group._nameVotes = votes;
+      const bestName = [...votes.entries()]
+        .sort((a, b) => b[1] - a[1] || b[0].length - a[0].length)[0]?.[0];
+      if (bestName) group.criterion_name = bestName;
     }
     addScore(criteriaMap.get(criterionKey), score, count);
     addAttendanceCount(criteriaMap.get(criterionKey), attendanceCount);
@@ -1190,7 +1212,10 @@ function aggregateCriteria(rows) {
     .map(finalizeScoreGroup)
     .sort((a, b) => String(a.pillar_id).localeCompare(String(b.pillar_id), "pt-BR", { numeric: true }));
   const criteria = [...criteriaMap.values()]
-    .map(finalizeScoreGroup)
+    .map((group) => {
+      const { _nameVotes, ...rest } = group;
+      return finalizeScoreGroup(rest);
+    })
     .sort((a, b) => {
       const pillarSort = String(a.pillar_id).localeCompare(String(b.pillar_id), "pt-BR", { numeric: true });
       return pillarSort || String(a.criterion_id).localeCompare(String(b.criterion_id), "pt-BR", { numeric: true });

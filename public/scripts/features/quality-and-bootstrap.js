@@ -254,6 +254,18 @@ function qualityCriterionGroupId(value) {
   return match ? match[1] : (raw || 'Sem critério');
 }
 
+// Unifica variantes do mesmo subcritério: "3.3", "3,3", "3.30", "3.3 - texto".
+function normalizeQualitySubcriterionId(value) {
+  const raw = String(value || '').trim().replace(/,/g, '.');
+  if (!raw) return '';
+  const match = raw.match(/^(\d+(?:\.\d+)+)/) || raw.match(/^(\d+)/);
+  if (!match) return raw.replace(/\s+/g, ' ').toLowerCase();
+  return match[1]
+    .split('.')
+    .map((part) => String(Number(part)))
+    .join('.');
+}
+
 const qualityCriterionDefinitions = {
   '1': {
     title: 'Critério 1 — Humanização e Vínculo com o Beneficiário',
@@ -323,13 +335,13 @@ function aggregateQualitySubcriteria(items) {
   (items || []).filter((item) => item.total > 0).forEach((item) => {
     const name = String(item.criterion_name || 'Sem subcritério').trim() || 'Sem subcritério';
     const rawId = String(item.criterion_id || '').trim();
-    const criterionGroupId = qualityCriterionGroupId(rawId);
+    const canonicalId = normalizeQualitySubcriterionId(rawId);
+    const criterionGroupId = qualityCriterionGroupId(canonicalId || rawId);
     if (selectedQualitySubcriteriaCriterion && criterionGroupId !== selectedQualitySubcriteriaCriterion) return;
-    const normalizedId = rawId.replace(/\s+/g, ' ').toLowerCase();
     const normalizedName = name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
-    const groupKey = normalizedId || normalizedName;
+    const groupKey = canonicalId || normalizedName;
     const current = grouped.get(groupKey) || {
-      criterion_id: new Set(),
+      criterion_id: canonicalId || rawId,
       criterion_group_id: criterionGroupId,
       criterion_names: new Map(),
       criterion_name: name,
@@ -342,7 +354,6 @@ function aggregateQualitySubcriteria(items) {
       total_atendimentos: 0,
     };
     const total = Number(item.total) || 0;
-    if (rawId) current.criterion_id.add(rawId);
     current.criterion_names.set(name, (current.criterion_names.get(name) || 0) + total);
     current.total += total;
     current.applicable += Number(item.applicable) || 0;
@@ -362,7 +373,7 @@ function aggregateQualitySubcriteria(items) {
     return {
       ...item,
       criterion_group_id: item.criterion_group_id,
-      criterion_id: [...item.criterion_id].filter(Boolean).sort((a, b) => a.localeCompare(b, 'pt-BR', { numeric: true })).join(', '),
+      criterion_id: item.criterion_id,
       criterion_name: bestName,
       score_pct: Number(scorePct.toFixed(1)),
       pct_2: item.total > 0 ? Number(((item.score_2 / item.total) * 100).toFixed(1)) : 0,
@@ -377,11 +388,11 @@ function aggregateQualityEvaluatedCriteria(items) {
   (items || []).forEach((item) => {
     const rawId = String(item.criterio_id || '').trim();
     const name = String(item.sub_criterio || 'Sem subcritério').trim() || 'Sem subcritério';
-    const normalizedId = rawId.replace(/\s+/g, ' ').toLowerCase();
+    const canonicalId = normalizeQualitySubcriterionId(rawId);
     const normalizedName = name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
-    const groupKey = normalizedId || normalizedName;
+    const groupKey = canonicalId || normalizedName;
     const current = grouped.get(groupKey) || {
-      criterio_id: new Set(),
+      criterio_id: canonicalId || rawId || 'Critério',
       sub_criterio: name,
       sub_criterios: new Map(),
       total_atendimentos: 0,
@@ -395,7 +406,6 @@ function aggregateQualityEvaluatedCriteria(items) {
     const attendances = Number(item.total_atendimentos) || 0;
     const evaluations = Number(item.total_avaliacoes) || 0;
     const weight = attendances || evaluations;
-    if (rawId) current.criterio_id.add(rawId);
     current.sub_criterios.set(name, (current.sub_criterios.get(name) || 0) + (weight || 1));
     current.total_atendimentos += attendances;
     current.total_avaliacoes += evaluations;
@@ -416,7 +426,7 @@ function aggregateQualityEvaluatedCriteria(items) {
     const bestName = [...item.sub_criterios.entries()]
       .sort((a, b) => b[1] - a[1] || b[0].length - a[0].length)[0]?.[0] || item.sub_criterio;
     return {
-      criterio_id: [...item.criterio_id].filter(Boolean).sort((a, b) => a.localeCompare(b, 'pt-BR', { numeric: true })).join(', ') || 'Critério',
+      criterio_id: item.criterio_id || 'Critério',
       sub_criterio: bestName,
       total_atendimentos: item.total_atendimentos,
       total_avaliacoes: item.total_avaliacoes,
