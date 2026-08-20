@@ -198,6 +198,38 @@ function partnerVisionParams() {
   return p;
 }
 
+/** Mesmo recorte do Q12B na aba Sessões: grupo econômico (não partner_broker). */
+function partnerVisionSessionsQ12Params() {
+  const p = new URLSearchParams();
+  if (!currentPartnerBrokerIds.length) return p;
+
+  const names = [];
+  for (const id of currentPartnerBrokerIds) {
+    const partner = partnerOptionsCache.find((item) => String(item.broker_id) === String(id));
+    if (!partner) continue;
+    const primary = String(partner.broker_name || '').trim();
+    const secondary = String(partner.broker_name_secondary || '').trim();
+    const text = `${primary} ${secondary}`
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase();
+    const token = text.match(/(^|[^a-z0-9])(mds|wiz|inter)([^a-z0-9]|$)/);
+    if (token) names.push(token[2].toUpperCase());
+    else if (primary) names.push(primary);
+  }
+  const unique = [...new Set(names.filter(Boolean))];
+  if (unique.length > 1) {
+    p.set('group_names', JSON.stringify(unique));
+    return p;
+  }
+  if (unique.length === 1) {
+    p.set('group_name', unique[0]);
+    return p;
+  }
+  // Sem nome mapeável: cai no filtro por partner_broker (mesmo escopo do restante da aba).
+  return partnerVisionParams();
+}
+
 function partnerVisionMonthWindow() {
   const out = [];
   const cursor = new Date(2026, 0, 1);
@@ -778,11 +810,11 @@ function renderPartnerSessionsKinship(finishers, kinship, opts) {
   if (context) {
     const parts = [
       `mês ${partnerVisionMonthLabel(partnerSessionsKinshipMonth)}`,
-      'Q12B = tipo_atendimento_agent',
-      'parentesco via beneficiary_id/CPF',
+      'mesma regra do Q12B (tipo_atendimento_agent)',
+      'recorte por grupo econômico do parceiro',
     ];
     if (currentPartnerBrokerIds.length) parts.push(`parceiro: ${selectedPartnerVisionLabel()}`);
-    else parts.push('todos os parceiros');
+    else parts.push('todos os grupos');
     context.textContent = parts.join(' · ');
   }
   if (content) content.style.display = 'block';
@@ -805,10 +837,10 @@ async function loadPartnerSessionsKinship() {
   if (content) content.style.display = 'none';
   if (kinshipList) kinshipList.innerHTML = '<div style="font-size:12px;color:#94a3b8">Carregando titular/dependente...</div>';
 
-  const pHuman = partnerVisionParams();
-  pHuman.set('scope', 'human_interaction');
+  // Humano/IA: mesmo endpoint do Q12B (sem scope), com group_names — igual à aba Sessões.
+  const pHuman = partnerVisionSessionsQ12Params();
   if (month) pHuman.set('meses', month);
-  const pKin = partnerVisionParams();
+  const pKin = partnerVisionSessionsQ12Params();
   pKin.set('scope', 'kinship');
   if (month) pKin.set('meses', month);
 

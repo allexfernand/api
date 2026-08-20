@@ -471,7 +471,10 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     }
 
     if (scope === 'human_interaction') {
-      const where = [companySessionsDateFilter, companySessionsScopeFilter].filter(Boolean).join(' AND ');
+      // Idêntico ao Q12B (message_agent_finishers do endpoint principal).
+      const where = companySessionsMode === "company"
+        ? companySessionsWhere
+        : (companySessionsDateFilter || '');
       const rows = await runQuery(warehouseId, `
         SELECT
           s.${quoteIdent('tipo_atendimento_agent')} AS tipo_atendimento,
@@ -485,7 +488,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       return res.status(200).json({
         scope: 'human_interaction',
         message_agent_finishers: rows.map((row) => ({
-          tipo: String(getCell(row[0]) || 'IA'),
+          tipo: String(getCell(row[0]) || '—'),
           total: toInt(row[1]),
         })),
         filters_applied: {
@@ -493,6 +496,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           organization: Boolean(groupNames.length || company || partnerBrokerId),
         },
         source: "dashboard_sessions_base_gold.tipo_atendimento_agent",
+        rule: "Q12B = tipo_atendimento_agent (teve mensagem agent)",
       });
     }
 
