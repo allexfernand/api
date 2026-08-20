@@ -10,13 +10,14 @@ import { FormEvent, useMemo, useState } from "react";
 import styles from "./SettingsTab.module.css";
 import { ActivityLogsPanel } from "./ActivityLogsPanel";
 import { AttendantsPanel } from "./AttendantsPanel";
+import { QualityCriteriaDepartmentsPanel } from "./QualityCriteriaDepartmentsPanel";
 import { useManagedUsers, type PartnerGroupMap, type PartnerOption } from "./hooks/useManagedUsers";
 import { MENU_SECTIONS, FULL_DEFAULT_ALLOWED_MENUS, MDS_DEFAULT_ALLOWED_MENUS, type MenuId } from "../../dashboard/menu-catalog";
 import type { DashboardRole } from "../../contracts/common";
 import type { ManagedDashboardUserPublic } from "../../contracts/dashboard-users";
 import { PASSWORD_RULES, validateStrongPassword } from "../../lib/password-policy";
 
-type SettingsSection = "access" | "activity" | "attendants";
+type SettingsSection = "access" | "activity" | "attendants" | "quality-criteria";
 
 function defaultMenusFor(role: DashboardRole): MenuId[] {
   return role === "mds" ? [...MDS_DEFAULT_ALLOWED_MENUS] : [...FULL_DEFAULT_ALLOWED_MENUS];
@@ -105,10 +106,19 @@ export function SettingsTab() {
         >
           Atendentes
         </button>
+        <button
+          type="button"
+          className={`${styles.subnavItem} ${section === "quality-criteria" ? styles.subnavItemActive : ""}`}
+          onClick={() => setSection("quality-criteria")}
+          aria-current={section === "quality-criteria" ? "page" : undefined}
+        >
+          Critérios × deptos
+        </button>
       </nav>
 
       {section === "activity" ? <ActivityLogsPanel /> : null}
       {section === "attendants" ? <AttendantsPanel /> : null}
+      {section === "quality-criteria" ? <QualityCriteriaDepartmentsPanel /> : null}
 
       {section === "access" ? (
         <>

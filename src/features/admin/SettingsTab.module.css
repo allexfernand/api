@@ -644,6 +644,26 @@
   padding: 2px 8px;
 }
 
+.criteriaDeptChecks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.criteriaDeptCheck {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+}
+
+.criteriaDeptCheck input {
+  accent-color: var(--brand, #3f55e3);
+}
+
 .primaryBtn,
 .secondaryBtn {
   height: 36px;

@@ -61,6 +61,7 @@ let selectedQualityCollaboratorName = '';
 let selectedQualityOperationalCollaborators = new Set();
 let selectedQualityOperationalSetor = '';
 let selectedQualityOperationalStatus = '';
+let selectedQualityStrategicDepartment = '';
 let qualityData = null, selectedQualityKey = null;
 let pdfReadinessTimer = null;
 let isPdfGenerating = false;

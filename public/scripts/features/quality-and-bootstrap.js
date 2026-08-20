@@ -13,6 +13,14 @@ function onQualityCriteriaSortChange(value) {
   renderQualityStrategic();
 }
 
+function onQualityStrategicDepartmentChange(value) {
+  const allowed = ['Enfermagem', 'Agendamento', 'Tech', 'Outros'];
+  selectedQualityStrategicDepartment = allowed.includes(value) ? value : '';
+  const select = document.getElementById('quality-strategic-department');
+  if (select) select.value = selectedQualityStrategicDepartment;
+  loadQuality();
+}
+
 function onQualityCollaboratorSortChange(value) {
   const allowed = ['name', 'setor', 'status', 'score', 'attendance'];
   const nextSort = allowed.includes(value) ? value : 'score';
@@ -894,6 +902,7 @@ async function loadQualityCollaboratorCriteria(name) {
   }
   p.set('mode', 'collaborator_criteria');
   if (meses.length > 0) p.set('meses', meses.join(','));
+  if (selectedQualityStrategicDepartment) p.set('department', selectedQualityStrategicDepartment);
   const data = await safeGet('/api/quality?' + p.toString());
   if (!data || data.error) {
     content.innerHTML = `<div class="loading-box" style="padding:18px;color:#b45309">${escapeHtml(data?.error || 'Erro ao carregar notas por critério.')}</div>`;
@@ -944,6 +953,8 @@ async function loadQuality() {
   setStatus('loading', '⏳ Carregando qualidade...');
   const operationalLoading = document.getElementById('quality-operational-loading');
   const operationalItems = document.getElementById('quality-items');
+  const departmentSelect = document.getElementById('quality-strategic-department');
+  if (departmentSelect) departmentSelect.value = selectedQualityStrategicDepartment || '';
   if (operationalLoading) {
     operationalLoading.style.display = 'block';
     operationalLoading.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando atendimentos...';
@@ -954,6 +965,7 @@ async function loadQuality() {
   const p = new URLSearchParams();
   if (meses.length > 0) p.set('meses', meses.join(','));
   p.set('quality_daily_month', selectedQualityDailyMonth || currentMonthValue());
+  if (selectedQualityStrategicDepartment) p.set('department', selectedQualityStrategicDepartment);
   if (getActiveTab() !== 'qualidade-operacional') {
     appendGroupParams(p);
     if (currentCompany) p.set('company', currentCompany);
@@ -1023,7 +1035,10 @@ function renderQualityStrategic() {
   const period = qualityPeriodLabel();
 
   setText('quality-head-score', scoreLabel);
-  setText('quality-head-period', `Pipeline de avaliação · ${period}`);
+  const departmentNote = selectedQualityStrategicDepartment
+    ? ` · depto ${selectedQualityStrategicDepartment}`
+    : '';
+  setText('quality-head-period', `Pipeline de avaliação · ${period}${departmentNote}`);
   setText('q-kpi-score', scoreLabel);
   setText('q-kpi-total', fmt(Number(kpis.evaluated) || 0));
   setText('q-kpi-resolved', fmtPct(kpis.resolved_pct));
@@ -1036,7 +1051,14 @@ function renderQualityStrategic() {
     ? `${weakCriterion.criterion_description || 'Menor aproveitamento entre os critérios avaliados.'} ${fmt(Number(weakCriterion.total_atendimentos) || 0)} atend. avaliados.`
     : 'menor score por critério');
   setText('q-kpi-latest', `último registro: ${formatQualityDate(kpis.latest_at)}`);
-  setText('quality-criteria-bullets-period', `${period} · is_applicable = true`);
+  const deptFilterMeta = strategic.department_filter || {};
+  const mappedCount = Array.isArray(deptFilterMeta.criterion_ids) ? deptFilterMeta.criterion_ids.length : null;
+  setText(
+    'quality-criteria-bullets-period',
+    selectedQualityStrategicDepartment
+      ? `${period} · ${selectedQualityStrategicDepartment}${mappedCount != null ? ` · ${fmt(mappedCount)} subcritérios mapeados` : ''}`
+      : `${period} · is_applicable = true`,
+  );
   buildQualityDailyMonthOptions();
   renderQualityVolumeEvolutionChart(strategic.volume_evolution || {});
   renderQualityDailyVolumeEvolutionChart(strategic.daily_volume_evolution || {});

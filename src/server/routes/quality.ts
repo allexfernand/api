@@ -4,6 +4,11 @@
 import { rejectMdsAuth, requireBasicAuth, requireMenuAccess, scopedGroupNames } from "../../../lib/basic-auth";
 import { escape, getCell, getColumns, quoteIdent, resolveWarehouseId, runQuery } from "../../../lib/databricks";
 import { setApiCors } from "../../../lib/http";
+import {
+  criterionIdsForDepartment,
+  listQualityCriterionDepartmentMappings,
+} from "../quality-criteria/service";
+import { QUALITY_CRITERIA_DEPARTMENTS } from "../../contracts/quality-criteria-departments";
 
 const SUMMARY_TABLE = "hive_metastore.sanus_prod.quality_analysis_silver_summary";
 const EVALUATED_VOLUME_TABLE = "hive_metastore.sanus_prod.quality_analysis_silver_summary";
@@ -739,7 +744,18 @@ function buildFinisherCondition(alias, column, criteriaFinisher) {
     : `${alias}.${quoteIdent(column)} IS NULL`;
 }
 
-function buildEvaluatedCriteriaWhere(scope, criteriaFinisher, criteriaFinishedByColumn) {
+function buildCriterionIdsCondition(alias, criterionIds) {
+  if (!Array.isArray(criterionIds)) return null;
+  if (!criterionIds.length) return "1 = 0";
+  const list = criterionIds
+    .map((id) => `'${escapeSql(String(id).trim())}'`)
+    .filter((id) => id !== "''")
+    .join(",");
+  if (!list) return "1 = 0";
+  return `CAST(${alias}.${quoteIdent("criterio_id")} AS STRING) IN (${list})`;
+}
+
+function buildEvaluatedCriteriaWhere(scope, criteriaFinisher, criteriaFinishedByColumn, criterionIds) {
   const conditions = [applicableCriteriaCondition("q", "is_applicable")];
 
   if (scope.months.length) {
@@ -750,26 +766,33 @@ function buildEvaluatedCriteriaWhere(scope, criteriaFinisher, criteriaFinishedBy
   const finisherCondition = buildFinisherCondition("q", criteriaFinishedByColumn, criteriaFinisher);
   if (finisherCondition) conditions.push(finisherCondition);
 
+  const criterionCondition = buildCriterionIdsCondition("q", criterionIds);
+  if (criterionCondition) conditions.push(criterionCondition);
+
   return `WHERE ${conditions.join(" AND ")}`;
 }
 
-function buildEvaluatedCriteriaCatalogWhere(criteriaFinisher, criteriaFinishedByColumn) {
+function buildEvaluatedCriteriaCatalogWhere(criteriaFinisher, criteriaFinishedByColumn, criterionIds) {
   const conditions = [applicableCriteriaCondition("q", "is_applicable")];
   const finisherCondition = buildFinisherCondition("q", criteriaFinishedByColumn, criteriaFinisher);
   if (finisherCondition) conditions.push(finisherCondition);
+  const criterionCondition = buildCriterionIdsCondition("q", criterionIds);
+  if (criterionCondition) conditions.push(criterionCondition);
   return `WHERE ${conditions.join(" AND ")}`;
 }
 
-function buildCriteriaRecordWhere(scope) {
+function buildCriteriaRecordWhere(scope, criterionIds) {
   const conditions = [];
   if (scope.months.length) {
     const monthList = scope.months.map((month) => `'${escapeSql(month)}'`).join(",");
     conditions.push(`DATE_FORMAT(try_cast(q.${quoteIdent("event_timestamp")} AS TIMESTAMP), 'yyyy-MM') IN (${monthList})`);
   }
+  const criterionCondition = buildCriterionIdsCondition("q", criterionIds);
+  if (criterionCondition) conditions.push(criterionCondition);
   return conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
 }
 
-async function loadOverallCriteriaScore(warehouseId, scope) {
+async function loadOverallCriteriaScore(warehouseId, scope, criterionIds) {
   const applicableCondition = applicableCriteriaCondition("q", "is_applicable");
   const rows = await runQuery(warehouseId, `
     SELECT
@@ -779,7 +802,7 @@ async function loadOverallCriteriaScore(warehouseId, scope) {
       SUM(CASE WHEN ${applicableCondition} THEN 1 ELSE 0 END) * ${CRITERION_MAX_SCORE} AS pontuacao_maxima,
       COALESCE(SUM(CASE WHEN ${applicableCondition} THEN COALESCE(${numberExpr("q", "pontuacao")}, 0) ELSE 0 END), 0) / NULLIF(SUM(CASE WHEN ${applicableCondition} THEN 1 ELSE 0 END) * ${CRITERION_MAX_SCORE}, 0) * 100 AS score_pct
     FROM ${EVALUATED_CRITERIA_TABLE} q
-    ${buildCriteriaRecordWhere(scope)}
+    ${buildCriteriaRecordWhere(scope, criterionIds)}
   `);
   const row = rows[0] || [];
   return {
@@ -849,7 +872,7 @@ function buildCriteriaFinisherSql(criteriaFinisher, summarySessionJoin, summaryF
   };
 }
 
-async function loadEvaluatedCriteriaBullets(warehouseId, scope, criteriaFinisher, summarySessionJoin, summaryFinishedByColumn, criteriaFinishedByColumn) {
+async function loadEvaluatedCriteriaBullets(warehouseId, scope, criteriaFinisher, summarySessionJoin, summaryFinishedByColumn, criteriaFinishedByColumn, criterionIds) {
   const finisherSql = buildCriteriaFinisherSql(criteriaFinisher, summarySessionJoin, summaryFinishedByColumn, criteriaFinishedByColumn);
   const summaryJoinSelect = summarySessionJoin
     ? `MAX(CAST(s.${quoteIdent(summarySessionJoin.summary)} AS STRING))`
@@ -860,7 +883,7 @@ async function loadEvaluatedCriteriaBullets(warehouseId, scope, criteriaFinisher
         CAST(q.${quoteIdent("criterio_id")} AS STRING) AS criterio_id,
         COALESCE(NULLIF(TRIM(CAST(q.${quoteIdent("sub_criterio")} AS STRING)), ''), 'Sem subcritério') AS sub_criterio
       FROM ${EVALUATED_CRITERIA_TABLE} q
-      ${buildEvaluatedCriteriaCatalogWhere(criteriaFinisher, criteriaFinishedByColumn)}
+      ${buildEvaluatedCriteriaCatalogWhere(criteriaFinisher, criteriaFinishedByColumn, criterionIds)}
       GROUP BY
         CAST(q.${quoteIdent("criterio_id")} AS STRING),
         COALESCE(NULLIF(TRIM(CAST(q.${quoteIdent("sub_criterio")} AS STRING)), ''), 'Sem subcritério')
@@ -873,7 +896,7 @@ async function loadEvaluatedCriteriaBullets(warehouseId, scope, criteriaFinisher
         AVG(${numberExpr("q", "pontuacao")}) AS pontuacao_criterio,
         COUNT(*) AS total_avaliacoes
       FROM ${EVALUATED_CRITERIA_TABLE} q
-      ${buildEvaluatedCriteriaWhere(scope, criteriaFinisher, criteriaFinishedByColumn)}
+      ${buildEvaluatedCriteriaWhere(scope, criteriaFinisher, criteriaFinishedByColumn, criterionIds)}
       GROUP BY
         CAST(q.${quoteIdent("criterio_id")} AS STRING),
         COALESCE(NULLIF(TRIM(CAST(q.${quoteIdent("sub_criterio")} AS STRING)), ''), 'Sem subcritério'),
@@ -952,7 +975,7 @@ async function loadEvaluatedCriteriaBullets(warehouseId, scope, criteriaFinisher
   };
 }
 
-async function loadEvaluatedCriteriaByCollaborator(warehouseId, scope, criteriaFinisher, summarySessionJoin, summaryFinishedByColumn, criteriaFinishedByColumn, criteriaCollaboratorColumn) {
+async function loadEvaluatedCriteriaByCollaborator(warehouseId, scope, criteriaFinisher, summarySessionJoin, summaryFinishedByColumn, criteriaFinishedByColumn, criteriaCollaboratorColumn, criterionIds) {
   if (!criteriaCollaboratorColumn) return [];
   const finisherSql = buildCriteriaFinisherSql(criteriaFinisher, summarySessionJoin, summaryFinishedByColumn, criteriaFinishedByColumn);
   const summaryJoinSelect = summarySessionJoin
@@ -969,7 +992,7 @@ async function loadEvaluatedCriteriaByCollaborator(warehouseId, scope, criteriaF
         AVG(${numberExpr("q", "pontuacao")}) AS pontuacao_criterio,
         COUNT(*) AS total_avaliacoes
       FROM ${EVALUATED_CRITERIA_TABLE} q
-      ${buildEvaluatedCriteriaWhere(scope, criteriaFinisher, criteriaFinishedByColumn)}
+      ${buildEvaluatedCriteriaWhere(scope, criteriaFinisher, criteriaFinishedByColumn, criterionIds)}
       GROUP BY
         ${collaboratorExpr},
         CAST(q.${quoteIdent("criterio_id")} AS STRING),
@@ -1222,7 +1245,7 @@ function buildInsightCards(criteria, pillars) {
   ];
 }
 
-async function loadQualityEvolution(warehouseId, criteriaColumns) {
+async function loadQualityEvolution(warehouseId, criteriaColumns, criterionIds) {
   const criteriaDateColumn = pickColumn(criteriaColumns, DATE_CANDIDATES);
   const criteriaScoreColumn = pickColumn(criteriaColumns, CRITERIA_SCORE_CANDIDATES);
   const criterionIdColumn = pickColumn(criteriaColumns, CRITERION_ID_CANDIDATES);
@@ -1238,11 +1261,13 @@ async function loadQualityEvolution(warehouseId, criteriaColumns) {
   const attendanceExpr = criteriaAttendanceColumn
     ? `COUNT(DISTINCT CAST(${qcol("c", criteriaAttendanceColumn)} AS STRING))`
     : "COUNT(*)";
+  const criterionIdCondition = buildCriterionIdsCondition("c", criterionIds);
+  const evolutionWhere = [applicableCondition, criterionIdCondition].filter(Boolean).join(" AND ");
   const baseCte = `
     month_scope AS (
       SELECT ${monthExpr} AS month
       FROM ${EVALUATED_CRITERIA_TABLE} c
-      WHERE ${applicableCondition}
+      WHERE ${evolutionWhere}
         AND try_cast(${qcol("c", criteriaDateColumn)} AS TIMESTAMP) IS NOT NULL
       GROUP BY ${monthExpr}
       ORDER BY month DESC
@@ -1261,7 +1286,7 @@ async function loadQualityEvolution(warehouseId, criteriaColumns) {
       FROM ${EVALUATED_CRITERIA_TABLE} c
       INNER JOIN month_scope ms
         ON ${monthExpr} = ms.month
-      WHERE ${applicableCondition}
+      WHERE ${evolutionWhere}
       GROUP BY ${monthExpr}
       ORDER BY month
     `),
@@ -1276,7 +1301,7 @@ async function loadQualityEvolution(warehouseId, criteriaColumns) {
       FROM ${EVALUATED_CRITERIA_TABLE} c
       INNER JOIN month_scope ms
         ON ${monthExpr} = ms.month
-      WHERE ${applicableCondition}
+      WHERE ${evolutionWhere}
       GROUP BY ${monthExpr}, ${criterionGroupExpr}
       ORDER BY month, criterion_id
     `),
@@ -1299,7 +1324,7 @@ async function loadQualityEvolution(warehouseId, criteriaColumns) {
   };
 }
 
-async function loadCollaboratorCriteriaDetail(warehouseId, criteriaColumns, scope, query) {
+async function loadCollaboratorCriteriaDetail(warehouseId, criteriaColumns, scope, query, criterionIds) {
   const collaborator = String(query.collaborator || "").trim();
   const missingCollaborator = String(query.missing_close_by || "") === "1";
   if (!collaborator && !missingCollaborator) {
@@ -1327,7 +1352,7 @@ async function loadCollaboratorCriteriaDetail(warehouseId, criteriaColumns, scop
       AVG(${numberExpr("c", criteriaScoreColumn)}) AS pontuacao_media,
       COALESCE(SUM(COALESCE(${numberExpr("c", criteriaScoreColumn)}, 0)), 0) / NULLIF(COUNT(*) * ${CRITERION_MAX_SCORE}, 0) * 100 AS score_pct
     FROM ${EVALUATED_CRITERIA_TABLE} c
-    ${buildEvaluatedCriteriaWhere(scope, "", null).replace(/\bq\./g, "c.")}
+    ${buildEvaluatedCriteriaWhere(scope, "", null, criterionIds).replace(/\bq\./g, "c.")}
       AND UPPER(TRIM(CAST(${collaboratorExpr} AS STRING))) IN (${collaboratorNameList})
     GROUP BY ${criterionGroupExpr}
     ORDER BY criterion_id
@@ -1356,7 +1381,7 @@ async function loadCollaboratorCriteriaDetail(warehouseId, criteriaColumns, scop
   };
 }
 
-async function loadStrategic(warehouseId, columns, criteriaColumns, scope, sharedKey, criteriaFinisher, summarySessionJoin, summaryFinishedByColumn, criteriaFinishedByColumn, qualityDailyMonth) {
+async function loadStrategic(warehouseId, columns, criteriaColumns, scope, sharedKey, criteriaFinisher, summarySessionJoin, summaryFinishedByColumn, criteriaFinishedByColumn, qualityDailyMonth, criterionIds, departmentFilter) {
   const summaryScoreColumn = pickColumn(columns, SCORE_CANDIDATES);
   const resolvedColumn = pickColumn(columns, RESOLVED_CANDIDATES);
   const careLineColumn = pickColumn(columns, CARE_LINE_CANDIDATES);
@@ -1367,7 +1392,7 @@ async function loadStrategic(warehouseId, columns, criteriaColumns, scope, share
   const criterionIdColumn = pickColumn(criteriaColumns, CRITERION_ID_CANDIDATES);
   const criterionNameColumn = pickColumn(criteriaColumns, CRITERION_NAME_CANDIDATES);
   const criteriaAttendanceColumn = pickColumn(criteriaColumns, ["attendance_id", "atendimento_id", "appointment_id"]);
-  const strategicCriteriaWhere = buildEvaluatedCriteriaWhere(scope, "", null).replace(/\bq\./g, "c.");
+  const strategicCriteriaWhere = buildEvaluatedCriteriaWhere(scope, "", null, criterionIds).replace(/\bq\./g, "c.");
 
   const [summaryRows, criteriaRows, evaluatedVolume, evaluatedCriteria, evaluatedCriteriaByCollaborator, overallCriteriaScore, qualityEvolution, volumeEvolution, dailyVolumeEvolution] = await Promise.all([
     runQuery(warehouseId, `
@@ -1393,10 +1418,10 @@ async function loadStrategic(warehouseId, columns, criteriaColumns, scope, share
       GROUP BY 1, 2, 3, 4, 5
     `),
     loadEvaluatedVolume(warehouseId, scope),
-    loadEvaluatedCriteriaBullets(warehouseId, scope, criteriaFinisher, summarySessionJoin, summaryFinishedByColumn, criteriaFinishedByColumn),
-    loadEvaluatedCriteriaByCollaborator(warehouseId, scope, criteriaFinisher, summarySessionJoin, summaryFinishedByColumn, criteriaFinishedByColumn, criteriaCollaboratorColumn),
-    loadOverallCriteriaScore(warehouseId, scope),
-    loadQualityEvolution(warehouseId, criteriaColumns),
+    loadEvaluatedCriteriaBullets(warehouseId, scope, criteriaFinisher, summarySessionJoin, summaryFinishedByColumn, criteriaFinishedByColumn, criterionIds),
+    loadEvaluatedCriteriaByCollaborator(warehouseId, scope, criteriaFinisher, summarySessionJoin, summaryFinishedByColumn, criteriaFinishedByColumn, criteriaCollaboratorColumn, criterionIds),
+    loadOverallCriteriaScore(warehouseId, scope, criterionIds),
+    loadQualityEvolution(warehouseId, criteriaColumns, criterionIds),
     loadQualityVolumeEvolution(warehouseId, criteriaColumns, scope),
     loadQualityDailyVolumeEvolution(warehouseId, criteriaColumns, scope, qualityDailyMonth),
   ]);
@@ -1469,6 +1494,11 @@ async function loadStrategic(warehouseId, columns, criteriaColumns, scope, share
     evaluated_criteria: evaluatedCriteria.items,
     evaluated_criteria_by_collaborator: evaluatedCriteriaByCollaborator,
     criteria_finisher_filter: evaluatedCriteria.filter,
+    department_filter: {
+      department: departmentFilter || "",
+      criterion_ids: Array.isArray(criterionIds) ? criterionIds : null,
+      applied: Array.isArray(criterionIds),
+    },
     evolution: qualityEvolution,
     volume_evolution: volumeEvolution,
     daily_volume_evolution: dailyVolumeEvolution,
@@ -1594,6 +1624,15 @@ export default async function handler(req, res) {
     const criteriaFinisher = ["humano", "ia"].includes(String(req.query.criteria_finisher || "").toLowerCase())
       ? String(req.query.criteria_finisher).toLowerCase()
       : "";
+    const departmentRaw = String(req.query.department || req.query.setor || "").trim();
+    const departmentFilter = (QUALITY_CRITERIA_DEPARTMENTS as readonly string[]).includes(departmentRaw)
+      ? departmentRaw
+      : "";
+    let criterionIds = null;
+    if (departmentFilter) {
+      const mappings = await listQualityCriterionDepartmentMappings();
+      criterionIds = criterionIdsForDepartment(mappings, departmentFilter);
+    }
     const warehouseId = await resolveWarehouseId();
 
     const [summaryColumns, criteriaColumns, sessionColumns] = await Promise.all([
@@ -1610,7 +1649,7 @@ export default async function handler(req, res) {
       return res.status(200).json({ daily_volume_evolution: dailyVolumeEvolution, updatedAt: new Date().toISOString() });
     }
     if (String(req.query.mode || "") === "collaborator_criteria") {
-      const detail = await loadCollaboratorCriteriaDetail(warehouseId, criteriaColumns, scope, req.query);
+      const detail = await loadCollaboratorCriteriaDetail(warehouseId, criteriaColumns, scope, req.query, criterionIds);
       return res.status(200).json(detail);
     }
 
@@ -1623,7 +1662,7 @@ export default async function handler(req, res) {
       : null;
 
     const [strategic, operational] = await Promise.all([
-      loadStrategic(warehouseId, summaryColumns, criteriaColumns, scope, sharedKey, criteriaFinisher, summarySessionJoin, summaryFinishedByColumn, criteriaFinishedByColumn, qualityDailyMonth),
+      loadStrategic(warehouseId, summaryColumns, criteriaColumns, scope, sharedKey, criteriaFinisher, summarySessionJoin, summaryFinishedByColumn, criteriaFinishedByColumn, qualityDailyMonth, criterionIds, departmentFilter),
       loadOperational(warehouseId, summaryColumns, criteriaColumns, scope, sharedKey),
     ]);
 
@@ -1636,6 +1675,7 @@ export default async function handler(req, res) {
         months: scope.months,
         quality_daily_month: qualityDailyMonth,
         criteria_finisher: criteriaFinisher,
+        department: departmentFilter || "",
         applied: scope.filtersApplied,
       },
       schema: {
