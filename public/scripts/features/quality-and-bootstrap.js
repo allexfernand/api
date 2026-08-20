@@ -951,22 +951,27 @@ async function loadQualityCollaboratorCriteria(name) {
 
 async function loadQuality() {
   setStatus('loading', '⏳ Carregando qualidade...');
+  const activeTab = getActiveTab();
+  const isOperationalTab = activeTab === 'qualidade-operacional';
+  const view = isOperationalTab ? 'operational' : 'strategic';
+
   const operationalLoading = document.getElementById('quality-operational-loading');
   const operationalItems = document.getElementById('quality-items');
   const departmentSelect = document.getElementById('quality-strategic-department');
   if (departmentSelect) departmentSelect.value = selectedQualityStrategicDepartment || '';
-  if (operationalLoading) {
+  if (isOperationalTab && operationalLoading) {
     operationalLoading.style.display = 'block';
     operationalLoading.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando atendimentos...';
   }
-  if (operationalItems) operationalItems.style.display = 'none';
+  if (isOperationalTab && operationalItems) operationalItems.style.display = 'none';
 
   const meses = [...selectedMonths].sort();
   const p = new URLSearchParams();
+  p.set('view', view);
   if (meses.length > 0) p.set('meses', meses.join(','));
-  p.set('quality_daily_month', selectedQualityDailyMonth || currentMonthValue());
-  if (selectedQualityStrategicDepartment) p.set('department', selectedQualityStrategicDepartment);
-  if (getActiveTab() !== 'qualidade-operacional') {
+  if (!isOperationalTab) {
+    p.set('quality_daily_month', selectedQualityDailyMonth || currentMonthValue());
+    if (selectedQualityStrategicDepartment) p.set('department', selectedQualityStrategicDepartment);
     appendGroupParams(p);
     if (currentCompany) p.set('company', currentCompany);
   }
@@ -974,17 +979,30 @@ async function loadQuality() {
 
   if (!data || data.error) {
     const msg = data && data.error ? String(data.error).slice(0, 220) : 'Erro ao carregar qualidade';
-    if (operationalLoading) operationalLoading.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>' + msg;
+    if (isOperationalTab && operationalLoading) {
+      operationalLoading.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>' + msg;
+    }
     setStatus('error', '✗ Erro qualidade');
     return;
   }
 
-  qualityData = data;
+  if (!qualityData) qualityData = {};
+  if (data.strategic) qualityData.strategic = data.strategic;
+  if (data.operational) qualityData.operational = data.operational;
+  if (data.filters) qualityData.filters = data.filters;
+  if (data.schema) qualityData.schema = data.schema;
+  if (data.source) qualityData.source = data.source;
+  qualityData.updatedAt = data.updatedAt;
+
   selectedQualityKey = null;
   selectedQualityCollaboratorName = '';
-  renderQualityStrategic();
-  renderQualityOperational();
-  loadQualityFactualInsight();
+  if (isOperationalTab) {
+    renderQualityOperational();
+  } else {
+    renderQualityStrategic();
+    loadQualityFactualInsight();
+    loadQualityDailyVolumeEvolution();
+  }
   setStatus('ok', '✓ Dados ao vivo');
   document.getElementById('last-upd').textContent = 'Atualizado: ' + new Date().toLocaleTimeString('pt-BR');
 }

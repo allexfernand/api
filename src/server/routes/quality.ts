@@ -1381,7 +1381,8 @@ async function loadCollaboratorCriteriaDetail(warehouseId, criteriaColumns, scop
   };
 }
 
-async function loadStrategic(warehouseId, columns, criteriaColumns, scope, sharedKey, criteriaFinisher, summarySessionJoin, summaryFinishedByColumn, criteriaFinishedByColumn, qualityDailyMonth, criterionIds, departmentFilter) {
+async function loadStrategic(warehouseId, columns, criteriaColumns, scope, sharedKey, criteriaFinisher, summarySessionJoin, summaryFinishedByColumn, criteriaFinishedByColumn, qualityDailyMonth, criterionIds, departmentFilter, options = {}) {
+  const includeDailyVolume = Boolean(options.includeDailyVolume);
   const summaryScoreColumn = pickColumn(columns, SCORE_CANDIDATES);
   const resolvedColumn = pickColumn(columns, RESOLVED_CANDIDATES);
   const careLineColumn = pickColumn(columns, CARE_LINE_CANDIDATES);
@@ -1394,7 +1395,17 @@ async function loadStrategic(warehouseId, columns, criteriaColumns, scope, share
   const criteriaAttendanceColumn = pickColumn(criteriaColumns, ["attendance_id", "atendimento_id", "appointment_id"]);
   const strategicCriteriaWhere = buildEvaluatedCriteriaWhere(scope, "", null, criterionIds).replace(/\bq\./g, "c.");
 
-  const [summaryRows, criteriaRows, evaluatedVolume, evaluatedCriteria, evaluatedCriteriaByCollaborator, overallCriteriaScore, qualityEvolution, volumeEvolution, dailyVolumeEvolution] = await Promise.all([
+  const [
+    summaryRows,
+    criteriaRows,
+    evaluatedVolume,
+    evaluatedCriteria,
+    evaluatedCriteriaByCollaborator,
+    overallCriteriaScore,
+    qualityEvolution,
+    volumeEvolution,
+    dailyVolumeEvolution,
+  ] = await Promise.all([
     runQuery(warehouseId, `
       SELECT
         COUNT(*) AS total,
@@ -1423,7 +1434,9 @@ async function loadStrategic(warehouseId, columns, criteriaColumns, scope, share
     loadOverallCriteriaScore(warehouseId, scope, criterionIds),
     loadQualityEvolution(warehouseId, criteriaColumns, criterionIds),
     loadQualityVolumeEvolution(warehouseId, criteriaColumns, scope),
-    loadQualityDailyVolumeEvolution(warehouseId, criteriaColumns, scope, qualityDailyMonth),
+    includeDailyVolume
+      ? loadQualityDailyVolumeEvolution(warehouseId, criteriaColumns, scope, qualityDailyMonth)
+      : Promise.resolve(null),
   ]);
 
   const criteriaAgg = aggregateCriteria(criteriaRows);
@@ -1501,7 +1514,7 @@ async function loadStrategic(warehouseId, columns, criteriaColumns, scope, share
     },
     evolution: qualityEvolution,
     volume_evolution: volumeEvolution,
-    daily_volume_evolution: dailyVolumeEvolution,
+    daily_volume_evolution: dailyVolumeEvolution || { month: qualityDailyMonth, series: [] },
     collaborators,
     care_lines: careLines,
     insights: buildInsightCards(criteriaAgg.criteria, criteriaAgg.pillars),
@@ -1634,12 +1647,21 @@ export default async function handler(req, res) {
       criterionIds = criterionIdsForDepartment(mappings, departmentFilter);
     }
     const warehouseId = await resolveWarehouseId();
+    const viewRaw = String(req.query.view || "").toLowerCase();
+    const view = ["strategic", "operational", "all"].includes(viewRaw) ? viewRaw : "all";
+    const needOperational = view === "operational" || view === "all";
+    const needStrategic = view === "strategic" || view === "all";
+    const needSessionColumns = needStrategic; // finisher / daily paths
 
-    const [summaryColumns, criteriaColumns, sessionColumns] = await Promise.all([
+    const columnJobs = [
       getColumns(warehouseId, SUMMARY_TABLE),
       getColumns(warehouseId, CRITERIA_TABLE),
-      getColumns(warehouseId, SESSION_TABLE),
-    ]);
+    ];
+    if (needSessionColumns) columnJobs.push(getColumns(warehouseId, SESSION_TABLE));
+    const columnResults = await Promise.all(columnJobs);
+    const summaryColumns = columnResults[0];
+    const criteriaColumns = columnResults[1];
+    const sessionColumns = needSessionColumns ? columnResults[2] : [];
     const scope = await buildSummaryScope(summaryColumns, req.query, req);
     const qualityDailyMonth = /^\d{4}-\d{2}$/.test(String(req.query.quality_daily_month || ""))
       ? String(req.query.quality_daily_month)
@@ -1656,14 +1678,34 @@ export default async function handler(req, res) {
     const sharedKey = pickJoinKey(summaryColumns, criteriaColumns);
     const summaryFinishedByColumn = pickColumn(summaryColumns, FINISHER_CANDIDATES);
     const criteriaFinishedByColumn = pickColumn(criteriaColumns, FINISHER_CANDIDATES);
-    const summarySessionJoinCandidates = pickSummarySessionJoin(summaryColumns, sessionColumns);
-    const summarySessionJoin = criteriaFinisher && !summaryFinishedByColumn && !criteriaFinishedByColumn
+    const summarySessionJoinCandidates = needStrategic
+      ? pickSummarySessionJoin(summaryColumns, sessionColumns)
+      : [];
+    const summarySessionJoin = needStrategic && criteriaFinisher && !summaryFinishedByColumn && !criteriaFinishedByColumn
       ? await resolveSummarySessionJoin(warehouseId, summarySessionJoinCandidates, scope)
       : null;
 
     const [strategic, operational] = await Promise.all([
-      loadStrategic(warehouseId, summaryColumns, criteriaColumns, scope, sharedKey, criteriaFinisher, summarySessionJoin, summaryFinishedByColumn, criteriaFinishedByColumn, qualityDailyMonth, criterionIds, departmentFilter),
-      loadOperational(warehouseId, summaryColumns, criteriaColumns, scope, sharedKey),
+      needStrategic
+        ? loadStrategic(
+            warehouseId,
+            summaryColumns,
+            criteriaColumns,
+            scope,
+            sharedKey,
+            criteriaFinisher,
+            summarySessionJoin,
+            summaryFinishedByColumn,
+            criteriaFinishedByColumn,
+            qualityDailyMonth,
+            criterionIds,
+            departmentFilter,
+            { includeDailyVolume: false },
+          )
+        : Promise.resolve(null),
+      needOperational
+        ? loadOperational(warehouseId, summaryColumns, criteriaColumns, scope, sharedKey)
+        : Promise.resolve(null),
     ]);
 
     res.status(200).json({
@@ -1676,6 +1718,7 @@ export default async function handler(req, res) {
         quality_daily_month: qualityDailyMonth,
         criteria_finisher: criteriaFinisher,
         department: departmentFilter || "",
+        view,
         applied: scope.filtersApplied,
       },
       schema: {

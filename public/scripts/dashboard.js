@@ -1,11 +1,15 @@
 (async function loadSanusDashboard() {
-  const CACHE = "20260820-quality-dept";
+  const CACHE = "20260820-perf-boot";
 
-  function loadScript(src) {
+  function loadScript(src, { ordered = false } = {}) {
     return new Promise((resolve, reject) => {
       const existing = document.querySelector(`script[src="${src}"]`);
       if (existing) {
         if (src.includes("chart") && window.Chart) {
+          resolve();
+          return;
+        }
+        if (existing.dataset.loaded === "1") {
           resolve();
           return;
         }
@@ -15,7 +19,12 @@
       }
       const script = document.createElement("script");
       script.src = src;
-      script.onload = () => resolve();
+      // async=false: download em paralelo, execução na ordem de inserção.
+      if (ordered) script.async = false;
+      script.onload = () => {
+        script.dataset.loaded = "1";
+        resolve();
+      };
       script.onerror = () => reject(new Error("Falha ao carregar " + src));
       document.head.appendChild(script);
     });
@@ -23,14 +32,11 @@
 
   async function ensureChart() {
     if (window.Chart) return;
-    // Preferência: cópia local (sem depender do CDN / race do next/script).
     await loadScript(`/vendor/chart.umd.min.js?v=${CACHE}`);
     if (window.Chart) return;
     await loadScript(`https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js`);
     if (!window.Chart) throw new Error("Chart.js não ficou disponível após o carregamento.");
   }
-
-  await ensureChart();
 
   const chunks = [
     `/scripts/features/core.js?v=${CACHE}`,
@@ -42,9 +48,11 @@
     `/scripts/features/demographics.js?v=${CACHE}`,
     `/scripts/features/quality-and-bootstrap.js?v=${CACHE}`,
   ];
-  for (const src of chunks) {
-    await loadScript(src);
-  }
+
+  // Chart primeiro (initializeDashboard no último chunk pode plotar na hora).
+  // Features: download em paralelo, execução na ordem (async=false).
+  await ensureChart();
+  await Promise.all(chunks.map((src) => loadScript(src, { ordered: true })));
 })().catch((error) => {
   console.error("[dashboard-loader]", error);
   const status = document.getElementById("status");
