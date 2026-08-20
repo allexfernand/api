@@ -77,7 +77,8 @@ export function SettingsTab() {
       <header className={styles.header}>
         <h2 className={styles.title}>Configurações</h2>
         <p className={styles.subtitle}>
-          Gerencie acesso dos usuários e acompanhe os últimos logins da plataforma.
+          Acesso, logs, atendentes e o mapa de <strong>subcritérios × setores</strong> usado no
+          filtro da Qualidade Estratégica.
         </p>
       </header>
 
@@ -112,7 +113,7 @@ export function SettingsTab() {
           onClick={() => setSection("quality-criteria")}
           aria-current={section === "quality-criteria" ? "page" : undefined}
         >
-          Critérios × deptos
+          Subcritérios × setores
         </button>
       </nav>
 

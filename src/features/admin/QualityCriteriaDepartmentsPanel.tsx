@@ -96,12 +96,12 @@ export function QualityCriteriaDepartmentsPanel() {
   return (
     <div className={styles.attendantsPanel}>
       <div className={styles.sectionIntro}>
-        <h3 className={styles.sectionTitle}>Critérios × departamentos</h3>
+        <h3 className={styles.sectionTitle}>Subcritérios × setores</h3>
         <p className={styles.subtitle}>
-          Associe cada <strong>subcritério</strong> aos departamentos em que ele é avaliado. Na
-          Qualidade Estratégica, o filtro de departamento calcula score, distribuição e ranking
-          somente com os subcritérios marcados aqui. Um subcritério pode valer para vários
-          departamentos (ex.: Agendamento avalia menos critérios que Enfermagem).
+          Associe cada <strong>subcritério</strong> aos setores (Enfermagem, Agendamento, Tech,
+          Outros) em que ele é avaliado. Na Qualidade Estratégica, o filtro de setor calcula score,
+          distribuição e ranking só com os subcritérios marcados aqui. Um subcritério pode valer
+          para vários setores.
         </p>
       </div>
 
