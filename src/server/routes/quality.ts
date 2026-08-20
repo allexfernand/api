@@ -1381,7 +1381,12 @@ async function loadCollaboratorCriteriaDetail(warehouseId, criteriaColumns, scop
   };
 }
 
-async function loadStrategic(warehouseId, columns, criteriaColumns, scope, sharedKey, criteriaFinisher, summarySessionJoin, summaryFinishedByColumn, criteriaFinishedByColumn, qualityDailyMonth, criterionIds, departmentFilter, options = {}) {
+async function loadStrategic(warehouseId, columns, criteriaColumns, scope, sharedKey, criteriaFinisher, summarySessionJoin, summaryFinishedByColumn, criteriaFinishedByColumn, qualityDailyMonth, criterionIds, departmentFilter, options: {
+  includeDailyVolume?: boolean;
+  includeScoreEvolution?: boolean;
+  includeVolumeEvolution?: boolean;
+  includeCriteriaByCollaborator?: boolean;
+} = {}) {
   const includeDailyVolume = Boolean(options.includeDailyVolume);
   const includeScoreEvolution = Boolean(options.includeScoreEvolution);
   const includeVolumeEvolution = Boolean(options.includeVolumeEvolution);

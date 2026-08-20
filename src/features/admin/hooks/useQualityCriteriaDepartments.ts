@@ -109,7 +109,7 @@ export function useQualityCriteriaDepartments() {
       try {
         const response = await apiRequest("/api/admin/quality-criteria-departments", {
           method: "PUT",
-          body: input,
+          body: JSON.stringify(input),
           schema: upsertQualityCriterionDepartmentsResponseSchema,
         });
         setLoaded((current) => {
