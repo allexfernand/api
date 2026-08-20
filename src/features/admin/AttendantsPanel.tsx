@@ -17,7 +17,7 @@ function normalizeKey(value: string) {
     .toLowerCase();
 }
 
-export function AttendantsPanel() {
+export function AttendantsPanel({ onOpenQualityCriteria }: { onOpenQualityCriteria?: () => void } = {}) {
   const {
     status,
     error,
@@ -103,6 +103,16 @@ export function AttendantsPanel() {
           Lista baseada em <code>finished_by</code> dos últimos 12 meses. Associe cada atendente a um
           setor (Enfermagem, Agendamento, Tech, Outros) e marque Ativo/Inativo. Inativos continuam na
           conta por departamento.
+          {onOpenQualityCriteria ? (
+            <>
+              {" "}
+              Para mapear quais <strong>subcritérios</strong> cada setor avalia, abra{" "}
+              <button type="button" className={styles.linkButton} onClick={onOpenQualityCriteria}>
+                Subcritérios × setores
+              </button>
+              .
+            </>
+          ) : null}
         </p>
       </div>
 

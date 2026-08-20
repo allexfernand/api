@@ -6,7 +6,7 @@
 // Sem seleção explícita de menus, o usuário mantém o comportamento de hoje —
 // ver legacyMenuVisible em DashboardShell.tsx e hasMenuAccess no servidor.
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import styles from "./SettingsTab.module.css";
 import { ActivityLogsPanel } from "./ActivityLogsPanel";
 import { AttendantsPanel } from "./AttendantsPanel";
@@ -18,6 +18,16 @@ import type { ManagedDashboardUserPublic } from "../../contracts/dashboard-users
 import { PASSWORD_RULES, validateStrongPassword } from "../../lib/password-policy";
 
 type SettingsSection = "access" | "activity" | "attendants" | "quality-criteria";
+
+function sectionFromHash(): SettingsSection | null {
+  if (typeof window === "undefined") return null;
+  const hash = window.location.hash.replace(/^#/, "").toLowerCase();
+  if (hash === "subcriterios" || hash === "quality-criteria" || hash === "criterios") return "quality-criteria";
+  if (hash === "atendentes" || hash === "attendants") return "attendants";
+  if (hash === "logs" || hash === "activity") return "activity";
+  if (hash === "acesso" || hash === "access") return "access";
+  return null;
+}
 
 function defaultMenusFor(role: DashboardRole): MenuId[] {
   return role === "mds" ? [...MDS_DEFAULT_ALLOWED_MENUS] : [...FULL_DEFAULT_ALLOWED_MENUS];
@@ -63,6 +73,42 @@ export function SettingsTab() {
   const [selected, setSelected] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
 
+  useEffect(() => {
+    const apply = () => {
+      const next = sectionFromHash();
+      if (next) setSection(next);
+    };
+    apply();
+    const onHash = () => apply();
+    const onGoto = (event: Event) => {
+      const detail = (event as CustomEvent<SettingsSection>).detail;
+      if (detail) setSection(detail);
+    };
+    window.addEventListener("hashchange", onHash);
+    document.addEventListener("sanus:settings-section", onGoto);
+    return () => {
+      window.removeEventListener("hashchange", onHash);
+      document.removeEventListener("sanus:settings-section", onGoto);
+    };
+  }, []);
+
+  function goTo(next: SettingsSection) {
+    setSection(next);
+    const hash =
+      next === "quality-criteria"
+        ? "subcriterios"
+        : next === "attendants"
+          ? "atendentes"
+          : next === "activity"
+            ? "logs"
+            : "acesso";
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.hash = hash;
+      window.history.replaceState(null, "", url.toString());
+    }
+  }
+
   // Deriva a seleção em vez de sincronizá-la via efeito: sem usuário
   // escolhido (ou se ele saiu da lista), cai no primeiro da lista — a menos
   // que o formulário de criação esteja aberto.
@@ -86,7 +132,7 @@ export function SettingsTab() {
         <button
           type="button"
           className={`${styles.subnavItem} ${section === "access" ? styles.subnavItemActive : ""}`}
-          onClick={() => setSection("access")}
+          onClick={() => goTo("access")}
           aria-current={section === "access" ? "page" : undefined}
         >
           Acesso
@@ -94,7 +140,7 @@ export function SettingsTab() {
         <button
           type="button"
           className={`${styles.subnavItem} ${section === "activity" ? styles.subnavItemActive : ""}`}
-          onClick={() => setSection("activity")}
+          onClick={() => goTo("activity")}
           aria-current={section === "activity" ? "page" : undefined}
         >
           Logs de atividade
@@ -102,7 +148,7 @@ export function SettingsTab() {
         <button
           type="button"
           className={`${styles.subnavItem} ${section === "attendants" ? styles.subnavItemActive : ""}`}
-          onClick={() => setSection("attendants")}
+          onClick={() => goTo("attendants")}
           aria-current={section === "attendants" ? "page" : undefined}
         >
           Atendentes
@@ -110,7 +156,7 @@ export function SettingsTab() {
         <button
           type="button"
           className={`${styles.subnavItem} ${section === "quality-criteria" ? styles.subnavItemActive : ""}`}
-          onClick={() => setSection("quality-criteria")}
+          onClick={() => goTo("quality-criteria")}
           aria-current={section === "quality-criteria" ? "page" : undefined}
         >
           Subcritérios × setores
@@ -118,7 +164,11 @@ export function SettingsTab() {
       </nav>
 
       {section === "activity" ? <ActivityLogsPanel /> : null}
-      {section === "attendants" ? <AttendantsPanel /> : null}
+      {section === "attendants" ? (
+        <AttendantsPanel
+          onOpenQualityCriteria={() => goTo("quality-criteria")}
+        />
+      ) : null}
       {section === "quality-criteria" ? <QualityCriteriaDepartmentsPanel /> : null}
 
       {section === "access" ? (
