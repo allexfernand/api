@@ -29,8 +29,8 @@ const SUMMARY_ID_CANDIDATES = [
 ];
 const JOIN_KEY_CANDIDATES = SUMMARY_ID_CANDIDATES.filter((column) => column !== "id");
 const SCORE_CANDIDATES = [
-  "overall_score", "score_geral", "general_score", "quality_score", "score_percentual",
-  "score_pct", "percentual", "final_score", "nota_final", "score", "nota",
+  "percentual_desempenho", "overall_score", "score_geral", "general_score", "quality_score", "score_percentual",
+  "score_pct", "percentual", "final_score", "nota_final", "nota_atendimento", "score", "nota",
 ];
 const RESOLVED_CANDIDATES = [
   "problem_resolved", "problema_resolvido", "resolved", "is_resolved",
@@ -503,6 +503,9 @@ async function buildSummaryScope(columns, query, req) {
   } else if (groupNames.length && groupColumn) {
     conditions.push(`UPPER(TRIM(CAST(${qcol("s", groupColumn)} AS STRING))) IN (${groupNames.map((group) => `UPPER(TRIM('${escapeSql(group)}'))`).join(",")})`);
     filtersApplied.organization = true;
+  } else if (groupNames.length || company) {
+    // Silvers de qualidade não têm empresa/grupo: o recorte vai via botmaker_session.
+    filtersApplied.organization = true;
   }
 
   return {
@@ -512,6 +515,7 @@ async function buildSummaryScope(columns, query, req) {
     orgColumn,
     orgIdColumn,
     groupColumn,
+    orgViaSession: Boolean((groupNames.length || company) && !orgColumn && !orgIdColumn && !(groupNames.length && groupColumn)),
     filtersApplied,
     groupName,
     groupNames,
@@ -611,22 +615,66 @@ function resolveCriteriaOrgCondition(scope, criteriaColumns, alias = "q") {
   return buildCriteriaOrgViaSummaryCondition(scope, alias);
 }
 
+function qualityAnalysisJsonExpr(alias = "b") {
+  return `regexp_replace(CAST(${alias}.${quoteIdent("quality_analysis")} AS STRING), r'^\`\`\`json\\s*|\\s*\`\`\`$', '')`;
+}
+
+function buildSessionOrgCondition(scope, alias = "b") {
+  if (!(scope.groupNames?.length || scope.company)) return "";
+  return `CAST(${alias}.${quoteIdent("organization_id")} AS STRING) IN ${orgIdsSubquery(scope.groupNames || [], scope.company)}`;
+}
+
+function buildSessionDateCondition(scope, alias = "b") {
+  if (scope.months?.length) {
+    const monthList = scope.months.map((month) => `'${escapeSql(month)}'`).join(",");
+    return `DATE_FORMAT(try_cast(${alias}.${quoteIdent("creation_time")} AS TIMESTAMP), 'yyyy-MM') IN (${monthList})`;
+  }
+  return `try_cast(${alias}.${quoteIdent("creation_time")} AS TIMESTAMP) >= current_timestamp() - INTERVAL 30 DAYS`;
+}
+
+function sessionQualityCte(scope) {
+  const orgCondition = buildSessionOrgCondition(scope, "b");
+  return `
+    session_quality AS (
+      SELECT
+        CAST(b.${quoteIdent("session_id")} AS STRING) AS session_id,
+        COALESCE(NULLIF(TRIM(CAST(b.${quoteIdent("finished_by")} AS STRING)), ''), '${escapeSql(MISSING_COLLABORATOR_LABEL)}') AS collaborator,
+        try_cast(b.${quoteIdent("creation_time")} AS TIMESTAMP) AS event_timestamp,
+        ${qualityAnalysisJsonExpr("b")} AS qa_json,
+        try_cast(get_json_object(${qualityAnalysisJsonExpr("b")}, '$.resumo_quantitativo.percentual_desempenho') AS DOUBLE) AS percentual_desempenho,
+        try_cast(get_json_object(${qualityAnalysisJsonExpr("b")}, '$.resumo_quantitativo.nota_atendimento') AS DOUBLE) AS nota_atendimento,
+        try_cast(get_json_object(${qualityAnalysisJsonExpr("b")}, '$.resumo_quantitativo.nota_maxima_possivel') AS DOUBLE) AS nota_maxima_possivel,
+        LOWER(TRIM(CAST(get_json_object(${qualityAnalysisJsonExpr("b")}, '$.resumo_quantitativo.problema_resolvido') AS STRING))) AS problema_resolvido
+      FROM ${SESSION_TABLE} b
+      WHERE b.${quoteIdent("quality_analysis")} IS NOT NULL
+        AND ${buildSessionDateCondition(scope, "b")}
+        ${orgCondition ? `AND ${orgCondition}` : ""}
+    ),
+    session_criteria AS (
+      SELECT
+        s.session_id,
+        s.collaborator,
+        s.event_timestamp,
+        CAST(item.id AS STRING) AS criterio_id,
+        COALESCE(NULLIF(TRIM(CAST(item.sub_criterio AS STRING)), ''), 'Sem critério') AS criterion_name,
+        CAST(item.pontuacao AS STRING) AS score_raw,
+        try_cast(item.pontuacao AS DOUBLE) AS pontuacao
+      FROM session_quality s
+      LATERAL VIEW OUTER INLINE(
+        from_json(
+          get_json_object(s.qa_json, '$.tabela_avaliacao'),
+          'array<struct<id:string,sub_criterio:string,pontuacao:string>>'
+        )
+      ) t AS item
+      WHERE item.id IS NOT NULL
+    )
+  `;
+}
+
 async function loadQualityVolumeEvolution(warehouseId, criteriaColumns, scope) {
-  const criteriaDateColumn = pickColumn(criteriaColumns, DATE_CANDIDATES);
-  const criteriaConversationColumn = pickColumn(criteriaColumns, [
-    "attendance_id", "atendimento_id", "appointment_id", "session_id",
-    "conversation_id", "botmaker_session_id", "ticket_id",
-  ]);
   const months = lastNMonthsList(12);
   const monthList = months.map((month) => `'${escapeSql(month)}'`).join(",");
-  const qualityMonthExpr = criteriaDateColumn
-    ? `DATE_FORMAT(DATE_TRUNC('MONTH', try_cast(${qcol("c", criteriaDateColumn)} AS TIMESTAMP)), 'yyyy-MM')`
-    : null;
-  const qualityVolumeExpr = criteriaConversationColumn
-    ? `COUNT(DISTINCT CAST(${qcol("c", criteriaConversationColumn)} AS STRING))`
-    : "COUNT(*)";
   const sessionMonthExpr = `DATE_FORMAT(DATE_TRUNC('MONTH', try_cast(s.${quoteIdent("creation_time")} AS TIMESTAMP)), 'yyyy-MM')`;
-  const criteriaOrgCondition = resolveCriteriaOrgCondition(scope, criteriaColumns, "c");
   const sessionOrgFilter = scope.company
     ? `CAST(o.${quoteIdent("id")} AS STRING) IN ${orgIdsSubquery(null, scope.company)}`
     : (scope.groupNames?.length ? `CAST(o.${quoteIdent("id")} AS STRING) IN ${orgIdsSubquery(scope.groupNames, null)}` : null);
@@ -634,18 +682,47 @@ async function loadQualityVolumeEvolution(warehouseId, criteriaColumns, scope) {
     ? `${SESSION_TABLE} s INNER JOIN ${ORGANIZATIONS_TABLE} o ON CAST(s.${quoteIdent("organization_id")} AS STRING) = CAST(o.${quoteIdent("id")} AS STRING)`
     : `${SESSION_TABLE} s`;
 
+  // Preferência: volume avaliado via sessions com quality_analysis (tem org).
+  // Fallback para silver de critérios quando não há filtro de org.
+  const useSessionQuality = Boolean(scope.orgViaSession || scope.groupNames?.length || scope.company);
+  const criteriaDateColumn = pickColumn(criteriaColumns || [], DATE_CANDIDATES);
+  const criteriaConversationColumn = pickColumn(criteriaColumns || [], [
+    "attendance_id", "atendimento_id", "appointment_id", "session_id",
+    "conversation_id", "botmaker_session_id", "ticket_id",
+  ]);
+  const qualityMonthExpr = criteriaDateColumn
+    ? `DATE_FORMAT(DATE_TRUNC('MONTH', try_cast(${qcol("c", criteriaDateColumn)} AS TIMESTAMP)), 'yyyy-MM')`
+    : null;
+  const qualityVolumeExpr = criteriaConversationColumn
+    ? `COUNT(DISTINCT CAST(${qcol("c", criteriaConversationColumn)} AS STRING))`
+    : "COUNT(*)";
+  const criteriaOrgCondition = resolveCriteriaOrgCondition(scope, criteriaColumns, "c");
+
   const [qualityRows, sessionRows] = await Promise.all([
-    criteriaDateColumn ? runQuery(warehouseId, `
-      SELECT
-        ${qualityMonthExpr} AS month,
-        ${qualityVolumeExpr} AS total_evaluated_sessions
-      FROM ${EVALUATED_CRITERIA_TABLE} c
-      WHERE try_cast(${qcol("c", criteriaDateColumn)} AS TIMESTAMP) IS NOT NULL
-        AND ${qualityMonthExpr} IN (${monthList})
-        ${criteriaOrgCondition}
-      GROUP BY ${qualityMonthExpr}
-      ORDER BY month
-    `) : Promise.resolve([]),
+    useSessionQuality
+      ? runQuery(warehouseId, `
+          SELECT
+            ${sessionMonthExpr} AS month,
+            COUNT(*) AS total_evaluated_sessions
+          FROM ${sessionFrom}
+          WHERE try_cast(s.${quoteIdent("creation_time")} AS TIMESTAMP) IS NOT NULL
+            AND ${sessionMonthExpr} IN (${monthList})
+            AND s.${quoteIdent("quality_analysis")} IS NOT NULL
+            ${sessionOrgFilter ? `AND ${sessionOrgFilter}` : ""}
+          GROUP BY ${sessionMonthExpr}
+          ORDER BY month
+        `)
+      : (criteriaDateColumn ? runQuery(warehouseId, `
+          SELECT
+            ${qualityMonthExpr} AS month,
+            ${qualityVolumeExpr} AS total_evaluated_sessions
+          FROM ${EVALUATED_CRITERIA_TABLE} c
+          WHERE try_cast(${qcol("c", criteriaDateColumn)} AS TIMESTAMP) IS NOT NULL
+            AND ${qualityMonthExpr} IN (${monthList})
+            ${criteriaOrgCondition}
+          GROUP BY ${qualityMonthExpr}
+          ORDER BY month
+        `) : Promise.resolve([])),
     runQuery(warehouseId, `
       SELECT
         ${sessionMonthExpr} AS month,
@@ -674,7 +751,7 @@ async function loadQualityVolumeEvolution(warehouseId, criteriaColumns, scope) {
       company: scope.company,
     },
     source: {
-      quality: EVALUATED_CRITERIA_TABLE,
+      quality: useSessionQuality ? SESSION_TABLE : EVALUATED_CRITERIA_TABLE,
       sessions: SESSION_TABLE,
     },
   };
@@ -1517,12 +1594,216 @@ async function loadCollaboratorCriteriaDetail(warehouseId, criteriaColumns, scop
   };
 }
 
+async function loadStrategicFromSessions(warehouseId, scope, criterionIds, departmentFilter, qualityDailyMonth, options: {
+  includeDailyVolume?: boolean;
+  includeScoreEvolution?: boolean;
+  includeVolumeEvolution?: boolean;
+  includeCriteriaByCollaborator?: boolean;
+} = {}) {
+  const includeDailyVolume = Boolean(options.includeDailyVolume);
+  const includeScoreEvolution = Boolean(options.includeScoreEvolution);
+  const includeVolumeEvolution = Boolean(options.includeVolumeEvolution);
+  const criterionFilter = buildCriterionIdsCondition("c", criterionIds);
+  const criterionWhere = criterionFilter ? `WHERE ${criterionFilter}` : "";
+  const baseCte = sessionQualityCte(scope);
+
+  const [
+    summaryRows,
+    criteriaRows,
+    overallRows,
+    collaboratorRows,
+    qualityEvolution,
+    volumeEvolution,
+    dailyVolumeEvolution,
+  ] = await Promise.all([
+    runQuery(warehouseId, `
+      WITH ${baseCte}
+      SELECT
+        COUNT(*) AS total,
+        MAX(event_timestamp) AS latest_at,
+        AVG(percentual_desempenho) AS avg_score,
+        AVG(
+          CASE
+            WHEN problema_resolvido IN ('true', '1', 'sim', 'yes', 'y') THEN 1.0
+            WHEN problema_resolvido IN ('false', '0', 'nao', 'não', 'no', 'n') THEN 0.0
+            ELSE NULL
+          END
+        ) AS resolved_rate
+      FROM session_quality
+    `),
+    runQuery(warehouseId, `
+      WITH ${baseCte}
+      SELECT
+        COALESCE(NULLIF(regexp_extract(regexp_replace(c.criterio_id, ',', '.'), '^(\\\\d+)', 1), ''), 'Pilar') AS pillar_id,
+        CONCAT('Pilar ', COALESCE(NULLIF(regexp_extract(regexp_replace(c.criterio_id, ',', '.'), '^(\\\\d+)', 1), ''), '?')) AS pillar_name,
+        c.criterio_id AS criterion_id,
+        c.criterion_name,
+        c.score_raw,
+        COUNT(*) AS total,
+        COUNT(DISTINCT c.session_id) AS total_atendimentos
+      FROM session_criteria c
+      ${criterionWhere}
+      GROUP BY 1, 2, 3, 4, 5
+    `),
+    runQuery(warehouseId, `
+      WITH ${baseCte}
+      SELECT
+        SUM(CASE WHEN c.pontuacao IS NOT NULL THEN 1 ELSE 0 END) AS total_criterios_aplicaveis,
+        COUNT(*) AS total_criterios_disponiveis,
+        COALESCE(SUM(CASE WHEN c.pontuacao IS NOT NULL THEN COALESCE(c.pontuacao, 0) ELSE 0 END), 0) AS pontuacao_total,
+        SUM(CASE WHEN c.pontuacao IS NOT NULL THEN 1 ELSE 0 END) * ${CRITERION_MAX_SCORE} AS pontuacao_maxima,
+        COALESCE(SUM(CASE WHEN c.pontuacao IS NOT NULL THEN COALESCE(c.pontuacao, 0) ELSE 0 END), 0)
+          / NULLIF(SUM(CASE WHEN c.pontuacao IS NOT NULL THEN 1 ELSE 0 END) * ${CRITERION_MAX_SCORE}, 0) * 100 AS score_pct
+      FROM session_criteria c
+      ${criterionWhere}
+    `),
+    runQuery(warehouseId, `
+      WITH ${baseCte},
+      scored AS (
+        SELECT
+          c.collaborator,
+          c.session_id,
+          COALESCE(SUM(CASE WHEN c.pontuacao IS NOT NULL THEN COALESCE(c.pontuacao, 0) ELSE 0 END), 0)
+            / NULLIF(SUM(CASE WHEN c.pontuacao IS NOT NULL THEN 1 ELSE 0 END) * ${CRITERION_MAX_SCORE}, 0) * 100 AS score_pct,
+          COUNT(*) AS total_avaliacoes
+        FROM session_criteria c
+        ${criterionWhere}
+        GROUP BY c.collaborator, c.session_id
+      )
+      SELECT
+        collaborator,
+        COUNT(DISTINCT session_id) AS total_atendimentos,
+        SUM(total_avaliacoes) AS total_avaliacoes,
+        AVG(score_pct) AS score_pct
+      FROM scored
+      GROUP BY collaborator
+      ORDER BY score_pct DESC, total_atendimentos DESC
+    `),
+    includeScoreEvolution
+      ? runQuery(warehouseId, `
+          WITH ${baseCte}
+          SELECT
+            DATE_FORMAT(DATE_TRUNC('MONTH', event_timestamp), 'yyyy-MM') AS month,
+            AVG(percentual_desempenho) AS score_pct,
+            COUNT(*) AS total_avaliacoes,
+            COUNT(*) AS total_atendimentos
+          FROM session_quality
+          WHERE event_timestamp IS NOT NULL
+          GROUP BY 1
+          ORDER BY month
+        `).then((monthlyRows) => ({
+          monthly: monthlyRows.map((row) => ({
+            month: String(getCell(row[0]) || ""),
+            score_pct: toNumber(row[1]),
+            total_avaliacoes: toInt(row[2]),
+            total_atendimentos: toInt(row[3]),
+          })).filter((item) => item.month),
+          by_criterion: [],
+        }))
+      : Promise.resolve({ monthly: [], by_criterion: [] }),
+    includeVolumeEvolution
+      ? loadQualityVolumeEvolution(warehouseId, [], scope)
+      : Promise.resolve({ months: [], monthly: [] }),
+    includeDailyVolume
+      ? loadQualityDailyVolumeEvolution(warehouseId, [], scope, qualityDailyMonth)
+      : Promise.resolve(null),
+  ]);
+
+  const criteriaAgg = aggregateCriteria(criteriaRows);
+  const summary = summaryRows[0] || [];
+  const overallRow = overallRows[0] || [];
+  const overallCriteriaScore = {
+    total_criterios: toInt(overallRow[0]),
+    total_criterios_disponiveis: toInt(overallRow[1]),
+    pontuacao_total: toNumber(overallRow[2]) || 0,
+    pontuacao_maxima: toNumber(overallRow[3]) || 0,
+    score_pct: toNumber(overallRow[4]),
+  };
+  const summaryScore = normalizeSummaryScore(summary[2]);
+  const overallScore = overallCriteriaScore.score_pct !== null
+    ? overallCriteriaScore.score_pct
+    : (criteriaAgg.totals.applicable > 0 ? criteriaAgg.totals.score_pct : summaryScore);
+  const resolvedRate = toNumber(summary[3]);
+  const weakestPillar = criteriaAgg.pillars
+    .filter((item) => item.applicable > 0 && item.score_pct !== null)
+    .sort((a, b) => a.score_pct - b.score_pct)[0] || null;
+  const weakestCriterion = criteriaAgg.criteria
+    .filter((item) => item.applicable > 0 && item.score_pct !== null)
+    .sort((a, b) => {
+      const scoreSort = a.score_pct - b.score_pct;
+      return scoreSort || String(a.criterion_id).localeCompare(String(b.criterion_id), "pt-BR", { numeric: true });
+    })[0] || null;
+
+  const collaborators = mergeCollaboratorsWithMeta((collaboratorRows || []).map((row) => ({
+    name: String(getCell(row[0]) || "Sem colaborador"),
+    total: toInt(row[1]),
+    total_avaliacoes: toInt(row[2]),
+    score_pct: toNumber(row[3]),
+  }))).filter((item) => {
+    if (departmentFilter && String(item.setor || "") !== departmentFilter) return false;
+    return true;
+  });
+
+  return {
+    kpis: {
+      overall_score: overallScore,
+      overall_criteria_score: overallCriteriaScore,
+      evaluated: toInt(summary[0]),
+      evaluated_monthly: [],
+      resolved_pct: resolvedRate === null ? null : Number((resolvedRate * 100).toFixed(1)),
+      applicable_criteria: overallCriteriaScore.total_criterios || criteriaAgg.totals.applicable,
+      available_criteria: overallCriteriaScore.total_criterios_disponiveis || overallCriteriaScore.total_criterios || criteriaAgg.totals.total,
+      na_pct: criteriaAgg.totals.total > 0 ? criteriaAgg.totals.pct_na : null,
+      weakest_pillar: weakestPillar,
+      weakest_criterion: weakestCriterion
+        ? {
+            criterion_id: weakestCriterion.criterion_id,
+            criterion_name: weakestCriterion.criterion_name,
+            score_pct: weakestCriterion.score_pct,
+            total_atendimentos: weakestCriterion.total_atendimentos,
+            pillar_id: weakestCriterion.pillar_id,
+          }
+        : null,
+      latest_at: getCell(summary[1]),
+    },
+    pillars: criteriaAgg.pillars,
+    criteria: criteriaAgg.criteria,
+    evaluated_criteria: criteriaAgg.criteria.map((item) => ({
+      criterio_id: item.criterion_id,
+      sub_criterio: item.criterion_name,
+      total_atendimentos: item.total_atendimentos,
+      total_avaliacoes: item.total,
+      pontuacao_media: item.applicable > 0 ? (item.scoreSum / item.applicable) : null,
+      percentual_criterio: item.score_pct === null ? null : item.score_pct / 100,
+      percentual_atendimento: item.score_pct === null ? null : item.score_pct / 100,
+      criterio_max_score: CRITERION_MAX_SCORE,
+    })),
+    evaluated_criteria_by_collaborator: [],
+    criteria_finisher_filter: { applied: false, strategy: "session.org", value: "" },
+    department_filter: {
+      department: departmentFilter || "",
+      criterion_ids: Array.isArray(criterionIds) ? criterionIds : null,
+      applied: Array.isArray(criterionIds),
+    },
+    evolution: qualityEvolution,
+    volume_evolution: volumeEvolution,
+    daily_volume_evolution: dailyVolumeEvolution || { month: qualityDailyMonth, series: [] },
+    collaborators,
+    care_lines: [],
+    insights: buildInsightCards(criteriaAgg.criteria, criteriaAgg.pillars),
+    source_override: "botmaker_session.quality_analysis",
+  };
+}
+
 async function loadStrategic(warehouseId, columns, criteriaColumns, scope, sharedKey, criteriaFinisher, summarySessionJoin, summaryFinishedByColumn, criteriaFinishedByColumn, qualityDailyMonth, criterionIds, departmentFilter, options: {
   includeDailyVolume?: boolean;
   includeScoreEvolution?: boolean;
   includeVolumeEvolution?: boolean;
   includeCriteriaByCollaborator?: boolean;
 } = {}) {
+  if (scope.orgViaSession && (scope.groupNames?.length || scope.company)) {
+    return loadStrategicFromSessions(warehouseId, scope, criterionIds, departmentFilter, qualityDailyMonth, options);
+  }
   const includeDailyVolume = Boolean(options.includeDailyVolume);
   const includeScoreEvolution = Boolean(options.includeScoreEvolution);
   const includeVolumeEvolution = Boolean(options.includeVolumeEvolution);
@@ -1840,6 +2121,33 @@ export default async function handler(req, res) {
       return res.status(200).json({ daily_volume_evolution: dailyVolumeEvolution, updatedAt: new Date().toISOString() });
     }
     if (mode === "quality_score_evolution") {
+      if (scope.orgViaSession && (scope.groupNames?.length || scope.company)) {
+        const baseCte = sessionQualityCte(scope);
+        const monthlyRows = await runQuery(warehouseId, `
+          WITH ${baseCte}
+          SELECT
+            DATE_FORMAT(DATE_TRUNC('MONTH', event_timestamp), 'yyyy-MM') AS month,
+            AVG(percentual_desempenho) AS score_pct,
+            COUNT(*) AS total_avaliacoes,
+            COUNT(*) AS total_atendimentos
+          FROM session_quality
+          WHERE event_timestamp IS NOT NULL
+          GROUP BY 1
+          ORDER BY month
+        `);
+        return res.status(200).json({
+          evolution: {
+            monthly: monthlyRows.map((row) => ({
+              month: String(getCell(row[0]) || ""),
+              score_pct: toNumber(row[1]),
+              total_avaliacoes: toInt(row[2]),
+              total_atendimentos: toInt(row[3]),
+            })).filter((item) => item.month),
+            by_criterion: [],
+          },
+          updatedAt: new Date().toISOString(),
+        });
+      }
       const evolution = await loadQualityEvolution(warehouseId, criteriaColumns, criterionIds, scope);
       return res.status(200).json({ evolution, updatedAt: new Date().toISOString() });
     }
