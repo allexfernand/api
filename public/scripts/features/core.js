@@ -512,13 +512,10 @@ function matchesPartnerVisionDefault(partner) {
     || /(^|[^a-z0-9])inter([^a-z0-9]|$)/.test(text);
 }
 
+// Visão Parceiros inicia sem seleção — mesmo comportamento da Análise Demográfica
+// (universo completo). Antes pré-selecionava MDS/Wiz/Inter e disparava N×3 APIs.
 function applyPartnerVisionDefaultSelectionIfNeeded() {
-  if (getActiveTab() !== 'visao-parceiros' || partnerVisionSelectionTouched || currentPartnerBrokerIds.length || !partnerOptionsCache.length) return false;
-  currentPartnerBrokerIds = [...new Set(partnerOptionsCache
-    .filter(matchesPartnerVisionDefault)
-    .map((partner) => String(partner.broker_id || '').trim())
-    .filter(Boolean))];
-  return currentPartnerBrokerIds.length > 0;
+  return false;
 }
 
 function isMdsPartner(partner) {

@@ -263,6 +263,21 @@ function partnerVisionSingleParams(partnerId) {
   return p;
 }
 
+async function mapWithConcurrency(items, concurrency, mapper) {
+  const list = Array.isArray(items) ? items : [];
+  const limit = Math.max(1, Math.min(concurrency || 2, list.length || 1));
+  const results = new Array(list.length);
+  let cursor = 0;
+  async function worker() {
+    while (cursor < list.length) {
+      const index = cursor++;
+      results[index] = await mapper(list[index], index);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, list.length) }, () => worker()));
+  return results;
+}
+
 function sumSeriesTotal(data) {
   if (!data || !Array.isArray(data.series)) return 0;
   return data.series.reduce((sum, item) => sum + (Number(item.total) || 0), 0);
@@ -380,7 +395,8 @@ async function loadPartnerVisionSummary() {
   if (sessionsPrevHeader) sessionsPrevHeader.textContent = `Sessões ${partnerVisionMonthLabel(sessionComparisonMonths[0] || '')}`;
   if (sessionsCurrentHeader) sessionsCurrentHeader.textContent = `Sessões ${partnerVisionMonthLabel(sessionComparisonMonths[1] || sessionComparisonMonths[0] || '')}`;
   const monthParam = months.join(',');
-  const rows = await Promise.all(partners.map(async (partner) => {
+  // No máximo 2 parceiros em paralelo (3 APIs cada) — evita stampede no warehouse.
+  const rows = await mapWithConcurrency(partners, 2, async (partner) => {
     const demographicsParams = partnerVisionSingleParams(partner.id);
     const sessionsParams = partnerVisionSingleParams(partner.id);
     const appointmentsParams = partnerVisionSingleParams(partner.id);
@@ -403,7 +419,7 @@ async function loadPartnerVisionSummary() {
       sessionComparison: sessionComparisonMonths.map((month) => sessionsByMonth.get(month) || 0),
       hasError: Boolean(demographics?.error || sessions?.error || appointments?.error),
     };
-  }));
+  });
   if (requestId !== partnerVisionSummaryRequestId) return;
 
   body.innerHTML = rows.map((row) => {
@@ -587,7 +603,7 @@ async function loadPartnerVision() {
   if (context) {
     context.textContent = currentPartnerBrokerIds.length
       ? `Parceiro: ${selectedPartnerVisionLabel()}`
-      : 'Todos os parceiros · beneficiaries · acumulado desde mai/2022';
+      : 'Todos os parceiros · sem filtro de parceiro (igual à Análise Demográfica)';
   }
   if (loading) loading.style.display = 'none';
 }

@@ -7,7 +7,7 @@ export default function Page() {
   return (
     <>
       <DashboardPage fragments={fragments} />
-      <Script src="/scripts/dashboard.js?v=20260820-rank-depto" strategy="afterInteractive" />
+      <Script src="/scripts/dashboard.js?v=20260820-vp-noselect" strategy="afterInteractive" />
     </>
   );
 }
