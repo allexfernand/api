@@ -807,7 +807,10 @@ async function loadSessionsBeneficiaryUtilization(baseParams, demographicsData, 
     const errorBox = document.getElementById('sessions-utilization-error');
     const loading = document.getElementById('sessions-utilization-loading');
     const interactionError = document.getElementById('s-total-evol-interaction-error');
+    const evolInteractionError = document.getElementById('s-evol-interaction-error');
+    const evolInteractionSkel = document.getElementById('skel-s-evol-interaction');
     if (loading) loading.style.display = 'none';
+    if (evolInteractionSkel) evolInteractionSkel.style.display = 'none';
     if (errorBox) {
       errorBox.style.display = 'block';
       errorBox.textContent = data?.error ? String(data.error).slice(0, 220) : 'Erro ao carregar utilização da base';
@@ -816,12 +819,19 @@ async function loadSessionsBeneficiaryUtilization(baseParams, demographicsData, 
       interactionError.style.display = 'block';
       interactionError.textContent = data?.error ? String(data.error).slice(0, 220) : 'Erro ao carregar sessões com interação';
     }
+    if (evolInteractionError) {
+      evolInteractionError.style.display = 'block';
+      evolInteractionError.textContent = data?.error ? String(data.error).slice(0, 220) : 'Erro ao carregar finalizações com interação';
+    }
     return;
   }
   const series = data.series || [];
   const uniqueBeneficiaryValues = series.map((it) => Number(it.unique_beneficiaries ?? it.unique_cpfs) || 0);
-  const interactionSessionValues = series.map((it) => Number(it.sessions_with_user_interaction) || 0);
+  const interactionSessionValues = series.map((it) => Number(it.sessions_with_user_interaction ?? it.total_with_user_interaction) || 0);
   const interactionUniqueBeneficiaryValues = series.map((it) => Number(it.unique_beneficiaries_with_user_interaction) || 0);
+  const interactionHumanoValues = series.map((it) => Number(it.humano_with_user_interaction) || 0);
+  const interactionIaValues = series.map((it) => Number(it.ia_with_user_interaction) || 0);
+  const interactionTotalValues = series.map((it) => Number(it.total_with_user_interaction ?? it.sessions_with_user_interaction) || ((Number(it.humano_with_user_interaction) || 0) + (Number(it.ia_with_user_interaction) || 0)));
   renderSessionsTotalEvolutionChart(labels, totalValues, uniqueBeneficiaryValues, Boolean(data.beneficiaries_included));
   renderSessionsTotalEvolutionInteractionChart(
     labels,
@@ -832,10 +842,32 @@ async function loadSessionsBeneficiaryUtilization(baseParams, demographicsData, 
     Boolean(data.beneficiaries_included),
     Boolean(data.user_interaction_included),
   );
+  const evolInteractionCv = document.getElementById('sessionsEvolInteractionChart');
+  const evolInteractionSkel = document.getElementById('skel-s-evol-interaction');
+  const evolInteractionError = document.getElementById('s-evol-interaction-error');
+  if (evolInteractionError) { evolInteractionError.style.display = 'none'; evolInteractionError.textContent = ''; }
+  if (evolInteractionSkel) evolInteractionSkel.style.display = 'none';
+  if (evolInteractionCv) {
+    evolInteractionCv.style.display = 'block';
+    sessionsEvolInteractionChart = renderSessionsFinalizationsEvolutionChart(
+      evolInteractionCv,
+      sessionsEvolInteractionChart,
+      labels,
+      interactionTotalValues,
+      interactionHumanoValues,
+      interactionIaValues,
+    );
+  }
   const interactionMode = document.getElementById('s-total-evol-interaction-mode');
+  const evolInteractionMode = document.getElementById('s-evol-interaction-mode');
   if (interactionMode) {
     const totalMode = document.getElementById('s-total-evol-mode');
     interactionMode.textContent = totalMode ? totalMode.textContent : 'global';
+  }
+  if (evolInteractionMode) {
+    const evolMode = document.getElementById('s-evol-mode');
+    const totalMode = document.getElementById('s-total-evol-mode');
+    evolInteractionMode.textContent = (totalMode && totalMode.textContent) || (evolMode && evolMode.textContent) || 'global';
   }
   renderSessionsUtilization(data, demographicsData, hasScopedComparison ? {
     data: globalData,
@@ -1696,6 +1728,10 @@ async function loadSessionsEvolution() {
   const interactionCv = document.getElementById('sessionsTotalEvolInteractionChart');
   const interactionModeLabel = document.getElementById('s-total-evol-interaction-mode');
   const interactionErrorBox = document.getElementById('s-total-evol-interaction-error');
+  const evolInteractionSkel = document.getElementById('skel-s-evol-interaction');
+  const evolInteractionCv = document.getElementById('sessionsEvolInteractionChart');
+  const evolInteractionModeLabel = document.getElementById('s-evol-interaction-mode');
+  const evolInteractionErrorBox = document.getElementById('s-evol-interaction-error');
   const utilizationLoading = document.getElementById('sessions-utilization-loading');
   const utilizationContent = document.getElementById('sessions-utilization-content');
   const utilizationError = document.getElementById('sessions-utilization-error');
@@ -1708,6 +1744,9 @@ async function loadSessionsEvolution() {
   if (interactionSkel) interactionSkel.style.display = 'block';
   if (interactionCv) interactionCv.style.display = 'none';
   if (interactionErrorBox) { interactionErrorBox.style.display = 'none'; interactionErrorBox.textContent = ''; }
+  if (evolInteractionSkel) evolInteractionSkel.style.display = 'block';
+  if (evolInteractionCv) evolInteractionCv.style.display = 'none';
+  if (evolInteractionErrorBox) { evolInteractionErrorBox.style.display = 'none'; evolInteractionErrorBox.textContent = ''; }
   if (utilizationLoading) {
     utilizationLoading.style.display = 'block';
     utilizationLoading.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando utilização...';
@@ -1737,10 +1776,15 @@ async function loadSessionsEvolution() {
       interactionErrorBox.style.display = 'block';
       interactionErrorBox.textContent = (data && data.error) ? String(data.error).slice(0, 220) : 'Erro ao carregar sessões com interação';
     }
+    if (evolInteractionErrorBox) {
+      evolInteractionErrorBox.style.display = 'block';
+      evolInteractionErrorBox.textContent = (data && data.error) ? String(data.error).slice(0, 220) : 'Erro ao carregar finalizações com interação';
+    }
     showSessionsAttendanceError(data);
     if (skel) skel.style.display = 'none';
     if (totalSkel) totalSkel.style.display = 'none';
     if (interactionSkel) interactionSkel.style.display = 'none';
+    if (evolInteractionSkel) evolInteractionSkel.style.display = 'none';
     if (utilizationLoading) utilizationLoading.style.display = 'none';
     if (utilizationError) {
       utilizationError.style.display = 'block';
@@ -1771,6 +1815,11 @@ async function loadSessionsEvolution() {
   }
   if (interactionModeLabel && totalModeLabel) {
     interactionModeLabel.textContent = totalModeLabel.textContent;
+  }
+  if (evolInteractionModeLabel && totalModeLabel) {
+    evolInteractionModeLabel.textContent = totalModeLabel.textContent;
+  } else if (evolInteractionModeLabel && modeLabel) {
+    evolInteractionModeLabel.textContent = modeLabel.textContent;
   }
 
   const series = (data && !data.error ? data.series : []) || [];

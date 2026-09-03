@@ -116,7 +116,17 @@
     </div>
 
     <div class="fluid-grid">
-      <div class="chart-card" data-qtag="#Q4B" style="grid-column:1 / -1">
+      <div class="chart-card" data-qtag="#Q3B">
+        <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Evolução mensal de finalizações · com interação do beneficiário</h2>
+        <div style="font-size:11px;color:#94a3b8;margin-bottom:14px">Somente sessões com mensagem do beneficiário (sender_type=user) · últimos 12 meses · <span id="s-evol-interaction-mode">global</span></div>
+        <div class="chart-wrap">
+          <div class="skeleton" id="skel-s-evol-interaction"></div>
+          <canvas id="sessionsEvolInteractionChart" style="display:none"></canvas>
+        </div>
+        <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="s-evol-interaction-error"></div>
+      </div>
+
+      <div class="chart-card" data-qtag="#Q4B">
         <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Evolução mensal do total de sessões · com interação do beneficiário</h2>
         <div style="font-size:11px;color:#94a3b8;margin-bottom:14px">Total de sessões e sessões com mensagem do beneficiário (sender_type=user) · últimos 12 meses · <span id="s-total-evol-interaction-mode">global</span></div>
         <div class="chart-wrap">

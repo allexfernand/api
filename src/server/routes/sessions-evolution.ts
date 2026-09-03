@@ -474,7 +474,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         SELECT
           s.${quoteIdent('mes')} AS mes,
           CAST(s.${quoteIdent('session_id')} AS STRING) AS session_id,
-          s.${quoteIdent('beneficiary_key')} AS beneficiary_key
+          s.${quoteIdent('beneficiary_key')} AS beneficiary_key,
+          s.${quoteIdent('tipo_atendimento_agent')} AS tipo_atendimento
         FROM ${fromSql}
         ${where}
       ),
@@ -482,7 +483,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         SELECT
           ss.mes,
           ss.session_id,
-          ss.beneficiary_key
+          ss.beneficiary_key,
+          ss.tipo_atendimento
         FROM scoped_sessions ss
         WHERE EXISTS (
           SELECT 1
@@ -490,14 +492,32 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           WHERE CAST(m.${quoteIdent('session_id')} AS STRING) = ss.session_id
             AND LOWER(TRIM(CAST(m.${quoteIdent('sender_type')} AS STRING))) = 'user'
         )
+      ),
+      by_tipo AS (
+        SELECT
+          mes,
+          tipo_atendimento,
+          COUNT(*) AS total
+        FROM sessions_with_user
+        GROUP BY mes, tipo_atendimento
+      ),
+      by_month AS (
+        SELECT
+          mes,
+          COUNT(*) AS sessions_with_user_interaction,
+          COUNT(DISTINCT CASE WHEN beneficiary_key IS NOT NULL THEN beneficiary_key END) AS unique_beneficiaries_with_user_interaction
+        FROM sessions_with_user
+        GROUP BY mes
       )
       SELECT
-        mes,
-        COUNT(*) AS sessions_with_user_interaction,
-        COUNT(DISTINCT CASE WHEN beneficiary_key IS NOT NULL THEN beneficiary_key END) AS unique_beneficiaries_with_user_interaction
-      FROM sessions_with_user
-      GROUP BY mes
-      ORDER BY mes
+        b.mes,
+        b.tipo_atendimento,
+        b.total,
+        m.sessions_with_user_interaction,
+        m.unique_beneficiaries_with_user_interaction
+      FROM by_tipo b
+      INNER JOIN by_month m ON b.mes = m.mes
+      ORDER BY b.mes
     `, params.list) : Promise.resolve([]),
     ]);
 
@@ -521,13 +541,20 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       else if (key === "__last_12_months") utilization.last_12_months = value;
       else beneficiariesByMes.set(key, value);
     });
-    const userInteractionByMes = new Map(userInteractionRows.map((row) => [
-      String(getCell(row[0]) || ""),
-      {
-        sessions_with_user_interaction: toInt(row[1]),
-        unique_beneficiaries_with_user_interaction: toInt(row[2]),
-      },
-    ]));
+    const userInteractionByMesTipo = new Map();
+    const userInteractionByMes = new Map();
+    userInteractionRows.forEach((row) => {
+      const mes = String(getCell(row[0]) || "");
+      const tipo = String(getCell(row[1]) || "").toUpperCase();
+      const total = toInt(row[2]);
+      userInteractionByMesTipo.set(`${mes}|${tipo}`, total);
+      if (!userInteractionByMes.has(mes)) {
+        userInteractionByMes.set(mes, {
+          sessions_with_user_interaction: toInt(row[3]),
+          unique_beneficiaries_with_user_interaction: toInt(row[4]),
+        });
+      }
+    });
     const series = monthList.map((m) => {
       const humano = byMesTipo.get(`${m}|HUMANO`) || 0;
       const ia = byMesTipo.get(`${m}|IA`) || 0;
@@ -536,6 +563,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         sessions_with_user_interaction: 0,
         unique_beneficiaries_with_user_interaction: 0,
       };
+      const humanoUser = userInteractionByMesTipo.get(`${m}|HUMANO`) || 0;
+      const iaUser = userInteractionByMesTipo.get(`${m}|IA`) || 0;
       return {
         mes: m,
         humano,
@@ -543,8 +572,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         total: humano + ia,
         unique_cpfs: uniqueBeneficiaries,
         unique_beneficiaries: uniqueBeneficiaries,
-        sessions_with_user_interaction: userInteraction.sessions_with_user_interaction,
+        sessions_with_user_interaction: userInteraction.sessions_with_user_interaction || (humanoUser + iaUser),
         unique_beneficiaries_with_user_interaction: userInteraction.unique_beneficiaries_with_user_interaction,
+        humano_with_user_interaction: humanoUser,
+        ia_with_user_interaction: iaUser,
+        total_with_user_interaction: humanoUser + iaUser,
       };
     });
 
