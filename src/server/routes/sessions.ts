@@ -754,25 +754,30 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       }
     }
 
-    const messageAgentFinishersPromise = companySessionsMode === "company"
-      ? runQuery(warehouseId, `
-        SELECT
-          s.${quoteIdent('tipo_atendimento_agent')} AS tipo_atendimento,
-          COUNT(*) AS total_sessions
-        FROM ${dashboardSessionsTable} s
-        ${companySessionsWhere ? `WHERE ${companySessionsWhere}` : ''}
-        GROUP BY s.${quoteIdent('tipo_atendimento_agent')}
-        ORDER BY total_sessions DESC
-      `, params.list)
-      : runQuery(warehouseId, `
-        SELECT
-          s.${quoteIdent('tipo_atendimento_agent')} AS tipo_atendimento,
-          COUNT(*) AS total_sessions
-        FROM ${dashboardSessionsTable} s
-        ${companySessionsDateFilter ? `WHERE ${companySessionsDateFilter}` : ''}
-        GROUP BY s.${quoteIdent('tipo_atendimento_agent')}
-        ORDER BY total_sessions DESC
-      `);
+    const userInteractionExistsSql = `
+      EXISTS (
+        SELECT 1
+        FROM ${MESSAGE_TABLE} m
+        WHERE CAST(m.${quoteIdent('session_id')} AS STRING) = CAST(s.${quoteIdent('session_id')} AS STRING)
+          AND LOWER(TRIM(CAST(m.${quoteIdent('sender_type')} AS STRING))) = 'user'
+      )
+    `;
+    const withUserInteractionFilter = (baseWhere: string | null) => {
+      if (!includeUserInteraction) return baseWhere || '';
+      return baseWhere ? `${baseWhere} AND ${userInteractionExistsSql}` : userInteractionExistsSql;
+    };
+    const messageAgentFinishersWhere = withUserInteractionFilter(
+      companySessionsMode === "company" ? companySessionsWhere : (companySessionsDateFilter || ''),
+    );
+    const messageAgentFinishersPromise = runQuery(warehouseId, `
+      SELECT
+        s.${quoteIdent('tipo_atendimento_agent')} AS tipo_atendimento,
+        COUNT(*) AS total_sessions
+      FROM ${dashboardSessionsTable} s
+      ${messageAgentFinishersWhere ? `WHERE ${messageAgentFinishersWhere}` : ''}
+      GROUP BY s.${quoteIdent('tipo_atendimento_agent')}
+      ORDER BY total_sessions DESC
+    `, companySessionsMode === "company" ? params.list : undefined);
 
     const companySessionsPromise = companySessionsMode === "company"
       ? runQuery(warehouseId, `
@@ -794,6 +799,31 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         ORDER BY total_sessions DESC
       `);
 
+    const companySessionsForUiWhere = withUserInteractionFilter(
+      companySessionsMode === "company" ? companySessionsWhere : (companySessionsDateFilter || ''),
+    );
+    const companySessionsForUiPromise = includeUserInteraction
+      ? (companySessionsMode === "company"
+        ? runQuery(warehouseId, `
+          SELECT
+            COALESCE(NULLIF(TRIM(CAST(s.${quoteIdent('organization_name')} AS STRING)), ''), 'Sem empresa') AS empresa,
+            COUNT(*) AS total_sessions
+          FROM ${dashboardSessionsTable} s
+          ${companySessionsForUiWhere ? `WHERE ${companySessionsForUiWhere}` : ''}
+          GROUP BY COALESCE(NULLIF(TRIM(CAST(s.${quoteIdent('organization_name')} AS STRING)), ''), 'Sem empresa')
+          ORDER BY total_sessions DESC
+        `, params.list)
+        : runQuery(warehouseId, `
+          SELECT
+            s.${quoteIdent('economic_group_canonical')} AS empresa,
+            COUNT(*) AS total_sessions
+          FROM ${dashboardSessionsTable} s
+          ${companySessionsForUiWhere ? `WHERE ${companySessionsForUiWhere}` : ''}
+          GROUP BY s.${quoteIdent('economic_group_canonical')}
+          ORDER BY total_sessions DESC
+        `))
+      : Promise.resolve(null);
+
     const userInteractionWhere = companySessionsMode === "company"
       ? companySessionsWhere
       : (companySessionsDateFilter || '');
@@ -802,12 +832,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         SELECT COUNT(*) AS total_sessions
         FROM ${dashboardSessionsTable} s
         ${userInteractionWhere ? `WHERE ${userInteractionWhere}` : ''}
-          ${userInteractionWhere ? 'AND' : 'WHERE'} EXISTS (
-            SELECT 1
-            FROM ${MESSAGE_TABLE} m
-            WHERE CAST(m.${quoteIdent('session_id')} AS STRING) = CAST(s.${quoteIdent('session_id')} AS STRING)
-              AND LOWER(TRIM(CAST(m.${quoteIdent('sender_type')} AS STRING))) = 'user'
-          )
+          ${userInteractionWhere ? 'AND' : 'WHERE'} ${userInteractionExistsSql}
       `, companySessionsMode === "company" ? params.list : undefined)
       : Promise.resolve(null);
 
@@ -833,10 +858,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         LIMIT 30
       `, params.list);
 
-    const [typificationsSettled, messageAgentFinishersSettled, companySessionsSettled, userInteractionSettled] = await Promise.allSettled([
+    const [typificationsSettled, messageAgentFinishersSettled, companySessionsSettled, companySessionsForUiSettled, userInteractionSettled] = await Promise.allSettled([
       typificationsPromise,
       messageAgentFinishersPromise,
       companySessionsPromise,
+      companySessionsForUiPromise,
       userInteractionPromise,
     ]);
 
@@ -861,15 +887,29 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const companySessionsError = companySessionsSettled.status === 'rejected'
       ? (companySessionsSettled.reason instanceof Error ? companySessionsSettled.reason.message : String(companySessionsSettled.reason))
       : null;
-    const companySessions = companySessionsSettled.status === 'fulfilled'
+    const companySessionsUnfiltered = companySessionsSettled.status === 'fulfilled'
       ? companySessionsSettled.value.map((r) => ({
           empresa: String(getCell(r[0]) || "Sem empresa"),
           total: toInt(r[1]),
         }))
       : [];
-    const companySessionsTotal = companySessions.reduce((acc, item) => acc + (Number(item.total) || 0), 0);
+    const companySessionsForUiError = includeUserInteraction
+      ? (companySessionsForUiSettled.status === 'rejected'
+        ? (companySessionsForUiSettled.reason instanceof Error ? companySessionsForUiSettled.reason.message : String(companySessionsForUiSettled.reason))
+        : null)
+      : null;
+    const companySessions = includeUserInteraction
+      ? (companySessionsForUiSettled.status === 'fulfilled' && Array.isArray(companySessionsForUiSettled.value)
+        ? companySessionsForUiSettled.value.map((r) => ({
+            empresa: String(getCell(r[0]) || "Sem empresa"),
+            total: toInt(r[1]),
+          }))
+        : [])
+      : companySessionsUnfiltered;
+    const companySessionsTotal = companySessionsUnfiltered.reduce((acc, item) => acc + (Number(item.total) || 0), 0);
     const economicGroupTotal = companySessionsSettled.status === 'fulfilled' ? companySessionsTotal : 0;
     const economicGroupTotalError = companySessionsError;
+    const companySessionsUiError = includeUserInteraction ? (companySessionsForUiError || null) : companySessionsError;
     const userInteractionError = !includeUserInteraction
       ? null
       : (userInteractionSettled.status === 'rejected'
@@ -890,12 +930,21 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         ? "Sessão com ≥1 mensagem em botmaker_message onde sender_type = 'user'"
         : null,
       company_sessions: companySessions,
-      company_sessions_error: companySessionsError,
+      company_sessions_error: companySessionsUiError,
       company_sessions_mode: companySessionsMode,
-      company_sessions_source: companySessionsSource,
+      company_sessions_source: includeUserInteraction
+        ? `${companySessionsSource} · só sessões com ≥1 interação do cliente`
+        : companySessionsSource,
       message_agent_finishers: messageAgentFinishers,
       message_agent_finishers_error: messageAgentFinishersError,
-      message_agent_finishers_filter_applied: { period: true, organization: true },
+      message_agent_finishers_filter_applied: {
+        period: true,
+        organization: true,
+        user_interaction: includeUserInteraction,
+      },
+      message_agent_finishers_rule: includeUserInteraction
+        ? "Q12B = tipo_atendimento_agent, só sessões com ≥1 mensagem sender_type=user"
+        : "Q12B = tipo_atendimento_agent (teve mensagem agent)",
       typifications,
       typifications_error: typificationsError,
       typifications_finisher: typificationFinisher,

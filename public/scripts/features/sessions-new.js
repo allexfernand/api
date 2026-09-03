@@ -45,7 +45,7 @@ function renderSessionMessageAgentFinishersNew(items, opts) {
   if (note) {
     const messages = [];
     if (selectedSessionScopeText()) messages.push(`recorte: ${selectedSessionScopeText()}`);
-    messages.push('fonte: Q12B = tipo_atendimento_agent');
+    messages.push('fonte: Q12B = tipo_atendimento_agent · só c/ ≥1 interação do cliente');
     note.style.display = messages.length ? 'block' : 'none';
     note.textContent = messages.join(' · ');
   }
@@ -175,6 +175,7 @@ function renderSessionCompaniesNew(items, opts) {
   if (note) {
     const messages = [];
     if (isCompanyMode && selectedSessionScopeText()) messages.push(`recorte: ${selectedSessionScopeText()}`);
+    messages.push('só sessões com ≥1 interação do cliente');
     if (opts.source) messages.push(opts.source);
     note.style.display = messages.length ? 'block' : 'none';
     note.textContent = messages.join(' · ');
