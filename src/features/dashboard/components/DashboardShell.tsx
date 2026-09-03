@@ -16,6 +16,8 @@ declare global {
 }
 
 const CONFIGURACOES_ITEM = { id: "configuracoes", label: "Configurações", icon: "fa-sliders" } as const;
+const SESSOES_NEW_ITEM = { id: "sessoes-new", label: "Sessões - New", icon: "fa-comments" } as const;
+const ADMIN_ONLY_TABS = new Set<string>([CONFIGURACOES_ITEM.id, SESSOES_NEW_ITEM.id]);
 
 const defaultLogo = { src: "/assets/logo_sanus.svg", alt: "Sanus", width: 112, height: 32 };
 
@@ -424,6 +426,16 @@ function Navigation({
             <div className="sidebar-section-label">Administração</div>
             <button
               type="button"
+              className={`tab sidebar-tab ${activeTab === SESSOES_NEW_ITEM.id ? "active" : ""}`}
+              data-tab={SESSOES_NEW_ITEM.id}
+              title={sidebarCollapsed ? SESSOES_NEW_ITEM.label : undefined}
+              onClick={() => onChange(SESSOES_NEW_ITEM.id)}
+            >
+              <i className={`fa-solid ${SESSOES_NEW_ITEM.icon}`} aria-hidden="true" />
+              <span>{SESSOES_NEW_ITEM.label}</span>
+            </button>
+            <button
+              type="button"
               className={`tab sidebar-tab ${activeTab === CONFIGURACOES_ITEM.id ? "active" : ""}`}
               data-tab={CONFIGURACOES_ITEM.id}
               title={sidebarCollapsed ? CONFIGURACOES_ITEM.label : undefined}
@@ -697,13 +709,14 @@ export function DashboardShell() {
 
   const activate = useCallback((tab: string) => {
     let nextTab = tab;
-    if (tab === "configuracoes") {
+    if (ADMIN_ONLY_TABS.has(tab)) {
       if (!isAdmin) nextTab = "demografica";
     } else if (!isMenuVisible(tab as MenuId)) {
       nextTab = "demografica";
     }
     setActiveTab(nextTab);
     document.body.dataset.activeTab = nextTab;
+    document.body.dataset.isAdmin = isAdmin ? "1" : "0";
     legacy("activateTab", nextTab);
     if (window.matchMedia("(max-width: 760px)").matches) setSidebarCollapsed(true);
   }, [isAdmin, isMenuVisible]);
@@ -732,6 +745,7 @@ export function DashboardShell() {
         setDashboardRole(auth.role || "");
         setAllowedMenus((auth.allowedMenus as MenuId[] | null) ?? null);
         setIsAdmin(Boolean(auth.isAdmin));
+        document.body.dataset.isAdmin = auth.isAdmin ? "1" : "0";
         setAuthenticated(true);
       })
       .catch(() => {
@@ -739,6 +753,7 @@ export function DashboardShell() {
         setDashboardRole("");
         setAllowedMenus(null);
         setIsAdmin(false);
+        delete document.body.dataset.isAdmin;
         setAuthenticated(false);
       });
     const onTabChange = (event: Event) => setActiveTab((event as CustomEvent<string>).detail);

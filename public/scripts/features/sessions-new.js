@@ -1,8 +1,20 @@
-// --- Sessões ---
-function renderSessionMessageAgentFinishers(items, opts) {
-  const loading = document.getElementById('session-message-finishers-loading');
-  const content = document.getElementById('session-message-finishers-content');
-  const note = document.getElementById('s-msg-fin-note');
+// --- Sessões - New (cópia independente) ---
+// Gerado a partir de sessions.js — edite este arquivo livremente.
+let sessionsRequestIdNew = 0;
+let sessionsDeptEvolutionCacheNew = null;
+let sessionsDailySeriesCacheNew = [];
+let selectedSessionsDailyMonthNew = typeof currentMonthValue === "function" ? currentMonthValue() : "";
+let selectedSessionsDailyIndexesNew = new Set();
+let selectedSessionTypificationFinisherNew = "";
+let selectedAppointmentTypeMonthsNew = new Set();
+let sessionsEvolChartNew, sessionsEvolInteractionChartNew, sessionsTotalEvolChartNew, sessionsTotalEvolInteractionChartNew, sessionsAttendanceChartNew, sessionsDailyChartNew, sessionsTopGroupsChartNew;
+let sessionCompaniesDataNew = [];
+let selectedTypificationNew = null;
+
+function renderSessionMessageAgentFinishersNew(items, opts) {
+  const loading = document.getElementById('sn-session-message-finishers-loading');
+  const content = document.getElementById('sn-session-message-finishers-content');
+  const note = document.getElementById('sn-s-msg-fin-note');
   opts = opts || {};
   if (opts.error) {
     if (loading) {
@@ -20,14 +32,14 @@ function renderSessionMessageAgentFinishers(items, opts) {
   const width = n => total > 0 ? ((n / total) * 100).toFixed(1) + '%' : '0%';
   const s = (id, value) => { const el = document.getElementById(id); if (el) el.textContent = value; };
 
-  s('s-msg-fin-humano', fmt(humano));
-  s('s-msg-fin-ia', fmt(ia));
-  s('s-msg-fin-total', fmt(total));
-  s('s-msg-fin-humano-pct', pct(humano));
-  s('s-msg-fin-ia-pct', pct(ia));
+  s('sn-s-msg-fin-humano', fmt(humano));
+  s('sn-s-msg-fin-ia', fmt(ia));
+  s('sn-s-msg-fin-total', fmt(total));
+  s('sn-s-msg-fin-humano-pct', pct(humano));
+  s('sn-s-msg-fin-ia-pct', pct(ia));
 
-  const barHumano = document.getElementById('bar-msg-fin-humano');
-  const barIa = document.getElementById('bar-msg-fin-ia');
+  const barHumano = document.getElementById('sn-bar-msg-fin-humano');
+  const barIa = document.getElementById('sn-bar-msg-fin-ia');
   if (barHumano) barHumano.style.width = width(humano);
   if (barIa) barIa.style.width = width(ia);
   if (note) {
@@ -48,11 +60,11 @@ const SESSION_DEPT_COLORS = {
   Outros: '#94a3b8',
 };
 
-function renderSessionHumanDepartments(data, opts) {
-  const loading = document.getElementById('session-human-dept-loading');
-  const list = document.getElementById('session-human-dept-list');
-  const meta = document.getElementById('s-human-dept-meta');
-  const errorBox = document.getElementById('session-human-dept-error');
+function renderSessionHumanDepartmentsNew(data, opts) {
+  const loading = document.getElementById('sn-session-human-dept-loading');
+  const list = document.getElementById('sn-session-human-dept-list');
+  const meta = document.getElementById('sn-s-human-dept-meta');
+  const errorBox = document.getElementById('sn-session-human-dept-error');
   opts = opts || {};
   if (loading) loading.style.display = 'none';
   if (errorBox) {
@@ -86,10 +98,10 @@ function renderSessionHumanDepartments(data, opts) {
   }).join('');
 }
 
-async function loadSessionHumanDepartments(requestId) {
-  const loading = document.getElementById('session-human-dept-loading');
-  const list = document.getElementById('session-human-dept-list');
-  const errorBox = document.getElementById('session-human-dept-error');
+async function loadSessionHumanDepartmentsNew(requestId) {
+  const loading = document.getElementById('sn-session-human-dept-loading');
+  const list = document.getElementById('sn-session-human-dept-list');
+  const errorBox = document.getElementById('sn-session-human-dept-error');
   if (loading) loading.style.display = 'block';
   if (list) list.innerHTML = '';
   if (errorBox) {
@@ -102,28 +114,28 @@ async function loadSessionHumanDepartments(requestId) {
   if (meses.length > 0) p.set('meses', meses.join(','));
   appendGroupParams(p);
   const data = await safeGet('/api/sessions?' + p.toString());
-  if (requestId !== sessionsRequestId) return;
+  if (requestId !== sessionsRequestIdNew) return;
   if (!data || data.error) {
-    renderSessionHumanDepartments(null, {
+    renderSessionHumanDepartmentsNew(null, {
       error: data?.error || 'Erro ao carregar humano por departamento',
     });
     return;
   }
-  renderSessionHumanDepartments(data, { error: data.error });
+  renderSessionHumanDepartmentsNew(data, { error: data.error });
 }
 
-function filterSessionCompanies() {
-  const input = document.getElementById('session-company-search');
+function filterSessionCompaniesNew() {
+  const input = document.getElementById('sn-session-company-search');
   const q = input ? input.value.toLowerCase() : '';
-  renderSessionCompaniesTable(sessionCompaniesData.filter((c) => String(c.empresa || '').toLowerCase().includes(q)));
+  renderSessionCompaniesTableNew(sessionCompaniesDataNew.filter((c) => String(c.empresa || '').toLowerCase().includes(q)));
 }
 
-function renderSessionCompaniesTable(data) {
-  const tbody = document.getElementById('session-companies-tbody');
+function renderSessionCompaniesTableNew(data) {
+  const tbody = document.getElementById('sn-session-companies-tbody');
   if (!tbody) return;
   const rows = data || [];
-  const grand = sessionCompaniesData.reduce((acc, c) => acc + (Number(c.total) || 0), 0);
-  const max = sessionCompaniesData[0]?.total > 0 ? Number(sessionCompaniesData[0].total) : 0;
+  const grand = sessionCompaniesDataNew.reduce((acc, c) => acc + (Number(c.total) || 0), 0);
+  const max = sessionCompaniesDataNew[0]?.total > 0 ? Number(sessionCompaniesDataNew[0].total) : 0;
   tbody.innerHTML = rows.length ? rows.slice(0, 100).map((c, i) => {
     const total = Number(c.total) || 0;
     const bw = max > 0 ? Math.max(Math.round((total / max) * 100), 2) : 0;
@@ -135,22 +147,22 @@ function renderSessionCompaniesTable(data) {
       <td style="padding:6px 8px"><div style="background:#f1f5f9;border-radius:3px;height:5px;overflow:hidden"><div style="height:100%;width:${bw}%;background:linear-gradient(90deg,#14b8a6,#0f766e);border-radius:3px"></div></div><div style="font-size:10px;color:#94a3b8;text-align:right">${pct}%</div></td>
     </tr>`;
   }).join('') : '<tr><td colspan="4" style="padding:16px 8px;text-align:center;color:#94a3b8">Nenhuma empresa encontrada para o filtro atual.</td></tr>';
-  const footer = document.getElementById('session-companies-footer');
+  const footer = document.getElementById('sn-session-companies-footer');
   if (footer) footer.textContent = `${Math.min(rows.length, 100)} de ${rows.length} · ${fmt(grand)} sessões`;
 }
 
-function renderSessionCompanies(items, opts) {
-  const loading = document.getElementById('session-companies-loading');
-  const wrap = document.getElementById('session-companies-wrap');
-  const note = document.getElementById('session-companies-note');
-  const title = document.getElementById('session-companies-title');
-  const nameHeader = document.getElementById('session-companies-name-header');
+function renderSessionCompaniesNew(items, opts) {
+  const loading = document.getElementById('sn-session-companies-loading');
+  const wrap = document.getElementById('sn-session-companies-wrap');
+  const note = document.getElementById('sn-session-companies-note');
+  const title = document.getElementById('sn-session-companies-title');
+  const nameHeader = document.getElementById('sn-session-companies-name-header');
   opts = opts || {};
   const isCompanyMode = opts.mode === 'company';
   if (title) title.innerHTML = `<i class="fa-solid fa-building" style="margin-right:6px"></i>${isCompanyMode ? 'Sessões por empresa' : 'Sessões por grupo econômico'}`;
   if (nameHeader) nameHeader.textContent = isCompanyMode ? 'Empresa' : 'Grupo econômico';
   if (opts.error) {
-    sessionCompaniesData = [];
+    sessionCompaniesDataNew = [];
     if (loading) {
       loading.style.display = 'block';
       loading.innerHTML = `<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>Erro ao carregar ${isCompanyMode ? 'sessões por empresa' : 'sessões por grupo econômico'}: ` + String(opts.error).slice(0, 200);
@@ -158,8 +170,8 @@ function renderSessionCompanies(items, opts) {
     if (wrap) wrap.style.display = 'none';
     return;
   }
-  sessionCompaniesData = (items || []).filter((item) => Number(item.total) > 0);
-  filterSessionCompanies();
+  sessionCompaniesDataNew = (items || []).filter((item) => Number(item.total) > 0);
+  filterSessionCompaniesNew();
   if (note) {
     const messages = [];
     if (isCompanyMode && selectedSessionScopeText()) messages.push(`recorte: ${selectedSessionScopeText()}`);
@@ -171,18 +183,18 @@ function renderSessionCompanies(items, opts) {
   if (wrap) wrap.style.display = 'block';
 }
 
-function renderSessionsDepartmentEvolution(data) {
-  const skel = document.getElementById('skel-s-top-groups');
-  const cv = document.getElementById('sessionsTopGroupsChart');
-  const title = document.getElementById('s-top-groups-title');
-  const source = document.getElementById('s-top-groups-source');
-  const mode = document.getElementById('s-top-groups-mode');
-  const errorBox = document.getElementById('s-top-groups-error');
+function renderSessionsDepartmentEvolutionNew(data) {
+  const skel = document.getElementById('sn-skel-s-top-groups');
+  const cv = document.getElementById('sn-sessionsTopGroupsChart');
+  const title = document.getElementById('sn-s-top-groups-title');
+  const source = document.getElementById('sn-s-top-groups-source');
+  const mode = document.getElementById('sn-s-top-groups-mode');
+  const errorBox = document.getElementById('sn-s-top-groups-error');
   if (!cv) return;
 
-  if (sessionsTopGroupsChart) {
-    sessionsTopGroupsChart.destroy();
-    sessionsTopGroupsChart = null;
+  if (sessionsTopGroupsChartNew) {
+    sessionsTopGroupsChartNew.destroy();
+    sessionsTopGroupsChartNew = null;
   }
 
   if (errorBox) {
@@ -287,7 +299,7 @@ function renderSessionsDepartmentEvolution(data) {
 
   if (skel) skel.style.display = 'none';
   cv.style.display = 'block';
-  sessionsTopGroupsChart = new Chart(cv, {
+  sessionsTopGroupsChartNew = new Chart(cv, {
     type: 'line',
     data: { labels, datasets },
     options: {
@@ -330,22 +342,22 @@ function renderSessionsDepartmentEvolution(data) {
   });
 }
 
-function onSessionTypificationFinisherChange(value) {
-  selectedSessionTypificationFinisher = value || '';
-  selectedTypification = null;
-  loadSessions();
+function onSessionTypificationFinisherChangeNew(value) {
+  selectedSessionTypificationFinisherNew = value || '';
+  selectedTypificationNew = null;
+  loadSessionsNew();
 }
 
-function resetTypificationGroupsCard(reason) {
-  const hadSelection = Boolean(selectedTypification);
-  selectedTypification = null;
-  const empty = document.getElementById('typification-groups-empty');
-  const loading = document.getElementById('typification-groups-loading');
-  const content = document.getElementById('typification-groups-content');
-  const context = document.getElementById('typification-groups-context');
-  const list = document.getElementById('typification-groups-list');
-  const meta = document.getElementById('typification-groups-meta');
-  const note = document.getElementById('typification-groups-note');
+function resetTypificationGroupsCardNew(reason) {
+  const hadSelection = Boolean(selectedTypificationNew);
+  selectedTypificationNew = null;
+  const empty = document.getElementById('sn-typification-groups-empty');
+  const loading = document.getElementById('sn-typification-groups-loading');
+  const content = document.getElementById('sn-typification-groups-content');
+  const context = document.getElementById('sn-typification-groups-context');
+  const list = document.getElementById('sn-typification-groups-list');
+  const meta = document.getElementById('sn-typification-groups-meta');
+  const note = document.getElementById('sn-typification-groups-note');
   if (loading) loading.style.display = 'none';
   if (content) content.style.display = 'none';
   if (list) list.innerHTML = '';
@@ -362,34 +374,34 @@ function resetTypificationGroupsCard(reason) {
   }
 }
 
-function onSessionTypificationClick(rawTipo) {
+function onSessionTypificationClickNew(rawTipo) {
   const tipo = String(rawTipo || '').trim();
   if (!tipo) return;
-  if (selectedTypification === tipo) {
-    resetTypificationGroupsCard();
-    refreshTypificationActiveState();
+  if (selectedTypificationNew === tipo) {
+    resetTypificationGroupsCardNew();
+    refreshTypificationActiveStateNew();
     return;
   }
-  selectedTypification = tipo;
-  refreshTypificationActiveState();
-  loadTypificationGroupsBreakdown(tipo);
+  selectedTypificationNew = tipo;
+  refreshTypificationActiveStateNew();
+  loadTypificationGroupsBreakdownNew(tipo);
 }
 
-function refreshTypificationActiveState() {
+function refreshTypificationActiveStateNew() {
   document.querySelectorAll('#session-typifications-list .session-typification-row').forEach((row) => {
-    row.classList.toggle('is-active', row.dataset.tipo === selectedTypification);
+    row.classList.toggle('is-active', row.dataset.tipo === selectedTypificationNew);
   });
 }
 
-async function loadTypificationGroupsBreakdown(tipo) {
+async function loadTypificationGroupsBreakdownNew(tipo) {
   const requestId = ++typificationGroupsRequestId;
-  const empty = document.getElementById('typification-groups-empty');
-  const loading = document.getElementById('typification-groups-loading');
-  const content = document.getElementById('typification-groups-content');
-  const context = document.getElementById('typification-groups-context');
-  const list = document.getElementById('typification-groups-list');
-  const meta = document.getElementById('typification-groups-meta');
-  const note = document.getElementById('typification-groups-note');
+  const empty = document.getElementById('sn-typification-groups-empty');
+  const loading = document.getElementById('sn-typification-groups-loading');
+  const content = document.getElementById('sn-typification-groups-content');
+  const context = document.getElementById('sn-typification-groups-context');
+  const list = document.getElementById('sn-typification-groups-list');
+  const meta = document.getElementById('sn-typification-groups-meta');
+  const note = document.getElementById('sn-typification-groups-note');
   if (empty) empty.style.display = 'none';
   if (content) content.style.display = 'none';
   if (loading) loading.style.display = 'block';
@@ -401,11 +413,11 @@ async function loadTypificationGroupsBreakdown(tipo) {
   p.set('typification_value', tipo);
   if (meses.length > 0) p.set('meses', meses.join(','));
   appendGroupParams(p);
-  if (selectedSessionTypificationFinisher) p.set('typification_finisher', selectedSessionTypificationFinisher);
+  if (selectedSessionTypificationFinisherNew) p.set('typification_finisher', selectedSessionTypificationFinisherNew);
 
   const data = await safeGet('/api/sessions?' + p.toString());
   if (requestId !== typificationGroupsRequestId) return;
-  if (selectedTypification !== tipo) return;
+  if (selectedTypificationNew !== tipo) return;
 
   if (loading) loading.style.display = 'none';
 
@@ -446,19 +458,19 @@ async function loadTypificationGroupsBreakdown(tipo) {
   if (note) {
     const messages = [];
     if (selectedSessionScopeText()) messages.push(`recortado por: ${selectedSessionScopeText()}`);
-    if (selectedSessionTypificationFinisher === 'humano') messages.push('finalizadas por Humano');
-    else if (selectedSessionTypificationFinisher === 'ia') messages.push('finalizadas por IA');
+    if (selectedSessionTypificationFinisherNew === 'humano') messages.push('finalizadas por Humano');
+    else if (selectedSessionTypificationFinisherNew === 'ia') messages.push('finalizadas por IA');
     note.style.display = messages.length ? 'block' : 'none';
     note.textContent = messages.join(' · ');
   }
 }
 
-function renderSessionTypifications(items, opts) {
-  const loading = document.getElementById('session-typifications-loading');
-  const content = document.getElementById('session-typifications-content');
-  const list = document.getElementById('session-typifications-list');
-  const meta = document.getElementById('session-typifications-meta');
-  const note = document.getElementById('session-typifications-note');
+function renderSessionTypificationsNew(items, opts) {
+  const loading = document.getElementById('sn-session-typifications-loading');
+  const content = document.getElementById('sn-session-typifications-content');
+  const list = document.getElementById('sn-session-typifications-list');
+  const meta = document.getElementById('sn-session-typifications-meta');
+  const note = document.getElementById('sn-session-typifications-note');
   opts = opts || {};
   if (opts.error) {
     if (loading) {
@@ -480,9 +492,9 @@ function renderSessionTypifications(items, opts) {
       const rawTipo = item.tipo || 'Sem tipificação';
       const label = escapeHtml(rawTipo);
       const tipoAttr = escapeAttr(rawTipo);
-      const isActive = selectedTypification === rawTipo;
+      const isActive = selectedTypificationNew === rawTipo;
       const activeClass = isActive ? ' is-active' : '';
-      return `<div class="session-typification-row is-interactive${activeClass}" role="button" tabindex="0" data-tipo="${tipoAttr}" onclick="onSessionTypificationClick(this.dataset.tipo)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();onSessionTypificationClick(this.dataset.tipo);}" title="${label} — clique para detalhar por grupo">
+      return `<div class="session-typification-row is-interactive${activeClass}" role="button" tabindex="0" data-tipo="${tipoAttr}" onclick="onSessionTypificationClickNew(this.dataset.tipo)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();onSessionTypificationClickNew(this.dataset.tipo);}" title="${label} — clique para detalhar por grupo">
         <div class="session-typification-label">${label}</div>
         <div class="session-typification-track"><div class="session-typification-bar" style="width:${width}%"></div></div>
         <div class="session-typification-value">${fmt(value)} <span style="color:#94a3b8;font-weight:700">(${pct}%)</span></div>
@@ -493,8 +505,8 @@ function renderSessionTypifications(items, opts) {
   if (note) {
     const messages = [];
     if (selectedSessionScopeText()) messages.push('Filtro aplicado como no Q14');
-    if (selectedSessionTypificationFinisher === 'humano') messages.push('finalizadas por Humano');
-    else if (selectedSessionTypificationFinisher === 'ia') messages.push('finalizadas por IA');
+    if (selectedSessionTypificationFinisherNew === 'humano') messages.push('finalizadas por Humano');
+    else if (selectedSessionTypificationFinisherNew === 'ia') messages.push('finalizadas por IA');
     note.style.display = messages.length ? 'block' : 'none';
     note.textContent = messages.join(' · ');
   }
@@ -502,18 +514,18 @@ function renderSessionTypifications(items, opts) {
   if (content) content.style.display = 'flex';
 }
 
-function renderSessionsUtilization(data, demographicsData, comparison) {
-  return renderUtilizationCards(data, demographicsData, comparison, {
-    loading: document.getElementById('sessions-utilization-loading'),
-    content: document.getElementById('sessions-utilization-content'),
-    errorBox: document.getElementById('sessions-utilization-error'),
-    context: document.getElementById('sessions-utilization-context'),
+function renderSessionsUtilizationNew(data, demographicsData, comparison) {
+  return renderUtilizationCardsNew(data, demographicsData, comparison, {
+    loading: document.getElementById('sn-sessions-utilization-loading'),
+    content: document.getElementById('sn-sessions-utilization-content'),
+    errorBox: document.getElementById('sn-sessions-utilization-error'),
+    context: document.getElementById('sn-sessions-utilization-context'),
     scoped: Boolean(currentGroups.length || currentPartnerBrokerId),
     scopeText: selectedSessionScopeText(),
   });
 }
 
-function renderUtilizationCards(data, demographicsData, comparison, elements = {}) {
+function renderUtilizationCardsNew(data, demographicsData, comparison, elements = {}) {
   const { loading, content, errorBox, context } = elements;
   if (!content) return;
   const useAppointmentVolumeBase = Boolean(elements.useAppointmentVolumeBase);
@@ -658,12 +670,12 @@ function renderUtilizationCards(data, demographicsData, comparison, elements = {
   content.style.display = 'grid';
 }
 
-function renderSessionsTotalEvolutionChart(labels, totalValues, uniqueBeneficiaryValues, hasUniqueBeneficiaryData) {
-  const totalSkel = document.getElementById('skel-s-total-evol');
-  const totalCv = document.getElementById('sessionsTotalEvolChart');
+function renderSessionsTotalEvolutionChartNew(labels, totalValues, uniqueBeneficiaryValues, hasUniqueBeneficiaryData) {
+  const totalSkel = document.getElementById('sn-skel-s-total-evol');
+  const totalCv = document.getElementById('sn-sessionsTotalEvolChart');
   if (totalSkel) totalSkel.style.display = 'none';
   if (totalCv) totalCv.style.display = 'block';
-  if (sessionsTotalEvolChart) sessionsTotalEvolChart.destroy();
+  if (sessionsTotalEvolChartNew) sessionsTotalEvolChartNew.destroy();
   if (!totalCv) return;
   const datasets = [{
     label: 'Total de sessões',
@@ -690,7 +702,7 @@ function renderSessionsTotalEvolutionChart(labels, totalValues, uniqueBeneficiar
       tension: 0.35,
     });
   }
-  sessionsTotalEvolChart = new Chart(totalCv, {
+  sessionsTotalEvolChartNew = new Chart(totalCv, {
     type: 'line',
     data: { labels, datasets },
     options: {
@@ -723,12 +735,12 @@ function renderSessionsTotalEvolutionChart(labels, totalValues, uniqueBeneficiar
   });
 }
 
-function renderSessionsTotalEvolutionInteractionChart(labels, totalValues, uniqueBeneficiaryValues, interactionSessionValues, interactionUniqueBeneficiaryValues, hasUniqueBeneficiaryData, hasInteractionData) {
-  const skel = document.getElementById('skel-s-total-evol-interaction');
-  const cv = document.getElementById('sessionsTotalEvolInteractionChart');
+function renderSessionsTotalEvolutionInteractionChartNew(labels, totalValues, uniqueBeneficiaryValues, interactionSessionValues, interactionUniqueBeneficiaryValues, hasUniqueBeneficiaryData, hasInteractionData) {
+  const skel = document.getElementById('sn-skel-s-total-evol-interaction');
+  const cv = document.getElementById('sn-sessionsTotalEvolInteractionChart');
   if (skel) skel.style.display = 'none';
   if (cv) cv.style.display = 'block';
-  if (sessionsTotalEvolInteractionChart) sessionsTotalEvolInteractionChart.destroy();
+  if (sessionsTotalEvolInteractionChartNew) sessionsTotalEvolInteractionChartNew.destroy();
   if (!cv) return;
   const datasets = [{
     label: 'Total de sessões',
@@ -754,7 +766,7 @@ function renderSessionsTotalEvolutionInteractionChart(labels, totalValues, uniqu
       tension: 0.35,
     });
   }
-  sessionsTotalEvolInteractionChart = new Chart(cv, {
+  sessionsTotalEvolInteractionChartNew = new Chart(cv, {
     type: 'line',
     data: { labels, datasets },
     options: {
@@ -788,7 +800,7 @@ function renderSessionsTotalEvolutionInteractionChart(labels, totalValues, uniqu
   });
 }
 
-async function loadSessionsBeneficiaryUtilization(baseParams, demographicsData, labels, totalValues, requestId) {
+async function loadSessionsBeneficiaryUtilizationNew(baseParams, demographicsData, labels, totalValues, requestId) {
   const p = new URLSearchParams(baseParams);
   p.set('include_beneficiaries', '1');
   p.set('only_beneficiaries', '1');
@@ -804,11 +816,11 @@ async function loadSessionsBeneficiaryUtilization(baseParams, demographicsData, 
   ]);
   if (requestId !== sessionsEvolutionRequestId) return;
   if (!data || data.error) {
-    const errorBox = document.getElementById('sessions-utilization-error');
-    const loading = document.getElementById('sessions-utilization-loading');
-    const interactionError = document.getElementById('s-total-evol-interaction-error');
-    const evolInteractionError = document.getElementById('s-evol-interaction-error');
-    const evolInteractionSkel = document.getElementById('skel-s-evol-interaction');
+    const errorBox = document.getElementById('sn-sessions-utilization-error');
+    const loading = document.getElementById('sn-sessions-utilization-loading');
+    const interactionError = document.getElementById('sn-s-total-evol-interaction-error');
+    const evolInteractionError = document.getElementById('sn-s-evol-interaction-error');
+    const evolInteractionSkel = document.getElementById('sn-skel-s-evol-interaction');
     if (loading) loading.style.display = 'none';
     if (evolInteractionSkel) evolInteractionSkel.style.display = 'none';
     if (errorBox) {
@@ -832,8 +844,8 @@ async function loadSessionsBeneficiaryUtilization(baseParams, demographicsData, 
   const interactionHumanoValues = series.map((it) => Number(it.humano_with_user_interaction) || 0);
   const interactionIaValues = series.map((it) => Number(it.ia_with_user_interaction) || 0);
   const interactionTotalValues = series.map((it) => Number(it.total_with_user_interaction ?? it.sessions_with_user_interaction) || ((Number(it.humano_with_user_interaction) || 0) + (Number(it.ia_with_user_interaction) || 0)));
-  renderSessionsTotalEvolutionChart(labels, totalValues, uniqueBeneficiaryValues, Boolean(data.beneficiaries_included));
-  renderSessionsTotalEvolutionInteractionChart(
+  renderSessionsTotalEvolutionChartNew(labels, totalValues, uniqueBeneficiaryValues, Boolean(data.beneficiaries_included));
+  renderSessionsTotalEvolutionInteractionChartNew(
     labels,
     totalValues,
     uniqueBeneficiaryValues,
@@ -842,40 +854,40 @@ async function loadSessionsBeneficiaryUtilization(baseParams, demographicsData, 
     Boolean(data.beneficiaries_included),
     Boolean(data.user_interaction_included),
   );
-  const evolInteractionCv = document.getElementById('sessionsEvolInteractionChart');
-  const evolInteractionSkel = document.getElementById('skel-s-evol-interaction');
-  const evolInteractionError = document.getElementById('s-evol-interaction-error');
+  const evolInteractionCv = document.getElementById('sn-sessionsEvolInteractionChart');
+  const evolInteractionSkel = document.getElementById('sn-skel-s-evol-interaction');
+  const evolInteractionError = document.getElementById('sn-s-evol-interaction-error');
   if (evolInteractionError) { evolInteractionError.style.display = 'none'; evolInteractionError.textContent = ''; }
   if (evolInteractionSkel) evolInteractionSkel.style.display = 'none';
   if (evolInteractionCv) {
     evolInteractionCv.style.display = 'block';
-    sessionsEvolInteractionChart = renderSessionsFinalizationsEvolutionChart(
+    sessionsEvolInteractionChartNew = renderSessionsFinalizationsEvolutionChartNew(
       evolInteractionCv,
-      sessionsEvolInteractionChart,
+      sessionsEvolInteractionChartNew,
       labels,
       interactionTotalValues,
       interactionHumanoValues,
       interactionIaValues,
     );
   }
-  const interactionMode = document.getElementById('s-total-evol-interaction-mode');
-  const evolInteractionMode = document.getElementById('s-evol-interaction-mode');
+  const interactionMode = document.getElementById('sn-s-total-evol-interaction-mode');
+  const evolInteractionMode = document.getElementById('sn-s-evol-interaction-mode');
   if (interactionMode) {
-    const totalMode = document.getElementById('s-total-evol-mode');
+    const totalMode = document.getElementById('sn-s-total-evol-mode');
     interactionMode.textContent = totalMode ? totalMode.textContent : 'global';
   }
   if (evolInteractionMode) {
-    const evolMode = document.getElementById('s-evol-mode');
-    const totalMode = document.getElementById('s-total-evol-mode');
+    const evolMode = document.getElementById('sn-s-evol-mode');
+    const totalMode = document.getElementById('sn-s-total-evol-mode');
     evolInteractionMode.textContent = (totalMode && totalMode.textContent) || (evolMode && evolMode.textContent) || 'global';
   }
-  renderSessionsUtilization(data, demographicsData, hasScopedComparison ? {
+  renderSessionsUtilizationNew(data, demographicsData, hasScopedComparison ? {
     data: globalData,
     demographicsData: globalDemographicsData,
   } : null);
 }
 
-function sessionsDeptEvolutionScopeKey() {
+function sessionsDeptEvolutionScopeKeyNew() {
   return JSON.stringify({
     groups: Array.isArray(currentGroups) ? [...currentGroups].sort() : [],
     partners: Array.isArray(currentPartnerBrokerIds) ? [...currentPartnerBrokerIds].map(String).sort() : [],
@@ -884,41 +896,42 @@ function sessionsDeptEvolutionScopeKey() {
   });
 }
 
-async function loadSessionsDepartmentEvolution(requestId) {
-  const scopeKey = sessionsDeptEvolutionScopeKey();
-  if (sessionsDeptEvolutionCache.key === scopeKey && sessionsDeptEvolutionCache.data) {
-    renderSessionsDepartmentEvolution(sessionsDeptEvolutionCache.data);
+async function loadSessionsDepartmentEvolutionNew(requestId) {
+  const scopeKey = sessionsDeptEvolutionScopeKeyNew();
+  if (sessionsDeptEvolutionCacheNew.key === scopeKey && sessionsDeptEvolutionCacheNew.data) {
+    renderSessionsDepartmentEvolutionNew(sessionsDeptEvolutionCacheNew.data);
     return;
   }
   const p = new URLSearchParams();
   p.set('scope', 'human_department_evolution');
   appendGroupParams(p);
   const data = await safeGet('/api/sessions?' + p.toString());
-  if (requestId !== sessionsRequestId) return;
+  if (requestId !== sessionsRequestIdNew) return;
   if (!data || data.error) {
-    renderSessionsDepartmentEvolution({ error: data?.error || 'Erro ao carregar evolução por departamento' });
+    renderSessionsDepartmentEvolutionNew({ error: data?.error || 'Erro ao carregar evolução por departamento' });
     return;
   }
-  sessionsDeptEvolutionCache = { key: scopeKey, data };
-  renderSessionsDepartmentEvolution(data);
+  sessionsDeptEvolutionCacheNew = { key: scopeKey, data };
+  renderSessionsDepartmentEvolutionNew(data);
 }
 
-async function loadSessions() {
-  const requestId = ++sessionsRequestId;
-  resetTypificationGroupsCard('reload');
-  buildAppointmentTypesPeriodoOptions();
-  buildSessionsDailyMonthOptions();
-  const economicGroupBullet = document.getElementById('bullet-sessoes-eg');
-  const economicGroupPeriodoLabel = document.getElementById('bullet-sessoes-eg-periodo');
-  const messageFinishersLoading = document.getElementById('session-message-finishers-loading');
-  const messageFinishersContent = document.getElementById('session-message-finishers-content');
-  const sessionCompaniesLoading = document.getElementById('session-companies-loading');
-  const sessionCompaniesWrap = document.getElementById('session-companies-wrap');
-  const typificationsLoading = document.getElementById('session-typifications-loading');
-  const typificationsContent = document.getElementById('session-typifications-content');
-  const topGroupsSkel = document.getElementById('skel-s-top-groups');
-  const topGroupsCanvas = document.getElementById('sessionsTopGroupsChart');
-  const topGroupsError = document.getElementById('s-top-groups-error');
+async function loadSessionsNew() {
+  if (typeof getActiveTab === "function" && getActiveTab() !== "sessoes-new") return;
+  const requestId = ++sessionsRequestIdNew;
+  resetTypificationGroupsCardNew('reload');
+  buildAppointmentTypesPeriodoOptionsNew();
+  buildSessionsDailyMonthOptionsNew();
+  const economicGroupBullet = document.getElementById('sn-bullet-sessoes-eg');
+  const economicGroupPeriodoLabel = document.getElementById('sn-bullet-sessoes-eg-periodo');
+  const messageFinishersLoading = document.getElementById('sn-session-message-finishers-loading');
+  const messageFinishersContent = document.getElementById('sn-session-message-finishers-content');
+  const sessionCompaniesLoading = document.getElementById('sn-session-companies-loading');
+  const sessionCompaniesWrap = document.getElementById('sn-session-companies-wrap');
+  const typificationsLoading = document.getElementById('sn-session-typifications-loading');
+  const typificationsContent = document.getElementById('sn-session-typifications-content');
+  const topGroupsSkel = document.getElementById('sn-skel-s-top-groups');
+  const topGroupsCanvas = document.getElementById('sn-sessionsTopGroupsChart');
+  const topGroupsError = document.getElementById('sn-s-top-groups-error');
   if (economicGroupBullet) economicGroupBullet.textContent = '…';
   if (messageFinishersLoading) {
     messageFinishersLoading.style.display = 'block';
@@ -948,16 +961,16 @@ async function loadSessions() {
   const p = new URLSearchParams();
   if (meses.length > 0)  p.set('meses', meses.join(','));
   appendGroupParams(p);
-  if (selectedSessionTypificationFinisher) p.set('typification_finisher', selectedSessionTypificationFinisher);
+  if (selectedSessionTypificationFinisherNew) p.set('typification_finisher', selectedSessionTypificationFinisherNew);
   const qs = p.toString() ? '?' + p.toString() : '';
 
-  loadSessionsEvolution();
-  loadSessionsDailyEvolution();
-  loadSessionHumanDepartments(requestId);
-  loadSessionsDepartmentEvolution(requestId);
+  loadSessionsEvolutionNew();
+  loadSessionsDailyEvolutionNew();
+  loadSessionHumanDepartmentsNew(requestId);
+  loadSessionsDepartmentEvolutionNew(requestId);
 
   const sessions = await safeGet('/api/sessions' + qs);
-  if (requestId !== sessionsRequestId) return;
+  if (requestId !== sessionsRequestIdNew) return;
   if (sessions && !sessions.error) {
     if (economicGroupBullet) economicGroupBullet.textContent = sessions.economic_group_total_error ? 'Erro' : fmt(sessions.economic_group_total || 0);
     if (economicGroupPeriodoLabel) {
@@ -965,16 +978,16 @@ async function loadSessions() {
       economicGroupPeriodoLabel.textContent = '';
       economicGroupPeriodoLabel.title = '';
     }
-    window.__sessionsLastFinishers = sessions.message_agent_finishers || [];
-    renderSessionMessageAgentFinishers(window.__sessionsLastFinishers, {
+    window.__sessionsNewLastFinishers = sessions.message_agent_finishers || [];
+    renderSessionMessageAgentFinishersNew(window.__sessionsNewLastFinishers, {
       error: sessions.message_agent_finishers_error,
     });
-    renderSessionCompanies(sessions.company_sessions || [], {
+    renderSessionCompaniesNew(sessions.company_sessions || [], {
       error: sessions.company_sessions_error,
       mode: sessions.company_sessions_mode,
       source: sessions.company_sessions_source,
     });
-    renderSessionTypifications(sessions.typifications || [], {
+    renderSessionTypificationsNew(sessions.typifications || [], {
       error: sessions.typifications_error,
     });
   } else {
@@ -992,15 +1005,15 @@ async function loadSessions() {
   }
 }
 
-function setSessionsAttendanceLoading() {
-  const skel = document.getElementById('skel-s-attendance');
-  const cv = document.getElementById('sessionsAttendanceChart');
-  const errorBox = document.getElementById('s-attendance-error');
-  const volumeLoading = document.getElementById('appointments-volume-loading');
-  const volumeContent = document.getElementById('appointments-volume-content');
-  const volumeError = document.getElementById('appointments-volume-error');
-  const typesLoading = document.getElementById('appointment-types-loading');
-  const typesContent = document.getElementById('appointment-types-content');
+function setSessionsAttendanceLoadingNew() {
+  const skel = document.getElementById('sn-skel-s-attendance');
+  const cv = document.getElementById('sn-sessionsAttendanceChart');
+  const errorBox = document.getElementById('sn-s-attendance-error');
+  const volumeLoading = document.getElementById('sn-appointments-volume-loading');
+  const volumeContent = document.getElementById('sn-appointments-volume-content');
+  const volumeError = document.getElementById('sn-appointments-volume-error');
+  const typesLoading = document.getElementById('sn-appointment-types-loading');
+  const typesContent = document.getElementById('sn-appointment-types-content');
   if (skel) skel.style.display = 'block';
   if (cv) cv.style.display = 'none';
   if (errorBox) { errorBox.style.display = 'none'; errorBox.textContent = ''; }
@@ -1017,14 +1030,14 @@ function setSessionsAttendanceLoading() {
   if (typesContent) typesContent.style.display = 'none';
 }
 
-function showSessionsAttendanceError(data) {
-  const skel = document.getElementById('skel-s-attendance');
-  const errorBox = document.getElementById('s-attendance-error');
-  const volumeLoading = document.getElementById('appointments-volume-loading');
-  const volumeContent = document.getElementById('appointments-volume-content');
-  const volumeError = document.getElementById('appointments-volume-error');
-  const typesLoading = document.getElementById('appointment-types-loading');
-  const typesContent = document.getElementById('appointment-types-content');
+function showSessionsAttendanceErrorNew(data) {
+  const skel = document.getElementById('sn-skel-s-attendance');
+  const errorBox = document.getElementById('sn-s-attendance-error');
+  const volumeLoading = document.getElementById('sn-appointments-volume-loading');
+  const volumeContent = document.getElementById('sn-appointments-volume-content');
+  const volumeError = document.getElementById('sn-appointments-volume-error');
+  const typesLoading = document.getElementById('sn-appointment-types-loading');
+  const typesContent = document.getElementById('sn-appointment-types-content');
   if (errorBox) {
     errorBox.style.display = 'block';
     errorBox.textContent = (data && data.error) ? String(data.error).slice(0, 220) : 'Erro ao carregar sessões x agendamentos';
@@ -1044,11 +1057,11 @@ function showSessionsAttendanceError(data) {
   if (typesContent) typesContent.style.display = 'none';
 }
 
-function renderAppointmentsVolumeList(labels, values) {
-  const loading = document.getElementById('appointments-volume-loading');
-  const content = document.getElementById('appointments-volume-content');
-  const tbody = document.getElementById('appointments-volume-tbody');
-  const meta = document.getElementById('appointments-volume-meta');
+function renderAppointmentsVolumeListNew(labels, values) {
+  const loading = document.getElementById('sn-appointments-volume-loading');
+  const content = document.getElementById('sn-appointments-volume-content');
+  const tbody = document.getElementById('sn-appointments-volume-tbody');
+  const meta = document.getElementById('sn-appointments-volume-meta');
   const total = values.reduce((acc, value) => acc + (Number(value) || 0), 0);
   if (tbody) {
     const rowsHtml = labels.map((label, idx) => `<tr style="border-bottom:1px solid #f1f5f9">
@@ -1066,7 +1079,7 @@ function renderAppointmentsVolumeList(labels, values) {
   if (content) content.style.display = 'flex';
 }
 
-async function loadAppointmentTypes(monthValues, idPrefix='appointment-types') {
+async function loadAppointmentTypesNew(monthValues, idPrefix='sn-appointment-types') {
   const loading = document.getElementById(`${idPrefix}-loading`);
   const content = document.getElementById(`${idPrefix}-content`);
   const tbody = document.getElementById(`${idPrefix}-tbody`);
@@ -1112,7 +1125,7 @@ async function loadAppointmentTypes(monthValues, idPrefix='appointment-types') {
   if (content) content.style.display = 'block';
 }
 
-async function loadPetitTopExams(monthValues) {
+async function loadPetitTopExamsNew(monthValues) {
   const loading = petitElementById('petit-top-exams-loading');
   const content = petitElementById('petit-top-exams-content');
   const list = petitElementById('petit-top-exams-list');
@@ -1160,7 +1173,7 @@ async function loadPetitTopExams(monthValues) {
   if (content) content.style.display = 'flex';
 }
 
-async function loadPetitTopConsultations(monthValues) {
+async function loadPetitTopConsultationsNew(monthValues) {
   const loading = petitElementById('petit-top-consultations-loading');
   const content = petitElementById('petit-top-consultations-content');
   const list = petitElementById('petit-top-consultations-list');
@@ -1208,10 +1221,10 @@ async function loadPetitTopConsultations(monthValues) {
   if (content) content.style.display = 'flex';
 }
 
-async function renderSessionsAttendanceChart(labels, monthValues, sessionValues, data, demographicsData) {
-  const skel = document.getElementById('skel-s-attendance');
-  const cv = document.getElementById('sessionsAttendanceChart');
-  const modeLabel = document.getElementById('s-attendance-mode');
+async function renderSessionsAttendanceChartNew(labels, monthValues, sessionValues, data, demographicsData) {
+  const skel = document.getElementById('sn-skel-s-attendance');
+  const cv = document.getElementById('sn-sessionsAttendanceChart');
+  const modeLabel = document.getElementById('sn-s-attendance-mode');
   if (!cv) return;
   if (modeLabel) {
     if (data.mode === 'cpf_join' || data.mode === 'variables_json_filter' || data.mode === 'organization_join' || data.mode === 'partner_broker' || data.mode === 'economic_group_name') {
@@ -1228,7 +1241,7 @@ async function renderSessionsAttendanceChart(labels, monthValues, sessionValues,
   appendGroupParams(p);
   const appointmentsData = await safeGet('/api/appointments-evolution' + (p.toString() ? '?' + p.toString() : ''));
   if (!appointmentsData || appointmentsData.error) {
-    showSessionsAttendanceError(appointmentsData);
+    showSessionsAttendanceErrorNew(appointmentsData);
     return;
   }
   const resolvedDemographicsData = demographicsData || await safeGet('/api/demographics' + buildQS());
@@ -1256,9 +1269,9 @@ async function renderSessionsAttendanceChart(labels, monthValues, sessionValues,
     return mN[mm] ? `${mN[mm]}/${y.slice(2)}` : mes;
   });
   const appointmentVolumeValues = appointmentMonths.map((mes) => appointmentsByMonth[mes] || 0);
-  renderAppointmentsVolumeList(appointmentLabels, appointmentVolumeValues);
+  renderAppointmentsVolumeListNew(appointmentLabels, appointmentVolumeValues);
 
-  if (sessionsAttendanceChart) sessionsAttendanceChart.destroy();
+  if (sessionsAttendanceChartNew) sessionsAttendanceChartNew.destroy();
   if (skel) skel.style.display = 'none';
   if (modeLabel && (averageRatio !== null || averageBeneficiaryRatio !== null)) {
     const ratioLabel = averageRatio !== null
@@ -1270,7 +1283,7 @@ async function renderSessionsAttendanceChart(labels, monthValues, sessionValues,
     modeLabel.textContent = `${modeLabel.textContent}${ratioLabel}${beneficiaryLabel}`;
   }
   cv.style.display = 'block';
-  if (cv) sessionsAttendanceChart = new Chart(cv, {
+  if (cv) sessionsAttendanceChartNew = new Chart(cv, {
     type: 'line',
     data: {
       labels,
@@ -1370,19 +1383,19 @@ async function renderSessionsAttendanceChart(labels, monthValues, sessionValues,
   });
 }
 
-async function loadSessionsDailyEvolution() {
-  buildSessionsDailyMonthOptions();
-  const skel = document.getElementById('skel-s-daily');
-  const cv = document.getElementById('sessionsDailyChart');
-  const errorBox = document.getElementById('s-daily-error');
-  const modeLabel = document.getElementById('s-daily-mode');
+async function loadSessionsDailyEvolutionNew() {
+  buildSessionsDailyMonthOptionsNew();
+  const skel = document.getElementById('sn-skel-s-daily');
+  const cv = document.getElementById('sn-sessionsDailyChart');
+  const errorBox = document.getElementById('sn-s-daily-error');
+  const modeLabel = document.getElementById('sn-s-daily-mode');
   if (skel) skel.style.display = 'block';
   if (cv) cv.style.display = 'none';
   if (errorBox) { errorBox.style.display = 'none'; errorBox.textContent = ''; }
 
   const p = new URLSearchParams();
   p.set('granularity', 'day');
-  p.set('mes', selectedSessionsDailyMonth || currentMonthValue());
+  p.set('mes', selectedSessionsDailyMonthNew || currentMonthValue());
   appendGroupParams(p);
   const data = await safeGet('/api/sessions-evolution?' + p.toString());
   if (!data || data.error) {
@@ -1391,13 +1404,13 @@ async function loadSessionsDailyEvolution() {
       errorBox.textContent = data && data.error ? String(data.error).slice(0, 220) : 'Erro ao carregar evolução diária';
     }
     if (skel) skel.style.display = 'none';
-    sessionsDailySeriesCache = [];
-    selectedSessionsDailyIndexes = new Set();
-    updateSessionsDailySelectionSummary();
+    sessionsDailySeriesCacheNew = [];
+    selectedSessionsDailyIndexesNew = new Set();
+    updateSessionsDailySelectionSummaryNew();
     return;
   }
 
-  const month = data.month || selectedSessionsDailyMonth;
+  const month = data.month || selectedSessionsDailyMonthNew;
   const [year, mm] = String(month).split('-');
   if (modeLabel) {
     const parts = [mN[mm] ? `${mN[mm]}/${year}` : month];
@@ -1409,11 +1422,11 @@ async function loadSessionsDailyEvolution() {
 
   const weekdayFmt = new Intl.DateTimeFormat('pt-BR', { weekday: 'short', timeZone: 'UTC' });
   const series = data.series || [];
-  sessionsDailySeriesCache = series.map((it) => ({
+  sessionsDailySeriesCacheNew = series.map((it) => ({
     dia: String(it.dia || ''),
     total: Number(it.total) || 0,
   }));
-  selectedSessionsDailyIndexes = new Set();
+  selectedSessionsDailyIndexesNew = new Set();
   const labels = series.map((it) => {
     const day = String(it.dia || '');
     const date = new Date(`${day}T00:00:00Z`);
@@ -1422,12 +1435,12 @@ async function loadSessionsDailyEvolution() {
       : weekdayFmt.format(date).replace('.', '').replace(/^./, c => c.toUpperCase());
     return [day.slice(8, 10), weekday];
   });
-  const totalValues = sessionsDailySeriesCache.map((it) => it.total);
-  if (sessionsDailyChart) sessionsDailyChart.destroy();
+  const totalValues = sessionsDailySeriesCacheNew.map((it) => it.total);
+  if (sessionsDailyChartNew) sessionsDailyChartNew.destroy();
   if (skel) skel.style.display = 'none';
   if (cv) {
     cv.style.display = 'block';
-    sessionsDailyChart = new Chart(cv, {
+    sessionsDailyChartNew = new Chart(cv, {
       type: 'line',
       data: {
         labels,
@@ -1437,11 +1450,11 @@ async function loadSessionsDailyEvolution() {
           borderColor: '#0f766e',
           backgroundColor: 'rgba(15,118,110,0.08)',
           borderWidth: 2,
-          pointRadius: sessionsDailyPointRadii(),
+          pointRadius: sessionsDailyPointRadiiNew(),
           pointHoverRadius: 6,
-          pointBackgroundColor: sessionsDailyPointColors(),
-          pointBorderColor: sessionsDailyPointBorderColors(),
-          pointBorderWidth: sessionsDailyPointBorderWidths(),
+          pointBackgroundColor: sessionsDailyPointColorsNew(),
+          pointBorderColor: sessionsDailyPointBorderColorsNew(),
+          pointBorderWidth: sessionsDailyPointBorderWidthsNew(),
           fill: true,
           tension: 0.35,
         }],
@@ -1449,7 +1462,7 @@ async function loadSessionsDailyEvolution() {
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        onClick: onSessionsDailyChartClick,
+        onClick: onSessionsDailyChartClickNew,
         onHover: (event, elements) => {
           const target = event?.native?.target || event?.chart?.canvas;
           if (target) target.style.cursor = elements?.length ? 'pointer' : 'default';
@@ -1462,17 +1475,17 @@ async function loadSessionsDailyEvolution() {
             callbacks: {
               title: items => {
                 const idx = items[0]?.dataIndex ?? 0;
-                const raw = sessionsDailySeriesCache[idx]?.dia;
+                const raw = sessionsDailySeriesCacheNew[idx]?.dia;
                 if (!raw) return '';
                 const date = new Date(`${raw}T00:00:00Z`);
                 const weekday = Number.isNaN(date.getTime()) ? '' : weekdayFmt.format(date);
-                const selected = selectedSessionsDailyIndexes.has(idx) ? ' · selecionado' : '';
+                const selected = selectedSessionsDailyIndexesNew.has(idx) ? ' · selecionado' : '';
                 return `${raw.split('-').reverse().join('/')} · ${weekday}${selected}`;
               },
               label: c => `${fmt(c.parsed.y)} sessões`,
               afterBody: () => {
-                if (!selectedSessionsDailyIndexes.size) return ['Clique para selecionar este dia'];
-                return [`Seleção: ${fmt(sessionsDailySelectedTotal())} sessões`];
+                if (!selectedSessionsDailyIndexesNew.size) return ['Clique para selecionar este dia'];
+                return [`Seleção: ${fmt(sessionsDailySelectedTotalNew())} sessões`];
               },
             },
           },
@@ -1491,66 +1504,66 @@ async function loadSessionsDailyEvolution() {
       },
     });
   }
-  updateSessionsDailySelectionSummary();
+  updateSessionsDailySelectionSummaryNew();
 }
 
-function sessionsDailySelectedTotal() {
+function sessionsDailySelectedTotalNew() {
   let total = 0;
-  selectedSessionsDailyIndexes.forEach((idx) => {
-    total += Number(sessionsDailySeriesCache[idx]?.total) || 0;
+  selectedSessionsDailyIndexesNew.forEach((idx) => {
+    total += Number(sessionsDailySeriesCacheNew[idx]?.total) || 0;
   });
   return total;
 }
 
-function sessionsDailyPointRadii() {
-  const hasSelection = selectedSessionsDailyIndexes.size > 0;
-  return sessionsDailySeriesCache.map((_, idx) => {
-    if (selectedSessionsDailyIndexes.has(idx)) return 6;
+function sessionsDailyPointRadiiNew() {
+  const hasSelection = selectedSessionsDailyIndexesNew.size > 0;
+  return sessionsDailySeriesCacheNew.map((_, idx) => {
+    if (selectedSessionsDailyIndexesNew.has(idx)) return 6;
     return hasSelection ? 2.5 : 3;
   });
 }
 
-function sessionsDailyPointColors() {
-  const hasSelection = selectedSessionsDailyIndexes.size > 0;
-  return sessionsDailySeriesCache.map((_, idx) => {
-    if (selectedSessionsDailyIndexes.has(idx)) return '#0f766e';
+function sessionsDailyPointColorsNew() {
+  const hasSelection = selectedSessionsDailyIndexesNew.size > 0;
+  return sessionsDailySeriesCacheNew.map((_, idx) => {
+    if (selectedSessionsDailyIndexesNew.has(idx)) return '#0f766e';
     return hasSelection ? 'rgba(15,118,110,0.35)' : '#0f766e';
   });
 }
 
-function sessionsDailyPointBorderColors() {
-  return sessionsDailySeriesCache.map((_, idx) => (
-    selectedSessionsDailyIndexes.has(idx) ? '#99f6e4' : '#0f766e'
+function sessionsDailyPointBorderColorsNew() {
+  return sessionsDailySeriesCacheNew.map((_, idx) => (
+    selectedSessionsDailyIndexesNew.has(idx) ? '#99f6e4' : '#0f766e'
   ));
 }
 
-function sessionsDailyPointBorderWidths() {
-  return sessionsDailySeriesCache.map((_, idx) => (
-    selectedSessionsDailyIndexes.has(idx) ? 2 : 0
+function sessionsDailyPointBorderWidthsNew() {
+  return sessionsDailySeriesCacheNew.map((_, idx) => (
+    selectedSessionsDailyIndexesNew.has(idx) ? 2 : 0
   ));
 }
 
-function applySessionsDailySelectionStyles() {
-  if (!sessionsDailyChart?.data?.datasets?.[0]) {
-    updateSessionsDailySelectionSummary();
+function applySessionsDailySelectionStylesNew() {
+  if (!sessionsDailyChartNew?.data?.datasets?.[0]) {
+    updateSessionsDailySelectionSummaryNew();
     return;
   }
-  const dataset = sessionsDailyChart.data.datasets[0];
-  dataset.pointRadius = sessionsDailyPointRadii();
-  dataset.pointBackgroundColor = sessionsDailyPointColors();
-  dataset.pointBorderColor = sessionsDailyPointBorderColors();
-  dataset.pointBorderWidth = sessionsDailyPointBorderWidths();
-  sessionsDailyChart.update('none');
-  updateSessionsDailySelectionSummary();
+  const dataset = sessionsDailyChartNew.data.datasets[0];
+  dataset.pointRadius = sessionsDailyPointRadiiNew();
+  dataset.pointBackgroundColor = sessionsDailyPointColorsNew();
+  dataset.pointBorderColor = sessionsDailyPointBorderColorsNew();
+  dataset.pointBorderWidth = sessionsDailyPointBorderWidthsNew();
+  sessionsDailyChartNew.update('none');
+  updateSessionsDailySelectionSummaryNew();
 }
 
-function updateSessionsDailySelectionSummary() {
-  const wrap = document.getElementById('s-daily-selection');
-  const label = document.getElementById('s-daily-selection-label');
-  const totalEl = document.getElementById('s-daily-selection-total');
-  const clearBtn = document.getElementById('s-daily-selection-clear');
-  const count = selectedSessionsDailyIndexes.size;
-  const total = sessionsDailySelectedTotal();
+function updateSessionsDailySelectionSummaryNew() {
+  const wrap = document.getElementById('sn-s-daily-selection');
+  const label = document.getElementById('sn-s-daily-selection-label');
+  const totalEl = document.getElementById('sn-s-daily-selection-total');
+  const clearBtn = document.getElementById('sn-s-daily-selection-clear');
+  const count = selectedSessionsDailyIndexesNew.size;
+  const total = sessionsDailySelectedTotalNew();
   if (wrap) wrap.classList.toggle('is-active', count > 0);
   if (clearBtn) clearBtn.hidden = count === 0;
   if (!count) {
@@ -1558,9 +1571,9 @@ function updateSessionsDailySelectionSummary() {
     if (totalEl) totalEl.textContent = '—';
     return;
   }
-  const sorted = [...selectedSessionsDailyIndexes].sort((a, b) => a - b);
+  const sorted = [...selectedSessionsDailyIndexesNew].sort((a, b) => a - b);
   const days = sorted
-    .map((idx) => String(sessionsDailySeriesCache[idx]?.dia || '').slice(8, 10))
+    .map((idx) => String(sessionsDailySeriesCacheNew[idx]?.dia || '').slice(8, 10))
     .filter(Boolean);
   const daysPreview = days.length <= 6
     ? days.join(', ')
@@ -1573,24 +1586,24 @@ function updateSessionsDailySelectionSummary() {
   if (totalEl) totalEl.textContent = `${fmt(total)} sessões`;
 }
 
-function onSessionsDailyChartClick(event, elements, chart) {
+function onSessionsDailyChartClickNew(event, elements, chart) {
   const active = elements?.length
     ? elements
     : (chart?.getElementsAtEventForMode?.(event, 'nearest', { intersect: false }, true) || []);
   if (!active.length) return;
   const idx = active[0].index;
-  if (idx == null || idx < 0 || idx >= sessionsDailySeriesCache.length) return;
-  if (selectedSessionsDailyIndexes.has(idx)) selectedSessionsDailyIndexes.delete(idx);
-  else selectedSessionsDailyIndexes.add(idx);
-  applySessionsDailySelectionStyles();
+  if (idx == null || idx < 0 || idx >= sessionsDailySeriesCacheNew.length) return;
+  if (selectedSessionsDailyIndexesNew.has(idx)) selectedSessionsDailyIndexesNew.delete(idx);
+  else selectedSessionsDailyIndexesNew.add(idx);
+  applySessionsDailySelectionStylesNew();
 }
 
-function clearSessionsDailySelection() {
-  selectedSessionsDailyIndexes = new Set();
-  applySessionsDailySelectionStyles();
+function clearSessionsDailySelectionNew() {
+  selectedSessionsDailyIndexesNew = new Set();
+  applySessionsDailySelectionStylesNew();
 }
 
-function renderSessionsFinalizationsEvolutionChart(cv, chartInstance, labels, totalValues, humanoValues, iaValues, options = {}) {
+function renderSessionsFinalizationsEvolutionChartNew(cv, chartInstance, labels, totalValues, humanoValues, iaValues, options = {}) {
   if (chartInstance) chartInstance.destroy();
   if (!cv) return null;
   const highlightIa = Boolean(options.highlightIa);
@@ -1714,27 +1727,27 @@ function renderSessionsFinalizationsEvolutionChart(cv, chartInstance, labels, to
   });
 }
 
-async function loadSessionsEvolution() {
+async function loadSessionsEvolutionNew() {
   const requestId = ++sessionsEvolutionRequestId;
-  const skel = document.getElementById('skel-s-evol');
-  const cv = document.getElementById('sessionsEvolChart');
-  const modeLabel = document.getElementById('s-evol-mode');
-  const errorBox = document.getElementById('s-evol-error');
-  const totalSkel = document.getElementById('skel-s-total-evol');
-  const totalCv = document.getElementById('sessionsTotalEvolChart');
-  const totalModeLabel = document.getElementById('s-total-evol-mode');
-  const totalErrorBox = document.getElementById('s-total-evol-error');
-  const interactionSkel = document.getElementById('skel-s-total-evol-interaction');
-  const interactionCv = document.getElementById('sessionsTotalEvolInteractionChart');
-  const interactionModeLabel = document.getElementById('s-total-evol-interaction-mode');
-  const interactionErrorBox = document.getElementById('s-total-evol-interaction-error');
-  const evolInteractionSkel = document.getElementById('skel-s-evol-interaction');
-  const evolInteractionCv = document.getElementById('sessionsEvolInteractionChart');
-  const evolInteractionModeLabel = document.getElementById('s-evol-interaction-mode');
-  const evolInteractionErrorBox = document.getElementById('s-evol-interaction-error');
-  const utilizationLoading = document.getElementById('sessions-utilization-loading');
-  const utilizationContent = document.getElementById('sessions-utilization-content');
-  const utilizationError = document.getElementById('sessions-utilization-error');
+  const skel = document.getElementById('sn-skel-s-evol');
+  const cv = document.getElementById('sn-sessionsEvolChart');
+  const modeLabel = document.getElementById('sn-s-evol-mode');
+  const errorBox = document.getElementById('sn-s-evol-error');
+  const totalSkel = document.getElementById('sn-skel-s-total-evol');
+  const totalCv = document.getElementById('sn-sessionsTotalEvolChart');
+  const totalModeLabel = document.getElementById('sn-s-total-evol-mode');
+  const totalErrorBox = document.getElementById('sn-s-total-evol-error');
+  const interactionSkel = document.getElementById('sn-skel-s-total-evol-interaction');
+  const interactionCv = document.getElementById('sn-sessionsTotalEvolInteractionChart');
+  const interactionModeLabel = document.getElementById('sn-s-total-evol-interaction-mode');
+  const interactionErrorBox = document.getElementById('sn-s-total-evol-interaction-error');
+  const evolInteractionSkel = document.getElementById('sn-skel-s-evol-interaction');
+  const evolInteractionCv = document.getElementById('sn-sessionsEvolInteractionChart');
+  const evolInteractionModeLabel = document.getElementById('sn-s-evol-interaction-mode');
+  const evolInteractionErrorBox = document.getElementById('sn-s-evol-interaction-error');
+  const utilizationLoading = document.getElementById('sn-sessions-utilization-loading');
+  const utilizationContent = document.getElementById('sn-sessions-utilization-content');
+  const utilizationError = document.getElementById('sn-sessions-utilization-error');
   if (skel) skel.style.display = 'block';
   if (cv) cv.style.display = 'none';
   if (errorBox) { errorBox.style.display = 'none'; errorBox.textContent = ''; }
@@ -1753,7 +1766,7 @@ async function loadSessionsEvolution() {
   }
   if (utilizationContent) utilizationContent.style.display = 'none';
   if (utilizationError) { utilizationError.style.display = 'none'; utilizationError.textContent = ''; }
-  setSessionsAttendanceLoading();
+  setSessionsAttendanceLoadingNew();
 
   const p = new URLSearchParams();
   appendGroupParams(p);
@@ -1780,7 +1793,7 @@ async function loadSessionsEvolution() {
       evolInteractionErrorBox.style.display = 'block';
       evolInteractionErrorBox.textContent = (data && data.error) ? String(data.error).slice(0, 220) : 'Erro ao carregar finalizações com interação';
     }
-    showSessionsAttendanceError(data);
+    showSessionsAttendanceErrorNew(data);
     if (skel) skel.style.display = 'none';
     if (totalSkel) totalSkel.style.display = 'none';
     if (interactionSkel) interactionSkel.style.display = 'none';
@@ -1836,17 +1849,154 @@ async function loadSessionsEvolution() {
   if (cv && data && !data.error) cv.style.display = 'block';
 
   if (cv && data && !data.error) {
-    sessionsEvolChart = renderSessionsFinalizationsEvolutionChart(cv, sessionsEvolChart, labels, totalValues, humanoValues, iaValues);
+    sessionsEvolChartNew = renderSessionsFinalizationsEvolutionChartNew(cv, sessionsEvolChartNew, labels, totalValues, humanoValues, iaValues);
   }
-  renderSessionsTotalEvolutionChart(labels, totalValues, uniqueBeneficiaryValues, Boolean(data.beneficiaries_included));
-  renderSessionsTotalEvolutionInteractionChart(labels, totalValues, uniqueBeneficiaryValues, [], [], Boolean(data.beneficiaries_included), false);
+  renderSessionsTotalEvolutionChartNew(labels, totalValues, uniqueBeneficiaryValues, Boolean(data.beneficiaries_included));
+  renderSessionsTotalEvolutionInteractionChartNew(labels, totalValues, uniqueBeneficiaryValues, [], [], Boolean(data.beneficiaries_included), false);
 
   appointmentTypesBaseMonths = series.map((it) => it.mes);
-  loadSessionsBeneficiaryUtilization(p, demographicsData, labels, totalValues, requestId);
+  loadSessionsBeneficiaryUtilizationNew(p, demographicsData, labels, totalValues, requestId);
   await Promise.all([
-    renderSessionsAttendanceChart(labels, appointmentTypesBaseMonths, totalValues, data, demographicsData),
-    loadSessionAppointmentTypes(),
+    renderSessionsAttendanceChartNew(labels, appointmentTypesBaseMonths, totalValues, data, demographicsData),
+    loadSessionAppointmentTypesNew(),
   ]);
 }
 
 
+
+function buildSessionsDailyMonthOptionsNew() {
+  const select = document.getElementById("sn-sessions-daily-month-select");
+  if (!select) return;
+  const now = new Date();
+  const options = [];
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const val = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    options.push({ value: val, label: `${mN[mm]}/${d.getFullYear()}` });
+  }
+  if (!options.some((option) => option.value === selectedSessionsDailyMonthNew)) {
+    selectedSessionsDailyMonthNew = options[0]?.value || currentMonthValue();
+  }
+  select.innerHTML = options
+    .map((option) => {
+      const selected = option.value === selectedSessionsDailyMonthNew ? " selected" : "";
+      return `<option value="${option.value}"${selected}>${option.label}</option>`;
+    })
+    .join("");
+}
+
+function onSessionsDailyMonthChangeNew(value) {
+  selectedSessionsDailyMonthNew = value || currentMonthValue();
+  selectedSessionsDailyIndexesNew = new Set();
+  loadSessionsDailyEvolutionNew();
+}
+
+function buildAppointmentTypesPeriodoOptionsNew() {
+  const container = document.getElementById("sn-appointment-types-periodo-options");
+  if (!container) return;
+  const now = new Date();
+  container.innerHTML = "";
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const val = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const lbl = `${mN[mm]}/${d.getFullYear()}`;
+    const item = document.createElement("label");
+    item.style.cssText =
+      "display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:6px;cursor:pointer;font-size:12px;color:#334155";
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.value = val;
+    cb.style.accentColor = "#6366f1";
+    cb.checked = selectedAppointmentTypeMonthsNew.has(val);
+    cb.addEventListener("change", () => {
+      if (cb.checked) selectedAppointmentTypeMonthsNew.add(val);
+      else selectedAppointmentTypeMonthsNew.delete(val);
+      const cbTudo = document.getElementById("sn-appointment-types-cb-tudo");
+      if (cbTudo) cbTudo.checked = false;
+      updateAppointmentTypesPeriodoLabelNew();
+      loadSessionAppointmentTypesNew();
+    });
+    item.appendChild(cb);
+    item.appendChild(document.createTextNode(lbl));
+    container.appendChild(item);
+  }
+}
+
+function toggleAppointmentTypesPeriodoDropdownNew() {
+  buildAppointmentTypesPeriodoOptionsNew();
+  const dd = document.getElementById("sn-appointment-types-periodo-dropdown");
+  if (dd) dd.style.display = dd.style.display === "none" ? "block" : "none";
+}
+
+document.addEventListener("click", (e) => {
+  const btn = document.getElementById("sn-appointment-types-periodo-btn");
+  const dd = document.getElementById("sn-appointment-types-periodo-dropdown");
+  if (dd && btn && !btn.contains(e.target) && !dd.contains(e.target)) dd.style.display = "none";
+});
+
+function selectAllAppointmentTypesPeriodoNew() {
+  buildAppointmentTypesPeriodoOptionsNew();
+  const cbTudo = document.getElementById("sn-appointment-types-cb-tudo");
+  if (cbTudo) cbTudo.checked = false;
+  document.querySelectorAll("#sn-appointment-types-periodo-options input[type=checkbox]").forEach((cb) => {
+    cb.checked = true;
+    selectedAppointmentTypeMonthsNew.add(cb.value);
+  });
+  updateAppointmentTypesPeriodoLabelNew();
+  loadSessionAppointmentTypesNew();
+}
+
+function clearAppointmentTypesPeriodoNew(reload = true) {
+  const cbTudo = document.getElementById("sn-appointment-types-cb-tudo");
+  if (cbTudo) cbTudo.checked = false;
+  document.querySelectorAll("#sn-appointment-types-periodo-options input[type=checkbox]").forEach((cb) => {
+    cb.checked = false;
+  });
+  selectedAppointmentTypeMonthsNew.clear();
+  updateAppointmentTypesPeriodoLabelNew();
+  if (reload) loadSessionAppointmentTypesNew();
+}
+
+function onAppointmentTypesTudoChangeNew(el) {
+  if (el.checked) {
+    document.querySelectorAll("#sn-appointment-types-periodo-options input[type=checkbox]").forEach((cb) => {
+      cb.checked = false;
+    });
+    selectedAppointmentTypeMonthsNew.clear();
+    const lbl = document.getElementById("sn-appointment-types-periodo-label");
+    if (lbl) lbl.textContent = "Tudo";
+    loadSessionAppointmentTypesNew();
+  } else {
+    updateAppointmentTypesPeriodoLabelNew();
+    loadSessionAppointmentTypesNew();
+  }
+}
+
+function updateAppointmentTypesPeriodoLabelNew() {
+  const lbl = document.getElementById("sn-appointment-types-periodo-label");
+  if (!lbl) return;
+  if (selectedAppointmentTypeMonthsNew.size === 0) {
+    lbl.textContent = "(Todos os meses)";
+    return;
+  }
+  if (selectedAppointmentTypeMonthsNew.size === 1) {
+    const [val] = selectedAppointmentTypeMonthsNew;
+    const [y, mm] = val.split("-");
+    lbl.textContent = `${mN[mm]}/${y}`;
+    return;
+  }
+  lbl.textContent = `${selectedAppointmentTypeMonthsNew.size} meses selecionados`;
+}
+
+function loadSessionAppointmentTypesNew() {
+  if (typeof getActiveTab === "function" && getActiveTab() !== "sessoes-new") return;
+  const cbTudo = document.getElementById("sn-appointment-types-cb-tudo");
+  if (cbTudo && cbTudo.checked) return loadAppointmentTypesNew(null, "sn-appointment-types");
+  const months =
+    selectedAppointmentTypeMonthsNew.size > 0
+      ? [...selectedAppointmentTypeMonthsNew].sort()
+      : [...selectedMonths].sort();
+  return loadAppointmentTypesNew(months, "sn-appointment-types");
+}

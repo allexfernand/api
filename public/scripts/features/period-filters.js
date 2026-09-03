@@ -221,7 +221,7 @@ function onAppointmentsDailyMonthChange(value) {
 }
 
 function loadSessionAppointmentTypes() {
-  if (getActiveTab() !== 'sessoes') return;
+  if (!isSessionsFamilyTab()) return;
   const months = selectedAppointmentTypeMonths.size
     ? [...selectedAppointmentTypeMonths].sort()
     : appointmentTypesBaseMonths;

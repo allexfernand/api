@@ -18,6 +18,7 @@ export function DashboardTabs({ fragments }: { fragments: DashboardFragments }) 
       <AppointmentsTab html={fragments.appointments} />
       <CareCoordinationTab html={fragments["care-coordination"]} />
       <SessionsTab html={fragments.sessions} />
+      <SessionsTab html={fragments["sessions-new"]} />
       <ExecutiveCommitteeTab html={fragments["executive-committee"]} />
       <ExecutiveCommitteeTab html={fragments["executive-committee-mds"]} />
       <ClaimsAnalysisTab />

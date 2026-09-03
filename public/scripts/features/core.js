@@ -121,8 +121,28 @@ function applyDashboardUser(user = '') {
   }
 }
 
+function isSessionsFamilyTab(tab = getActiveTab()) {
+  return tab === 'sessoes' || tab === 'sessoes-new';
+}
+
+function loadActiveSessionsTab() {
+  const tab = getActiveTab();
+  if (tab === 'sessoes-new') {
+    if (typeof loadSessionsNew === 'function') loadSessionsNew();
+    return;
+  }
+  if (tab === 'sessoes') loadSessions();
+}
+
+function isAdminDashboardUser() {
+  return document.body.dataset.isAdmin === '1';
+}
+
 async function activateTab(tabName) {
-  if (Array.isArray(allowedMenusOverride) && tabName !== 'configuracoes' && !allowedMenusOverride.includes(tabName)) {
+  if (tabName === 'sessoes-new' && !isAdminDashboardUser()) {
+    tabName = 'demografica';
+  }
+  if (Array.isArray(allowedMenusOverride) && tabName !== 'configuracoes' && tabName !== 'sessoes-new' && !allowedMenusOverride.includes(tabName)) {
     tabName = allowedMenusOverride[0] || 'demografica';
   } else if (tabName === 'visao-parceiros' && shouldBlockPartnerVisionLegacy()) {
     tabName = 'demografica';
@@ -205,15 +225,15 @@ function updateFilterVisibility() {
   const isPartnerVision = isPartnerVisionTab(activeTab);
   if (filterbar) filterbar.style.display = isSinistro ? 'none' : 'flex';
   document.body.dataset.activeTab = activeTab;
-  if (activeTab === 'sessoes') {
+  if (isSessionsFamilyTab(activeTab)) {
     currentCompany = '';
     resetCompanySelect();
   } else if (!isSinistro && !isQualityOperational && !isPartnerVision && currentGroups.length) {
     loadCompanyOptions();
   }
   if (groupGroup) groupGroup.style.display = (isSinistro || isQualityOperational || isPartnerVision) ? 'none' : 'flex';
-  if (typeGroup) typeGroup.style.display = (activeTab === 'sessoes' || activeTab === 'coordenacao-cuidado' || isPetitTab(activeTab) || activeTab.startsWith('qualidade') || isSinistro || isPartnerVision) ? 'none' : 'flex';
-  if (companyGroup) companyGroup.style.display = (activeTab === 'sessoes' || isSinistro || isQualityOperational || isPartnerVision) ? 'none' : 'flex';
+  if (typeGroup) typeGroup.style.display = (isSessionsFamilyTab(activeTab) || activeTab === 'coordenacao-cuidado' || isPetitTab(activeTab) || activeTab.startsWith('qualidade') || isSinistro || isPartnerVision) ? 'none' : 'flex';
+  if (companyGroup) companyGroup.style.display = (isSessionsFamilyTab(activeTab) || isSinistro || isQualityOperational || isPartnerVision) ? 'none' : 'flex';
   if (partnerGroup) partnerGroup.style.display = (!isSinistro && !isPartnerVision && isPartnerFilteredTab(activeTab)) ? 'flex' : 'none';
   if (partnerMultiGroup) partnerMultiGroup.style.display = isPartnerVision ? 'flex' : 'none';
   if (qualityCollaboratorGroup) qualityCollaboratorGroup.style.display = isQualityOperational ? 'flex' : 'none';
@@ -291,7 +311,7 @@ function onCareBeneficiaryTypeChange(value) {
 }
 
 function isPartnerFilteredTab(tab = getActiveTab()) {
-  return tab === 'demografica' || tab === 'visao-parceiros' || tab === 'agendamentos' || tab === 'sessoes' || tab === 'coordenacao-cuidado' || isPetitTab(tab);
+  return tab === 'demografica' || tab === 'visao-parceiros' || tab === 'agendamentos' || isSessionsFamilyTab(tab) || tab === 'coordenacao-cuidado' || isPetitTab(tab);
 }
 
 function isPartnerVisionTab(tab = getActiveTab()) {
@@ -379,12 +399,12 @@ function onGroupSelectionChange() {
   const activeTab = getActiveTab();
   // Ao trocar grupo, limpa empresa e recarrega lista
   currentCompany = '';
-  if (activeTab === 'sessoes') resetCompanySelect();
+  if (isSessionsFamilyTab(activeTab)) resetCompanySelect();
   else loadCompanyOptions();
   updateGroupSelectLabel();
   updateFilterInfo();
-  if (activeTab === 'sessoes') {
-    loadSessions();
+  if (isSessionsFamilyTab(activeTab)) {
+    loadActiveSessionsTab();
     return;
   }
   loadAll(false);
@@ -419,11 +439,11 @@ document.getElementById('partner-select').addEventListener('change', async e => 
   const activeTab = getActiveTab();
   if (isPetitMdsTab(activeTab)) {
     await ensurePetitMdsScope();
-  } else if (activeTab !== 'sessoes') {
+  } else if (!isSessionsFamilyTab(activeTab)) {
     loadCompanyOptions();
   }
-  if (activeTab === 'sessoes') {
-    loadSessions();
+  if (isSessionsFamilyTab(activeTab)) {
+    loadActiveSessionsTab();
     return;
   }
   if (activeTab === 'demografica') {
@@ -721,9 +741,9 @@ function updateFilterInfo() {
   } else if (isPartnerFilteredTab(activeTab) && currentPartnerBrokerId) {
     parts.push(`Parceiro: ${selectedPartnerLabel()}`);
   }
-  if (currentCompany && activeTab !== 'sessoes') parts.push(currentCompany);
+  if (currentCompany && !isSessionsFamilyTab(activeTab)) parts.push(currentCompany);
   if (activeTab === 'coordenacao-cuidado' && currentCareBeneficiaryType) parts.push(`Vínculo: ${careBeneficiaryTypeLabel()}`);
-  if (currentType && activeTab !== 'sessoes' && activeTab !== 'coordenacao-cuidado' && !isPetitTab(activeTab) && !activeTab.startsWith('qualidade')) parts.push(currentType === 'TITULAR' ? 'Titular' : 'Dependente');
+  if (currentType && !isSessionsFamilyTab(activeTab) && activeTab !== 'coordenacao-cuidado' && !isPetitTab(activeTab) && !activeTab.startsWith('qualidade')) parts.push(currentType === 'TITULAR' ? 'Titular' : 'Dependente');
   document.getElementById('filter-info').textContent = parts.length ? `Filtrando: ${parts.join(' · ')}` : '';
 }
 
@@ -735,6 +755,7 @@ async function clearFilters() {
   currentPartnerBrokerIds = [];
   currentCareBeneficiaryType = '';
   selectedSessionTypificationFinisher = '';
+  if (typeof selectedSessionTypificationFinisherNew !== 'undefined') selectedSessionTypificationFinisherNew = '';
   selectedQualityOperationalCollaborators = new Set();
   selectedQualityOperationalSetor = '';
   selectedQualityOperationalStatus = '';
@@ -748,17 +769,19 @@ async function clearFilters() {
   syncCareBeneficiaryTypeControls();
   const typificationFinisherSelect = document.getElementById('session-typification-finisher-select');
   if (typificationFinisherSelect) typificationFinisherSelect.value = '';
+  const typificationFinisherSelectNew = document.getElementById('sn-session-typification-finisher-select');
+  if (typificationFinisherSelectNew) typificationFinisherSelectNew.value = '';
   document.getElementById('company-select').innerHTML = '<option value="">(Selecione um grupo primeiro)</option>';
   document.getElementById('company-select').disabled = true;
   document.getElementById('filter-info').textContent = '';
   clearPeriodo(false);
   if (isPetitMdsTab(activeTab)) {
     await ensurePetitMdsScope();
-  } else if (activeTab !== 'sessoes' && !isSinistroTab(activeTab) && activeTab !== 'qualidade-operacional') {
+  } else if (!isSessionsFamilyTab(activeTab) && !isSinistroTab(activeTab) && activeTab !== 'qualidade-operacional') {
     loadCompanyOptions();
   }
-  if (activeTab === 'sessoes') {
-    loadSessions();
+  if (isSessionsFamilyTab(activeTab)) {
+    loadActiveSessionsTab();
     return;
   }
   if (activeTab === 'visao-parceiros') {
@@ -774,8 +797,8 @@ function buildQS() {
   const p = new URLSearchParams();
   appendGroupParams(p);
   const activeTab = getActiveTab();
-  if (currentCompany && activeTab !== 'sessoes') p.set('company', currentCompany);
-  if (currentType && activeTab !== 'sessoes' && activeTab !== 'coordenacao-cuidado' && !isPetitTab(activeTab) && !activeTab.startsWith('qualidade')) p.set('type', currentType);
+  if (currentCompany && !isSessionsFamilyTab(activeTab)) p.set('company', currentCompany);
+  if (currentType && !isSessionsFamilyTab(activeTab) && activeTab !== 'coordenacao-cuidado' && !isPetitTab(activeTab) && !activeTab.startsWith('qualidade')) p.set('type', currentType);
   const s = p.toString();
   return s ? '?' + s : '';
 }
@@ -907,17 +930,17 @@ function collectPdfFilters() {
     { label: 'Grupo econômico', value: currentGroups.length ? currentGroups.join(' · ') : 'Todos os grupos' },
     { label: 'Parceiro', value: currentPartnerBrokerId ? selectedPartnerLabel() : 'Todos os parceiros' },
   ];
-  if (activeTab !== 'sessoes') {
+  if (!isSessionsFamilyTab(activeTab)) {
     filters.push({ label: 'Empresa', value: currentCompany || 'Todas as empresas' });
   }
-  if (activeTab !== 'sessoes' && activeTab !== 'coordenacao-cuidado' && !isPetitTab(activeTab) && !activeTab.startsWith('qualidade')) {
+  if (!isSessionsFamilyTab(activeTab) && activeTab !== 'coordenacao-cuidado' && !isPetitTab(activeTab) && !activeTab.startsWith('qualidade')) {
     filters.push({ label: 'Tipo beneficiário', value: currentType ? getSelectedOptionLabel('type-select', currentType) : 'Todos' });
   }
   const periodFilter = document.getElementById('filter-periodo');
   if (periodFilter && periodFilter.style.display !== 'none') {
     filters.push({ label: 'Período', value: document.getElementById('periodo-label')?.textContent?.trim() || 'Todos os meses' });
   }
-  if (activeTab === 'sessoes') {
+  if (isSessionsFamilyTab(activeTab)) {
     filters.push({ label: 'Q11 Humano/IA', value: getSelectedOptionLabel('session-typification-finisher-select', 'Humano + IA') });
   }
   return filters;
@@ -1460,14 +1483,14 @@ async function downloadDashboardPdf() {
 function isPeriodFilteredTab(tab = getActiveTab()) {
   const activeTab = tab;
   if (activeTab === 'sinistralidade-v2') return false;
-  return activeTab === 'agendamentos' || activeTab === 'coordenacao-cuidado' || activeTab === 'sessoes' || isPetitTab(activeTab) || activeTab.startsWith('qualidade') || isSinistroTab(activeTab);
+  return activeTab === 'agendamentos' || activeTab === 'coordenacao-cuidado' || isSessionsFamilyTab(activeTab) || isPetitTab(activeTab) || activeTab.startsWith('qualidade') || isSinistroTab(activeTab);
 }
 
 function loadPeriodFilteredTab() {
   const activeTab = getActiveTab();
   if (activeTab === 'agendamentos') loadAppointments();
   else if (activeTab === 'coordenacao-cuidado') renderCareCoordination();
-  else if (activeTab === 'sessoes') loadSessions();
+  else if (isSessionsFamilyTab(activeTab)) loadActiveSessionsTab();
   else if (activeTab === 'petit-comite') renderPetitComite();
   else if (activeTab === 'petit-comite-mds') renderPetitComiteMds();
   else if (activeTab.startsWith('qualidade')) loadQuality();

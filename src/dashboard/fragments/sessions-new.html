@@ -1,0 +1,293 @@
+<!-- Tab: Sessões - New (cópia independente, admin) -->
+  <div class="tab-content" id="tab-sessoes-new">
+    <div class="card-box" data-qtag="#Q13" style="display:flex;align-items:center;justify-content:space-between;gap:20px;padding:20px 28px;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:20px;min-width:260px">
+        <div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#0f766e,#0b3b47);display:flex;align-items:center;justify-content:center">
+          <i class="fa-solid fa-building-user" style="font-size:20px;color:#fff"></i>
+        </div>
+        <div>
+          <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;margin-bottom:3px">Total de Sessões · grupo econômico</div>
+          <div style="font-size:34px;font-weight:700;color:#0f766e;letter-spacing:-1px;line-height:1" id="sn-bullet-sessoes-eg">—</div>
+          <div style="font-size:11px;color:#94a3b8;margin-top:3px;display:none" id="sn-bullet-sessoes-eg-periodo"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="fluid-grid">
+      <div class="card-box" data-qtag="#Q12B">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+        <div class="section-title" style="margin-bottom:0"><i class="fa-solid fa-comments" style="margin-right:6px"></i>Sessões com interação humana</div>
+      </div>
+      <div class="loading-box" id="sn-session-message-finishers-loading"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...</div>
+      <div id="sn-session-message-finishers-content" style="display:none">
+        <div style="display:grid;grid-template-columns:1fr 1px 1fr;gap:20px;margin-bottom:18px">
+          <div style="text-align:center">
+            <div style="width:48px;height:48px;border-radius:50%;background:#eef2ff;display:flex;align-items:center;justify-content:center;margin:0 auto 10px"><i class="fa-solid fa-user-check" style="font-size:19px;color:#6366f1"></i></div>
+            <div style="font-size:26px;font-weight:700;color:#1e293b" id="sn-s-msg-fin-humano">—</div>
+            <div style="font-size:11px;color:#94a3b8;margin-top:4px">Humano</div>
+            <div style="font-size:12px;font-weight:600;color:#6366f1;margin-top:4px" id="sn-s-msg-fin-humano-pct">—</div>
+          </div>
+          <div style="background:#f1f5f9"></div>
+          <div style="text-align:center">
+            <div style="width:48px;height:48px;border-radius:50%;background:#ccfbf1;display:flex;align-items:center;justify-content:center;margin:0 auto 10px"><i class="fa-solid fa-robot" style="font-size:19px;color:#0f766e"></i></div>
+            <div style="font-size:26px;font-weight:700;color:#1e293b" id="sn-s-msg-fin-ia">—</div>
+            <div style="font-size:11px;color:#94a3b8;margin-top:4px">IA</div>
+            <div style="font-size:12px;font-weight:600;color:#0f766e;margin-top:4px" id="sn-s-msg-fin-ia-pct">—</div>
+          </div>
+        </div>
+        <div style="background:#f1f5f9;border-radius:8px;overflow:hidden;height:8px;display:flex">
+          <div id="sn-bar-msg-fin-humano" style="background:#6366f1;height:100%;transition:width .4s"></div>
+          <div id="sn-bar-msg-fin-ia" style="background:#14b8a6;height:100%;transition:width .4s"></div>
+        </div>
+        <div style="font-size:11px;color:#94a3b8;margin-top:10px;text-align:right">Total: <strong id="sn-s-msg-fin-total" style="color:#64748b">—</strong> sessões</div>
+        <div style="font-size:11px;color:#f59e0b;margin-top:6px;text-align:right;display:none" id="sn-s-msg-fin-note"></div>
+      </div>
+    </div>
+
+      <div class="card-box appointments-volume-card" data-qtag="#Q14">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+          <div class="section-title" id="sn-session-companies-title" style="margin-bottom:0"><i class="fa-solid fa-building" style="margin-right:6px"></i>Sessões por grupo econômico</div>
+          <input type="text" id="sn-session-company-search" placeholder="Buscar..." oninput="filterSessionCompaniesNew()" style="font-size:12px;padding:5px 10px;border-radius:8px;border:1px solid #e2e8f0;outline:none;width:140px;color:#334155"/>
+        </div>
+        <div class="loading-box" id="sn-session-companies-loading"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...</div>
+        <div id="sn-session-companies-wrap" class="appointments-volume-scroll" style="display:none;max-height:300px">
+          <table style="width:100%;border-collapse:collapse;font-size:12px">
+            <thead style="position:sticky;top:0;background:#fff;z-index:1">
+              <tr style="border-bottom:2px solid #f1f5f9">
+                <th style="text-align:left;padding:6px 8px;font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase">#</th>
+                <th id="sn-session-companies-name-header" style="text-align:left;padding:6px 8px;font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase">Grupo econômico</th>
+                <th style="text-align:right;padding:6px 8px;font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase">Sessões</th>
+                <th style="padding:6px 8px;width:80px"></th>
+              </tr>
+            </thead>
+            <tbody id="sn-session-companies-tbody"></tbody>
+          </table>
+          <div id="sn-session-companies-footer" style="margin-top:8px;font-size:10px;color:#94a3b8;text-align:right"></div>
+          <div id="sn-session-companies-note" style="font-size:11px;color:#f59e0b;margin-top:6px;text-align:right;display:none"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="fluid-grid sessions-q15-grid">
+      <div class="chart-card" data-qtag="#Q15">
+        <h2 id="sn-s-top-groups-title" style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Evolução humana · por departamento</h2>
+        <div style="font-size:11px;color:#94a3b8;margin-bottom:14px"><span id="sn-s-top-groups-source"></span><span id="sn-s-top-groups-mode">Últimos 12 meses</span></div>
+        <div class="chart-wrap">
+          <div class="skeleton" id="sn-skel-s-top-groups"></div>
+          <canvas id="sn-sessionsTopGroupsChart" style="display:none"></canvas>
+        </div>
+        <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="sn-s-top-groups-error"></div>
+      </div>
+
+      <div class="card-box" data-qtag="#Q15B">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+          <div>
+            <div class="section-title" style="margin-bottom:2px"><i class="fa-solid fa-sitemap" style="margin-right:6px"></i>Humano por departamento</div>
+            <div style="font-size:10px;color:#94a3b8">Mesmo universo do Q12B Humano · setor via finished_by</div>
+          </div>
+          <div style="font-size:11px;color:#94a3b8" id="sn-s-human-dept-meta">—</div>
+        </div>
+        <div class="loading-box" id="sn-session-human-dept-loading" style="display:none;padding:16px"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando departamentos...</div>
+        <div id="sn-session-human-dept-list" class="sessions-dept-list"></div>
+        <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="sn-session-human-dept-error"></div>
+      </div>
+    </div>
+
+    <div class="fluid-grid">
+      <div class="chart-card" data-qtag="#Q3">
+        <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Evolução mensal de finalizações</h2>
+        <div style="font-size:11px;color:#94a3b8;margin-bottom:14px">Últimos 12 meses · <span id="sn-s-evol-mode">global</span></div>
+        <div class="chart-wrap">
+          <div class="skeleton" id="sn-skel-s-evol"></div>
+          <canvas id="sn-sessionsEvolChart" style="display:none"></canvas>
+        </div>
+        <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="sn-s-evol-error"></div>
+      </div>
+
+      <div class="chart-card" data-qtag="#Q4">
+        <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Evolução mensal do total de sessões</h2>
+        <div style="font-size:11px;color:#94a3b8;margin-bottom:14px">Sessões e beneficiários únicos · últimos 12 meses · <span id="sn-s-total-evol-mode">global</span></div>
+        <div class="chart-wrap">
+          <div class="skeleton" id="sn-skel-s-total-evol"></div>
+          <canvas id="sn-sessionsTotalEvolChart" style="display:none"></canvas>
+        </div>
+        <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="sn-s-total-evol-error"></div>
+      </div>
+    </div>
+
+    <div class="fluid-grid">
+      <div class="chart-card" data-qtag="#Q3B">
+        <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Evolução mensal de finalizações · com interação do beneficiário</h2>
+        <div style="font-size:11px;color:#94a3b8;margin-bottom:14px">Somente sessões com mensagem do beneficiário (sender_type=user) · últimos 12 meses · <span id="sn-s-evol-interaction-mode">global</span></div>
+        <div class="chart-wrap">
+          <div class="skeleton" id="sn-skel-s-evol-interaction"></div>
+          <canvas id="sn-sessionsEvolInteractionChart" style="display:none"></canvas>
+        </div>
+        <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="sn-s-evol-interaction-error"></div>
+      </div>
+
+      <div class="chart-card" data-qtag="#Q4B">
+        <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Evolução mensal do total de sessões · com interação do beneficiário</h2>
+        <div style="font-size:11px;color:#94a3b8;margin-bottom:14px">Total de sessões e sessões com mensagem do beneficiário (sender_type=user) · últimos 12 meses · <span id="sn-s-total-evol-interaction-mode">global</span></div>
+        <div class="chart-wrap">
+          <div class="skeleton" id="sn-skel-s-total-evol-interaction"></div>
+          <canvas id="sn-sessionsTotalEvolInteractionChart" style="display:none"></canvas>
+        </div>
+        <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="sn-s-total-evol-interaction-error"></div>
+      </div>
+    </div>
+
+    <div class="fluid-grid">
+      <div class="card-box" data-qtag="#Q11">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+          <div class="section-title" style="margin-bottom:0"><i class="fa-solid fa-tags" style="margin-right:6px"></i>Tipos de encerramento de conversas</div>
+          <select class="filter-select" id="sn-session-typification-finisher-select" onchange="onSessionTypificationFinisherChangeNew(this.value)" style="min-width:160px">
+            <option value="">(Humano + IA)</option>
+            <option value="humano">Humano</option>
+            <option value="ia">IA</option>
+          </select>
+        </div>
+        <div class="loading-box" id="sn-session-typifications-loading"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...</div>
+        <div id="sn-session-typifications-content" style="display:none">
+          <div style="font-size:11px;color:#94a3b8;margin-bottom:14px">Tipificação da conversa · respeita os filtros da aba · clique para detalhar por grupo</div>
+          <div class="session-typification-list" id="sn-session-typifications-list"></div>
+          <div style="font-size:11px;color:#94a3b8;margin-top:12px;text-align:right" id="sn-session-typifications-meta">—</div>
+          <div style="font-size:11px;color:#f59e0b;margin-top:6px;text-align:right;display:none" id="sn-session-typifications-note"></div>
+        </div>
+      </div>
+
+      <div class="card-box" data-qtag="#Q11B">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+          <div class="section-title" style="margin-bottom:0"><i class="fa-solid fa-building" style="margin-right:6px"></i>Volume por grupo econômico</div>
+          <div id="sn-typification-groups-context" style="font-size:11px;color:#64748b;font-weight:700">—</div>
+        </div>
+        <div class="typification-groups-empty" id="sn-typification-groups-empty">
+          <i class="fa-solid fa-hand-pointer"></i>
+          <div>Selecione um tipo de encerramento ao lado para ver o volume por grupo econômico.</div>
+        </div>
+        <div class="loading-box" id="sn-typification-groups-loading" style="display:none"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...</div>
+        <div id="sn-typification-groups-content" style="display:none">
+          <div class="session-typification-list" id="sn-typification-groups-list"></div>
+          <div style="font-size:11px;color:#94a3b8;margin-top:12px;text-align:right" id="sn-typification-groups-meta">—</div>
+          <div style="font-size:11px;color:#f59e0b;margin-top:6px;text-align:right;display:none" id="sn-typification-groups-note"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card-box" data-qtag="#Q16">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap">
+        <div>
+          <div class="section-title" style="margin-bottom:4px"><i class="fa-solid fa-users-viewfinder" style="margin-right:6px"></i>Utilização da base de beneficiários</div>
+        </div>
+        <div style="font-size:11px;color:#64748b;font-weight:700" id="sn-sessions-utilization-context">global</div>
+      </div>
+      <div class="loading-box" id="sn-sessions-utilization-loading"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando utilização...</div>
+      <div class="sessions-utilization-grid" id="sn-sessions-utilization-content" style="display:none"></div>
+      <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="sn-sessions-utilization-error"></div>
+    </div>
+
+    <div class="chart-card" data-qtag="#Q10">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap">
+        <div>
+          <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Evolução diária do total de sessões</h2>
+          <div style="font-size:11px;color:#94a3b8">Dias do mês · <span id="sn-s-daily-mode">mês atual</span> · clique nos pontos para selecionar</div>
+        </div>
+        <div class="filter-group">
+          <label for="sn-sessions-daily-month-select">📅 Mês</label>
+          <select class="filter-select" id="sn-sessions-daily-month-select" onchange="onSessionsDailyMonthChangeNew(this.value)" style="min-width:160px"></select>
+        </div>
+      </div>
+      <div class="sessions-daily-selection" id="sn-s-daily-selection">
+        <div class="sessions-daily-selection-meta">
+          <span id="sn-s-daily-selection-label">Nenhum dia selecionado</span>
+          <strong id="sn-s-daily-selection-total">—</strong>
+        </div>
+        <button type="button" class="sessions-daily-clear-btn" id="sn-s-daily-selection-clear" onclick="clearSessionsDailySelectionNew()" hidden>Limpar seleção</button>
+      </div>
+      <div class="chart-wrap">
+        <div class="skeleton" id="sn-skel-s-daily"></div>
+        <canvas id="sn-sessionsDailyChart" style="display:none"></canvas>
+      </div>
+      <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="sn-s-daily-error"></div>
+    </div>
+
+    <div class="sessions-appointments-grid">
+      <div class="chart-card" data-qtag="#Q8">
+        <h2 style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">Sessões x agendamentos</h2>
+        <div style="font-size:11px;color:#94a3b8;margin-bottom:14px">Mesmos períodos · <span id="sn-s-attendance-mode">global</span></div>
+        <div class="chart-wrap">
+          <div class="skeleton" id="sn-skel-s-attendance"></div>
+          <canvas id="sn-sessionsAttendanceChart" style="display:none"></canvas>
+        </div>
+        <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="sn-s-attendance-error"></div>
+      </div>
+
+      <div class="card-box appointments-volume-card" data-qtag="#Q7">
+        <div class="section-title"><i class="fa-solid fa-calendar-check" style="margin-right:6px"></i>Volumes de agendamentos</div>
+        <div class="loading-box" id="sn-appointments-volume-loading"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...</div>
+        <div id="sn-appointments-volume-content" style="display:none;flex:1;min-height:0;flex-direction:column">
+          <div style="font-size:11px;color:#94a3b8;margin-bottom:10px">Volume mensal de atendimentos</div>
+          <div class="appointments-volume-scroll">
+            <table class="appointments-volume-table">
+              <thead>
+                <tr style="border-bottom:1px solid #e2e8f0;color:#64748b">
+                  <th style="text-align:left;padding:8px 10px;font-weight:600">Mês</th>
+                  <th style="text-align:right;padding:8px 10px;font-weight:600">Agendamentos</th>
+                </tr>
+              </thead>
+              <tbody id="sn-appointments-volume-tbody"></tbody>
+            </table>
+          </div>
+          <div style="font-size:11px;color:#94a3b8;margin-top:10px;text-align:right" id="sn-appointments-volume-meta">—</div>
+        </div>
+        <div style="font-size:11px;color:#f59e0b;margin-top:8px;text-align:right;display:none" id="sn-appointments-volume-error"></div>
+      </div>
+    </div>
+
+    <div class="card-box" data-qtag="#Q9">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+        <div class="section-title" style="margin-bottom:0"><i class="fa-solid fa-stethoscope" style="margin-right:6px"></i>Tipos de consulta</div>
+        <div style="position:relative">
+          <button id="sn-appointment-types-periodo-btn" onclick="toggleAppointmentTypesPeriodoDropdownNew()" style="font-size:12px;padding:5px 12px;border-radius:6px;border:1px solid #ddd;background:#fff;color:#333;cursor:pointer;min-width:200px;text-align:left;display:flex;align-items:center;justify-content:space-between;gap:8px">
+            <span id="sn-appointment-types-periodo-label">(Todos os meses)</span>
+            <i class="fa-solid fa-chevron-down" style="font-size:10px;color:#94a3b8"></i>
+          </button>
+          <div id="sn-appointment-types-periodo-dropdown" style="display:none;position:absolute;top:36px;right:0;background:#fff;border:1px solid #e2e8f0;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.1);z-index:999;min-width:280px;padding:8px">
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 8px 8px;border-bottom:1px solid #f1f5f9;margin-bottom:6px">
+              <span style="font-size:11px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.5px">Últimos 12 meses</span>
+              <div style="display:flex;gap:8px">
+                <button onclick="selectAllAppointmentTypesPeriodoNew()" style="font-size:11px;color:#6366f1;background:none;border:none;cursor:pointer;font-weight:600">Selecionar tudo</button>
+                <button onclick="clearAppointmentTypesPeriodoNew()" style="font-size:11px;color:#94a3b8;background:none;border:none;cursor:pointer">Limpar</button>
+              </div>
+            </div>
+            <div id="sn-appointment-types-periodo-options" style="max-height:240px;overflow-y:auto;display:grid;grid-template-columns:1fr 1fr;gap:2px"></div>
+            <div style="border-top:1px solid #f1f5f9;margin-top:6px;padding-top:6px">
+              <label style="display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:6px;cursor:pointer;font-size:12px;color:#6366f1;font-weight:600">
+                <input type="checkbox" id="sn-appointment-types-cb-tudo" style="accent-color:#6366f1" onchange="onAppointmentTypesTudoChangeNew(this)"/>
+                Tudo (sem filtro de período)
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="loading-box" id="sn-appointment-types-loading"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...</div>
+      <div id="sn-appointment-types-content" style="display:none">
+        <div style="font-size:11px;color:#94a3b8;margin-bottom:10px">Agrupamento por assunto/tipo de solicitação</div>
+        <div class="table-scroll">
+          <table class="appointment-types-table">
+            <thead>
+              <tr style="border-bottom:1px solid #e2e8f0;color:#64748b">
+                <th style="text-align:left;padding:9px 10px;font-weight:600">Tipo</th>
+                <th style="text-align:right;padding:9px 10px;font-weight:600">Total</th>
+                <th style="text-align:right;padding:9px 10px;font-weight:600">%</th>
+              </tr>
+            </thead>
+            <tbody id="sn-appointment-types-tbody"></tbody>
+          </table>
+        </div>
+        <div style="font-size:11px;color:#94a3b8;margin-top:10px;text-align:right" id="sn-appointment-types-meta">—</div>
+      </div>
+    </div>
+
+    <div style="text-align:center;padding:20px;color:#bbb;font-size:13px">Mais dados serão adicionados em breve.</div>
+  </div>

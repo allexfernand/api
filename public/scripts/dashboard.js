@@ -1,5 +1,5 @@
 (async function loadSanusDashboard() {
-  const CACHE = "20260903-q3b-user-interaction";
+  const CACHE = "20260903-sessoes-new-indep";
 
   function loadScript(src, { ordered = false } = {}) {
     return new Promise((resolve, reject) => {
@@ -45,6 +45,7 @@
     `/scripts/features/care-coordination.js?v=${CACHE}`,
     `/scripts/features/appointments.js?v=${CACHE}`,
     `/scripts/features/sessions.js?v=${CACHE}`,
+    `/scripts/features/sessions-new.js?v=${CACHE}`,
     `/scripts/features/demographics.js?v=${CACHE}`,
     `/scripts/features/quality-and-bootstrap.js?v=${CACHE}`,
   ];
