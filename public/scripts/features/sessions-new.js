@@ -744,27 +744,17 @@ function renderSessionsTotalEvolutionInteractionChartNew(labels, totalValues, un
   if (cv) cv.style.display = 'block';
   if (sessionsTotalEvolInteractionChartNew) sessionsTotalEvolInteractionChartNew.destroy();
   if (!cv) return;
-  const datasets = [{
-    label: 'Total de sessões',
-    data: totalValues,
-    borderColor: '#0f766e',
-    backgroundColor: 'rgba(15,118,110,0.08)',
-    borderWidth: 2,
-    pointRadius: 3,
-    pointBackgroundColor: '#0f766e',
-    fill: true,
-    tension: 0.35,
-  }];
+  const datasets = [];
   if (hasInteractionData) {
     datasets.push({
-      label: 'Sessões c/ interação do beneficiário',
+      label: 'Total de sessões c/ interação',
       data: interactionSessionValues,
-      borderColor: '#ea580c',
-      backgroundColor: 'rgba(234,88,12,0.08)',
+      borderColor: '#0f766e',
+      backgroundColor: 'rgba(15,118,110,0.08)',
       borderWidth: 2,
       pointRadius: 3,
-      pointBackgroundColor: '#ea580c',
-      fill: false,
+      pointBackgroundColor: '#0f766e',
+      fill: true,
       tension: 0.35,
     });
   }
@@ -781,15 +771,11 @@ function renderSessionsTotalEvolutionInteractionChartNew(labels, totalValues, un
           titleColor: '#94a3b8', bodyColor: '#f1f5f9',
           callbacks: {
             label: c => {
-              const label = String(c.dataset.label || '');
-              if (label.startsWith('Sessões c/ interação')) {
-                const sessions = Number(c.parsed.y) || 0;
-                const beneficiaries = Number(interactionUniqueBeneficiaryValues[c.dataIndex]) || 0;
-                const avg = beneficiaries > 0 ? sessions / beneficiaries : null;
-                const avgLabel = avg === null ? '—' : avg.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 2 });
-                return `Sessões c/ interação: ${fmt(sessions)} · benef. únicos: ${fmt(beneficiaries)} · média ${avgLabel} sessões/benef.`;
-              }
-              return `${c.dataset.label}: ${fmt(c.parsed.y)} sessões`;
+              const sessions = Number(c.parsed.y) || 0;
+              const beneficiaries = Number(interactionUniqueBeneficiaryValues[c.dataIndex]) || 0;
+              const avg = beneficiaries > 0 ? sessions / beneficiaries : null;
+              const avgLabel = avg === null ? '—' : avg.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 2 });
+              return `Sessões c/ interação: ${fmt(sessions)} · benef. únicos: ${fmt(beneficiaries)} · média ${avgLabel} sessões/benef.`;
             },
           },
         },
