@@ -13,7 +13,7 @@ let currentDashboardUser = '';
 // regras legadas por completo para aquele usuário específico.
 let allowedMenusOverride = null;
 
-let usersData = [], companiesData = [], sessionCompaniesData = [], eChart, livesNetChart, agegroupChart, partnerVisionEvolutionChart, appointmentTypesTrendChart, appointmentsDailyChart, appointmentsStatusChart, appointmentsMonthlyChart, careCoordinationLinesChart, careLinesEvolutionChart, careComplementChart, careActiveComplementChart, petitCareLinesChart, petitSessionsEvolChart, petitSessionsTotalEvolChart, sessionsEvolChart, sessionsTotalEvolChart, sessionsAttendanceChart, sessionsDailyChart, sessionsTopGroupsChart, qualityVolumeEvolutionChart, qualityDailyVolumeEvolutionChart, qualityEvolutionChart, qualityCriteriaEvolutionChart;
+let usersData = [], companiesData = [], sessionCompaniesData = [], eChart, livesNetChart, agegroupChart, partnerVisionEvolutionChart, appointmentTypesTrendChart, appointmentsDailyChart, appointmentsStatusChart, appointmentsMonthlyChart, careCoordinationLinesChart, careLinesEvolutionChart, careComplementChart, careActiveComplementChart, petitCareLinesChart, petitSessionsEvolChart, petitSessionsTotalEvolChart, sessionsEvolChart, sessionsTotalEvolChart, sessionsTotalEvolInteractionChart, sessionsAttendanceChart, sessionsDailyChart, sessionsTopGroupsChart, qualityVolumeEvolutionChart, qualityDailyVolumeEvolutionChart, qualityEvolutionChart, qualityCriteriaEvolutionChart;
 let currentGroup = '', currentType = '', currentCompany = '';
 let currentGroups = [];
 let currentPartnerBrokerId = '';

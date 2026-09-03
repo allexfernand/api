@@ -351,6 +351,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   const months = Math.min(Math.max(parseInt(req.query.months) || 12, 1), 24);
   const includeBeneficiaries = String(req.query.include_beneficiaries || '') === '1';
   const onlyBeneficiaries = String(req.query.only_beneficiaries || '') === '1';
+  const includeUserInteraction = String(req.query.include_user_interaction || '') === '1';
   const hasOrgFilter = Boolean(groupNames.length || company || partnerBrokerId);
 
   const monthList = explicitMonths.length ? explicitMonths : lastNMonthsList(months);
@@ -422,7 +423,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       });
     }
 
-    const [rows, beneficiaryRows] = await Promise.all([
+    const [rows, beneficiaryRows, userInteractionRows] = await Promise.all([
       onlyBeneficiaries ? Promise.resolve([]) : runQuery(warehouseId, `
       WITH scoped_sessions AS (
         SELECT
@@ -468,6 +469,36 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       SELECT '__last_12_months', COUNT(DISTINCT beneficiary_key)
       FROM beneficiary_base
     `, params.list) : Promise.resolve([]),
+      includeUserInteraction ? runQuery(warehouseId, `
+      WITH scoped_sessions AS (
+        SELECT
+          s.${quoteIdent('mes')} AS mes,
+          CAST(s.${quoteIdent('session_id')} AS STRING) AS session_id,
+          s.${quoteIdent('beneficiary_key')} AS beneficiary_key
+        FROM ${fromSql}
+        ${where}
+      ),
+      sessions_with_user AS (
+        SELECT
+          ss.mes,
+          ss.session_id,
+          ss.beneficiary_key
+        FROM scoped_sessions ss
+        WHERE EXISTS (
+          SELECT 1
+          FROM ${MESSAGE_TABLE} m
+          WHERE CAST(m.${quoteIdent('session_id')} AS STRING) = ss.session_id
+            AND LOWER(TRIM(CAST(m.${quoteIdent('sender_type')} AS STRING))) = 'user'
+        )
+      )
+      SELECT
+        mes,
+        COUNT(*) AS sessions_with_user_interaction,
+        COUNT(DISTINCT CASE WHEN beneficiary_key IS NOT NULL THEN beneficiary_key END) AS unique_beneficiaries_with_user_interaction
+      FROM sessions_with_user
+      GROUP BY mes
+      ORDER BY mes
+    `, params.list) : Promise.resolve([]),
     ]);
 
     const byMesTipo = new Map(rows.map((r) => [
@@ -490,11 +521,31 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       else if (key === "__last_12_months") utilization.last_12_months = value;
       else beneficiariesByMes.set(key, value);
     });
+    const userInteractionByMes = new Map(userInteractionRows.map((row) => [
+      String(getCell(row[0]) || ""),
+      {
+        sessions_with_user_interaction: toInt(row[1]),
+        unique_beneficiaries_with_user_interaction: toInt(row[2]),
+      },
+    ]));
     const series = monthList.map((m) => {
       const humano = byMesTipo.get(`${m}|HUMANO`) || 0;
       const ia = byMesTipo.get(`${m}|IA`) || 0;
       const uniqueBeneficiaries = beneficiariesByMes.get(m) || 0;
-      return { mes: m, humano, ia, total: humano + ia, unique_cpfs: uniqueBeneficiaries, unique_beneficiaries: uniqueBeneficiaries };
+      const userInteraction = userInteractionByMes.get(m) || {
+        sessions_with_user_interaction: 0,
+        unique_beneficiaries_with_user_interaction: 0,
+      };
+      return {
+        mes: m,
+        humano,
+        ia,
+        total: humano + ia,
+        unique_cpfs: uniqueBeneficiaries,
+        unique_beneficiaries: uniqueBeneficiaries,
+        sessions_with_user_interaction: userInteraction.sessions_with_user_interaction,
+        unique_beneficiaries_with_user_interaction: userInteraction.unique_beneficiaries_with_user_interaction,
+      };
     });
 
     setStableCache(res);
@@ -505,6 +556,10 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       utilization,
       utilization_periods: fullMonthScopes,
       beneficiaries_included: Boolean(includeBeneficiaries),
+      user_interaction_included: Boolean(includeUserInteraction),
+      user_interaction_rule: includeUserInteraction
+        ? "botmaker_message.sender_type='user' (ao menos 1 mensagem do beneficiário na sessão)"
+        : null,
       filters: { group_name: groupName, company, type: typeFilter, partner_broker_id: partnerBrokerId },
       mode,
       source: "botmaker_session.inline",
