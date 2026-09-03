@@ -1,5 +1,5 @@
 (async function loadSanusDashboard() {
-  const CACHE = "20260903-sessoes-new-q4b-gold-patients";
+  const CACHE = "20260903-sessoes-new-q4b-hide-session-benef";
 
   function loadScript(src, { ordered = false } = {}) {
     return new Promise((resolve, reject) => {

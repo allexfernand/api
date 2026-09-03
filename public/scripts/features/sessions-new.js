@@ -767,17 +767,6 @@ function renderSessionsTotalEvolutionInteractionChartNew(
       fill: true,
       tension: 0.35,
     });
-    datasets.push({
-      label: 'Beneficiários únicos c/ interação (sessão)',
-      data: interactionUniqueBeneficiaryValues,
-      borderColor: '#7c3aed',
-      backgroundColor: 'rgba(124,58,237,0.08)',
-      borderWidth: 2,
-      pointRadius: 3,
-      pointBackgroundColor: '#7c3aed',
-      fill: false,
-      tension: 0.35,
-    });
   }
   if (hasAttendanceGoldData) {
     datasets.push({
