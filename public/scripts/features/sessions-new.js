@@ -770,7 +770,7 @@ function renderSessionsTotalEvolutionInteractionChartNew(
   }
   if (hasAttendanceGoldData) {
     datasets.push({
-      label: 'Pacientes únicos (cards atendimento gold)',
+      label: 'Beneficiários Únicos (titular e dependentes)',
       data: attendanceGoldUniquePatientValues,
       borderColor: '#ea580c',
       backgroundColor: 'rgba(234,88,12,0.08)',
@@ -800,10 +800,10 @@ function renderSessionsTotalEvolutionInteractionChartNew(
               const goldPatients = Number(attendanceGoldUniquePatientValues[c.dataIndex]) || 0;
               const avg = beneficiaries > 0 ? sessions / beneficiaries : null;
               const avgLabel = avg === null ? '—' : avg.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 2 });
-              if (label.startsWith('Pacientes únicos')) {
-                return `Pacientes únicos (gold): ${fmt(c.parsed.y)} · CPF distinto em cards do mês`;
+              if (label.startsWith('Beneficiários Únicos')) {
+                return `Beneficiários únicos (titular e dependentes): ${fmt(c.parsed.y)} · CPF distinto em cards do mês`;
               }
-              if (label.startsWith('Beneficiários únicos')) {
+              if (label.startsWith('Beneficiários únicos c/ interação')) {
                 return `Benef. únicos c/ interação (sessão): ${fmt(c.parsed.y)} · média ${avgLabel} sessões/benef.`;
               }
               return `Sessões c/ interação: ${fmt(c.parsed.y)} · benef. sessão: ${fmt(beneficiaries)} · pacientes gold: ${fmt(goldPatients)}`;
