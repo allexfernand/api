@@ -923,6 +923,7 @@ async function loadSessionsNew() {
   buildSessionsDailyMonthOptionsNew();
   const economicGroupBullet = document.getElementById('sn-bullet-sessoes-eg');
   const economicGroupPeriodoLabel = document.getElementById('sn-bullet-sessoes-eg-periodo');
+  const economicGroupInteractionBullet = document.getElementById('sn-bullet-sessoes-eg-interaction');
   const messageFinishersLoading = document.getElementById('sn-session-message-finishers-loading');
   const messageFinishersContent = document.getElementById('sn-session-message-finishers-content');
   const sessionCompaniesLoading = document.getElementById('sn-session-companies-loading');
@@ -933,6 +934,7 @@ async function loadSessionsNew() {
   const topGroupsCanvas = document.getElementById('sn-sessionsTopGroupsChart');
   const topGroupsError = document.getElementById('sn-s-top-groups-error');
   if (economicGroupBullet) economicGroupBullet.textContent = '…';
+  if (economicGroupInteractionBullet) economicGroupInteractionBullet.textContent = '…';
   if (messageFinishersLoading) {
     messageFinishersLoading.style.display = 'block';
     messageFinishersLoading.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...';
@@ -962,6 +964,7 @@ async function loadSessionsNew() {
   if (meses.length > 0)  p.set('meses', meses.join(','));
   appendGroupParams(p);
   if (selectedSessionTypificationFinisherNew) p.set('typification_finisher', selectedSessionTypificationFinisherNew);
+  p.set('include_user_interaction', '1');
   const qs = p.toString() ? '?' + p.toString() : '';
 
   loadSessionsEvolutionNew();
@@ -973,6 +976,15 @@ async function loadSessionsNew() {
   if (requestId !== sessionsRequestIdNew) return;
   if (sessions && !sessions.error) {
     if (economicGroupBullet) economicGroupBullet.textContent = sessions.economic_group_total_error ? 'Erro' : fmt(sessions.economic_group_total || 0);
+    if (economicGroupInteractionBullet) {
+      if (sessions.economic_group_with_user_interaction_error) {
+        economicGroupInteractionBullet.textContent = 'Erro';
+        economicGroupInteractionBullet.title = String(sessions.economic_group_with_user_interaction_error).slice(0, 220);
+      } else {
+        economicGroupInteractionBullet.textContent = fmt(sessions.economic_group_with_user_interaction_total || 0);
+        economicGroupInteractionBullet.title = sessions.user_interaction_rule || '';
+      }
+    }
     if (economicGroupPeriodoLabel) {
       economicGroupPeriodoLabel.style.display = 'none';
       economicGroupPeriodoLabel.textContent = '';
@@ -992,6 +1004,7 @@ async function loadSessionsNew() {
     });
   } else {
     if (economicGroupBullet) economicGroupBullet.textContent = 'Erro';
+    if (economicGroupInteractionBullet) economicGroupInteractionBullet.textContent = 'Erro';
     const msg = sessions && sessions.error ? sessions.error : 'Erro ao carregar sessões';
     if (economicGroupPeriodoLabel) {
       economicGroupPeriodoLabel.style.display = 'block';

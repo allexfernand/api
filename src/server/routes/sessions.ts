@@ -274,6 +274,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     : '';
   const scope = String(req.query.scope || '').toLowerCase();
   const typificationValue = req.query.typification_value ? String(req.query.typification_value) : null;
+  const includeUserInteraction = String(req.query.include_user_interaction || '') === '1';
 
   const SESSION_DATE_COLUMN = 'creation_time';
 
@@ -793,6 +794,23 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         ORDER BY total_sessions DESC
       `);
 
+    const userInteractionWhere = companySessionsMode === "company"
+      ? companySessionsWhere
+      : (companySessionsDateFilter || '');
+    const userInteractionPromise = includeUserInteraction
+      ? runQuery(warehouseId, `
+        SELECT COUNT(*) AS total_sessions
+        FROM ${dashboardSessionsTable} s
+        ${userInteractionWhere ? `WHERE ${userInteractionWhere}` : ''}
+          ${userInteractionWhere ? 'AND' : 'WHERE'} EXISTS (
+            SELECT 1
+            FROM ${MESSAGE_TABLE} m
+            WHERE CAST(m.${quoteIdent('session_id')} AS STRING) = CAST(s.${quoteIdent('session_id')} AS STRING)
+              AND LOWER(TRIM(CAST(m.${quoteIdent('sender_type')} AS STRING))) = 'user'
+          )
+      `, companySessionsMode === "company" ? params.list : undefined)
+      : Promise.resolve(null);
+
     const typificationsPromise = companySessionsMode === "company"
       ? runQuery(warehouseId, `
         SELECT
@@ -815,10 +833,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         LIMIT 30
       `, params.list);
 
-    const [typificationsSettled, messageAgentFinishersSettled, companySessionsSettled] = await Promise.allSettled([
+    const [typificationsSettled, messageAgentFinishersSettled, companySessionsSettled, userInteractionSettled] = await Promise.allSettled([
       typificationsPromise,
       messageAgentFinishersPromise,
       companySessionsPromise,
+      userInteractionPromise,
     ]);
 
     const typificationsError = typificationsSettled.status === 'rejected'
@@ -851,11 +870,25 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const companySessionsTotal = companySessions.reduce((acc, item) => acc + (Number(item.total) || 0), 0);
     const economicGroupTotal = companySessionsSettled.status === 'fulfilled' ? companySessionsTotal : 0;
     const economicGroupTotalError = companySessionsError;
+    const userInteractionError = !includeUserInteraction
+      ? null
+      : (userInteractionSettled.status === 'rejected'
+        ? (userInteractionSettled.reason instanceof Error ? userInteractionSettled.reason.message : String(userInteractionSettled.reason))
+        : null);
+    const userInteractionTotal = includeUserInteraction && userInteractionSettled.status === 'fulfilled' && Array.isArray(userInteractionSettled.value)
+      ? toInt(userInteractionSettled.value?.[0]?.[0])
+      : null;
 
     setStableCache(res);
     res.status(200).json({
       economic_group_total: economicGroupTotal,
       economic_group_total_error: economicGroupTotalError,
+      economic_group_with_user_interaction_total: userInteractionTotal,
+      economic_group_with_user_interaction_error: userInteractionError,
+      user_interaction_included: includeUserInteraction,
+      user_interaction_rule: includeUserInteraction
+        ? "Sessão com ≥1 mensagem em botmaker_message onde sender_type = 'user'"
+        : null,
       company_sessions: companySessions,
       company_sessions_error: companySessionsError,
       company_sessions_mode: companySessionsMode,
