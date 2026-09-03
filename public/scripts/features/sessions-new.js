@@ -1459,6 +1459,7 @@ async function loadSessionsDailyEvolutionNew() {
   const p = new URLSearchParams();
   p.set('granularity', 'day');
   p.set('mes', selectedSessionsDailyMonthNew || currentMonthValue());
+  p.set('include_user_interaction', '1');
   appendGroupParams(p);
   const data = await safeGet('/api/sessions-evolution?' + p.toString());
   if (!data || data.error) {
@@ -1485,9 +1486,11 @@ async function loadSessionsDailyEvolutionNew() {
 
   const weekdayFmt = new Intl.DateTimeFormat('pt-BR', { weekday: 'short', timeZone: 'UTC' });
   const series = data.series || [];
+  const hasInteraction = Boolean(data.user_interaction_included);
   sessionsDailySeriesCacheNew = series.map((it) => ({
     dia: String(it.dia || ''),
     total: Number(it.total) || 0,
+    withInteraction: Number(it.sessions_with_user_interaction ?? it.total_with_user_interaction) || 0,
   }));
   selectedSessionsDailyIndexesNew = new Set();
   const labels = series.map((it) => {
@@ -1499,29 +1502,45 @@ async function loadSessionsDailyEvolutionNew() {
     return [day.slice(8, 10), weekday];
   });
   const totalValues = sessionsDailySeriesCacheNew.map((it) => it.total);
+  const interactionValues = sessionsDailySeriesCacheNew.map((it) => it.withInteraction);
   if (sessionsDailyChartNew) sessionsDailyChartNew.destroy();
   if (skel) skel.style.display = 'none';
   if (cv) {
     cv.style.display = 'block';
+    const datasets = [{
+      label: 'Total de sessões',
+      data: totalValues,
+      borderColor: '#0f766e',
+      backgroundColor: 'rgba(15,118,110,0.08)',
+      borderWidth: 2,
+      pointRadius: sessionsDailyPointRadiiNew(),
+      pointHoverRadius: 6,
+      pointBackgroundColor: sessionsDailyPointColorsNew(),
+      pointBorderColor: sessionsDailyPointBorderColorsNew(),
+      pointBorderWidth: sessionsDailyPointBorderWidthsNew(),
+      fill: true,
+      tension: 0.35,
+    }];
+    if (hasInteraction) {
+      datasets.push({
+        label: 'Com interação do beneficiário',
+        data: interactionValues,
+        borderColor: '#ea580c',
+        backgroundColor: 'rgba(234,88,12,0.06)',
+        borderWidth: 2,
+        borderDash: [6, 4],
+        pointRadius: 3,
+        pointHoverRadius: 5,
+        pointBackgroundColor: '#ea580c',
+        pointBorderColor: '#ea580c',
+        pointBorderWidth: 0,
+        fill: false,
+        tension: 0.35,
+      });
+    }
     sessionsDailyChartNew = new Chart(cv, {
       type: 'line',
-      data: {
-        labels,
-        datasets: [{
-          label: 'Sessões',
-          data: totalValues,
-          borderColor: '#0f766e',
-          backgroundColor: 'rgba(15,118,110,0.08)',
-          borderWidth: 2,
-          pointRadius: sessionsDailyPointRadiiNew(),
-          pointHoverRadius: 6,
-          pointBackgroundColor: sessionsDailyPointColorsNew(),
-          pointBorderColor: sessionsDailyPointBorderColorsNew(),
-          pointBorderWidth: sessionsDailyPointBorderWidthsNew(),
-          fill: true,
-          tension: 0.35,
-        }],
-      },
+      data: { labels, datasets },
       options: {
         responsive: true,
         maintainAspectRatio: false,
@@ -1531,7 +1550,12 @@ async function loadSessionsDailyEvolutionNew() {
           if (target) target.style.cursor = elements?.length ? 'pointer' : 'default';
         },
         plugins: {
-          legend: { display: false },
+          legend: {
+            display: true,
+            position: 'top',
+            align: 'end',
+            labels: { boxWidth: 10, boxHeight: 10, color: '#64748b', font: { size: 11 } },
+          },
           tooltip: {
             backgroundColor: '#1e293b', borderColor: '#334155', borderWidth: 1,
             titleColor: '#94a3b8', bodyColor: '#f1f5f9',
@@ -1545,10 +1569,17 @@ async function loadSessionsDailyEvolutionNew() {
                 const selected = selectedSessionsDailyIndexesNew.has(idx) ? ' · selecionado' : '';
                 return `${raw.split('-').reverse().join('/')} · ${weekday}${selected}`;
               },
-              label: c => `${fmt(c.parsed.y)} sessões`,
+              label: c => {
+                const label = String(c.dataset.label || 'Sessões');
+                return `${label}: ${fmt(c.parsed.y)}`;
+              },
               afterBody: () => {
                 if (!selectedSessionsDailyIndexesNew.size) return ['Clique para selecionar este dia'];
-                return [`Seleção: ${fmt(sessionsDailySelectedTotalNew())} sessões`];
+                const totals = sessionsDailySelectedTotalsNew();
+                if (hasInteraction) {
+                  return [`Seleção: ${fmt(totals.total)} total · ${fmt(totals.withInteraction)} c/ interação`];
+                }
+                return [`Seleção: ${fmt(totals.total)} sessões`];
               },
             },
           },
@@ -1570,12 +1601,18 @@ async function loadSessionsDailyEvolutionNew() {
   updateSessionsDailySelectionSummaryNew();
 }
 
-function sessionsDailySelectedTotalNew() {
+function sessionsDailySelectedTotalsNew() {
   let total = 0;
+  let withInteraction = 0;
   selectedSessionsDailyIndexesNew.forEach((idx) => {
     total += Number(sessionsDailySeriesCacheNew[idx]?.total) || 0;
+    withInteraction += Number(sessionsDailySeriesCacheNew[idx]?.withInteraction) || 0;
   });
-  return total;
+  return { total, withInteraction };
+}
+
+function sessionsDailySelectedTotalNew() {
+  return sessionsDailySelectedTotalsNew().total;
 }
 
 function sessionsDailyPointRadiiNew() {
@@ -1626,7 +1663,7 @@ function updateSessionsDailySelectionSummaryNew() {
   const totalEl = document.getElementById('sn-s-daily-selection-total');
   const clearBtn = document.getElementById('sn-s-daily-selection-clear');
   const count = selectedSessionsDailyIndexesNew.size;
-  const total = sessionsDailySelectedTotalNew();
+  const totals = sessionsDailySelectedTotalsNew();
   if (wrap) wrap.classList.toggle('is-active', count > 0);
   if (clearBtn) clearBtn.hidden = count === 0;
   if (!count) {
@@ -1646,7 +1683,13 @@ function updateSessionsDailySelectionSummaryNew() {
       ? `1 dia selecionado (${daysPreview})`
       : `${count} dias selecionados (${daysPreview})`;
   }
-  if (totalEl) totalEl.textContent = `${fmt(total)} sessões`;
+  if (totalEl) {
+    const hasInteractionSeries = sessionsDailySeriesCacheNew.some((it) => Number(it.withInteraction) > 0)
+      || sessionsDailyChartNew?.data?.datasets?.length > 1;
+    totalEl.textContent = hasInteractionSeries
+      ? `${fmt(totals.total)} total · ${fmt(totals.withInteraction)} c/ interação`
+      : `${fmt(totals.total)} sessões`;
+  }
 }
 
 function onSessionsDailyChartClickNew(event, elements, chart) {

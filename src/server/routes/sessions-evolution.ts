@@ -463,7 +463,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       ? (partnerBrokerId ? "partner_broker" : (company ? "organization_subquery" : "economic_group_name"))
       : "global";
     if (granularity === 'day') {
-      const rows = await runQuery(warehouseId, `
+      const [rows, userInteractionRows] = await Promise.all([
+        runQuery(warehouseId, `
         SELECT
           s.${quoteIdent('dia')} AS dia,
           s.${quoteIdent('tipo_atendimento_agent')} AS tipo_atendimento,
@@ -474,12 +475,37 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           s.${quoteIdent('dia')},
           s.${quoteIdent('tipo_atendimento_agent')}
         ORDER BY dia
-      `, params.list);
+      `, params.list),
+        includeUserInteraction ? runQuery(warehouseId, `
+        WITH scoped_sessions AS (
+          SELECT
+            s.${quoteIdent('dia')} AS dia,
+            CAST(s.${quoteIdent('session_id')} AS STRING) AS session_id
+          FROM ${fromSql}
+          ${where}
+        )
+        SELECT
+          ss.dia,
+          COUNT(*) AS total
+        FROM scoped_sessions ss
+        WHERE EXISTS (
+          SELECT 1
+          FROM ${MESSAGE_TABLE} m
+          WHERE CAST(m.${quoteIdent('session_id')} AS STRING) = ss.session_id
+            AND LOWER(TRIM(CAST(m.${quoteIdent('sender_type')} AS STRING))) = 'user'
+        )
+        GROUP BY ss.dia
+        ORDER BY ss.dia
+      `, params.list) : Promise.resolve([]),
+      ]);
 
       const byDiaTipo = new Map(rows.map((r) => [
         `${String(getCell(r[0]) || '')}|${String(getCell(r[1]) || '').toUpperCase()}`,
         toInt(r[2]),
       ]));
+      const interactionByDia = new Map(
+        userInteractionRows.map((r) => [String(getCell(r[0]) || ''), toInt(r[1])]),
+      );
       const days = [];
       const start = new Date(`${selectedDayMonth}-01T00:00:00Z`);
       const end = new Date(`${nextMonth(selectedDayMonth)}-01T00:00:00Z`);
@@ -489,13 +515,25 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const series = days.map((day) => {
         const humano = byDiaTipo.get(`${day}|HUMANO`) || 0;
         const ia = byDiaTipo.get(`${day}|IA`) || 0;
-        return { dia: day, humano, ia, total: humano + ia };
+        const withInteraction = interactionByDia.get(day) || 0;
+        return {
+          dia: day,
+          humano,
+          ia,
+          total: humano + ia,
+          sessions_with_user_interaction: withInteraction,
+          total_with_user_interaction: withInteraction,
+        };
       });
 
       return res.status(200).json({
         granularity: "day",
         month: selectedDayMonth,
         series,
+        user_interaction_included: Boolean(includeUserInteraction),
+        user_interaction_rule: includeUserInteraction
+          ? "botmaker_message.sender_type='user' (ao menos 1 mensagem do beneficiário na sessão)"
+          : null,
         filters: { group_name: groupName, company, type: typeFilter, partner_broker_id: partnerBrokerId },
         mode,
         source: "botmaker_session.inline",
