@@ -1,5 +1,5 @@
 (async function loadSanusDashboard() {
-  const CACHE = "20260903-sessoes-new-q4b-tooltip";
+  const CACHE = "20260903-sessoes-new-q4b-tooltip-green";
 
   function loadScript(src, { ordered = false } = {}) {
     return new Promise((resolve, reject) => {

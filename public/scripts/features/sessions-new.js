@@ -802,7 +802,7 @@ function renderSessionsTotalEvolutionInteractionChartNew(
               if (label.startsWith('Beneficiários Únicos')) {
                 return `Beneficiários únicos (titular e dependentes): ${fmt(c.parsed.y)} · média ${avgLabel} sessões/benef.`;
               }
-              return `Total de sessões c/ interação: ${fmt(c.parsed.y)} · benef. únicos: ${fmt(uniqueBeneficiaries)} · média ${avgLabel} sessões/benef.`;
+              return `Total de sessões c/ interação: ${fmt(c.parsed.y)}`;
             },
           },
         },
