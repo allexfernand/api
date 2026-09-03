@@ -796,17 +796,13 @@ function renderSessionsTotalEvolutionInteractionChartNew(
             label: c => {
               const label = String(c.dataset.label || '');
               const sessions = Number(interactionSessionValues[c.dataIndex]) || 0;
-              const beneficiaries = Number(interactionUniqueBeneficiaryValues[c.dataIndex]) || 0;
-              const goldPatients = Number(attendanceGoldUniquePatientValues[c.dataIndex]) || 0;
-              const avg = beneficiaries > 0 ? sessions / beneficiaries : null;
+              const uniqueBeneficiaries = Number(attendanceGoldUniquePatientValues[c.dataIndex]) || 0;
+              const avg = uniqueBeneficiaries > 0 ? sessions / uniqueBeneficiaries : null;
               const avgLabel = avg === null ? '—' : avg.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 2 });
               if (label.startsWith('Beneficiários Únicos')) {
-                return `Beneficiários únicos (titular e dependentes): ${fmt(c.parsed.y)} · CPF distinto em cards do mês`;
+                return `Beneficiários únicos (titular e dependentes): ${fmt(c.parsed.y)} · média ${avgLabel} sessões/benef.`;
               }
-              if (label.startsWith('Beneficiários únicos c/ interação')) {
-                return `Benef. únicos c/ interação (sessão): ${fmt(c.parsed.y)} · média ${avgLabel} sessões/benef.`;
-              }
-              return `Sessões c/ interação: ${fmt(c.parsed.y)} · benef. sessão: ${fmt(beneficiaries)} · pacientes gold: ${fmt(goldPatients)}`;
+              return `Total de sessões c/ interação: ${fmt(c.parsed.y)} · benef. únicos: ${fmt(uniqueBeneficiaries)} · média ${avgLabel} sessões/benef.`;
             },
           },
         },
