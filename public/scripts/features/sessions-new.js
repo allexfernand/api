@@ -1284,11 +1284,21 @@ async function loadPetitTopConsultationsNew(monthValues) {
   if (content) content.style.display = 'flex';
 }
 
-async function renderSessionsAttendanceChartNew(labels, monthValues, sessionValues, data, demographicsData) {
+async function renderSessionsAttendanceChartNew(labels, monthValues, sessionValues, data, demographicsData, options = {}) {
   const skel = document.getElementById('sn-skel-s-attendance');
   const cv = document.getElementById('sn-sessionsAttendanceChart');
   const modeLabel = document.getElementById('sn-s-attendance-mode');
   if (!cv) return;
+  const sessionsWithUserInteraction = Boolean(options.sessionsWithUserInteraction);
+  const sessionsLabel = sessionsWithUserInteraction
+    ? 'Sessões c/ interação'
+    : 'Sessões';
+  const sessionsRatioLabel = sessionsWithUserInteraction
+    ? 'Sessões c/ interação por agendamento'
+    : 'Sessões por agendamento';
+  const sessionsPer100Label = sessionsWithUserInteraction
+    ? 'Sessões c/ interação por 100 beneficiários'
+    : 'Sessões por 100 beneficiários';
   if (modeLabel) {
     if (data.mode === 'cpf_join' || data.mode === 'variables_json_filter' || data.mode === 'organization_join' || data.mode === 'partner_broker' || data.mode === 'economic_group_name') {
       const filterParts = [];
@@ -1337,11 +1347,13 @@ async function renderSessionsAttendanceChartNew(labels, monthValues, sessionValu
   if (sessionsAttendanceChartNew) sessionsAttendanceChartNew.destroy();
   if (skel) skel.style.display = 'none';
   if (modeLabel && (averageRatio !== null || averageBeneficiaryRatio !== null)) {
+    const ratioUnit = sessionsWithUserInteraction ? 'sessões c/ interação/agendamento' : 'sessões/agendamento';
+    const beneficiaryUnit = sessionsWithUserInteraction ? 'sessões c/ interação/100 beneficiários' : 'sessões/100 beneficiários';
     const ratioLabel = averageRatio !== null
-      ? ` · média ${averageRatio.toFixed(1).replace('.', ',')} sessões/agendamento`
+      ? ` · média ${averageRatio.toFixed(1).replace('.', ',')} ${ratioUnit}`
       : '';
     const beneficiaryLabel = averageBeneficiaryRatio !== null
-      ? ` · ${averageBeneficiaryRatio.toFixed(1).replace('.', ',')} sessões/100 beneficiários`
+      ? ` · ${averageBeneficiaryRatio.toFixed(1).replace('.', ',')} ${beneficiaryUnit}`
       : '';
     modeLabel.textContent = `${modeLabel.textContent}${ratioLabel}${beneficiaryLabel}`;
   }
@@ -1352,7 +1364,7 @@ async function renderSessionsAttendanceChartNew(labels, monthValues, sessionValu
       labels,
       datasets: [
         {
-          label: 'Sessões',
+          label: sessionsLabel,
           data: sessionValues,
           borderColor: '#0f766e',
           backgroundColor: 'rgba(15,118,110,0.08)',
@@ -1376,7 +1388,7 @@ async function renderSessionsAttendanceChartNew(labels, monthValues, sessionValu
           yAxisID: 'y',
         },
         {
-          label: 'Sessões por agendamento',
+          label: sessionsRatioLabel,
           data: ratioValues,
           borderColor: '#f59e0b',
           backgroundColor: 'rgba(245,158,11,0.08)',
@@ -1389,7 +1401,7 @@ async function renderSessionsAttendanceChartNew(labels, monthValues, sessionValu
           yAxisID: 'ratio',
         },
         {
-          label: 'Sessões por 100 beneficiários',
+          label: sessionsPer100Label,
           data: beneficiaryRatioValues,
           borderColor: '#8b5cf6',
           backgroundColor: 'rgba(139,92,246,0.08)',
@@ -1413,11 +1425,11 @@ async function renderSessionsAttendanceChartNew(labels, monthValues, sessionValu
           titleColor: '#94a3b8', bodyColor: '#f1f5f9',
           callbacks: {
             label: c => {
-              if (c.dataset.label === 'Sessões por 100 beneficiários') {
+              if (c.dataset.label === sessionsPer100Label) {
                 return `${c.dataset.label}: ${Number(c.parsed.y).toFixed(1).replace('.', ',')}`;
               }
               if (c.dataset.yAxisID === 'ratio') {
-                return `${c.dataset.label}: ${Number(c.parsed.y).toFixed(1).replace('.', ',')} sessões/agendamento`;
+                return `${c.dataset.label}: ${Number(c.parsed.y).toFixed(1).replace('.', ',')}`;
               }
               return `${c.dataset.label}: ${fmt(c.parsed.y)}`;
             },
@@ -1876,6 +1888,7 @@ async function loadSessionsEvolutionNew() {
 
   const p = new URLSearchParams();
   appendGroupParams(p);
+  p.set('include_user_interaction', '1');
   const qs = p.toString() ? '?' + p.toString() : '';
 
   const [data, demographicsData] = await Promise.all([
@@ -1949,6 +1962,7 @@ async function loadSessionsEvolutionNew() {
   const humanoValues = series.map((it) => Number(it.humano) || 0);
   const iaValues = series.map((it) => Number(it.ia) || 0);
   const totalValues = series.map((it) => Number(it.total) || ((Number(it.humano) || 0) + (Number(it.ia) || 0)));
+  const interactionSessionValues = series.map((it) => Number(it.sessions_with_user_interaction ?? it.total_with_user_interaction) || 0);
   const uniqueBeneficiaryValues = series.map((it) => Number(it.unique_beneficiaries ?? it.unique_cpfs) || 0);
 
   if (skel) skel.style.display = 'none';
@@ -1958,7 +1972,14 @@ async function loadSessionsEvolutionNew() {
   appointmentTypesBaseMonths = series.map((it) => it.mes);
   loadSessionsBeneficiaryUtilizationNew(p, demographicsData, labels, totalValues, requestId);
   await Promise.all([
-    renderSessionsAttendanceChartNew(labels, appointmentTypesBaseMonths, totalValues, data, demographicsData),
+    renderSessionsAttendanceChartNew(
+      labels,
+      appointmentTypesBaseMonths,
+      Boolean(data.user_interaction_included) ? interactionSessionValues : totalValues,
+      data,
+      demographicsData,
+      { sessionsWithUserInteraction: Boolean(data.user_interaction_included) },
+    ),
     loadSessionAppointmentTypesNew(),
   ]);
 }
