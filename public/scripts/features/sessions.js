@@ -741,20 +741,6 @@ function renderSessionsTotalEvolutionInteractionChart(labels, totalValues, uniqu
     fill: true,
     tension: 0.35,
   }];
-  if (hasUniqueBeneficiaryData) {
-    datasets.push({
-      label: 'Beneficiários únicos · média sessões/benef.',
-      data: uniqueBeneficiaryValues,
-      borderColor: '#7c3aed',
-      backgroundColor: 'rgba(124,58,237,0.08)',
-      borderWidth: 2,
-      borderDash: [6, 5],
-      pointRadius: 3,
-      pointBackgroundColor: '#7c3aed',
-      fill: false,
-      tension: 0.35,
-    });
-  }
   if (hasInteractionData) {
     datasets.push({
       label: 'Sessões c/ interação do beneficiário',
@@ -782,13 +768,6 @@ function renderSessionsTotalEvolutionInteractionChart(labels, totalValues, uniqu
           callbacks: {
             label: c => {
               const label = String(c.dataset.label || '');
-              if (label.startsWith('Beneficiários únicos')) {
-                const sessions = Number(totalValues[c.dataIndex]) || 0;
-                const beneficiaries = Number(c.parsed.y) || 0;
-                const avg = beneficiaries > 0 ? sessions / beneficiaries : null;
-                const avgLabel = avg === null ? '—' : avg.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 2 });
-                return `Beneficiários únicos: ${fmt(beneficiaries)} · média ${avgLabel} sessões/benef.`;
-              }
               if (label.startsWith('Sessões c/ interação')) {
                 const sessions = Number(c.parsed.y) || 0;
                 const beneficiaries = Number(interactionUniqueBeneficiaryValues[c.dataIndex]) || 0;
