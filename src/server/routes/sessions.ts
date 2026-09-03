@@ -637,9 +637,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
     if (scope === 'typification_groups' && typificationValue) {
       const tipFilter = `s.${quoteIdent('tipificacao')} = ${params.add(typificationValue)}`;
-      const where = [companySessionsDateFilter, companySessionsScopeFilter, typificationFinisherFilter, tipFilter]
-        .filter(Boolean)
-        .join(' AND ');
+      const where = withUserInteractionFilter(
+        [companySessionsDateFilter, companySessionsScopeFilter, typificationFinisherFilter, tipFilter]
+          .filter(Boolean)
+          .join(' AND '),
+      );
       try {
         const rows = await runQuery(warehouseId, `
           SELECT
@@ -667,9 +669,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
             period: meses.length > 0,
             organization: Boolean(groupNames.length || company || partnerBrokerId),
             finisher: Boolean(typificationFinisher),
+            user_interaction: includeUserInteraction,
           },
           finisher: typificationFinisher || null,
           source: 'dashboard_sessions_base_gold.economic_group_canonical',
+          rule: includeUserInteraction
+            ? 'Q11B = tipificação + grupo · só sessões com ≥1 mensagem sender_type=user'
+            : 'Q11B = tipificação + grupo',
         });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -849,27 +855,23 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       `, companySessionsMode === "company" ? params.list : undefined)
       : Promise.resolve(null);
 
-    const typificationsPromise = companySessionsMode === "company"
-      ? runQuery(warehouseId, `
-        SELECT
-          s.${quoteIdent('tipificacao')} AS tipificacao,
-          COUNT(*) AS total_sessions
-        FROM ${dashboardSessionsTable} s
-        ${[companySessionsWhere, typificationFinisherFilter].filter(Boolean).length ? `WHERE ${[companySessionsWhere, typificationFinisherFilter].filter(Boolean).join(' AND ')}` : ''}
-        GROUP BY s.${quoteIdent('tipificacao')}
-        ORDER BY total_sessions DESC
-        LIMIT 30
-      `, params.list)
-      : runQuery(warehouseId, `
-        SELECT
-          s.${quoteIdent('tipificacao')} AS tipificacao,
-          COUNT(*) AS total_sessions
-        FROM ${dashboardSessionsTable} s
-        ${[companySessionsDateFilter, typificationFinisherFilter].filter(Boolean).length ? `WHERE ${[companySessionsDateFilter, typificationFinisherFilter].filter(Boolean).join(' AND ')}` : ''}
-        GROUP BY s.${quoteIdent('tipificacao')}
-        ORDER BY total_sessions DESC
-        LIMIT 30
-      `, params.list);
+    const typificationsWhere = withUserInteractionFilter(
+      companySessionsMode === "company"
+        ? [companySessionsWhere, typificationFinisherFilter].filter(Boolean).join(' AND ')
+        : [companySessionsDateFilter, typificationFinisherFilter].filter(Boolean).join(' AND '),
+    );
+    const typificationsPromise = runQuery(warehouseId, `
+      SELECT
+        s.${quoteIdent('tipificacao')} AS tipificacao,
+        COUNT(*) AS total_sessions
+      FROM ${dashboardSessionsTable} s
+      ${typificationsWhere ? `WHERE ${typificationsWhere}` : ''}
+      GROUP BY s.${quoteIdent('tipificacao')}
+      ORDER BY total_sessions DESC
+      LIMIT 30
+    `, companySessionsMode === "company" || includeUserInteraction ? params.list : (
+      typificationFinisherFilter ? params.list : undefined
+    ));
 
     const [typificationsSettled, messageAgentFinishersSettled, companySessionsSettled, companySessionsForUiSettled, userInteractionSettled] = await Promise.allSettled([
       typificationsPromise,
@@ -961,7 +963,15 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       typifications,
       typifications_error: typificationsError,
       typifications_finisher: typificationFinisher,
-      typifications_filter_applied: { period: true, organization: true, finisher: Boolean(typificationFinisher) },
+      typifications_filter_applied: {
+        period: true,
+        organization: true,
+        finisher: Boolean(typificationFinisher),
+        user_interaction: includeUserInteraction,
+      },
+      typifications_rule: includeUserInteraction
+        ? "Q11 = tipificação · só sessões com ≥1 mensagem sender_type=user"
+        : "Q11 = tipificação",
       period_filter_applied: meses.length > 0,
     });
   } catch (err) {

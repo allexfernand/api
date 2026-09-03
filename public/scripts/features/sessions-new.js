@@ -416,6 +416,7 @@ async function loadTypificationGroupsBreakdownNew(tipo) {
   if (meses.length > 0) p.set('meses', meses.join(','));
   appendGroupParams(p);
   if (selectedSessionTypificationFinisherNew) p.set('typification_finisher', selectedSessionTypificationFinisherNew);
+  p.set('include_user_interaction', '1');
 
   const data = await safeGet('/api/sessions?' + p.toString());
   if (requestId !== typificationGroupsRequestId) return;
@@ -503,13 +504,13 @@ function renderSessionTypificationsNew(items, opts) {
       </div>`;
     }).join('') : '<div style="font-size:13px;color:#94a3b8;text-align:center;padding:14px 0">Nenhum encerramento tipificado encontrado para o filtro atual.</div>';
   }
-  if (meta) meta.textContent = `${rows.length} tipos · total ${fmt(total)} sessões tipificadas`;
+  if (meta) meta.textContent = `${rows.length} tipos · total ${fmt(total)} sessões tipificadas c/ interação`;
   if (note) {
-    const messages = [];
+    const messages = ['só conversas com ≥1 interação do cliente'];
     if (selectedSessionScopeText()) messages.push('Filtro aplicado como no Q14');
     if (selectedSessionTypificationFinisherNew === 'humano') messages.push('finalizadas por Humano');
     else if (selectedSessionTypificationFinisherNew === 'ia') messages.push('finalizadas por IA');
-    note.style.display = messages.length ? 'block' : 'none';
+    note.style.display = 'block';
     note.textContent = messages.join(' · ');
   }
   if (loading) loading.style.display = 'none';
