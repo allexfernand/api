@@ -127,9 +127,9 @@
       </div>
     </div>
 
-    <div class="fluid-grid">
+    <div class="fluid-grid sessions-q11-grid">
       <div class="card-box" data-qtag="#Q11">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+        <div class="sessions-q11-header">
           <div class="section-title" style="margin-bottom:0"><i class="fa-solid fa-tags" style="margin-right:6px"></i>Tipos de encerramento de conversas</div>
           <select class="filter-select" id="sn-session-typification-finisher-select" onchange="onSessionTypificationFinisherChangeNew(this.value)" style="min-width:160px">
             <option value="">(Humano + IA)</option>
@@ -139,17 +139,17 @@
         </div>
         <div class="loading-box" id="sn-session-typifications-loading"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...</div>
         <div id="sn-session-typifications-content" style="display:none">
-          <div style="font-size:11px;color:#94a3b8;margin-bottom:14px">Tipificação da conversa · só c/ interação do cliente · clique para detalhar por grupo</div>
+          <div class="sessions-q11-subtitle">Tipificação da conversa · só c/ interação do cliente · clique para detalhar por grupo</div>
           <div class="session-typification-list" id="sn-session-typifications-list"></div>
-          <div style="font-size:11px;color:#94a3b8;margin-top:12px;text-align:right" id="sn-session-typifications-meta">—</div>
-          <div style="font-size:11px;color:#f59e0b;margin-top:6px;text-align:right;display:none" id="sn-session-typifications-note"></div>
+          <div class="sessions-q11-meta" id="sn-session-typifications-meta">—</div>
+          <div class="sessions-q11-note" id="sn-session-typifications-note" style="display:none"></div>
         </div>
       </div>
 
       <div class="card-box" data-qtag="#Q11B">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+        <div class="sessions-q11-header">
           <div class="section-title" style="margin-bottom:0"><i class="fa-solid fa-building" style="margin-right:6px"></i>Volume por grupo econômico</div>
-          <div id="sn-typification-groups-context" style="font-size:11px;color:#64748b;font-weight:700">—</div>
+          <div id="sn-typification-groups-context" class="sessions-q11-context">—</div>
         </div>
         <div class="typification-groups-empty" id="sn-typification-groups-empty">
           <i class="fa-solid fa-hand-pointer"></i>
@@ -158,8 +158,8 @@
         <div class="loading-box" id="sn-typification-groups-loading" style="display:none"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...</div>
         <div id="sn-typification-groups-content" style="display:none">
           <div class="session-typification-list" id="sn-typification-groups-list"></div>
-          <div style="font-size:11px;color:#94a3b8;margin-top:12px;text-align:right" id="sn-typification-groups-meta">—</div>
-          <div style="font-size:11px;color:#f59e0b;margin-top:6px;text-align:right;display:none" id="sn-typification-groups-note"></div>
+          <div class="sessions-q11-meta" id="sn-typification-groups-meta">—</div>
+          <div class="sessions-q11-note" id="sn-typification-groups-note" style="display:none"></div>
         </div>
       </div>
     </div>

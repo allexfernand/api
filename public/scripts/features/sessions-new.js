@@ -442,7 +442,12 @@ async function loadTypificationGroupsBreakdownNew(tipo) {
     return;
   }
 
-  if (content) content.style.display = 'flex';
+  if (content) {
+    content.style.display = 'flex';
+    content.style.flexDirection = 'column';
+    content.style.minHeight = '0';
+    content.style.flex = '1 1 auto';
+  }
   const max = Number(groups[0].total) || 1;
   if (list) {
     list.innerHTML = groups.map((g) => {
@@ -514,7 +519,12 @@ function renderSessionTypificationsNew(items, opts) {
     note.textContent = messages.join(' · ');
   }
   if (loading) loading.style.display = 'none';
-  if (content) content.style.display = 'flex';
+  if (content) {
+    content.style.display = 'flex';
+    content.style.flexDirection = 'column';
+    content.style.minHeight = '0';
+    content.style.flex = '1 1 auto';
+  }
 }
 
 function renderSessionsUtilizationNew(data, demographicsData, comparison) {
