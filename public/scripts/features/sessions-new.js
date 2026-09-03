@@ -111,6 +111,7 @@ async function loadSessionHumanDepartmentsNew(requestId) {
   const meses = [...selectedMonths].sort();
   const p = new URLSearchParams();
   p.set('scope', 'human_by_department');
+  p.set('include_user_interaction', '1');
   if (meses.length > 0) p.set('meses', meses.join(','));
   appendGroupParams(p);
   const data = await safeGet('/api/sessions?' + p.toString());
@@ -894,6 +895,7 @@ function sessionsDeptEvolutionScopeKeyNew() {
     partners: Array.isArray(currentPartnerBrokerIds) ? [...currentPartnerBrokerIds].map(String).sort() : [],
     company: currentCompany || null,
     partner: currentPartnerBrokerId || null,
+    user_interaction: 1,
   });
 }
 
@@ -905,6 +907,7 @@ async function loadSessionsDepartmentEvolutionNew(requestId) {
   }
   const p = new URLSearchParams();
   p.set('scope', 'human_department_evolution');
+  p.set('include_user_interaction', '1');
   appendGroupParams(p);
   const data = await safeGet('/api/sessions?' + p.toString());
   if (requestId !== sessionsRequestIdNew) return;
@@ -1862,12 +1865,7 @@ async function loadSessionsEvolutionNew() {
   if (skel) skel.style.display = 'none';
   if (cv && data && !data.error) cv.style.display = 'block';
 
-  if (cv && data && !data.error) {
-    sessionsEvolChartNew = renderSessionsFinalizationsEvolutionChartNew(cv, sessionsEvolChartNew, labels, totalValues, humanoValues, iaValues);
-  }
-  renderSessionsTotalEvolutionChartNew(labels, totalValues, uniqueBeneficiaryValues, Boolean(data.beneficiaries_included));
-  renderSessionsTotalEvolutionInteractionChartNew(labels, totalValues, uniqueBeneficiaryValues, [], [], Boolean(data.beneficiaries_included), false);
-
+  // Q3/Q4 removidos de Sessões - New; mantém Q3B/Q4B via loadSessionsBeneficiaryUtilizationNew.
   appointmentTypesBaseMonths = series.map((it) => it.mes);
   loadSessionsBeneficiaryUtilizationNew(p, demographicsData, labels, totalValues, requestId);
   await Promise.all([

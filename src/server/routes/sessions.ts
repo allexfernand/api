@@ -297,6 +297,18 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const companySessionsScopeFilter = scopeFilters.length ? scopeFilters.join(' AND ') : null;
     const companySessionsWhere = [companySessionsDateFilter, companySessionsScopeFilter].filter(Boolean).join(' AND ');
     const companySessionsMode = groupNames.length || company || partnerBrokerId ? "company" : "economic_group";
+    const userInteractionExistsSql = `
+      EXISTS (
+        SELECT 1
+        FROM ${MESSAGE_TABLE} m
+        WHERE CAST(m.${quoteIdent('session_id')} AS STRING) = CAST(s.${quoteIdent('session_id')} AS STRING)
+          AND LOWER(TRIM(CAST(m.${quoteIdent('sender_type')} AS STRING))) = 'user'
+      )
+    `;
+    const withUserInteractionFilter = (baseWhere: string | null | undefined) => {
+      if (!includeUserInteraction) return baseWhere || '';
+      return baseWhere ? `${baseWhere} AND ${userInteractionExistsSql}` : userInteractionExistsSql;
+    };
     const companySessionsSource = companySessionsMode === "company"
       ? "dashboard_sessions_base_gold.organization_name"
       : "dashboard_sessions_base_gold.economic_group_canonical";
@@ -504,9 +516,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     if (scope === 'human_by_department') {
       const { groupSessionsByDepartment, listAttendantMappings } = await import("../attendants/service");
       // Mesma base do Q12B: só sessões Humano por tipo_atendimento_agent + mesmos filtros.
-      const q12bWhere = companySessionsMode === "company"
-        ? [companySessionsDateFilter, companySessionsScopeFilter].filter(Boolean).join(' AND ')
-        : (companySessionsDateFilter || '');
+      const q12bWhere = withUserInteractionFilter(
+        companySessionsMode === "company"
+          ? [companySessionsDateFilter, companySessionsScopeFilter].filter(Boolean).join(' AND ')
+          : (companySessionsDateFilter || ''),
+      );
 
       try {
         const [mappingRows, attendantRows] = await Promise.all([
@@ -555,9 +569,12 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           filters_applied: {
             period: meses.length > 0,
             organization: Boolean(groupNames.length || company || partnerBrokerId),
+            user_interaction: includeUserInteraction,
           },
           source: 'dashboard_sessions_base_gold.tipo_atendimento_agent + botmaker_session.finished_by',
-          rule: 'Universo = Q12B Humano (tipo_atendimento_agent); departamento via finished_by',
+          rule: includeUserInteraction
+            ? 'Universo = Q12B Humano com ≥1 interação do cliente (sender_type=user); departamento via finished_by'
+            : 'Universo = Q12B Humano (tipo_atendimento_agent); departamento via finished_by',
         });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -670,9 +687,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     if (scope === 'human_department_evolution') {
       const topGroupMonths = lastNMonthsList(12);
       const topGroupDateFilter = `s.${quoteIdent('mes')} IN (${topGroupMonths.map((m) => `'${m}'`).join(',')})`;
-      const humanDeptEvolWhere = companySessionsMode === "company"
-        ? [topGroupDateFilter, companySessionsScopeFilter].filter(Boolean).join(' AND ')
-        : topGroupDateFilter;
+      const humanDeptEvolWhere = withUserInteractionFilter(
+        companySessionsMode === "company"
+          ? [topGroupDateFilter, companySessionsScopeFilter].filter(Boolean).join(' AND ')
+          : topGroupDateFilter,
+      );
       try {
         const { groupSessionsEvolutionByDepartment, listAttendantMappings } = await import("../attendants/service");
         const queryParams = companySessionsMode === "company" ? params.list : undefined;
@@ -738,8 +757,14 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           departments: grouped.departments,
           series: grouped.series,
           monthly_totals: monthlyTotals,
+          filters_applied: {
+            organization: Boolean(groupNames.length || company || partnerBrokerId),
+            user_interaction: includeUserInteraction,
+          },
           source: 'dashboard_sessions_base_gold.tipo_atendimento_agent + botmaker_session.finished_by',
-          rule: 'Linhas de setor = Q12B Humano; Total do mês = todas as sessões (Humano + IA)',
+          rule: includeUserInteraction
+            ? 'Linhas de setor = Q12B Humano c/ ≥1 interação do cliente; Total do mês = sessões c/ ≥1 interação do cliente (Humano + IA)'
+            : 'Linhas de setor = Q12B Humano; Total do mês = todas as sessões (Humano + IA)',
         });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -754,18 +779,6 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       }
     }
 
-    const userInteractionExistsSql = `
-      EXISTS (
-        SELECT 1
-        FROM ${MESSAGE_TABLE} m
-        WHERE CAST(m.${quoteIdent('session_id')} AS STRING) = CAST(s.${quoteIdent('session_id')} AS STRING)
-          AND LOWER(TRIM(CAST(m.${quoteIdent('sender_type')} AS STRING))) = 'user'
-      )
-    `;
-    const withUserInteractionFilter = (baseWhere: string | null) => {
-      if (!includeUserInteraction) return baseWhere || '';
-      return baseWhere ? `${baseWhere} AND ${userInteractionExistsSql}` : userInteractionExistsSql;
-    };
     const messageAgentFinishersWhere = withUserInteractionFilter(
       companySessionsMode === "company" ? companySessionsWhere : (companySessionsDateFilter || ''),
     );
