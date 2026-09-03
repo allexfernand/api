@@ -53,7 +53,7 @@ function renderSessionMessageAgentFinishersNew(items, opts) {
   if (content) content.style.display = 'block';
 }
 
-const SESSION_DEPT_COLORS = {
+const SESSION_DEPT_COLORS_NEW = {
   Enfermagem: '#0f766e',
   Agendamento: '#6366f1',
   Tech: '#0369a1',
@@ -84,7 +84,7 @@ function renderSessionHumanDepartmentsNew(data, opts) {
     const value = Number(item.total) || 0;
     const pct = total > 0 ? (value / total) * 100 : 0;
     const pctLabel = Number.isFinite(item.pct) ? String(item.pct).replace('.', ',') : pct.toFixed(1).replace('.', ',');
-    const color = SESSION_DEPT_COLORS[item.department] || '#6366f1';
+    const color = SESSION_DEPT_COLORS_NEW[item.department] || '#6366f1';
     const active = Number(item.active) || 0;
     const inactive = Number(item.inactive) || 0;
     return `<div class="sessions-dept-row">
@@ -242,7 +242,7 @@ function renderSessionsDepartmentEvolutionNew(data) {
   };
 
   const datasets = departments.map((department, index) => {
-    const color = SESSION_DEPT_COLORS[department] || '#6366f1';
+    const color = SESSION_DEPT_COLORS_NEW[department] || '#6366f1';
     const total = deptPeriodTotals[index] || 0;
     return {
       label: `${department} · ${pctLabel(total)}`,

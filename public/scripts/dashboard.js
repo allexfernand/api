@@ -1,5 +1,5 @@
 (async function loadSanusDashboard() {
-  const CACHE = "20260903-sessoes-new-indep";
+  const CACHE = "20260903-sessoes-new-fix-const";
 
   function loadScript(src, { ordered = false } = {}) {
     return new Promise((resolve, reject) => {
