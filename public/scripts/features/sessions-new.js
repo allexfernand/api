@@ -1,7 +1,7 @@
 // --- Sessões - New (cópia independente) ---
 // Gerado a partir de sessions.js — edite este arquivo livremente.
 let sessionsRequestIdNew = 0;
-let sessionsDeptEvolutionCacheNew = null;
+let sessionsDeptEvolutionCacheNew = { key: "", data: null };
 let sessionsDailySeriesCacheNew = [];
 let selectedSessionsDailyMonthNew = typeof currentMonthValue === "function" ? currentMonthValue() : "";
 let selectedSessionsDailyIndexesNew = new Set();
