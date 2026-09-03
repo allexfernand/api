@@ -757,6 +757,17 @@ function renderSessionsTotalEvolutionInteractionChartNew(labels, totalValues, un
       fill: true,
       tension: 0.35,
     });
+    datasets.push({
+      label: 'Beneficiários únicos c/ interação',
+      data: interactionUniqueBeneficiaryValues,
+      borderColor: '#7c3aed',
+      backgroundColor: 'rgba(124,58,237,0.08)',
+      borderWidth: 2,
+      pointRadius: 3,
+      pointBackgroundColor: '#7c3aed',
+      fill: false,
+      tension: 0.35,
+    });
   }
   sessionsTotalEvolInteractionChartNew = new Chart(cv, {
     type: 'line',
@@ -771,11 +782,15 @@ function renderSessionsTotalEvolutionInteractionChartNew(labels, totalValues, un
           titleColor: '#94a3b8', bodyColor: '#f1f5f9',
           callbacks: {
             label: c => {
-              const sessions = Number(c.parsed.y) || 0;
+              const label = String(c.dataset.label || '');
+              const sessions = Number(interactionSessionValues[c.dataIndex]) || 0;
               const beneficiaries = Number(interactionUniqueBeneficiaryValues[c.dataIndex]) || 0;
               const avg = beneficiaries > 0 ? sessions / beneficiaries : null;
               const avgLabel = avg === null ? '—' : avg.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 2 });
-              return `Sessões c/ interação: ${fmt(sessions)} · benef. únicos: ${fmt(beneficiaries)} · média ${avgLabel} sessões/benef.`;
+              if (label.startsWith('Beneficiários únicos')) {
+                return `Benef. únicos c/ interação: ${fmt(c.parsed.y)} · média ${avgLabel} sessões/benef.`;
+              }
+              return `Sessões c/ interação: ${fmt(c.parsed.y)} · benef. únicos: ${fmt(beneficiaries)} · média ${avgLabel} sessões/benef.`;
             },
           },
         },
