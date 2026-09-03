@@ -737,7 +737,17 @@ function renderSessionsTotalEvolutionChartNew(labels, totalValues, uniqueBenefic
   });
 }
 
-function renderSessionsTotalEvolutionInteractionChartNew(labels, totalValues, uniqueBeneficiaryValues, interactionSessionValues, interactionUniqueBeneficiaryValues, hasUniqueBeneficiaryData, hasInteractionData) {
+function renderSessionsTotalEvolutionInteractionChartNew(
+  labels,
+  totalValues,
+  uniqueBeneficiaryValues,
+  interactionSessionValues,
+  interactionUniqueBeneficiaryValues,
+  attendanceGoldUniquePatientValues,
+  hasUniqueBeneficiaryData,
+  hasInteractionData,
+  hasAttendanceGoldData,
+) {
   const skel = document.getElementById('sn-skel-s-total-evol-interaction');
   const cv = document.getElementById('sn-sessionsTotalEvolInteractionChart');
   if (skel) skel.style.display = 'none';
@@ -758,13 +768,26 @@ function renderSessionsTotalEvolutionInteractionChartNew(labels, totalValues, un
       tension: 0.35,
     });
     datasets.push({
-      label: 'Beneficiários únicos c/ interação',
+      label: 'Beneficiários únicos c/ interação (sessão)',
       data: interactionUniqueBeneficiaryValues,
       borderColor: '#7c3aed',
       backgroundColor: 'rgba(124,58,237,0.08)',
       borderWidth: 2,
       pointRadius: 3,
       pointBackgroundColor: '#7c3aed',
+      fill: false,
+      tension: 0.35,
+    });
+  }
+  if (hasAttendanceGoldData) {
+    datasets.push({
+      label: 'Pacientes únicos (cards atendimento gold)',
+      data: attendanceGoldUniquePatientValues,
+      borderColor: '#ea580c',
+      backgroundColor: 'rgba(234,88,12,0.08)',
+      borderWidth: 2,
+      pointRadius: 3,
+      pointBackgroundColor: '#ea580c',
       fill: false,
       tension: 0.35,
     });
@@ -785,12 +808,16 @@ function renderSessionsTotalEvolutionInteractionChartNew(labels, totalValues, un
               const label = String(c.dataset.label || '');
               const sessions = Number(interactionSessionValues[c.dataIndex]) || 0;
               const beneficiaries = Number(interactionUniqueBeneficiaryValues[c.dataIndex]) || 0;
+              const goldPatients = Number(attendanceGoldUniquePatientValues[c.dataIndex]) || 0;
               const avg = beneficiaries > 0 ? sessions / beneficiaries : null;
               const avgLabel = avg === null ? '—' : avg.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 2 });
-              if (label.startsWith('Beneficiários únicos')) {
-                return `Benef. únicos c/ interação: ${fmt(c.parsed.y)} · média ${avgLabel} sessões/benef.`;
+              if (label.startsWith('Pacientes únicos')) {
+                return `Pacientes únicos (gold): ${fmt(c.parsed.y)} · CPF distinto em cards do mês`;
               }
-              return `Sessões c/ interação: ${fmt(c.parsed.y)} · benef. únicos: ${fmt(beneficiaries)} · média ${avgLabel} sessões/benef.`;
+              if (label.startsWith('Beneficiários únicos')) {
+                return `Benef. únicos c/ interação (sessão): ${fmt(c.parsed.y)} · média ${avgLabel} sessões/benef.`;
+              }
+              return `Sessões c/ interação: ${fmt(c.parsed.y)} · benef. sessão: ${fmt(beneficiaries)} · pacientes gold: ${fmt(goldPatients)}`;
             },
           },
         },
@@ -808,9 +835,11 @@ async function loadSessionsBeneficiaryUtilizationNew(baseParams, demographicsDat
   p.set('include_beneficiaries', '1');
   p.set('only_beneficiaries', '1');
   p.set('include_user_interaction', '1');
+  p.set('include_attendance_gold_patients', '1');
   const globalP = new URLSearchParams();
   globalP.set('include_beneficiaries', '1');
   globalP.set('only_beneficiaries', '1');
+  globalP.set('include_attendance_gold_patients', '1');
   const hasScopedComparison = Boolean(currentGroups.length || currentPartnerBrokerId);
   const [data, globalData, globalDemographicsData] = await Promise.all([
     safeGet('/api/sessions-evolution?' + p.toString()),
@@ -844,6 +873,7 @@ async function loadSessionsBeneficiaryUtilizationNew(baseParams, demographicsDat
   const uniqueBeneficiaryValues = series.map((it) => Number(it.unique_beneficiaries ?? it.unique_cpfs) || 0);
   const interactionSessionValues = series.map((it) => Number(it.sessions_with_user_interaction ?? it.total_with_user_interaction) || 0);
   const interactionUniqueBeneficiaryValues = series.map((it) => Number(it.unique_beneficiaries_with_user_interaction) || 0);
+  const attendanceGoldUniquePatientValues = series.map((it) => Number(it.unique_patients_attendance_gold) || 0);
   const interactionHumanoValues = series.map((it) => Number(it.humano_with_user_interaction) || 0);
   const interactionIaValues = series.map((it) => Number(it.ia_with_user_interaction) || 0);
   const interactionTotalValues = series.map((it) => Number(it.total_with_user_interaction ?? it.sessions_with_user_interaction) || ((Number(it.humano_with_user_interaction) || 0) + (Number(it.ia_with_user_interaction) || 0)));
@@ -854,8 +884,10 @@ async function loadSessionsBeneficiaryUtilizationNew(baseParams, demographicsDat
     uniqueBeneficiaryValues,
     interactionSessionValues,
     interactionUniqueBeneficiaryValues,
+    attendanceGoldUniquePatientValues,
     Boolean(data.beneficiaries_included),
     Boolean(data.user_interaction_included),
+    Boolean(data.attendance_gold_patients_included),
   );
   const evolInteractionCv = document.getElementById('sn-sessionsEvolInteractionChart');
   const evolInteractionSkel = document.getElementById('sn-skel-s-evol-interaction');

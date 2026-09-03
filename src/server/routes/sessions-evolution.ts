@@ -17,6 +17,7 @@ import { setApiCors, setStableCache } from "../../../lib/http";
 const SESSION_TABLE       = `hive_metastore.sanus_prod.botmaker_session`;
 const MESSAGE_TABLE       = `hive_metastore.sanus_prod.botmaker_message`;
 const DASHBOARD_SESSIONS_TABLE = `hive_metastore.sanus_prod.dashboard_sessions_base_gold`;
+const ATTENDANCE_GOLD_TABLE = `hive_metastore.sanus_prod.atendimento_gold_live`;
 const BENEFICIARIES_VIEW = `hive_metastore.sanus_prod.vw_beneficiarios`;
 const ORGANIZATIONS_TABLE = `hive_metastore.sanus_prod.organizations`;
 const PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.partner_brokers`;
@@ -303,6 +304,83 @@ function partnerBrokerCondition(partnerBrokerId: unknown, p: SqlParams, tableAli
   )`;
 }
 
+function attendanceGoldOrgNamesSubquery(groupNames: string[], company: unknown, partnerBrokerId: unknown, p: SqlParams) {
+  const names = groupNames.map((name) => String(name || '').trim()).filter(Boolean);
+  const companyName = String(company || '').trim();
+  const partnerIds = Array.isArray(partnerBrokerId)
+    ? partnerBrokerId.map((value) => String(value).trim()).filter(Boolean)
+    : [];
+  const partnerId = String(partnerBrokerId || '').trim();
+  if (!names.length && !companyName && !partnerIds.length && !partnerId) return null;
+
+  if (companyName) {
+    return `(SELECT UPPER(TRIM(${p.add(companyName)})) AS org_name)`;
+  }
+
+  if (partnerIds.length || partnerId) {
+    const partnerCondition = partnerIds.length
+      ? `CAST(opb.partner_broker_id AS STRING) IN (${p.addAll(partnerIds)})`
+      : partnerId === MDS_PARTNER_SCOPE
+      ? `CAST(opb.partner_broker_id AS STRING) IN (
+        SELECT CAST(pb.id AS STRING)
+        FROM ${PARTNER_BROKERS_TABLE} pb
+        WHERE UPPER(TRIM(COALESCE(CAST(pb.name AS STRING), ''))) = 'MDS'
+          OR UPPER(TRIM(COALESCE(CAST(pb.name_secondary AS STRING), ''))) = 'MDS'
+      )`
+      : `CAST(opb.partner_broker_id AS STRING) = ${p.add(partnerId)}`;
+    return `(
+      SELECT UPPER(TRIM(CAST(o.name AS STRING))) AS org_name
+      FROM ${ORGANIZATIONS_TABLE} o
+      INNER JOIN ${ORGANIZATION_PARTNER_BROKERS_TABLE} opb
+        ON CAST(o.id AS STRING) = CAST(opb.organization_id AS STRING)
+      WHERE ${partnerCondition}
+        AND opb.deleted_at IS NULL
+      UNION
+      SELECT UPPER(TRIM(CAST(child.name AS STRING))) AS org_name
+      FROM ${ORGANIZATION_PARTNER_BROKERS_TABLE} opb
+      INNER JOIN ${ORGANIZATIONS_TABLE} child
+        ON CAST(child.matriz_id AS STRING) = CAST(opb.organization_id AS STRING)
+      WHERE ${partnerCondition}
+        AND opb.deleted_at IS NULL
+    )`;
+  }
+
+  const nameList = names.map((name) => `UPPER(TRIM(${p.add(name)}))`).join(',');
+  return `(
+    SELECT UPPER(TRIM(CAST(o.name AS STRING))) AS org_name
+    FROM ${ORGANIZATIONS_TABLE} o
+    WHERE o.active = true AND UPPER(TRIM(CAST(o.name AS STRING))) IN (${nameList})
+    UNION
+    SELECT UPPER(TRIM(CAST(child.name AS STRING))) AS org_name
+    FROM ${ORGANIZATIONS_TABLE} child
+    WHERE child.matriz_id IN (
+      SELECT id FROM ${ORGANIZATIONS_TABLE}
+      WHERE active = true AND UPPER(TRIM(CAST(name AS STRING))) IN (${nameList})
+    )
+  )`;
+}
+
+function attendanceGoldScopeFilter(groupNames: string[], company: unknown, partnerBrokerId: unknown, p: SqlParams) {
+  const names = groupNames.map((name) => String(name || '').trim()).filter(Boolean);
+  const companyName = String(company || '').trim();
+  const hasPartner = Boolean(
+    (Array.isArray(partnerBrokerId) && partnerBrokerId.length)
+    || String(partnerBrokerId || '').trim(),
+  );
+  if (!names.length && !companyName && !hasPartner) return '';
+
+  const parts = [];
+  if (names.length && !companyName && !hasPartner) {
+    parts.push(`(${names.map((name) => `UPPER(TRIM(CAST(grupo_economico AS STRING))) LIKE CONCAT('%', UPPER(TRIM(${p.add(name)})), '%')`).join(' OR ')})`);
+  }
+  const orgSubquery = attendanceGoldOrgNamesSubquery(groupNames, company, partnerBrokerId, p);
+  if (orgSubquery) {
+    parts.push(`UPPER(TRIM(CAST(nome_conta AS STRING))) IN ${orgSubquery}`);
+  }
+  if (!parts.length) return '';
+  return `AND (${parts.join(' OR ')})`;
+}
+
 function lastNMonthsList(n: number, includeCurrentMonth = true) {
   const out = [];
   const d = new Date();
@@ -352,6 +430,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   const includeBeneficiaries = String(req.query.include_beneficiaries || '') === '1';
   const onlyBeneficiaries = String(req.query.only_beneficiaries || '') === '1';
   const includeUserInteraction = String(req.query.include_user_interaction || '') === '1';
+  const includeAttendanceGoldPatients = String(req.query.include_attendance_gold_patients || '') === '1';
   const hasOrgFilter = Boolean(groupNames.length || company || partnerBrokerId);
 
   const monthList = explicitMonths.length ? explicitMonths : lastNMonthsList(months);
@@ -423,7 +502,12 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       });
     }
 
-    const [rows, beneficiaryRows, userInteractionRows] = await Promise.all([
+    const attendanceParams = createSqlParams();
+    const attendanceScopeSql = includeAttendanceGoldPatients
+      ? attendanceGoldScopeFilter(groupNames, company, partnerBrokerId, attendanceParams)
+      : '';
+
+    const [rows, beneficiaryRows, userInteractionRows, attendanceGoldRows] = await Promise.all([
       onlyBeneficiaries ? Promise.resolve([]) : runQuery(warehouseId, `
       WITH scoped_sessions AS (
         SELECT
@@ -519,6 +603,21 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       INNER JOIN by_month m ON b.mes = m.mes
       ORDER BY b.mes
     `, params.list) : Promise.resolve([]),
+      includeAttendanceGoldPatients ? runQuery(warehouseId, `
+      SELECT
+        DATE_FORMAT(try_cast(hora_criacao_atendimento AS TIMESTAMP), 'yyyy-MM') AS mes,
+        COUNT(DISTINCT NULLIF(
+          LPAD(REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', ''), 11, '0'),
+          '00000000000'
+        )) AS unique_patients
+      FROM ${ATTENDANCE_GOLD_TABLE}
+      WHERE cpf_atendido IS NOT NULL
+        AND TRIM(CAST(cpf_atendido AS STRING)) != ''
+        AND DATE_FORMAT(try_cast(hora_criacao_atendimento AS TIMESTAMP), 'yyyy-MM') IN ${monthInList}
+        ${attendanceScopeSql}
+      GROUP BY DATE_FORMAT(try_cast(hora_criacao_atendimento AS TIMESTAMP), 'yyyy-MM')
+      ORDER BY mes
+    `, attendanceParams.list) : Promise.resolve([]),
     ]);
 
     const byMesTipo = new Map(rows.map((r) => [
@@ -555,6 +654,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         });
       }
     });
+    const attendanceGoldByMes = new Map(
+      attendanceGoldRows.map((row) => [String(getCell(row[0]) || ''), toInt(row[1])]),
+    );
     const series = monthList.map((m) => {
       const humano = byMesTipo.get(`${m}|HUMANO`) || 0;
       const ia = byMesTipo.get(`${m}|IA`) || 0;
@@ -577,6 +679,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         humano_with_user_interaction: humanoUser,
         ia_with_user_interaction: iaUser,
         total_with_user_interaction: humanoUser + iaUser,
+        unique_patients_attendance_gold: attendanceGoldByMes.get(m) || 0,
       };
     });
 
@@ -592,10 +695,15 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       user_interaction_rule: includeUserInteraction
         ? "botmaker_message.sender_type='user' (ao menos 1 mensagem do beneficiário na sessão)"
         : null,
+      attendance_gold_patients_included: Boolean(includeAttendanceGoldPatients),
+      attendance_gold_patients_rule: includeAttendanceGoldPatients
+        ? "COUNT(DISTINCT cpf_atendido) em atendimento_gold_live por mês (cards/pacientes atendidos; 1 sessão pode gerar N cards)"
+        : null,
       filters: { group_name: groupName, company, type: typeFilter, partner_broker_id: partnerBrokerId },
       mode,
       source: "botmaker_session.inline",
       cpf_source: includeBeneficiaries ? "botmaker_session.variables" : null,
+      attendance_gold_source: includeAttendanceGoldPatients ? "atendimento_gold_live.cpf_atendido" : null,
     });
   } catch (err) {
     res.status(500).json({ error: (err as { message?: string }).message });
