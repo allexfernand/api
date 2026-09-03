@@ -604,19 +604,41 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       ORDER BY b.mes
     `, params.list) : Promise.resolve([]),
       includeAttendanceGoldPatients ? runQuery(warehouseId, `
+      WITH gold_base AS (
+        SELECT
+          DATE_FORMAT(try_cast(hora_criacao_atendimento AS TIMESTAMP), 'yyyy-MM') AS mes,
+          NULLIF(
+            LPAD(REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', ''), 11, '0'),
+            '00000000000'
+          ) AS cpf_norm
+        FROM ${ATTENDANCE_GOLD_TABLE}
+        WHERE cpf_atendido IS NOT NULL
+          AND TRIM(CAST(cpf_atendido AS STRING)) != ''
+          AND DATE_FORMAT(try_cast(hora_criacao_atendimento AS TIMESTAMP), 'yyyy-MM') IN ${monthInList}
+          ${attendanceScopeSql}
+      )
       SELECT
-        DATE_FORMAT(try_cast(hora_criacao_atendimento AS TIMESTAMP), 'yyyy-MM') AS mes,
-        COUNT(DISTINCT NULLIF(
-          LPAD(REGEXP_REPLACE(CAST(cpf_atendido AS STRING), '[^0-9]', ''), 11, '0'),
-          '00000000000'
-        )) AS unique_patients
-      FROM ${ATTENDANCE_GOLD_TABLE}
-      WHERE cpf_atendido IS NOT NULL
-        AND TRIM(CAST(cpf_atendido AS STRING)) != ''
-        AND DATE_FORMAT(try_cast(hora_criacao_atendimento AS TIMESTAMP), 'yyyy-MM') IN ${monthInList}
-        ${attendanceScopeSql}
-      GROUP BY DATE_FORMAT(try_cast(hora_criacao_atendimento AS TIMESTAMP), 'yyyy-MM')
-      ORDER BY mes
+        mes,
+        COUNT(DISTINCT cpf_norm) AS unique_patients
+      FROM gold_base
+      WHERE cpf_norm IS NOT NULL
+      GROUP BY mes
+      UNION ALL
+      SELECT '__last_1_month', COUNT(DISTINCT CASE WHEN mes IN (${fullMonthScopes.last_1_month.map((month) => `'${month}'`).join(',')}) THEN cpf_norm END)
+      FROM gold_base
+      WHERE cpf_norm IS NOT NULL
+      UNION ALL
+      SELECT '__last_3_months', COUNT(DISTINCT CASE WHEN mes IN (${fullMonthScopes.last_3_months.map((month) => `'${month}'`).join(',')}) THEN cpf_norm END)
+      FROM gold_base
+      WHERE cpf_norm IS NOT NULL
+      UNION ALL
+      SELECT '__last_6_months', COUNT(DISTINCT CASE WHEN mes IN (${fullMonthScopes.last_6_months.map((month) => `'${month}'`).join(',')}) THEN cpf_norm END)
+      FROM gold_base
+      WHERE cpf_norm IS NOT NULL
+      UNION ALL
+      SELECT '__last_12_months', COUNT(DISTINCT cpf_norm)
+      FROM gold_base
+      WHERE cpf_norm IS NOT NULL
     `, attendanceParams.list) : Promise.resolve([]),
     ]);
 
@@ -654,9 +676,22 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         });
       }
     });
-    const attendanceGoldByMes = new Map(
-      attendanceGoldRows.map((row) => [String(getCell(row[0]) || ''), toInt(row[1])]),
-    );
+    const attendanceGoldByMes = new Map();
+    const utilizationAttendanceGold = {
+      last_1_month: 0,
+      last_3_months: 0,
+      last_6_months: 0,
+      last_12_months: 0,
+    };
+    attendanceGoldRows.forEach((row) => {
+      const key = String(getCell(row[0]) || "");
+      const value = toInt(row[1]);
+      if (key === "__last_1_month") utilizationAttendanceGold.last_1_month = value;
+      else if (key === "__last_3_months") utilizationAttendanceGold.last_3_months = value;
+      else if (key === "__last_6_months") utilizationAttendanceGold.last_6_months = value;
+      else if (key === "__last_12_months") utilizationAttendanceGold.last_12_months = value;
+      else if (key) attendanceGoldByMes.set(key, value);
+    });
     const series = monthList.map((m) => {
       const humano = byMesTipo.get(`${m}|HUMANO`) || 0;
       const ia = byMesTipo.get(`${m}|IA`) || 0;
@@ -689,6 +724,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       period_months: monthList,
       series,
       utilization,
+      utilization_attendance_gold: includeAttendanceGoldPatients ? utilizationAttendanceGold : null,
       utilization_periods: fullMonthScopes,
       beneficiaries_included: Boolean(includeBeneficiaries),
       user_interaction_included: Boolean(includeUserInteraction),
@@ -698,6 +734,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       attendance_gold_patients_included: Boolean(includeAttendanceGoldPatients),
       attendance_gold_patients_rule: includeAttendanceGoldPatients
         ? "COUNT(DISTINCT cpf_atendido) em atendimento_gold_live por mês (cards/pacientes atendidos; 1 sessão pode gerar N cards)"
+        : null,
+      utilization_attendance_gold_rule: includeAttendanceGoldPatients
+        ? "COUNT(DISTINCT cpf_atendido) em atendimento_gold_live nas janelas 1/3/6/12 meses (titular e dependentes)"
         : null,
       filters: { group_name: groupName, company, type: typeFilter, partner_broker_id: partnerBrokerId },
       mode,

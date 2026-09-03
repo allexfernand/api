@@ -528,13 +528,30 @@ function renderSessionTypificationsNew(items, opts) {
 }
 
 function renderSessionsUtilizationNew(data, demographicsData, comparison) {
-  return renderUtilizationCardsNew(data, demographicsData, comparison, {
+  const goldUtilization = data?.utilization_attendance_gold;
+  const patchedData = goldUtilization
+    ? { ...data, utilization: goldUtilization }
+    : data;
+  const comparisonGold = comparison?.data?.utilization_attendance_gold;
+  const patchedComparison = comparison && comparisonGold
+    ? {
+      ...comparison,
+      data: { ...comparison.data, utilization: comparisonGold },
+    }
+    : comparison;
+  return renderUtilizationCardsNew(patchedData, demographicsData, patchedComparison, {
     loading: document.getElementById('sn-sessions-utilization-loading'),
     content: document.getElementById('sn-sessions-utilization-content'),
     errorBox: document.getElementById('sn-sessions-utilization-error'),
     context: document.getElementById('sn-sessions-utilization-context'),
     scoped: Boolean(currentGroups.length || currentPartnerBrokerId),
     scopeText: selectedSessionScopeText(),
+    metricKind: goldUtilization
+      ? 'beneficiários únicos (titular e dependentes)'
+      : 'usuários únicos',
+    missingMetricMessage: goldUtilization
+      ? 'Beneficiários únicos (atendimento_gold_live) indisponíveis para o filtro atual.'
+      : 'Usuários únicos indisponíveis para o schema atual.',
   });
 }
 
