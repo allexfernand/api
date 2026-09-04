@@ -75,7 +75,15 @@ function renderSessionHumanDepartmentsNew(data, opts) {
   if (!list) return;
   const departments = Array.isArray(data?.departments) ? data.departments : [];
   const total = Number(data?.total) || departments.reduce((sum, item) => sum + (Number(item.total) || 0), 0);
-  if (meta) meta.textContent = total > 0 ? `${fmt(total)} sessões · Q12B Humano c/ interação` : 'sem sessões humanas no período';
+  const periodMonths = Array.isArray(opts.periodMonths) ? opts.periodMonths : [];
+  let periodLabel = 'todo o período';
+  if (periodMonths.length === 1) periodLabel = monthShortLabel(periodMonths[0]);
+  else if (periodMonths.length > 1) periodLabel = `${periodMonths.length} meses`;
+  if (meta) {
+    meta.textContent = total > 0
+      ? `${fmt(total)} sessões · Q12B Humano c/ interação · ${periodLabel}`
+      : `sem sessões humanas · ${periodLabel}`;
+  }
   if (!departments.length) {
     list.innerHTML = '<div style="font-size:12px;color:#94a3b8">Sem dados por departamento neste recorte.</div>';
     return;
@@ -120,10 +128,11 @@ async function loadSessionHumanDepartmentsNew(requestId) {
   if (!data || data.error) {
     renderSessionHumanDepartmentsNew(null, {
       error: data?.error || 'Erro ao carregar humano por departamento',
+      periodMonths: meses,
     });
     return;
   }
-  renderSessionHumanDepartmentsNew(data, { error: data.error });
+  renderSessionHumanDepartmentsNew(data, { error: data.error, periodMonths: meses });
 }
 
 function filterSessionCompaniesNew() {
@@ -292,7 +301,7 @@ function renderSessionsDepartmentEvolutionNew(data) {
   if (source) source.textContent = '';
   if (mode) {
     const parts = [];
-    parts.push('últimos 12 meses');
+    parts.push('últimos 12 meses (fixo · ignora filtro de data)');
     parts.push('setores = Q12B Humano');
     parts.push('total = Q4B c/ interação');
     parts.push('só c/ interação do cliente');
@@ -960,16 +969,9 @@ function sessionsDeptEvolutionScopeKeyNew() {
 }
 
 async function loadSessionsDepartmentEvolutionNew(requestId) {
-  const loading = document.getElementById('sn-session-human-dept-loading');
-  const list = document.getElementById('sn-session-human-dept-list');
-  if (loading) loading.style.display = 'block';
-  if (list) list.innerHTML = '';
   const scopeKey = sessionsDeptEvolutionScopeKeyNew();
   if (sessionsDeptEvolutionCacheNew.key === scopeKey && sessionsDeptEvolutionCacheNew.data) {
     renderSessionsDepartmentEvolutionNew(sessionsDeptEvolutionCacheNew.data);
-    if (sessionsDeptEvolutionCacheNew.data.departments_summary) {
-      renderSessionHumanDepartmentsNew(sessionsDeptEvolutionCacheNew.data.departments_summary);
-    }
     return;
   }
   const p = new URLSearchParams();
@@ -980,18 +982,10 @@ async function loadSessionsDepartmentEvolutionNew(requestId) {
   if (requestId !== sessionsRequestIdNew) return;
   if (!data || data.error) {
     renderSessionsDepartmentEvolutionNew({ error: data?.error || 'Erro ao carregar evolução por departamento' });
-    renderSessionHumanDepartmentsNew(null, {
-      error: data?.error || 'Erro ao carregar humano por departamento',
-    });
     return;
   }
   sessionsDeptEvolutionCacheNew = { key: scopeKey, data };
   renderSessionsDepartmentEvolutionNew(data);
-  if (data.departments_summary) {
-    renderSessionHumanDepartmentsNew(data.departments_summary);
-  } else {
-    renderSessionHumanDepartmentsNew({ departments: [], total: 0 });
-  }
 }
 
 async function loadSessionsNew() {
@@ -1049,6 +1043,7 @@ async function loadSessionsNew() {
   loadSessionsEvolutionNew();
   loadSessionsDailyEvolutionNew();
   loadSessionsDepartmentEvolutionNew(requestId);
+  loadSessionHumanDepartmentsNew(requestId);
 
   const sessions = await safeGet('/api/sessions' + qs);
   if (requestId !== sessionsRequestIdNew) return;

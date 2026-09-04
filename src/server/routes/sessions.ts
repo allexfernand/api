@@ -569,17 +569,21 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
     if (scope === 'human_by_department') {
       const { groupSessionsByDepartment, listAttendantMappings } = await import("../attendants/service");
-      // Q15B: sempre limita a um intervalo de meses (evita full-scan).
-      const monthList = meses.length > 0 ? meses : lastNMonthsList(12);
+      // Q15B: segue 100% os filtros (incluindo data). Sem meses = sem filtro de período.
+      const monthList = meses.length > 0 ? meses : [];
       const monthInList = monthList.map((m) => `'${m}'`).join(',');
-      const dateFilter = `s.${quoteIdent('mes')} IN (${monthInList})`;
+      const dateFilter = monthList.length > 0 ? `s.${quoteIdent('mes')} IN (${monthInList})` : null;
       const baseWhere = [
         dateFilter,
         companySessionsMode === "company" ? companySessionsScopeFilter : null,
       ].filter(Boolean).join(' AND ');
       const queryParams = params.list.length ? params.list : undefined;
       const caps = await resolveGoldDeptCapabilities(warehouseId);
-      const { start, endExclusive } = monthRangeBounds(monthList);
+      const boundsMonths = monthList.length > 0 ? monthList : lastNMonthsList(24);
+      const { start, endExclusive } = monthRangeBounds(boundsMonths);
+      const sessionMonthPrune = monthList.length > 0
+        ? `AND DATE_FORMAT(try_cast(b.${quoteIdent('creation_time')} AS TIMESTAMP), 'yyyy-MM') IN (${monthInList})`
+        : '';
 
       try {
         const useGoldFastPath = caps.hasFinishedBy && (!includeUserInteraction || caps.hasTeveUser);
@@ -595,7 +599,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
                   COUNT(*) AS total_sessions
                 FROM ${dashboardSessionsTable} s
                 WHERE s.${quoteIdent('tipo_atendimento_agent')} = 'Humano'
-                  AND ${baseWhere}
+                  ${baseWhere ? `AND ${baseWhere}` : ''}
                   ${includeUserInteraction ? `AND COALESCE(s.${quoteIdent('teve_user')}, 0) = 1` : ''}
                 GROUP BY 1
                 ORDER BY total_sessions DESC
@@ -606,7 +610,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
                   SELECT CAST(s.${quoteIdent('session_id')} AS STRING) AS session_id
                   FROM ${dashboardSessionsTable} s
                   WHERE s.${quoteIdent('tipo_atendimento_agent')} = 'Humano'
-                    AND ${baseWhere}
+                    ${baseWhere ? `AND ${baseWhere}` : ''}
                 ),
                 user_hits AS (
                   SELECT DISTINCT CAST(m.${quoteIdent('session_id')} AS STRING) AS session_id
@@ -629,7 +633,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
                 FROM scoped_user su
                 LEFT JOIN ${SESSION_TABLE} b
                   ON CAST(b.${quoteIdent('session_id')} AS STRING) = su.session_id
-                 AND DATE_FORMAT(try_cast(b.${quoteIdent('creation_time')} AS TIMESTAMP), 'yyyy-MM') IN (${monthInList})
+                 ${sessionMonthPrune}
                 GROUP BY 1
                 ORDER BY total_sessions DESC
                 LIMIT 2000
@@ -648,7 +652,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           ...grouped,
           attendants: attendants.slice(0, 50),
           filters_applied: {
-            period: true,
+            period: monthList.length > 0,
             organization: Boolean(groupNames.length || company || partnerBrokerId),
             user_interaction: includeUserInteraction,
           },
