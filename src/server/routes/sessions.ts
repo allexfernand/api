@@ -835,7 +835,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
             AND TRIM(CAST(m.${quoteIdent('content_text')} AS STRING)) <> ''
           ORDER BY try_cast(m.${quoteIdent('creation_time')} AS TIMESTAMP)
           LIMIT 16
-        `, msgParams.list);
+        `, msgParams.list.map((parameter) => ({ ...parameter, type: 'STRING' })));
         const messages = msgRows.map((row) => ({
           at: String(getCell(row[0]) || ''),
           sender: String(getCell(row[1]) || 'unknown'),
@@ -925,7 +925,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
         const samplesCacheKey = JSON.stringify({
           scope: 'typification_samples_live',
-          v: 3,
+          v: 4,
           tip: typificationValue,
           months: meses,
           groups: groupNames,
@@ -1057,6 +1057,49 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           };
         });
 
+        const sessionIds = conversations.map((c) => c.session_id).filter(Boolean);
+        if (sessionIds.length) {
+          const msgParams = createSqlParams();
+          const idPlaceholders = sessionIds.map((id) => msgParams.add(id)).join(', ');
+          try {
+            const msgRows = await runQuery(warehouseId, `
+              SELECT
+                CAST(m.${quoteIdent('session_id')} AS STRING) AS session_id,
+                DATE_FORMAT(try_cast(m.${quoteIdent('creation_time')} AS TIMESTAMP), 'HH:mm') AS msg_at,
+                LOWER(TRIM(CAST(m.${quoteIdent('sender_type')} AS STRING))) AS sender_type,
+                TRIM(CAST(m.${quoteIdent('content_text')} AS STRING)) AS content_text
+              FROM ${MESSAGE_TABLE} m
+              WHERE CAST(m.${quoteIdent('session_id')} AS STRING) IN (${idPlaceholders})
+                AND m.${quoteIdent('content_text')} IS NOT NULL
+                AND TRIM(CAST(m.${quoteIdent('content_text')} AS STRING)) <> ''
+              QUALIFY ROW_NUMBER() OVER (
+                PARTITION BY CAST(m.${quoteIdent('session_id')} AS STRING)
+                ORDER BY try_cast(m.${quoteIdent('creation_time')} AS TIMESTAMP)
+              ) <= 16
+              ORDER BY try_cast(m.${quoteIdent('creation_time')} AS TIMESTAMP)
+            `, msgParams.list);
+            const bySession = new Map<string, Array<{ at: string; sender: string; text: string }>>();
+            for (const row of msgRows) {
+              const sid = String(getCell(row[0]) || '');
+              const text = truncateText(String(getCell(row[3]) || ''), 420);
+              if (!sid || !text) continue;
+              const list = bySession.get(sid) || [];
+              list.push({
+                at: String(getCell(row[1]) || ''),
+                sender: String(getCell(row[2]) || 'unknown'),
+                text,
+              });
+              bySession.set(sid, list);
+            }
+            for (const conv of conversations) {
+              conv.messages = bySession.get(conv.session_id) || [];
+              conv.messages_loaded = true;
+            }
+          } catch {
+            // Popup ainda tenta carregar mensagens sob demanda se o batch falhar.
+          }
+        }
+
         const payload = {
           scope: 'typification_samples_live',
           typification: typificationValue,
@@ -1067,8 +1110,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
             organization: Boolean(groupNames.length || company || partnerBrokerId),
             user_interaction: true,
           },
-          source: 'botmaker_session.resume_soap · mensagens sob demanda no popup',
-          rule: `Q11D = ${Q11D_SAMPLE_LIMIT} conversas do motivo QA (prioriza SOAP) · scroll no quadro · msgs no clique`,
+          source: 'botmaker_session.resume_soap + botmaker_message',
+          rule: `Q11D = ${Q11D_SAMPLE_LIMIT} conversas do motivo QA (prioriza SOAP) · scroll no quadro · msgs no popup`,
         };
         typificationSamplesCache.set(samplesCacheKey, { at: Date.now(), payload });
         setStableCache(res);

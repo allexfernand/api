@@ -637,10 +637,10 @@ async function loadTypificationSamplesLiveNew(tipo) {
     }).join('');
   }
   const withSoap = conversations.filter((c) => c.has_soap).length;
-  if (meta) meta.textContent = `${conversations.length} conversas · ${withSoap} com SOAP · clique para abrir (mensagens no popup)`;
+  if (meta) meta.textContent = `${conversations.length} conversas · ${withSoap} com SOAP · clique para ver necessidade + mensagens`;
   if (note) {
     note.style.display = 'block';
-    note.textContent = data.source || 'botmaker_session.resume_soap · msgs sob demanda';
+    note.textContent = data.source || 'botmaker_session.resume_soap + botmaker_message';
   }
 }
 
@@ -723,10 +723,14 @@ async function openQaConversationModalNew(index) {
       .filter(Boolean)
       .join(' · ') || '—';
   }
-  const needsMessages = !item.messages_loaded;
-  renderQaConversationModalBodyNew(item, { messagesLoading: needsMessages });
+  const hasMessages = Array.isArray(item.messages) && item.messages.length > 0;
+  const needsMessages = !item.messages_loaded || !hasMessages;
+  renderQaConversationModalBodyNew(item, { messagesLoading: needsMessages && !hasMessages });
   modal.hidden = false;
-  if (!needsMessages || !item.session_id) return;
+  if (!needsMessages || !item.session_id || hasMessages) {
+    if (hasMessages) item.messages_loaded = true;
+    return;
+  }
 
   const requestToken = `${item.session_id}:${Date.now()}`;
   item._messagesRequestToken = requestToken;
@@ -735,7 +739,20 @@ async function openQaConversationModalNew(index) {
   p.set('session_id', item.session_id);
   const data = await safeGet('/api/sessions?' + p.toString());
   if (item._messagesRequestToken !== requestToken) return;
-  if (selectedTypificationLiveNew == null) return;
+  if (data && data.error) {
+    item.messages_loaded = false;
+    if (!modal.hidden && snQaConversationsCacheNew[Number(index)] === item) {
+      const body = document.getElementById('sn-qa-conv-modal-body');
+      if (body) {
+        renderQaConversationModalBodyNew(item, { messagesLoading: false });
+        const list = body.querySelector('.sn-qa-conv-msg-list');
+        if (list) {
+          list.innerHTML = `<div class="sn-qa-conv-empty-hint">Não foi possível carregar mensagens: ${escapeHtml(String(data.error).slice(0, 160))}</div>`;
+        }
+      }
+    }
+    return;
+  }
   item.messages = Array.isArray(data && data.messages) ? data.messages : [];
   item.messages_loaded = true;
   if (!modal.hidden && snQaConversationsCacheNew[Number(index)] === item) {
