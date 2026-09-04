@@ -73,6 +73,13 @@ function truncateText(value: string, max = 500): string {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
 
+function formatCpfDigits(raw: string): string | null {
+  const digits = String(raw || '').replace(/\D/g, '');
+  if (!digits) return null;
+  if (digits.length !== 11) return digits;
+  return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
+}
+
 type GoldDeptCapabilities = { hasFinishedBy: boolean; hasTeveUser: boolean; at: number; ttlMs: number };
 let goldDeptCapabilitiesCache: GoldDeptCapabilities | null = null;
 
@@ -867,6 +874,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
         const samplesCacheKey = JSON.stringify({
           scope: 'typification_samples_live',
+          v: 2,
           tip: typificationValue,
           months: meses,
           groups: groupNames,
@@ -902,6 +910,22 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
             NULLIF(TRIM(CAST(s.${quoteIdent('organization_name')} AS STRING)), '') AS organization_name,
             NULLIF(TRIM(b.${quoteIdent('resume_soap')}), '') AS resume_soap,
             NULLIF(TRIM(CAST(b.${quoteIdent('motivo')} AS STRING)), '') AS motivo,
+            NULLIF(TRIM(CAST(COALESCE(
+              b.${quoteIdent('variables')}['nameHolder'],
+              b.${quoteIdent('variables')}['nomeTitular'],
+              b.${quoteIdent('variables')}['dependentName1'],
+              b.${quoteIdent('variables')}['fromName']
+            ) AS STRING)), '') AS patient_name,
+            NULLIF(REGEXP_REPLACE(CAST(COALESCE(
+              b.${quoteIdent('variables')}['cpfHolder'],
+              b.${quoteIdent('variables')}['inputCpfHolder'],
+              b.${quoteIdent('variables')}['cpfTitular'],
+              b.${quoteIdent('variables')}['dependentCpf1'],
+              b.${quoteIdent('variables')}['cpf'],
+              b.${quoteIdent('variables')}['CPF'],
+              b.${quoteIdent('variables')}['cpf_beneficiario'],
+              b.${quoteIdent('variables')}['beneficiary_cpf']
+            ) AS STRING), '[^0-9]', ''), '') AS patient_cpf,
             CASE WHEN NULLIF(TRIM(b.${quoteIdent('resume_soap')}), '') IS NOT NULL THEN 1 ELSE 0 END AS has_soap
           FROM ${dashboardSessionsTable} s
           INNER JOIN ${QUALITY_SUMMARY_TABLE} q
@@ -916,6 +940,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         const conversations = rows.map((r) => {
           const soap = String(getCell(r[17]) || '').trim();
           const motivo = String(getCell(r[18]) || '').trim();
+          const patientName = String(getCell(r[19]) || '').trim();
+          const patientCpf = formatCpfDigits(String(getCell(r[20]) || ''));
           const preview = soapSubjectivePreview(soap)
             || (motivo ? `Motivo: ${motivo}` : null)
             || String(getCell(r[5]) || '').trim()
@@ -943,6 +969,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
             organization_name: String(getCell(r[16]) || '') || null,
             soap: soap || null,
             motivo: motivo || null,
+            patient_name: patientName || null,
+            patient_cpf: patientCpf,
             has_soap: Boolean(soap),
             preview: preview || null,
             messages: [] as Array<{ at: string; sender: string; text: string }>,

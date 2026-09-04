@@ -658,11 +658,14 @@ function openQaConversationModalNew(index) {
   if (!item || !modal || !body) return;
   if (title) title.textContent = item.tipificacao || 'Conversa';
   if (subtitle) {
-    subtitle.textContent = [item.event_at, item.closed_by, item.organization_name || item.economic_group]
+    const patientLabel = item.patient_name || item.patient_cpf || null;
+    subtitle.textContent = [patientLabel, item.event_at, item.closed_by, item.organization_name || item.economic_group]
       .filter(Boolean)
       .join(' · ') || '—';
   }
   const fields = [
+    ['Paciente', item.patient_name],
+    ['CPF', item.patient_cpf],
     ['Status', item.status_demanda],
     ['Problema', formatQaResolvedNew(item.problema_resolvido)],
     ['Desempenho', formatQaScoreNew(item)],
