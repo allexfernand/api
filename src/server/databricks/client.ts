@@ -98,9 +98,11 @@ export async function resolveWarehouseId(): Promise<string> {
   return wh.id;
 }
 
-export async function getColumns(warehouseId: string, tableName: string): Promise<string[]> {
-  const cached = columnsCache.get(tableName);
-  if (cached) return cached;
+export async function getColumns(warehouseId: string, tableName: string, opts?: { force?: boolean }): Promise<string[]> {
+  if (!opts?.force) {
+    const cached = columnsCache.get(tableName);
+    if (cached) return cached;
+  }
 
   const rows = await runQuery(warehouseId, `DESCRIBE TABLE ${tableName}`);
   const columns = rows
@@ -108,6 +110,11 @@ export async function getColumns(warehouseId: string, tableName: string): Promis
     .filter((column) => column && !column.startsWith("#"));
   columnsCache.set(tableName, columns);
   return columns;
+}
+
+export function clearColumnsCache(tableName?: string) {
+  if (tableName) columnsCache.delete(tableName);
+  else columnsCache.clear();
 }
 
 export function getCell(cell: DatabricksCell) {

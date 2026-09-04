@@ -8,7 +8,7 @@ import {
   scopedPartnerBrokerIds,
 } from "../../../lib/basic-auth";
 import { CORE_DATA_MENUS } from "../../dashboard/menu-catalog";
-import { createSqlParams, getCell, quoteIdent, resolveWarehouseId, runQuery, toInt, type SqlParams } from "../../../lib/databricks";
+import { createSqlParams, getCell, getColumns, quoteIdent, resolveWarehouseId, runQuery, toInt, type SqlParams } from "../../../lib/databricks";
 import { setApiCors, setStableCache } from "../../../lib/http";
 
 type ApiRequest = { method?: string; query: Record<string, any> };
@@ -49,6 +49,60 @@ const BENEFICIARIES_KINSHIP_TABLE = `hive_metastore.sanus_prod.beneficiaries`;
 const ORGANIZATIONS_TABLE = `hive_metastore.sanus_prod.organizations`;
 const PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.partner_brokers`;
 const ORGANIZATION_PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.organization_partner_brokers`;
+
+const HUMAN_DEPT_CACHE_TTL_MS = 10 * 60 * 1000;
+const humanDeptEvolutionCache = new Map<string, { at: number; payload: Record<string, unknown> }>();
+
+type GoldDeptCapabilities = { hasFinishedBy: boolean; hasTeveUser: boolean; at: number; ttlMs: number };
+let goldDeptCapabilitiesCache: GoldDeptCapabilities | null = null;
+
+async function resolveGoldDeptCapabilities(warehouseId: string): Promise<GoldDeptCapabilities> {
+  if (
+    goldDeptCapabilitiesCache
+    && Date.now() - goldDeptCapabilitiesCache.at < goldDeptCapabilitiesCache.ttlMs
+  ) {
+    return goldDeptCapabilitiesCache;
+  }
+  try {
+    const cols = await getColumns(warehouseId, DASHBOARD_SESSIONS_TABLE, {
+      force: !(goldDeptCapabilitiesCache?.hasFinishedBy && goldDeptCapabilitiesCache?.hasTeveUser),
+    });
+    const lower = new Set(cols.map((column) => column.toLowerCase()));
+    const hasFinishedBy = lower.has("finished_by");
+    const hasTeveUser = lower.has("teve_user");
+    goldDeptCapabilitiesCache = {
+      hasFinishedBy,
+      hasTeveUser,
+      at: Date.now(),
+      // Re-probe rápido enquanto a gold ainda não tem as colunas novas.
+      ttlMs: hasFinishedBy && hasTeveUser ? 5 * 60 * 1000 : 30 * 1000,
+    };
+  } catch {
+    goldDeptCapabilitiesCache = {
+      hasFinishedBy: false,
+      hasTeveUser: false,
+      at: Date.now(),
+      ttlMs: 30 * 1000,
+    };
+  }
+  return goldDeptCapabilitiesCache;
+}
+
+function monthRangeBounds(months: string[]) {
+  const sorted = [...months].filter((month) => /^\d{4}-\d{2}$/.test(month)).sort();
+  if (!sorted.length) {
+    const fallback = lastNMonthsList(12);
+    return monthRangeBounds(fallback);
+  }
+  const start = `${sorted[0]}-01`;
+  const [yearRaw, monthRaw] = sorted[sorted.length - 1].split("-");
+  const year = Number(yearRaw);
+  const month = Number(monthRaw);
+  const endExclusive = month === 12
+    ? `${year + 1}-01-01`
+    : `${year}-${String(month + 1).padStart(2, "0")}-01`;
+  return { start, endExclusive, months: sorted };
+}
 
 function normalizeCpfSql(expr: string) {
   return `NULLIF(LPAD(REGEXP_REPLACE(CAST(${expr} AS STRING), '[^0-9]', ''), 11, '0'), '00000000000')`;
@@ -515,48 +569,71 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
     if (scope === 'human_by_department') {
       const { groupSessionsByDepartment, listAttendantMappings } = await import("../attendants/service");
-      // Mesma base do Q12B: só sessões Humano por tipo_atendimento_agent + mesmos filtros.
-      // Interação do cliente via JOIN (não EXISTS correlacionado) — bem mais rápido com grupo/período.
-      const baseWhere = companySessionsMode === "company"
-        ? [companySessionsDateFilter, companySessionsScopeFilter].filter(Boolean).join(' AND ')
-        : (companySessionsDateFilter || '');
+      // Q15B: sempre limita a um intervalo de meses (evita full-scan).
+      const monthList = meses.length > 0 ? meses : lastNMonthsList(12);
+      const monthInList = monthList.map((m) => `'${m}'`).join(',');
+      const dateFilter = `s.${quoteIdent('mes')} IN (${monthInList})`;
+      const baseWhere = [
+        dateFilter,
+        companySessionsMode === "company" ? companySessionsScopeFilter : null,
+      ].filter(Boolean).join(' AND ');
       const queryParams = params.list.length ? params.list : undefined;
+      const caps = await resolveGoldDeptCapabilities(warehouseId);
+      const { start, endExclusive } = monthRangeBounds(monthList);
 
       try {
+        const useGoldFastPath = caps.hasFinishedBy && (!includeUserInteraction || caps.hasTeveUser);
         const [mappingRows, attendantRows] = await Promise.all([
           listAttendantMappings(),
-          runQuery(warehouseId, `
-            WITH scoped AS (
-              SELECT
-                CAST(s.${quoteIdent('session_id')} AS STRING) AS session_id
-              FROM ${dashboardSessionsTable} s
-              WHERE s.${quoteIdent('tipo_atendimento_agent')} = 'Humano'
-                ${baseWhere ? `AND ${baseWhere}` : ''}
-            ),
-            with_user AS (
-              SELECT sc.session_id
-              FROM scoped sc
-              ${includeUserInteraction ? `INNER JOIN (
-                SELECT DISTINCT CAST(m.${quoteIdent('session_id')} AS STRING) AS session_id
-                FROM ${MESSAGE_TABLE} m
-                INNER JOIN scoped sc2
-                  ON CAST(m.${quoteIdent('session_id')} AS STRING) = sc2.session_id
-                WHERE LOWER(TRIM(CAST(m.${quoteIdent('sender_type')} AS STRING))) = 'user'
-              ) u ON u.session_id = sc.session_id` : ''}
-            )
-            SELECT
-              COALESCE(
-                NULLIF(TRIM(CAST(b.${quoteIdent('finished_by')} AS STRING)), ''),
-                '(Sem finished_by)'
-              ) AS attendant,
-              COUNT(*) AS total_sessions
-            FROM with_user w
-            LEFT JOIN ${SESSION_TABLE} b
-              ON CAST(b.${quoteIdent('session_id')} AS STRING) = w.session_id
-            GROUP BY 1
-            ORDER BY total_sessions DESC
-            LIMIT 2000
-          `, queryParams),
+          useGoldFastPath
+            ? runQuery(warehouseId, `
+                SELECT
+                  COALESCE(
+                    NULLIF(TRIM(CAST(s.${quoteIdent('finished_by')} AS STRING)), ''),
+                    '(Sem finished_by)'
+                  ) AS attendant,
+                  COUNT(*) AS total_sessions
+                FROM ${dashboardSessionsTable} s
+                WHERE s.${quoteIdent('tipo_atendimento_agent')} = 'Humano'
+                  AND ${baseWhere}
+                  ${includeUserInteraction ? `AND COALESCE(s.${quoteIdent('teve_user')}, 0) = 1` : ''}
+                GROUP BY 1
+                ORDER BY total_sessions DESC
+                LIMIT 2000
+              `, queryParams)
+            : runQuery(warehouseId, `
+                WITH scoped AS (
+                  SELECT CAST(s.${quoteIdent('session_id')} AS STRING) AS session_id
+                  FROM ${dashboardSessionsTable} s
+                  WHERE s.${quoteIdent('tipo_atendimento_agent')} = 'Humano'
+                    AND ${baseWhere}
+                ),
+                user_hits AS (
+                  SELECT DISTINCT CAST(m.${quoteIdent('session_id')} AS STRING) AS session_id
+                  FROM ${MESSAGE_TABLE} m
+                  WHERE LOWER(TRIM(CAST(m.${quoteIdent('sender_type')} AS STRING))) = 'user'
+                    AND try_cast(m.${quoteIdent('creation_time')} AS TIMESTAMP) >= TIMESTAMP '${start}'
+                    AND try_cast(m.${quoteIdent('creation_time')} AS TIMESTAMP) < TIMESTAMP '${endExclusive}'
+                ),
+                scoped_user AS (
+                  SELECT sc.session_id
+                  FROM scoped sc
+                  ${includeUserInteraction ? 'INNER JOIN user_hits uh ON uh.session_id = sc.session_id' : ''}
+                )
+                SELECT
+                  COALESCE(
+                    NULLIF(TRIM(CAST(b.${quoteIdent('finished_by')} AS STRING)), ''),
+                    '(Sem finished_by)'
+                  ) AS attendant,
+                  COUNT(*) AS total_sessions
+                FROM scoped_user su
+                LEFT JOIN ${SESSION_TABLE} b
+                  ON CAST(b.${quoteIdent('session_id')} AS STRING) = su.session_id
+                 AND DATE_FORMAT(try_cast(b.${quoteIdent('creation_time')} AS TIMESTAMP), 'yyyy-MM') IN (${monthInList})
+                GROUP BY 1
+                ORDER BY total_sessions DESC
+                LIMIT 2000
+              `, queryParams),
         ]);
 
         const attendants = attendantRows.map((row) => ({
@@ -571,11 +648,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           ...grouped,
           attendants: attendants.slice(0, 50),
           filters_applied: {
-            period: meses.length > 0,
+            period: true,
             organization: Boolean(groupNames.length || company || partnerBrokerId),
             user_interaction: includeUserInteraction,
           },
-          source: 'dashboard_sessions_base_gold.tipo_atendimento_agent + botmaker_session.finished_by',
+          source: useGoldFastPath
+            ? 'dashboard_sessions_base_gold.finished_by + teve_user'
+            : 'dashboard_sessions_base_gold.tipo_atendimento_agent + botmaker_session.finished_by',
           rule: includeUserInteraction
             ? 'Universo = Q12B Humano com ≥1 interação do cliente (sender_type=user); departamento via finished_by'
             : 'Universo = Q12B Humano (tipo_atendimento_agent); departamento via finished_by',
@@ -693,87 +772,87 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       }
     }
 
-    // Q15: últimos 12 meses por padrão; respeita filtro de período quando enviado.
+    // Q15: janela fixa dos últimos 12 meses (igual Q3). Preferir colunas gold (finished_by/teve_user).
     if (scope === 'human_department_evolution') {
-      const topGroupMonths = meses.length > 0 ? meses : lastNMonthsList(12);
-      const topGroupDateFilter = `s.${quoteIdent('mes')} IN (${topGroupMonths.map((m) => `'${m}'`).join(',')})`;
-      const baseWhere = companySessionsMode === "company"
-        ? [topGroupDateFilter, companySessionsScopeFilter].filter(Boolean).join(' AND ')
-        : topGroupDateFilter;
+      const topGroupMonths = lastNMonthsList(12);
+      const monthInList = topGroupMonths.map((m) => `'${m}'`).join(',');
+      const topGroupDateFilter = `s.${quoteIdent('mes')} IN (${monthInList})`;
+      const baseWhere = [
+        topGroupDateFilter,
+        companySessionsMode === "company" ? companySessionsScopeFilter : null,
+      ].filter(Boolean).join(' AND ');
       const queryParams = params.list.length ? params.list : undefined;
+      const cacheKey = JSON.stringify({
+        scope: 'human_department_evolution',
+        months: topGroupMonths,
+        groups: groupNames,
+        company,
+        partnerBrokerId,
+        user: includeUserInteraction ? 1 : 0,
+      });
+      const cached = humanDeptEvolutionCache.get(cacheKey);
+      if (cached && Date.now() - cached.at < HUMAN_DEPT_CACHE_TTL_MS) {
+        setStableCache(res);
+        return res.status(200).json(cached.payload);
+      }
       try {
-        const { groupSessionsEvolutionByDepartment, listAttendantMappings } = await import("../attendants/service");
-        const userJoinSql = includeUserInteraction ? `
-              INNER JOIN (
-                SELECT DISTINCT CAST(m.${quoteIdent('session_id')} AS STRING) AS session_id
-                FROM ${MESSAGE_TABLE} m
-                INNER JOIN scoped sc2
-                  ON CAST(m.${quoteIdent('session_id')} AS STRING) = sc2.session_id
-                WHERE LOWER(TRIM(CAST(m.${quoteIdent('sender_type')} AS STRING))) = 'user'
-              ) u ON u.session_id = sc.session_id` : '';
-        const [mappingRows, attendantRows, monthlyTotalRows] = await Promise.all([
+        const { groupSessionsEvolutionByDepartment, groupSessionsByDepartment, listAttendantMappings } = await import("../attendants/service");
+        const caps = await resolveGoldDeptCapabilities(warehouseId);
+        const useGoldFastPath = caps.hasFinishedBy && (!includeUserInteraction || caps.hasTeveUser);
+        const { start, endExclusive } = monthRangeBounds(topGroupMonths);
+        const [mappingRows, attendantRows] = await Promise.all([
           listAttendantMappings(),
-          runQuery(warehouseId, `
-            WITH scoped AS (
-              SELECT
-                CAST(s.${quoteIdent('session_id')} AS STRING) AS session_id,
-                s.${quoteIdent('mes')} AS mes
-              FROM ${dashboardSessionsTable} s
-              WHERE s.${quoteIdent('tipo_atendimento_agent')} = 'Humano'
-                ${baseWhere ? `AND ${baseWhere}` : ''}
-            ),
-            with_user AS (
-              SELECT sc.session_id, sc.mes
-              FROM scoped sc
-              ${userJoinSql}
-            )
-            SELECT
-              w.mes AS mes,
-              COALESCE(
-                NULLIF(TRIM(CAST(b.${quoteIdent('finished_by')} AS STRING)), ''),
-                '(Sem finished_by)'
-              ) AS attendant,
-              COUNT(*) AS total_sessions
-            FROM with_user w
-            LEFT JOIN ${SESSION_TABLE} b
-              ON CAST(b.${quoteIdent('session_id')} AS STRING) = w.session_id
-            GROUP BY w.mes, 2
-            ORDER BY w.mes, total_sessions DESC
-          `, queryParams),
-          runQuery(warehouseId, includeUserInteraction ? `
-            WITH scoped AS (
-              SELECT
-                CAST(s.${quoteIdent('session_id')} AS STRING) AS session_id,
-                s.${quoteIdent('mes')} AS mes
-              FROM ${dashboardSessionsTable} s
-              ${baseWhere ? `WHERE ${baseWhere}` : ''}
-            ),
-            with_user AS (
-              SELECT sc.mes
-              FROM scoped sc
-              INNER JOIN (
-                SELECT DISTINCT CAST(m.${quoteIdent('session_id')} AS STRING) AS session_id
-                FROM ${MESSAGE_TABLE} m
-                INNER JOIN scoped sc2
-                  ON CAST(m.${quoteIdent('session_id')} AS STRING) = sc2.session_id
-                WHERE LOWER(TRIM(CAST(m.${quoteIdent('sender_type')} AS STRING))) = 'user'
-              ) u ON u.session_id = sc.session_id
-            )
-            SELECT
-              mes,
-              COUNT(*) AS total_sessions
-            FROM with_user
-            GROUP BY mes
-            ORDER BY mes
-          ` : `
-            SELECT
-              s.${quoteIdent('mes')} AS mes,
-              COUNT(*) AS total_sessions
-            FROM ${dashboardSessionsTable} s
-            ${baseWhere ? `WHERE ${baseWhere}` : ''}
-            GROUP BY s.${quoteIdent('mes')}
-            ORDER BY s.${quoteIdent('mes')}
-          `, queryParams),
+          useGoldFastPath
+            ? runQuery(warehouseId, `
+                SELECT
+                  s.${quoteIdent('mes')} AS mes,
+                  COALESCE(
+                    NULLIF(TRIM(CAST(s.${quoteIdent('finished_by')} AS STRING)), ''),
+                    '(Sem finished_by)'
+                  ) AS attendant,
+                  COUNT(*) AS total_sessions
+                FROM ${dashboardSessionsTable} s
+                WHERE s.${quoteIdent('tipo_atendimento_agent')} = 'Humano'
+                  AND ${baseWhere}
+                  ${includeUserInteraction ? `AND COALESCE(s.${quoteIdent('teve_user')}, 0) = 1` : ''}
+                GROUP BY s.${quoteIdent('mes')}, 2
+                ORDER BY s.${quoteIdent('mes')}, total_sessions DESC
+              `, queryParams)
+            : runQuery(warehouseId, `
+                WITH scoped AS (
+                  SELECT
+                    CAST(s.${quoteIdent('session_id')} AS STRING) AS session_id,
+                    s.${quoteIdent('mes')} AS mes
+                  FROM ${dashboardSessionsTable} s
+                  WHERE s.${quoteIdent('tipo_atendimento_agent')} = 'Humano'
+                    AND ${baseWhere}
+                ),
+                user_hits AS (
+                  SELECT DISTINCT CAST(m.${quoteIdent('session_id')} AS STRING) AS session_id
+                  FROM ${MESSAGE_TABLE} m
+                  WHERE LOWER(TRIM(CAST(m.${quoteIdent('sender_type')} AS STRING))) = 'user'
+                    AND try_cast(m.${quoteIdent('creation_time')} AS TIMESTAMP) >= TIMESTAMP '${start}'
+                    AND try_cast(m.${quoteIdent('creation_time')} AS TIMESTAMP) < TIMESTAMP '${endExclusive}'
+                ),
+                scoped_user AS (
+                  SELECT sc.session_id, sc.mes
+                  FROM scoped sc
+                  ${includeUserInteraction ? 'INNER JOIN user_hits uh ON uh.session_id = sc.session_id' : ''}
+                )
+                SELECT
+                  su.mes AS mes,
+                  COALESCE(
+                    NULLIF(TRIM(CAST(b.${quoteIdent('finished_by')} AS STRING)), ''),
+                    '(Sem finished_by)'
+                  ) AS attendant,
+                  COUNT(*) AS total_sessions
+                FROM scoped_user su
+                LEFT JOIN ${SESSION_TABLE} b
+                  ON CAST(b.${quoteIdent('session_id')} AS STRING) = su.session_id
+                 AND DATE_FORMAT(try_cast(b.${quoteIdent('creation_time')} AS TIMESTAMP), 'yyyy-MM') IN (${monthInList})
+                GROUP BY su.mes, 2
+                ORDER BY su.mes, total_sessions DESC
+              `, queryParams),
         ]);
 
         const attendantSeries = attendantRows.map((row) => ({
@@ -782,37 +861,46 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           total: toInt(row[2]),
         })).filter((row) => row.mes && row.attendant);
 
-        const monthlyTotals = monthlyTotalRows.map((row) => ({
-          mes: String(getCell(row[0]) || '').trim(),
-          total: toInt(row[1]),
-        })).filter((row) => row.mes);
-
         const grouped = groupSessionsEvolutionByDepartment(attendantSeries, mappingRows);
-        setStableCache(res);
-        return res.status(200).json({
+        const attendantsByName = new Map<string, number>();
+        attendantSeries.forEach((row) => {
+          attendantsByName.set(row.attendant, (attendantsByName.get(row.attendant) || 0) + row.total);
+        });
+        const departmentSummary = groupSessionsByDepartment(
+          [...attendantsByName.entries()].map(([attendant, total]) => ({ attendant, total })),
+          mappingRows,
+        );
+        const payload = {
           scope: 'human_department_evolution',
           months: topGroupMonths,
           departments: grouped.departments,
           series: grouped.series,
-          monthly_totals: monthlyTotals,
+          monthly_totals: [] as Array<{ mes: string; total: number }>,
+          departments_summary: departmentSummary,
           filters_applied: {
-            period: meses.length > 0,
+            period: false,
             organization: Boolean(groupNames.length || company || partnerBrokerId),
             user_interaction: includeUserInteraction,
           },
-          source: 'dashboard_sessions_base_gold.tipo_atendimento_agent + botmaker_session.finished_by',
+          source: useGoldFastPath
+            ? 'dashboard_sessions_base_gold.finished_by + teve_user'
+            : 'dashboard_sessions_base_gold.tipo_atendimento_agent + botmaker_session.finished_by',
           rule: includeUserInteraction
-            ? 'Linhas de setor = Q12B Humano c/ ≥1 interação do cliente; Total do mês = sessões c/ ≥1 interação do cliente (Humano + IA)'
-            : 'Linhas de setor = Q12B Humano; Total do mês = todas as sessões (Humano + IA)',
-        });
+            ? 'Linhas de setor = Q12B Humano c/ ≥1 interação do cliente; Total do mês = série Q4B (sessões c/ interação)'
+            : 'Linhas de setor = Q12B Humano; Total do mês = série Q4B',
+        };
+        humanDeptEvolutionCache.set(cacheKey, { at: Date.now(), payload });
+        setStableCache(res);
+        return res.status(200).json(payload);
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         return res.status(200).json({
           scope: 'human_department_evolution',
-          months: meses.length > 0 ? meses : lastNMonthsList(12),
+          months: topGroupMonths,
           departments: [],
           series: [],
           monthly_totals: [],
+          departments_summary: { departments: [], total: 0 },
           error: msg,
         });
       }

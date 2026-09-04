@@ -2,6 +2,7 @@
 // Gerado a partir de sessions.js — edite este arquivo livremente.
 let sessionsRequestIdNew = 0;
 let sessionsDeptEvolutionCacheNew = { key: "", data: null };
+let sessionsInteractionMonthlyNew = { months: [], totals: [] };
 let sessionsDailySeriesCacheNew = [];
 let selectedSessionsDailyMonthNew = typeof currentMonthValue === "function" ? currentMonthValue() : "";
 let selectedSessionsDailyIndexesNew = new Set();
@@ -74,7 +75,7 @@ function renderSessionHumanDepartmentsNew(data, opts) {
   if (!list) return;
   const departments = Array.isArray(data?.departments) ? data.departments : [];
   const total = Number(data?.total) || departments.reduce((sum, item) => sum + (Number(item.total) || 0), 0);
-  if (meta) meta.textContent = total > 0 ? `${fmt(total)} sessões do Q12B Humano` : 'sem sessões humanas no período';
+  if (meta) meta.textContent = total > 0 ? `${fmt(total)} sessões · Q12B Humano c/ interação` : 'sem sessões humanas no período';
   if (!departments.length) {
     list.innerHTML = '<div style="font-size:12px;color:#94a3b8">Sem dados por departamento neste recorte.</div>';
     return;
@@ -232,10 +233,20 @@ function renderSessionsDepartmentEvolutionNew(data) {
       return found ? Number(found.total) || 0 : 0;
     })
   );
+  const interactionMonths = Array.isArray(sessionsInteractionMonthlyNew.months)
+    ? sessionsInteractionMonthlyNew.months
+    : [];
+  const interactionTotals = Array.isArray(sessionsInteractionMonthlyNew.totals)
+    ? sessionsInteractionMonthlyNew.totals
+    : [];
   const totalByMonth = months.map((month) => {
-    const found = monthlyTotals.find((item) => item.mes === month);
-    return found ? Number(found.total) || 0 : 0;
+    const fromApi = monthlyTotals.find((item) => item.mes === month);
+    if (fromApi && Number(fromApi.total) > 0) return Number(fromApi.total) || 0;
+    const idx = interactionMonths.indexOf(month);
+    if (idx >= 0) return Number(interactionTotals[idx]) || 0;
+    return 0;
   });
+  const hasInteractionTotals = totalByMonth.some((value) => Number(value) > 0);
   const deptPeriodTotals = deptSeries.map((values) => values.reduce((sum, value) => sum + (Number(value) || 0), 0));
   const periodGrandTotal = totalByMonth.reduce((sum, value) => sum + (Number(value) || 0), 0);
   const pctLabel = (value) => {
@@ -274,21 +285,16 @@ function renderSessionsDepartmentEvolutionNew(data) {
     tension: 0.28,
     fill: false,
     order: 1,
+    hidden: !hasInteractionTotals,
   });
 
   if (title) title.textContent = 'Evolução humana · por departamento';
   if (source) source.textContent = '';
   if (mode) {
     const parts = [];
-    const periodMonths = Array.isArray(data.months) ? data.months : months;
-    if (periodMonths.length === 1) parts.push(monthShortLabel(periodMonths[0]));
-    else if (periodMonths.length > 1 && periodMonths.length < 12) {
-      parts.push(`${periodMonths.length} meses selecionados`);
-    } else {
-      parts.push('últimos 12 meses');
-    }
+    parts.push('últimos 12 meses');
     parts.push('setores = Q12B Humano');
-    parts.push('total = Humano + IA');
+    parts.push('total = Q4B c/ interação');
     parts.push('só c/ interação do cliente');
     if (selectedSessionScopeText()) parts.push(`recorte: ${selectedSessionScopeText()}`);
     if (currentCompany) parts.push(`empresa: ${currentCompany}`);
@@ -331,7 +337,7 @@ function renderSessionsDepartmentEvolutionNew(data) {
               const dataset = c.dataset || {};
               const value = Number(c.parsed.y) || 0;
               if (dataset.department === 'Total') {
-                return `Total do mês (Humano + IA): ${fmt(value)} sessões`;
+                return `Total do mês (c/ interação · Humano + IA): ${fmt(value)} sessões`;
               }
               const monthTotal = Number(totalByMonth[c.dataIndex]) || 0;
               const share = monthTotal > 0
@@ -948,31 +954,44 @@ function sessionsDeptEvolutionScopeKeyNew() {
     partners: Array.isArray(currentPartnerBrokerIds) ? [...currentPartnerBrokerIds].map(String).sort() : [],
     company: currentCompany || null,
     partner: currentPartnerBrokerId || null,
-    months: [...selectedMonths].sort(),
+    window: 'last_12_months',
     user_interaction: 1,
   });
 }
 
 async function loadSessionsDepartmentEvolutionNew(requestId) {
+  const loading = document.getElementById('sn-session-human-dept-loading');
+  const list = document.getElementById('sn-session-human-dept-list');
+  if (loading) loading.style.display = 'block';
+  if (list) list.innerHTML = '';
   const scopeKey = sessionsDeptEvolutionScopeKeyNew();
   if (sessionsDeptEvolutionCacheNew.key === scopeKey && sessionsDeptEvolutionCacheNew.data) {
     renderSessionsDepartmentEvolutionNew(sessionsDeptEvolutionCacheNew.data);
+    if (sessionsDeptEvolutionCacheNew.data.departments_summary) {
+      renderSessionHumanDepartmentsNew(sessionsDeptEvolutionCacheNew.data.departments_summary);
+    }
     return;
   }
-  const meses = [...selectedMonths].sort();
   const p = new URLSearchParams();
   p.set('scope', 'human_department_evolution');
   p.set('include_user_interaction', '1');
-  if (meses.length > 0) p.set('meses', meses.join(','));
   appendGroupParams(p);
   const data = await safeGet('/api/sessions?' + p.toString());
   if (requestId !== sessionsRequestIdNew) return;
   if (!data || data.error) {
     renderSessionsDepartmentEvolutionNew({ error: data?.error || 'Erro ao carregar evolução por departamento' });
+    renderSessionHumanDepartmentsNew(null, {
+      error: data?.error || 'Erro ao carregar humano por departamento',
+    });
     return;
   }
   sessionsDeptEvolutionCacheNew = { key: scopeKey, data };
   renderSessionsDepartmentEvolutionNew(data);
+  if (data.departments_summary) {
+    renderSessionHumanDepartmentsNew(data.departments_summary);
+  } else {
+    renderSessionHumanDepartmentsNew({ departments: [], total: 0 });
+  }
 }
 
 async function loadSessionsNew() {
@@ -1029,7 +1048,6 @@ async function loadSessionsNew() {
 
   loadSessionsEvolutionNew();
   loadSessionsDailyEvolutionNew();
-  loadSessionHumanDepartmentsNew(requestId);
   loadSessionsDepartmentEvolutionNew(requestId);
 
   const sessions = await safeGet('/api/sessions' + qs);
@@ -1973,6 +1991,13 @@ async function loadSessionsEvolutionNew() {
   const totalValues = series.map((it) => Number(it.total) || ((Number(it.humano) || 0) + (Number(it.ia) || 0)));
   const interactionSessionValues = series.map((it) => Number(it.sessions_with_user_interaction ?? it.total_with_user_interaction) || 0);
   const uniqueBeneficiaryValues = series.map((it) => Number(it.unique_beneficiaries ?? it.unique_cpfs) || 0);
+  sessionsInteractionMonthlyNew = {
+    months: series.map((it) => String(it.mes || '')),
+    totals: interactionSessionValues,
+  };
+  if (sessionsDeptEvolutionCacheNew.data) {
+    renderSessionsDepartmentEvolutionNew(sessionsDeptEvolutionCacheNew.data);
+  }
 
   if (skel) skel.style.display = 'none';
   if (cv && data && !data.error) cv.style.display = 'block';

@@ -89,10 +89,11 @@ const STEPS = [
 CREATE OR REPLACE TABLE ${FQN}
 USING DELTA
 AS
-WITH session_has_agent AS (
+WITH session_msg_flags AS (
   SELECT
     CAST(session_id AS STRING) AS session_id,
-    MAX(CASE WHEN sender_type = 'agent' THEN 1 ELSE 0 END) AS teve_humano
+    MAX(CASE WHEN LOWER(TRIM(CAST(sender_type AS STRING))) = 'agent' THEN 1 ELSE 0 END) AS teve_humano,
+    MAX(CASE WHEN LOWER(TRIM(CAST(sender_type AS STRING))) = 'user' THEN 1 ELSE 0 END) AS teve_user
   FROM hive_metastore.sanus_prod.botmaker_message
   GROUP BY CAST(session_id AS STRING)
 ),
@@ -119,8 +120,10 @@ sessions_base AS (
       WHEN TRIM(CAST(s.variables['typification'] AS STRING)) = '' THEN '(VAZIO/BRANCO)'
       ELSE TRIM(CAST(s.variables['typification'] AS STRING))
     END AS tipificacao,
+    NULLIF(TRIM(CAST(s.finished_by AS STRING)), '') AS finished_by,
     CASE WHEN s.finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END AS tipo_finished_by,
     COALESCE(sha.teve_humano, 0) AS teve_humano_agent,
+    COALESCE(sha.teve_user, 0) AS teve_user,
     CASE WHEN COALESCE(sha.teve_humano, 0) = 1 THEN 'Humano' ELSE 'IA' END AS tipo_atendimento_agent,
     COALESCE(
       CASE
@@ -174,7 +177,7 @@ sessions_base AS (
   FROM hive_metastore.sanus_prod.botmaker_session s
   LEFT JOIN hive_metastore.sanus_prod.organizations o
     ON CAST(s.organization_id AS STRING) = CAST(o.id AS STRING)
-  LEFT JOIN session_has_agent sha
+  LEFT JOIN session_msg_flags sha
     ON CAST(s.session_id AS STRING) = sha.session_id
   WHERE s.creation_time IS NOT NULL
 )
@@ -187,7 +190,7 @@ SELECT * FROM sessions_base
   },
   {
     label: "3/3 ANALYZE",
-    sql: `ANALYZE TABLE ${FQN} COMPUTE STATISTICS FOR COLUMNS mes, dia, economic_group_canonical, economic_group_name, organization_name, organization_id, tipo_atendimento_agent, tipo_finished_by, tipificacao`,
+    sql: `ANALYZE TABLE ${FQN} COMPUTE STATISTICS FOR COLUMNS mes, dia, economic_group_canonical, economic_group_name, organization_name, organization_id, tipo_atendimento_agent, tipo_finished_by, tipificacao, finished_by, teve_user`,
   },
 ];
 
