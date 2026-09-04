@@ -914,9 +914,9 @@ function renderStatusDemandaLiveNew(indicators, opts) {
   const rows = Array.isArray(indicators) ? indicators : [];
   const total = Number(opts.total) || rows.reduce((acc, item) => acc + (Number(item.total) || 0), 0);
   const defaults = [
-    { key: 'atendida', label: 'Demanda atendida', total: 0, pct: 0 },
-    { key: 'nao_atendida', label: 'Demanda não atendida', total: 0, pct: 0 },
-    { key: 'abandono', label: 'Abandono', total: 0, pct: 0 },
+    { key: 'atendida', label: 'Demanda atendida', total: 0, pct: 0, typifications: [] },
+    { key: 'nao_atendida', label: 'Demanda não atendida', total: 0, pct: 0, typifications: [] },
+    { key: 'abandono', label: 'Abandono', total: 0, pct: 0, typifications: [] },
   ];
   const byKey = new Map(rows.map((item) => [item.key, item]));
   const cards = defaults.map((item) => {
@@ -927,6 +927,7 @@ function renderStatusDemandaLiveNew(indicators, opts) {
           total: Number(hit.total) || 0,
           pct: Number(hit.pct) || 0,
           label: hit.label || item.label,
+          typifications: Array.isArray(hit.typifications) ? hit.typifications : [],
         }
       : item;
   });
@@ -935,17 +936,39 @@ function renderStatusDemandaLiveNew(indicators, opts) {
       const pct = Number.isFinite(Number(item.pct))
         ? Number(item.pct).toFixed(1).replace('.', ',')
         : '0,0';
+      const tips = item.typifications || [];
+      const maxTip = tips.length ? (Number(tips[0].total) || 1) : 1;
+      const tipRows = tips.length
+        ? tips.map((tip) => {
+            const tipTotal = Number(tip.total) || 0;
+            const width = Math.max((tipTotal / maxTip) * 100, 2);
+            const tipPct = Number.isFinite(Number(tip.pct))
+              ? Number(tip.pct).toFixed(1).replace('.', ',')
+              : (item.total > 0 ? ((tipTotal / item.total) * 100).toFixed(1).replace('.', ',') : '0,0');
+            const label = escapeHtml(tip.tipo || 'Sem tipificação');
+            return `<div class="sn-status-demanda-tip-row" title="${label}">
+              <div class="sn-status-demanda-tip-label">${label}</div>
+              <div class="session-typification-track"><div class="session-typification-bar" style="width:${width}%"></div></div>
+              <div class="sn-status-demanda-tip-value">${fmt(tipTotal)} <span>(${tipPct}%)</span></div>
+            </div>`;
+          }).join('')
+        : '<div class="sn-status-demanda-tip-empty">Sem tipificações neste status.</div>';
       return `<div class="sn-status-demanda-card sn-status-demanda-${escapeHtml(item.key)}">
-        <div class="sn-status-demanda-label">${escapeHtml(item.label)}</div>
-        <div class="sn-status-demanda-value">${fmt(item.total)}</div>
-        <div class="sn-status-demanda-pct">${pct}% do total QA</div>
+        <div class="sn-status-demanda-card-head">
+          <div>
+            <div class="sn-status-demanda-label">${escapeHtml(item.label)}</div>
+            <div class="sn-status-demanda-value">${fmt(item.total)}</div>
+          </div>
+          <div class="sn-status-demanda-pct">${pct}% do total</div>
+        </div>
+        <div class="sn-status-demanda-tip-list">${tipRows}</div>
       </div>`;
     }).join('');
   }
-  if (meta) meta.textContent = `total ${fmt(total)} sessões QA c/ interação`;
+  if (meta) meta.textContent = `total ${fmt(total)} sessões QA c/ interação · tipificação segregada por status`;
   if (note) {
     note.style.display = 'block';
-    note.textContent = opts.source || 'quality_analysis_silver_summary.status_demanda';
+    note.textContent = opts.source || 'quality_analysis_silver_summary.status_demanda × tipificacao';
   }
   if (loading) loading.style.display = 'none';
   if (content) {

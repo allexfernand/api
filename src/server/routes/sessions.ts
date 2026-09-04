@@ -860,7 +860,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       }
     }
 
-    // Q11E (Sessões - New): status_demanda da quality_analysis_silver_summary
+    // Q11E (Sessões - New): status_demanda + tipificação (mesmo critério Q11C)
     // Join: qa.id = gold.session_id · mesmos filtros da página + teve_user.
     if (scope === 'status_demanda_live') {
       const statusExpr = `CASE
@@ -868,73 +868,100 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         WHEN TRIM(CAST(q.${quoteIdent('status_demanda')} AS STRING)) = '' THEN '(VAZIO/BRANCO)'
         ELSE TRIM(CAST(q.${quoteIdent('status_demanda')} AS STRING))
       END`;
+      const tipExpr = `CASE
+        WHEN q.${quoteIdent('tipificacao')} IS NULL THEN '(NULO)'
+        WHEN TRIM(CAST(q.${quoteIdent('tipificacao')} AS STRING)) = '' THEN '(VAZIO/BRANCO)'
+        ELSE TRIM(CAST(q.${quoteIdent('tipificacao')} AS STRING))
+      END`;
       const where = [
         companySessionsDateFilter,
         companySessionsScopeFilter,
         `COALESCE(s.${quoteIdent('teve_user')}, 0) = 1`,
       ].filter(Boolean).join(' AND ');
       const queryParams = params.list.length ? params.list : undefined;
+      const classifyStatus = (raw: string): 'atendida' | 'nao_atendida' | 'abandono' | null => {
+        const value = String(raw || '').toLowerCase();
+        if (value.includes('abandono')) return 'abandono';
+        if (value.includes('não atendida') || value.includes('nao atendida')) return 'nao_atendida';
+        if (value.includes('atendida')) return 'atendida';
+        return null;
+      };
       try {
         const rows = await runQuery(warehouseId, `
           SELECT
+            ${tipExpr} AS tipificacao,
             ${statusExpr} AS status_demanda,
             COUNT(*) AS total_sessions
           FROM ${dashboardSessionsTable} s
           INNER JOIN ${QUALITY_SUMMARY_TABLE} q
             ON CAST(q.${quoteIdent('id')} AS STRING) = CAST(s.${quoteIdent('session_id')} AS STRING)
           ${where ? `WHERE ${where}` : ''}
-          GROUP BY 1
+          GROUP BY 1, 2
           ORDER BY total_sessions DESC
         `, queryParams);
-        const statuses = rows.map((r) => ({
-          status: String(getCell(r[0]) || '—'),
-          total: toInt(r[1]),
-        }));
-        const total = statuses.reduce((acc, item) => acc + item.total, 0);
-        const pick = (matcher: (value: string) => boolean) => {
-          const hit = statuses.find((item) => matcher(item.status.toLowerCase()));
-          return hit ? hit.total : 0;
+
+        const buckets: Record<'atendida' | 'nao_atendida' | 'abandono', {
+          key: 'atendida' | 'nao_atendida' | 'abandono';
+          label: string;
+          total: number;
+          tipMap: Map<string, number>;
+        }> = {
+          atendida: { key: 'atendida', label: 'Demanda atendida', total: 0, tipMap: new Map() },
+          nao_atendida: { key: 'nao_atendida', label: 'Demanda não atendida', total: 0, tipMap: new Map() },
+          abandono: { key: 'abandono', label: 'Abandono', total: 0, tipMap: new Map() },
         };
-        const indicators = [
-          {
-            key: 'atendida',
-            label: 'Demanda atendida',
-            total: pick((v) => v.includes('atendida') && !v.includes('não') && !v.includes('nao')),
-          },
-          {
-            key: 'nao_atendida',
-            label: 'Demanda não atendida',
-            total: pick((v) => v.includes('não atendida') || v.includes('nao atendida')),
-          },
-          {
-            key: 'abandono',
-            label: 'Abandono',
-            total: pick((v) => v.includes('abandono')),
-          },
-        ].map((item) => ({
-          ...item,
-          pct: total > 0 ? Math.round((item.total / total) * 1000) / 10 : 0,
-        }));
+
+        let total = 0;
+        for (const row of rows) {
+          const tipo = String(getCell(row[0]) || '—');
+          const status = String(getCell(row[1]) || '');
+          const count = toInt(row[2]);
+          if (!count) continue;
+          total += count;
+          const bucketKey = classifyStatus(status);
+          if (!bucketKey) continue;
+          const bucket = buckets[bucketKey];
+          bucket.total += count;
+          bucket.tipMap.set(tipo, (bucket.tipMap.get(tipo) || 0) + count);
+        }
+
+        const indicators = (['atendida', 'nao_atendida', 'abandono'] as const).map((key) => {
+          const bucket = buckets[key];
+          const typifications = [...bucket.tipMap.entries()]
+            .map(([tipo, tipTotal]) => ({
+              tipo,
+              total: tipTotal,
+              pct: bucket.total > 0 ? Math.round((tipTotal / bucket.total) * 1000) / 10 : 0,
+            }))
+            .sort((a, b) => b.total - a.total)
+            .slice(0, 20);
+          return {
+            key: bucket.key,
+            label: bucket.label,
+            total: bucket.total,
+            pct: total > 0 ? Math.round((bucket.total / total) * 1000) / 10 : 0,
+            typifications,
+          };
+        });
+
         setStableCache(res);
         return res.status(200).json({
           scope: 'status_demanda_live',
           indicators,
-          statuses,
           total,
           filters_applied: {
             period: meses.length > 0,
             organization: Boolean(groupNames.length || company || partnerBrokerId),
             user_interaction: true,
           },
-          source: 'quality_analysis_silver_summary.status_demanda · join qa.id = gold.session_id',
-          rule: 'Q11E = status da demanda QA · gold c/ interação · filtros da página',
+          source: 'quality_analysis_silver_summary.status_demanda × tipificacao · join qa.id = gold.session_id',
+          rule: 'Q11E = tipificação QA segregada por status da demanda · gold c/ interação · filtros da página',
         });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         return res.status(200).json({
           scope: 'status_demanda_live',
           indicators: [],
-          statuses: [],
           total: 0,
           error: msg,
         });
