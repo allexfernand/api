@@ -475,7 +475,7 @@ function resetTypificationGroupsLiveCardNew(reason) {
     if (reason === 'reload' && hadSelection) {
       empty.innerHTML = '<i class="fa-solid fa-arrows-rotate"></i><div>Os filtros mudaram. Selecione novamente um tipo de encerramento ao lado.</div>';
     } else {
-      empty.innerHTML = '<i class="fa-solid fa-hand-pointer"></i><div>Selecione um tipo de encerramento ao lado para ver as 3 conversas mais recentes.</div>';
+      empty.innerHTML = '<i class="fa-solid fa-hand-pointer"></i><div>Selecione um tipo de encerramento ao lado para ver 3 conversas com SOAP e mensagens.</div>';
     }
   }
 }
@@ -516,6 +516,53 @@ function formatQaResolvedNew(value) {
   if (raw === 'true' || raw === '1' || raw === 'sim') return 'Resolvido';
   if (raw === 'false' || raw === '0' || raw === 'nao' || raw === 'não') return 'Não resolvido';
   return value ? String(value) : '—';
+}
+
+function formatMessageSenderNew(sender) {
+  const raw = String(sender || '').toLowerCase();
+  if (raw === 'user' || raw === 'usuario' || raw === 'usuário' || raw === 'patient' || raw === 'beneficiary') return 'Paciente';
+  if (raw === 'agent' || raw === 'operator' || raw === 'human' || raw === 'attendant') return 'Atendente';
+  if (raw === 'bot' || raw === 'assistant' || raw === 'system') return 'Bot';
+  return sender ? String(sender) : '—';
+}
+
+function parseSoapSectionsNew(soap) {
+  const text = String(soap || '').trim();
+  if (!text) return [];
+  const re = /(?:^|\n)\s*(Subjetivo|Subjective|Objetivo|Objective|Avalia(?:ção|cao)?|Assessment|Plano|Plan|\b[SOAP]\b)\s*[:\-]\s*/gi;
+  const parts = [];
+  let match;
+  const matches = [];
+  while ((match = re.exec(text)) !== null) {
+    matches.push({ label: match[1], index: match.index, end: re.lastIndex });
+  }
+  if (!matches.length) {
+    return [{ label: 'SOAP', text }];
+  }
+  const labelMap = {
+    s: 'Subjetivo',
+    subjective: 'Subjetivo',
+    subjetivo: 'Subjetivo',
+    o: 'Objetivo',
+    objective: 'Objetivo',
+    objetivo: 'Objetivo',
+    a: 'Avaliação',
+    assessment: 'Avaliação',
+    avaliacao: 'Avaliação',
+    avaliação: 'Avaliação',
+    p: 'Plano',
+    plan: 'Plano',
+    plano: 'Plano',
+  };
+  for (let i = 0; i < matches.length; i++) {
+    const start = matches[i].end;
+    const end = i + 1 < matches.length ? matches[i + 1].index : text.length;
+    const body = text.slice(start, end).trim();
+    if (!body) continue;
+    const key = String(matches[i].label || '').toLowerCase();
+    parts.push({ label: labelMap[key] || matches[i].label, text: body });
+  }
+  return parts.length ? parts : [{ label: 'SOAP', text }];
 }
 
 async function loadTypificationSamplesLiveNew(tipo) {
@@ -576,22 +623,24 @@ async function loadTypificationSamplesLiveNew(tipo) {
       const who = escapeHtml(item.closed_by || 'Sem closed_by');
       const status = escapeHtml(item.status_demanda || 'Sem status');
       const score = escapeHtml(formatQaScoreNew(item));
-      const preview = escapeHtml(item.preview || item.linha_de_cuidado || 'Sem resumo qualitativo disponível.');
+      const preview = escapeHtml(item.preview || 'Sem SOAP/necessidade disponível — abra para ver as mensagens.');
       const org = escapeHtml(item.organization_name || item.economic_group || '');
+      const badge = item.has_soap ? 'SOAP' : (Array.isArray(item.messages) && item.messages.length ? 'Msgs' : 'QA');
       return `<button type="button" class="sn-qa-conv-card" data-qa-index="${index}" onclick="openQaConversationModalNew(${index})">
         <div class="sn-qa-conv-card-top">
           <div class="sn-qa-conv-card-title">${when} · ${who}</div>
           <span class="sn-qa-conv-pill">${score}</span>
         </div>
-        <div class="sn-qa-conv-card-meta">${status}${org ? ` · ${org}` : ''}</div>
+        <div class="sn-qa-conv-card-meta"><span class="sn-qa-conv-badge">${badge}</span> ${status}${org ? ` · ${org}` : ''}</div>
         <div class="sn-qa-conv-card-preview">${preview}</div>
       </button>`;
     }).join('');
   }
-  if (meta) meta.textContent = `${conversations.length} conversas mais recentes · clique para ver o resumo`;
+  const withSoap = conversations.filter((c) => c.has_soap).length;
+  if (meta) meta.textContent = `${conversations.length} conversas · ${withSoap} com SOAP · clique para ver necessidade + mensagens`;
   if (note) {
     note.style.display = 'block';
-    note.textContent = data.source || 'quality_analysis_silver_summary + resumo_qualitativo';
+    note.textContent = data.source || 'botmaker_session.resume_soap + botmaker_message';
   }
 }
 
@@ -607,7 +656,7 @@ function openQaConversationModalNew(index) {
   const subtitle = document.getElementById('sn-qa-conv-modal-subtitle');
   const body = document.getElementById('sn-qa-conv-modal-body');
   if (!item || !modal || !body) return;
-  if (title) title.textContent = item.tipificacao || 'Resumo da conversa';
+  if (title) title.textContent = item.tipificacao || 'Conversa';
   if (subtitle) {
     subtitle.textContent = [item.event_at, item.closed_by, item.organization_name || item.economic_group]
       .filter(Boolean)
@@ -619,10 +668,30 @@ function openQaConversationModalNew(index) {
     ['Desempenho', formatQaScoreNew(item)],
     ['Linha de cuidado', item.linha_de_cuidado],
     ['Categoria', item.categoria_linha_de_cuidado],
+    ['Motivo sessão', item.motivo],
     ['Tipo agendamento', item.tipo_atendimento_agendamento],
-    ['Bot / Agent', `${item.has_bot ? 'Bot' : '—'} · ${item.has_agent ? 'Agent' : '—'}`],
     ['Session', item.session_id],
   ];
+  const soapSections = parseSoapSectionsNew(item.soap || '');
+  const soapHtml = soapSections.length
+    ? soapSections.map((section) => `
+        <div class="sn-qa-conv-soap-block">
+          <div class="sn-qa-conv-detail-label">${escapeHtml(section.label)}</div>
+          <p>${escapeHtml(section.text)}</p>
+        </div>
+      `).join('')
+    : `<div class="sn-qa-conv-empty-hint">SOAP não disponível nesta sessão (comum em períodos muito recentes).</div>`;
+  const messages = Array.isArray(item.messages) ? item.messages : [];
+  const messagesHtml = messages.length
+    ? messages.map((msg) => {
+        const sender = formatMessageSenderNew(msg.sender);
+        const roleClass = sender === 'Paciente' ? 'is-user' : (sender === 'Atendente' ? 'is-agent' : 'is-bot');
+        return `<div class="sn-qa-conv-msg ${roleClass}">
+          <div class="sn-qa-conv-msg-meta">${escapeHtml(sender)}${msg.at ? ` · ${escapeHtml(msg.at)}` : ''}</div>
+          <div class="sn-qa-conv-msg-text">${escapeHtml(msg.text)}</div>
+        </div>`;
+      }).join('')
+    : `<div class="sn-qa-conv-empty-hint">Sem mensagens de texto disponíveis para esta sessão.</div>`;
   body.innerHTML = `
     <div class="sn-qa-conv-detail-grid">
       ${fields.map(([label, value]) => `
@@ -633,8 +702,12 @@ function openQaConversationModalNew(index) {
       `).join('')}
     </div>
     <div class="sn-qa-conv-detail-resumo">
-      <div class="sn-qa-conv-detail-label">Resumo qualitativo</div>
-      <p>${escapeHtml(item.resumo || item.preview || 'Sem resumo qualitativo disponível para esta conversa.')}</p>
+      <div class="sn-qa-conv-detail-label">Necessidade do paciente · SOAP</div>
+      ${soapHtml}
+    </div>
+    <div class="sn-qa-conv-detail-resumo">
+      <div class="sn-qa-conv-detail-label">Trocas de mensagem</div>
+      <div class="sn-qa-conv-msg-list">${messagesHtml}</div>
     </div>
   `;
   modal.hidden = false;

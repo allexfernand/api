@@ -7,7 +7,7 @@ export default function Page() {
   return (
     <>
       <DashboardPage fragments={fragments} />
-      <Script src="/scripts/dashboard.js?v=20260904-q11d-conv" strategy="afterInteractive" />
+      <Script src="/scripts/dashboard.js?v=20260904-q11d-soap" strategy="afterInteractive" />
     </>
   );
 }

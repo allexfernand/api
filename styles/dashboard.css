@@ -644,6 +644,40 @@ body[data-sidebar="collapsed"] .sidebar-tab span{opacity:0;position:absolute;tra
   line-height:1.6;
   white-space:pre-wrap;
 }
+.sn-qa-conv-badge{
+  display:inline-flex;
+  align-items:center;
+  font-size:10px;
+  font-weight:800;
+  letter-spacing:.3px;
+  text-transform:uppercase;
+  color:#4338ca;
+  background:#eef2ff;
+  border:1px solid #c7d2fe;
+  border-radius:999px;
+  padding:1px 7px;
+  margin-right:4px;
+}
+.sn-qa-conv-soap-block{
+  border-top:1px solid #e2e8f0;
+  padding-top:10px;
+  margin-top:10px;
+}
+.sn-qa-conv-soap-block:first-of-type{border-top:0;padding-top:0;margin-top:6px}
+.sn-qa-conv-soap-block p{margin:0;font-size:13px;color:#334155;line-height:1.6;white-space:pre-wrap}
+.sn-qa-conv-empty-hint{font-size:12px;color:#94a3b8;line-height:1.5;margin-top:6px}
+.sn-qa-conv-msg-list{display:grid;gap:8px;margin-top:8px;max-height:280px;overflow-y:auto;padding-right:4px}
+.sn-qa-conv-msg{
+  border-radius:10px;
+  padding:8px 10px;
+  border:1px solid #e2e8f0;
+  background:#f8fafc;
+}
+.sn-qa-conv-msg.is-user{background:#ecfeff;border-color:#a5f3fc}
+.sn-qa-conv-msg.is-agent{background:#f8fafc;border-color:#e2e8f0}
+.sn-qa-conv-msg.is-bot{background:#f1f5f9;border-color:#e2e8f0}
+.sn-qa-conv-msg-meta{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#64748b;margin-bottom:4px}
+.sn-qa-conv-msg-text{font-size:12px;color:#0f172a;line-height:1.5;white-space:pre-wrap;word-break:break-word}
 @media (max-width:720px){
   .sn-qa-conv-detail-grid{grid-template-columns:1fr}
 }

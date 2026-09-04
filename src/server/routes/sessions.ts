@@ -53,6 +53,25 @@ const ORGANIZATION_PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.organizati
 
 const HUMAN_DEPT_CACHE_TTL_MS = 10 * 60 * 1000;
 const humanDeptEvolutionCache = new Map<string, { at: number; payload: Record<string, unknown> }>();
+const typificationSamplesCache = new Map<string, { at: number; payload: Record<string, unknown> }>();
+const TYPIFICATION_SAMPLES_CACHE_TTL_MS = 3 * 60 * 1000;
+
+function soapSubjectivePreview(soap: string, max = 180): string | null {
+  const text = String(soap || '').trim();
+  if (!text) return null;
+  const match = text.match(
+    /(?:^|\n)\s*(?:Subjetivo|Subjective|\bS\b)\s*[:\-]\s*([\s\S]*?)(?=(?:\n\s*(?:Objetivo|Objective|Avalia(?:ção|cao)?|Assessment|Plano|Plan|\b[OAP]\b)\s*[:\-])|$)/i
+  );
+  const body = String(match?.[1] || text).replace(/\s+/g, ' ').trim();
+  if (!body) return null;
+  return body.length > max ? `${body.slice(0, max - 1)}…` : body;
+}
+
+function truncateText(value: string, max = 500): string {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
 
 type GoldDeptCapabilities = { hasFinishedBy: boolean; hasTeveUser: boolean; at: number; ttlMs: number };
 let goldDeptCapabilitiesCache: GoldDeptCapabilities | null = null;
@@ -801,13 +820,6 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         WHEN TRIM(CAST(q.${quoteIdent('tipificacao')} AS STRING)) = '' THEN '(VAZIO/BRANCO)'
         ELSE TRIM(CAST(q.${quoteIdent('tipificacao')} AS STRING))
       END`;
-      const qaJsonExpr = `regexp_replace(CAST(b.${quoteIdent('quality_analysis')} AS STRING), r'^\`\`\`json\\s*|\\s*\`\`\`$', '')`;
-      const resumoExpr = `COALESCE(
-        NULLIF(TRIM(CAST(get_json_object(${qaJsonExpr}, '$.resumo_qualitativo') AS STRING)), ''),
-        NULLIF(TRIM(CAST(get_json_object(${qaJsonExpr}, '$.resumo_atendimento') AS STRING)), ''),
-        NULLIF(TRIM(CAST(get_json_object(${qaJsonExpr}, '$.sintese') AS STRING)), ''),
-        NULLIF(TRIM(CAST(get_json_object(${qaJsonExpr}, '$.resumo') AS STRING)), '')
-      )`;
       const baseWhere = [
         companySessionsDateFilter,
         companySessionsScopeFilter,
@@ -853,6 +865,22 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           });
         }
 
+        const samplesCacheKey = JSON.stringify({
+          scope: 'typification_samples_live',
+          tip: typificationValue,
+          months: meses,
+          groups: groupNames,
+          company,
+          partnerBrokerId,
+        });
+        const samplesCached = typificationSamplesCache.get(samplesCacheKey);
+        if (samplesCached && Date.now() - samplesCached.at < TYPIFICATION_SAMPLES_CACHE_TTL_MS) {
+          setStableCache(res);
+          return res.status(200).json(samplesCached.payload);
+        }
+
+        // Prefere sessões com resume_soap (necessidade do paciente legível).
+        // Evita parse de quality_analysis (coluna pesada / cobertura baixa).
         const rows = await runQuery(warehouseId, `
           SELECT
             CAST(q.${quoteIdent('id')} AS STRING) AS qa_id,
@@ -872,20 +900,26 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
             CAST(q.${quoteIdent('has_agent')} AS STRING) AS has_agent,
             NULLIF(TRIM(CAST(s.${quoteIdent('economic_group_canonical')} AS STRING)), '') AS economic_group,
             NULLIF(TRIM(CAST(s.${quoteIdent('organization_name')} AS STRING)), '') AS organization_name,
-            ${resumoExpr} AS resumo
+            NULLIF(TRIM(b.${quoteIdent('resume_soap')}), '') AS resume_soap,
+            NULLIF(TRIM(CAST(b.${quoteIdent('motivo')} AS STRING)), '') AS motivo,
+            CASE WHEN NULLIF(TRIM(b.${quoteIdent('resume_soap')}), '') IS NOT NULL THEN 1 ELSE 0 END AS has_soap
           FROM ${dashboardSessionsTable} s
           INNER JOIN ${QUALITY_SUMMARY_TABLE} q
             ON CAST(q.${quoteIdent('id')} AS STRING) = CAST(s.${quoteIdent('session_id')} AS STRING)
           LEFT JOIN ${SESSION_TABLE} b
             ON CAST(b.${quoteIdent('session_id')} AS STRING) = CAST(s.${quoteIdent('session_id')} AS STRING)
           WHERE ${where || '1=1'}
-          ORDER BY try_cast(q.${quoteIdent('event_timestamp')} AS TIMESTAMP) DESC
+          ORDER BY has_soap DESC, try_cast(q.${quoteIdent('event_timestamp')} AS TIMESTAMP) DESC
           LIMIT 3
         `, queryParams);
 
         const conversations = rows.map((r) => {
-          const resumo = String(getCell(r[17]) || '').trim();
-          const preview = resumo.length > 180 ? `${resumo.slice(0, 177)}…` : resumo;
+          const soap = String(getCell(r[17]) || '').trim();
+          const motivo = String(getCell(r[18]) || '').trim();
+          const preview = soapSubjectivePreview(soap)
+            || (motivo ? `Motivo: ${motivo}` : null)
+            || String(getCell(r[5]) || '').trim()
+            || null;
           const pctRaw = getCell(r[9]);
           const notaRaw = getCell(r[10]);
           const notaMaxRaw = getCell(r[11]);
@@ -907,13 +941,57 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
             has_agent: String(getCell(r[14]) || '').toLowerCase() === 'true',
             economic_group: String(getCell(r[15]) || '') || null,
             organization_name: String(getCell(r[16]) || '') || null,
-            resumo: resumo || null,
+            soap: soap || null,
+            motivo: motivo || null,
+            has_soap: Boolean(soap),
             preview: preview || null,
+            messages: [] as Array<{ at: string; sender: string; text: string }>,
           };
         });
 
-        setStableCache(res);
-        return res.status(200).json({
+        const sessionIds = conversations.map((c) => c.session_id).filter(Boolean);
+        if (sessionIds.length) {
+          const msgParams = createSqlParams();
+          const idPlaceholders = sessionIds.map((id) => msgParams.add(id)).join(', ');
+          try {
+            const msgRows = await runQuery(warehouseId, `
+              SELECT
+                CAST(m.${quoteIdent('session_id')} AS STRING) AS session_id,
+                DATE_FORMAT(try_cast(m.${quoteIdent('creation_time')} AS TIMESTAMP), 'HH:mm') AS msg_at,
+                LOWER(TRIM(CAST(m.${quoteIdent('sender_type')} AS STRING))) AS sender_type,
+                TRIM(CAST(m.${quoteIdent('content_text')} AS STRING)) AS content_text
+              FROM ${MESSAGE_TABLE} m
+              WHERE CAST(m.${quoteIdent('session_id')} AS STRING) IN (${idPlaceholders})
+                AND m.${quoteIdent('content_text')} IS NOT NULL
+                AND TRIM(CAST(m.${quoteIdent('content_text')} AS STRING)) <> ''
+              QUALIFY ROW_NUMBER() OVER (
+                PARTITION BY CAST(m.${quoteIdent('session_id')} AS STRING)
+                ORDER BY try_cast(m.${quoteIdent('creation_time')} AS TIMESTAMP)
+              ) <= 16
+              ORDER BY try_cast(m.${quoteIdent('creation_time')} AS TIMESTAMP)
+            `, msgParams.list);
+            const bySession = new Map<string, Array<{ at: string; sender: string; text: string }>>();
+            for (const row of msgRows) {
+              const sid = String(getCell(row[0]) || '');
+              const text = truncateText(String(getCell(row[3]) || ''), 420);
+              if (!sid || !text) continue;
+              const list = bySession.get(sid) || [];
+              list.push({
+                at: String(getCell(row[1]) || ''),
+                sender: String(getCell(row[2]) || 'unknown'),
+                text,
+              });
+              bySession.set(sid, list);
+            }
+            for (const conv of conversations) {
+              conv.messages = bySession.get(conv.session_id) || [];
+            }
+          } catch {
+            // Mensagens são enriquecimento; não falha o card se a query de msgs cair.
+          }
+        }
+
+        const payload = {
           scope: 'typification_samples_live',
           typification: typificationValue,
           conversations,
@@ -923,9 +1001,12 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
             organization: Boolean(groupNames.length || company || partnerBrokerId),
             user_interaction: true,
           },
-          source: 'quality_analysis_silver_summary + botmaker_session.quality_analysis.resumo_qualitativo',
-          rule: 'Q11D = 3 conversas mais recentes do motivo QA · clique para ver resumo completo',
-        });
+          source: 'botmaker_session.resume_soap + botmaker_message · preferência por SOAP preenchido',
+          rule: 'Q11D = 3 conversas do motivo QA (prioriza SOAP) · modal com SOAP + trocas de mensagem',
+        };
+        typificationSamplesCache.set(samplesCacheKey, { at: Date.now(), payload });
+        setStableCache(res);
+        return res.status(200).json(payload);
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         if (!wantsSamples) {
