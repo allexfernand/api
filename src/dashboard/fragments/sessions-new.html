@@ -187,7 +187,16 @@
           <i class="fa-solid fa-hand-pointer"></i>
           <div>Selecione um tipo de encerramento ao lado para ver 7 conversas com SOAP.</div>
         </div>
-        <div class="loading-box" id="sn-typification-groups-live-loading" style="display:none"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...</div>
+        <div class="loading-box sn-qa-loading" id="sn-typification-groups-live-loading" style="display:none" aria-live="polite">
+          <div class="sn-qa-loading-title"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i><span id="sn-qa-loading-label">Carregando conversas...</span></div>
+          <div class="sn-qa-loading-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="sn-qa-loading-bar">
+            <div class="sn-qa-loading-bar-fill" id="sn-qa-loading-bar-fill"></div>
+          </div>
+          <div class="sn-qa-loading-meta">
+            <strong id="sn-qa-loading-pct">0%</strong>
+            <span id="sn-qa-loading-hint">Consultando Databricks…</span>
+          </div>
+        </div>
         <div id="sn-typification-groups-live-content" style="display:none">
           <div class="sn-qa-conv-list" id="sn-typification-groups-live-list"></div>
           <div class="sessions-q11-meta" id="sn-typification-groups-live-meta">—</div>

@@ -16,6 +16,8 @@ let selectedTypificationLiveNew = null;
 let typificationLiveGroupsRequestIdNew = 0;
 let typificationLiveRequestIdNew = 0;
 let snQaConversationsCacheNew = [];
+let snQaLoadingProgressTimerNew = null;
+let snQaLoadingProgressValueNew = 0;
 
 function renderSessionMessageAgentFinishersNew(items, opts) {
   const loading = document.getElementById('sn-session-message-finishers-loading');
@@ -456,6 +458,7 @@ function resetTypificationGroupsLiveCardNew(reason) {
   const hadSelection = Boolean(selectedTypificationLiveNew);
   selectedTypificationLiveNew = null;
   snQaConversationsCacheNew = [];
+  stopQ11dLoadingProgressNew();
   closeQaConversationModalNew();
   const empty = document.getElementById('sn-typification-groups-live-empty');
   const loading = document.getElementById('sn-typification-groups-live-loading');
@@ -565,6 +568,56 @@ function parseSoapSectionsNew(soap) {
   return parts.length ? parts : [{ label: 'SOAP', text }];
 }
 
+function setQ11dLoadingProgressNew(pct, label, hint) {
+  snQaLoadingProgressValueNew = Math.max(0, Math.min(100, Math.round(pct)));
+  const fill = document.getElementById('sn-qa-loading-bar-fill');
+  const bar = document.getElementById('sn-qa-loading-bar');
+  const pctEl = document.getElementById('sn-qa-loading-pct');
+  const labelEl = document.getElementById('sn-qa-loading-label');
+  const hintEl = document.getElementById('sn-qa-loading-hint');
+  if (fill) fill.style.width = `${snQaLoadingProgressValueNew}%`;
+  if (bar) bar.setAttribute('aria-valuenow', String(snQaLoadingProgressValueNew));
+  if (pctEl) pctEl.textContent = `${snQaLoadingProgressValueNew}%`;
+  if (label && labelEl) labelEl.textContent = label;
+  if (hint && hintEl) hintEl.textContent = hint;
+}
+
+function stopQ11dLoadingProgressNew(opts) {
+  opts = opts || {};
+  if (snQaLoadingProgressTimerNew) {
+    clearInterval(snQaLoadingProgressTimerNew);
+    snQaLoadingProgressTimerNew = null;
+  }
+  if (opts.complete) {
+    setQ11dLoadingProgressNew(100, 'Pronto', 'Conversas carregadas');
+  }
+}
+
+function startQ11dLoadingProgressNew() {
+  stopQ11dLoadingProgressNew();
+  const startedAt = Date.now();
+  const stages = [
+    { at: 0, label: 'Buscando conversas...', hint: 'Filtrando tipificação QA' },
+    { at: 3500, label: 'Priorizando SOAP...', hint: 'Selecionando atendimentos com resumo' },
+    { at: 9000, label: 'Carregando detalhes...', hint: 'Nome, CPF e necessidade do paciente' },
+    { at: 16000, label: 'Montando mensagens...', hint: 'Quase lá — consulta ainda em andamento' },
+    { at: 26000, label: 'Finalizando...', hint: 'Demorando um pouco mais que o usual' },
+  ];
+  setQ11dLoadingProgressNew(4, stages[0].label, stages[0].hint);
+  // Curva assintótica até ~92%: avança rápido no começo e desacelera,
+  // para parecer vivo sem mentir que terminou antes da API.
+  snQaLoadingProgressTimerNew = setInterval(() => {
+    const elapsed = Date.now() - startedAt;
+    const target = 92 * (1 - Math.exp(-elapsed / 14000));
+    const next = Math.max(snQaLoadingProgressValueNew, target);
+    let stage = stages[0];
+    for (let i = 0; i < stages.length; i++) {
+      if (elapsed >= stages[i].at) stage = stages[i];
+    }
+    setQ11dLoadingProgressNew(next, stage.label, stage.hint);
+  }, 200);
+}
+
 async function loadTypificationSamplesLiveNew(tipo) {
   const requestId = ++typificationLiveGroupsRequestIdNew;
   const empty = document.getElementById('sn-typification-groups-live-empty');
@@ -578,6 +631,7 @@ async function loadTypificationSamplesLiveNew(tipo) {
   if (content) content.style.display = 'none';
   if (loading) loading.style.display = 'block';
   if (context) context.textContent = tipo;
+  startQ11dLoadingProgressNew();
 
   const meses = [...selectedMonths].sort();
   const p = new URLSearchParams();
@@ -587,9 +641,18 @@ async function loadTypificationSamplesLiveNew(tipo) {
   appendGroupParams(p);
 
   const data = await safeGet('/api/sessions?' + p.toString());
-  if (requestId !== typificationLiveGroupsRequestIdNew) return;
-  if (selectedTypificationLiveNew !== tipo) return;
+  if (requestId !== typificationLiveGroupsRequestIdNew) {
+    stopQ11dLoadingProgressNew();
+    return;
+  }
+  if (selectedTypificationLiveNew !== tipo) {
+    stopQ11dLoadingProgressNew();
+    return;
+  }
 
+  stopQ11dLoadingProgressNew({ complete: true });
+  await new Promise((resolve) => setTimeout(resolve, 180));
+  if (requestId !== typificationLiveGroupsRequestIdNew) return;
   if (loading) loading.style.display = 'none';
 
   if (!data || data.error) {

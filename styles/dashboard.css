@@ -521,7 +521,49 @@ body[data-sidebar="collapsed"] .sidebar-tab span{opacity:0;position:absolute;tra
 .card-box[data-qtag="#Q11B"] #typification-groups-empty,
 .card-box[data-qtag="#Q11B"] #sn-typification-groups-empty,
 .card-box[data-qtag="#Q11D"] #sn-typification-groups-live-empty{flex:1 1 auto}
-.sn-qa-conv-list{display:grid;gap:8px}
+.sn-qa-loading{
+  display:flex;
+  flex-direction:column;
+  align-items:stretch;
+  justify-content:center;
+  gap:12px;
+  padding:28px 18px;
+  text-align:left;
+}
+.sn-qa-loading-title{
+  font-size:13px;
+  font-weight:700;
+  color:#475569;
+  text-align:center;
+}
+.sn-qa-loading-bar{
+  width:100%;
+  height:10px;
+  border-radius:999px;
+  background:#e2e8f0;
+  overflow:hidden;
+}
+.sn-qa-loading-bar-fill{
+  height:100%;
+  width:0%;
+  border-radius:999px;
+  background:linear-gradient(90deg,#6366f1,#4f46e5);
+  transition:width .2s linear;
+}
+.sn-qa-loading-meta{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  font-size:12px;
+  color:#64748b;
+}
+.sn-qa-loading-meta strong{
+  font-variant-numeric:tabular-nums;
+  color:#4338ca;
+  font-weight:800;
+  min-width:40px;
+}
 .sn-qa-conv-card{
   border:1px solid #e2e8f0;
   border-radius:12px;
