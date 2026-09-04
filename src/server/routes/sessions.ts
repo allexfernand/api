@@ -861,7 +861,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     }
 
     // Q11E (Sessões - New): status_demanda + tipificação (mesmo critério Q11C)
-    // Join: qa.id = gold.session_id · mesmos filtros da página + teve_user.
+    // Join: qa.id = gold.session_id · mesmos filtros da página + interação do user.
     if (scope === 'status_demanda_live') {
       const statusExpr = `CASE
         WHEN q.${quoteIdent('status_demanda')} IS NULL THEN '(NULO)'
@@ -873,10 +873,14 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         WHEN TRIM(CAST(q.${quoteIdent('tipificacao')} AS STRING)) = '' THEN '(VAZIO/BRANCO)'
         ELSE TRIM(CAST(q.${quoteIdent('tipificacao')} AS STRING))
       END`;
+      const qaCaps = await resolveGoldDeptCapabilities(warehouseId);
+      const userInteractionFilter = qaCaps.hasTeveUser
+        ? `COALESCE(s.${quoteIdent('teve_user')}, 0) = 1`
+        : userInteractionExistsSql;
       const where = [
         companySessionsDateFilter,
         companySessionsScopeFilter,
-        `COALESCE(s.${quoteIdent('teve_user')}, 0) = 1`,
+        userInteractionFilter,
       ].filter(Boolean).join(' AND ');
       const queryParams = params.list.length ? params.list : undefined;
       const classifyStatus = (raw: string): 'atendida' | 'nao_atendida' | 'abandono' | null => {
@@ -986,10 +990,14 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         WHEN TRIM(CAST(q.${quoteIdent('tipificacao')} AS STRING)) = '' THEN '(VAZIO/BRANCO)'
         ELSE TRIM(CAST(q.${quoteIdent('tipificacao')} AS STRING))
       END`;
+      const qaCaps = await resolveGoldDeptCapabilities(warehouseId);
+      const userInteractionFilter = qaCaps.hasTeveUser
+        ? `COALESCE(s.${quoteIdent('teve_user')}, 0) = 1`
+        : userInteractionExistsSql;
       const baseWhere = [
         companySessionsDateFilter,
         companySessionsScopeFilter,
-        `COALESCE(s.${quoteIdent('teve_user')}, 0) = 1`,
+        userInteractionFilter,
       ].filter(Boolean).join(' AND ');
       const tipValueFilter = wantsSamples && typificationValue
         ? `${qaTipExpr} = ${params.add(typificationValue)}`
