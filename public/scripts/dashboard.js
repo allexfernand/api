@@ -1,5 +1,5 @@
 (async function loadSanusDashboard() {
-  const CACHE = "20260904-q11d-patient";
+  const CACHE = "20260904-q11d-7";
 
   function loadScript(src, { ordered = false } = {}) {
     return new Promise((resolve, reject) => {

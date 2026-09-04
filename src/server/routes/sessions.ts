@@ -54,7 +54,8 @@ const ORGANIZATION_PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.organizati
 const HUMAN_DEPT_CACHE_TTL_MS = 10 * 60 * 1000;
 const humanDeptEvolutionCache = new Map<string, { at: number; payload: Record<string, unknown> }>();
 const typificationSamplesCache = new Map<string, { at: number; payload: Record<string, unknown> }>();
-const TYPIFICATION_SAMPLES_CACHE_TTL_MS = 3 * 60 * 1000;
+const TYPIFICATION_SAMPLES_CACHE_TTL_MS = 5 * 60 * 1000;
+const Q11D_SAMPLE_LIMIT = 7;
 
 function soapSubjectivePreview(soap: string, max = 180): string | null {
   const text = String(soap || '').trim();
@@ -359,6 +360,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     : '';
   const scope = String(req.query.scope || '').toLowerCase();
   const typificationValue = req.query.typification_value ? String(req.query.typification_value) : null;
+  const sampleSessionId = req.query.session_id ? String(req.query.session_id).trim() : '';
   const includeUserInteraction = String(req.query.include_user_interaction || '') === '1';
 
   const SESSION_DATE_COLUMN = 'creation_time';
@@ -809,6 +811,55 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       }
     }
 
+    // Q11D modal: mensagens sob demanda (não bloqueia o carregamento da lista).
+    if (scope === 'typification_sample_messages') {
+      if (!sampleSessionId) {
+        return res.status(200).json({
+          scope: 'typification_sample_messages',
+          session_id: null,
+          messages: [],
+          error: 'session_id é obrigatório',
+        });
+      }
+      try {
+        const msgParams = createSqlParams();
+        const sidParam = msgParams.add(sampleSessionId);
+        const msgRows = await runQuery(warehouseId, `
+          SELECT
+            DATE_FORMAT(try_cast(m.${quoteIdent('creation_time')} AS TIMESTAMP), 'HH:mm') AS msg_at,
+            LOWER(TRIM(CAST(m.${quoteIdent('sender_type')} AS STRING))) AS sender_type,
+            TRIM(CAST(m.${quoteIdent('content_text')} AS STRING)) AS content_text
+          FROM ${MESSAGE_TABLE} m
+          WHERE CAST(m.${quoteIdent('session_id')} AS STRING) = ${sidParam}
+            AND m.${quoteIdent('content_text')} IS NOT NULL
+            AND TRIM(CAST(m.${quoteIdent('content_text')} AS STRING)) <> ''
+          ORDER BY try_cast(m.${quoteIdent('creation_time')} AS TIMESTAMP)
+          LIMIT 16
+        `, msgParams.list);
+        const messages = msgRows.map((row) => ({
+          at: String(getCell(row[0]) || ''),
+          sender: String(getCell(row[1]) || 'unknown'),
+          text: truncateText(String(getCell(row[2]) || ''), 420),
+        })).filter((m) => m.text);
+        setStableCache(res);
+        return res.status(200).json({
+          scope: 'typification_sample_messages',
+          session_id: sampleSessionId,
+          messages,
+          total: messages.length,
+        });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        return res.status(200).json({
+          scope: 'typification_sample_messages',
+          session_id: sampleSessionId,
+          messages: [],
+          total: 0,
+          error: msg,
+        });
+      }
+    }
+
     // Q11C / Q11D (Sessões - New): tipificação de quality_analysis_silver_summary
     // Join: qa.id = gold.session_id · filtros/interação via gold.
     if (scope === 'typification_live' || scope === 'typification_groups_live' || scope === 'typification_samples_live') {
@@ -874,7 +925,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
         const samplesCacheKey = JSON.stringify({
           scope: 'typification_samples_live',
-          v: 2,
+          v: 3,
           tip: typificationValue,
           months: meses,
           groups: groupNames,
@@ -887,55 +938,83 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           return res.status(200).json(samplesCached.payload);
         }
 
-        // Prefere sessões com resume_soap (necessidade do paciente legível).
-        // Evita parse de quality_analysis (coluna pesada / cobertura baixa).
-        const rows = await runQuery(warehouseId, `
-          SELECT
-            CAST(q.${quoteIdent('id')} AS STRING) AS qa_id,
-            CAST(s.${quoteIdent('session_id')} AS STRING) AS session_id,
-            ${qaTipExpr} AS tipificacao,
-            DATE_FORMAT(try_cast(q.${quoteIdent('event_timestamp')} AS TIMESTAMP), 'yyyy-MM-dd HH:mm') AS event_at,
-            NULLIF(TRIM(CAST(q.${quoteIdent('closed_by')} AS STRING)), '') AS closed_by,
-            NULLIF(TRIM(CAST(q.${quoteIdent('linha_de_cuidado')} AS STRING)), '') AS linha_de_cuidado,
-            NULLIF(TRIM(CAST(q.${quoteIdent('categoria_linha_de_cuidado')} AS STRING)), '') AS categoria_linha_de_cuidado,
-            NULLIF(TRIM(CAST(q.${quoteIdent('status_demanda')} AS STRING)), '') AS status_demanda,
-            LOWER(TRIM(CAST(q.${quoteIdent('problema_resolvido')} AS STRING))) AS problema_resolvido,
-            try_cast(q.${quoteIdent('percentual_desempenho')} AS DOUBLE) AS percentual_desempenho,
-            try_cast(q.${quoteIdent('nota_atendimento')} AS DOUBLE) AS nota_atendimento,
-            try_cast(q.${quoteIdent('nota_maxima_possivel')} AS DOUBLE) AS nota_maxima_possivel,
-            NULLIF(TRIM(CAST(q.${quoteIdent('tipo_atendimento_agendamento')} AS STRING)), '') AS tipo_atendimento_agendamento,
-            CAST(q.${quoteIdent('has_bot')} AS STRING) AS has_bot,
-            CAST(q.${quoteIdent('has_agent')} AS STRING) AS has_agent,
-            NULLIF(TRIM(CAST(s.${quoteIdent('economic_group_canonical')} AS STRING)), '') AS economic_group,
-            NULLIF(TRIM(CAST(s.${quoteIdent('organization_name')} AS STRING)), '') AS organization_name,
-            NULLIF(TRIM(b.${quoteIdent('resume_soap')}), '') AS resume_soap,
-            NULLIF(TRIM(CAST(b.${quoteIdent('motivo')} AS STRING)), '') AS motivo,
-            NULLIF(TRIM(CAST(COALESCE(
-              b.${quoteIdent('variables')}['nameHolder'],
-              b.${quoteIdent('variables')}['nomeTitular'],
-              b.${quoteIdent('variables')}['dependentName1'],
-              b.${quoteIdent('variables')}['fromName']
-            ) AS STRING)), '') AS patient_name,
-            NULLIF(REGEXP_REPLACE(CAST(COALESCE(
-              b.${quoteIdent('variables')}['cpfHolder'],
-              b.${quoteIdent('variables')}['inputCpfHolder'],
-              b.${quoteIdent('variables')}['cpfTitular'],
-              b.${quoteIdent('variables')}['dependentCpf1'],
-              b.${quoteIdent('variables')}['cpf'],
-              b.${quoteIdent('variables')}['CPF'],
-              b.${quoteIdent('variables')}['cpf_beneficiario'],
-              b.${quoteIdent('variables')}['beneficiary_cpf']
-            ) AS STRING), '[^0-9]', ''), '') AS patient_cpf,
-            CASE WHEN NULLIF(TRIM(b.${quoteIdent('resume_soap')}), '') IS NOT NULL THEN 1 ELSE 0 END AS has_soap
+        const patientNameExpr = `NULLIF(TRIM(CAST(COALESCE(
+          b.${quoteIdent('variables')}['nameHolder'],
+          b.${quoteIdent('variables')}['nomeTitular'],
+          b.${quoteIdent('variables')}['dependentName1'],
+          b.${quoteIdent('variables')}['fromName']
+        ) AS STRING)), '')`;
+        const patientCpfExpr = `NULLIF(REGEXP_REPLACE(CAST(COALESCE(
+          b.${quoteIdent('variables')}['cpfHolder'],
+          b.${quoteIdent('variables')}['inputCpfHolder'],
+          b.${quoteIdent('variables')}['cpfTitular'],
+          b.${quoteIdent('variables')}['dependentCpf1'],
+          b.${quoteIdent('variables')}['cpf'],
+          b.${quoteIdent('variables')}['CPF'],
+          b.${quoteIdent('variables')}['cpf_beneficiario'],
+          b.${quoteIdent('variables')}['beneficiary_cpf']
+        ) AS STRING), '[^0-9]', ''), '')`;
+        const sampleSelect = `
+          CAST(q.${quoteIdent('id')} AS STRING) AS qa_id,
+          CAST(s.${quoteIdent('session_id')} AS STRING) AS session_id,
+          ${qaTipExpr} AS tipificacao,
+          DATE_FORMAT(try_cast(q.${quoteIdent('event_timestamp')} AS TIMESTAMP), 'yyyy-MM-dd HH:mm') AS event_at,
+          NULLIF(TRIM(CAST(q.${quoteIdent('closed_by')} AS STRING)), '') AS closed_by,
+          NULLIF(TRIM(CAST(q.${quoteIdent('linha_de_cuidado')} AS STRING)), '') AS linha_de_cuidado,
+          NULLIF(TRIM(CAST(q.${quoteIdent('categoria_linha_de_cuidado')} AS STRING)), '') AS categoria_linha_de_cuidado,
+          NULLIF(TRIM(CAST(q.${quoteIdent('status_demanda')} AS STRING)), '') AS status_demanda,
+          LOWER(TRIM(CAST(q.${quoteIdent('problema_resolvido')} AS STRING))) AS problema_resolvido,
+          try_cast(q.${quoteIdent('percentual_desempenho')} AS DOUBLE) AS percentual_desempenho,
+          try_cast(q.${quoteIdent('nota_atendimento')} AS DOUBLE) AS nota_atendimento,
+          try_cast(q.${quoteIdent('nota_maxima_possivel')} AS DOUBLE) AS nota_maxima_possivel,
+          NULLIF(TRIM(CAST(q.${quoteIdent('tipo_atendimento_agendamento')} AS STRING)), '') AS tipo_atendimento_agendamento,
+          CAST(q.${quoteIdent('has_bot')} AS STRING) AS has_bot,
+          CAST(q.${quoteIdent('has_agent')} AS STRING) AS has_agent,
+          NULLIF(TRIM(CAST(s.${quoteIdent('economic_group_canonical')} AS STRING)), '') AS economic_group,
+          NULLIF(TRIM(CAST(s.${quoteIdent('organization_name')} AS STRING)), '') AS organization_name,
+          NULLIF(TRIM(b.${quoteIdent('resume_soap')}), '') AS resume_soap,
+          NULLIF(TRIM(CAST(b.${quoteIdent('motivo')} AS STRING)), '') AS motivo,
+          ${patientNameExpr} AS patient_name,
+          ${patientCpfExpr} AS patient_cpf
+        `;
+
+        // 1) SOAP primeiro (mais útil + evita ordenar o universo inteiro por has_soap).
+        // 2) Completa com as mais recentes se faltar.
+        const soapRows = await runQuery(warehouseId, `
+          SELECT ${sampleSelect}
           FROM ${dashboardSessionsTable} s
           INNER JOIN ${QUALITY_SUMMARY_TABLE} q
             ON CAST(q.${quoteIdent('id')} AS STRING) = CAST(s.${quoteIdent('session_id')} AS STRING)
-          LEFT JOIN ${SESSION_TABLE} b
+          INNER JOIN ${SESSION_TABLE} b
             ON CAST(b.${quoteIdent('session_id')} AS STRING) = CAST(s.${quoteIdent('session_id')} AS STRING)
+           AND NULLIF(TRIM(b.${quoteIdent('resume_soap')}), '') IS NOT NULL
           WHERE ${where || '1=1'}
-          ORDER BY has_soap DESC, try_cast(q.${quoteIdent('event_timestamp')} AS TIMESTAMP) DESC
-          LIMIT 3
+          ORDER BY try_cast(q.${quoteIdent('event_timestamp')} AS TIMESTAMP) DESC
+          LIMIT ${Q11D_SAMPLE_LIMIT}
         `, queryParams);
+
+        let rows = soapRows;
+        if (rows.length < Q11D_SAMPLE_LIMIT) {
+          const excludeIds = rows
+            .map((r) => String(getCell(r[1]) || '').trim())
+            .filter(Boolean);
+          const notInFilter = excludeIds.length
+            ? `CAST(s.${quoteIdent('session_id')} AS STRING) NOT IN (${excludeIds.map((id) => params.add(id)).join(', ')})`
+            : null;
+          const fillWhere = [where, notInFilter].filter(Boolean).join(' AND ');
+          const fillRows = await runQuery(warehouseId, `
+            SELECT ${sampleSelect}
+            FROM ${dashboardSessionsTable} s
+            INNER JOIN ${QUALITY_SUMMARY_TABLE} q
+              ON CAST(q.${quoteIdent('id')} AS STRING) = CAST(s.${quoteIdent('session_id')} AS STRING)
+            LEFT JOIN ${SESSION_TABLE} b
+              ON CAST(b.${quoteIdent('session_id')} AS STRING) = CAST(s.${quoteIdent('session_id')} AS STRING)
+            WHERE ${fillWhere || '1=1'}
+            ORDER BY try_cast(q.${quoteIdent('event_timestamp')} AS TIMESTAMP) DESC
+            LIMIT ${Q11D_SAMPLE_LIMIT - rows.length}
+          `, params.list.length ? params.list : undefined);
+          rows = [...rows, ...fillRows];
+        }
 
         const conversations = rows.map((r) => {
           const soap = String(getCell(r[17]) || '').trim();
@@ -974,50 +1053,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
             has_soap: Boolean(soap),
             preview: preview || null,
             messages: [] as Array<{ at: string; sender: string; text: string }>,
+            messages_loaded: false,
           };
         });
-
-        const sessionIds = conversations.map((c) => c.session_id).filter(Boolean);
-        if (sessionIds.length) {
-          const msgParams = createSqlParams();
-          const idPlaceholders = sessionIds.map((id) => msgParams.add(id)).join(', ');
-          try {
-            const msgRows = await runQuery(warehouseId, `
-              SELECT
-                CAST(m.${quoteIdent('session_id')} AS STRING) AS session_id,
-                DATE_FORMAT(try_cast(m.${quoteIdent('creation_time')} AS TIMESTAMP), 'HH:mm') AS msg_at,
-                LOWER(TRIM(CAST(m.${quoteIdent('sender_type')} AS STRING))) AS sender_type,
-                TRIM(CAST(m.${quoteIdent('content_text')} AS STRING)) AS content_text
-              FROM ${MESSAGE_TABLE} m
-              WHERE CAST(m.${quoteIdent('session_id')} AS STRING) IN (${idPlaceholders})
-                AND m.${quoteIdent('content_text')} IS NOT NULL
-                AND TRIM(CAST(m.${quoteIdent('content_text')} AS STRING)) <> ''
-              QUALIFY ROW_NUMBER() OVER (
-                PARTITION BY CAST(m.${quoteIdent('session_id')} AS STRING)
-                ORDER BY try_cast(m.${quoteIdent('creation_time')} AS TIMESTAMP)
-              ) <= 16
-              ORDER BY try_cast(m.${quoteIdent('creation_time')} AS TIMESTAMP)
-            `, msgParams.list);
-            const bySession = new Map<string, Array<{ at: string; sender: string; text: string }>>();
-            for (const row of msgRows) {
-              const sid = String(getCell(row[0]) || '');
-              const text = truncateText(String(getCell(row[3]) || ''), 420);
-              if (!sid || !text) continue;
-              const list = bySession.get(sid) || [];
-              list.push({
-                at: String(getCell(row[1]) || ''),
-                sender: String(getCell(row[2]) || 'unknown'),
-                text,
-              });
-              bySession.set(sid, list);
-            }
-            for (const conv of conversations) {
-              conv.messages = bySession.get(conv.session_id) || [];
-            }
-          } catch {
-            // Mensagens são enriquecimento; não falha o card se a query de msgs cair.
-          }
-        }
 
         const payload = {
           scope: 'typification_samples_live',
@@ -1029,8 +1067,8 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
             organization: Boolean(groupNames.length || company || partnerBrokerId),
             user_interaction: true,
           },
-          source: 'botmaker_session.resume_soap + botmaker_message · preferência por SOAP preenchido',
-          rule: 'Q11D = 3 conversas do motivo QA (prioriza SOAP) · modal com SOAP + trocas de mensagem',
+          source: 'botmaker_session.resume_soap · mensagens sob demanda no popup',
+          rule: `Q11D = ${Q11D_SAMPLE_LIMIT} conversas do motivo QA (prioriza SOAP) · scroll no quadro · msgs no clique`,
         };
         typificationSamplesCache.set(samplesCacheKey, { at: Date.now(), payload });
         setStableCache(res);

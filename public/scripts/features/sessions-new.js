@@ -475,7 +475,7 @@ function resetTypificationGroupsLiveCardNew(reason) {
     if (reason === 'reload' && hadSelection) {
       empty.innerHTML = '<i class="fa-solid fa-arrows-rotate"></i><div>Os filtros mudaram. Selecione novamente um tipo de encerramento ao lado.</div>';
     } else {
-      empty.innerHTML = '<i class="fa-solid fa-hand-pointer"></i><div>Selecione um tipo de encerramento ao lado para ver 3 conversas com SOAP e mensagens.</div>';
+      empty.innerHTML = '<i class="fa-solid fa-hand-pointer"></i><div>Selecione um tipo de encerramento ao lado para ver 7 conversas com SOAP.</div>';
     }
   }
 }
@@ -637,10 +637,10 @@ async function loadTypificationSamplesLiveNew(tipo) {
     }).join('');
   }
   const withSoap = conversations.filter((c) => c.has_soap).length;
-  if (meta) meta.textContent = `${conversations.length} conversas · ${withSoap} com SOAP · clique para ver necessidade + mensagens`;
+  if (meta) meta.textContent = `${conversations.length} conversas · ${withSoap} com SOAP · clique para abrir (mensagens no popup)`;
   if (note) {
     note.style.display = 'block';
-    note.textContent = data.source || 'botmaker_session.resume_soap + botmaker_message';
+    note.textContent = data.source || 'botmaker_session.resume_soap · msgs sob demanda';
   }
 }
 
@@ -649,20 +649,10 @@ function closeQaConversationModalNew() {
   if (modal) modal.hidden = true;
 }
 
-function openQaConversationModalNew(index) {
-  const item = snQaConversationsCacheNew[Number(index)];
-  const modal = document.getElementById('sn-qa-conv-modal');
-  const title = document.getElementById('sn-qa-conv-modal-title');
-  const subtitle = document.getElementById('sn-qa-conv-modal-subtitle');
+function renderQaConversationModalBodyNew(item, opts) {
   const body = document.getElementById('sn-qa-conv-modal-body');
-  if (!item || !modal || !body) return;
-  if (title) title.textContent = item.tipificacao || 'Conversa';
-  if (subtitle) {
-    const patientLabel = item.patient_name || item.patient_cpf || null;
-    subtitle.textContent = [patientLabel, item.event_at, item.closed_by, item.organization_name || item.economic_group]
-      .filter(Boolean)
-      .join(' · ') || '—';
-  }
+  if (!item || !body) return;
+  opts = opts || {};
   const fields = [
     ['Paciente', item.patient_name],
     ['CPF', item.patient_cpf],
@@ -684,17 +674,22 @@ function openQaConversationModalNew(index) {
         </div>
       `).join('')
     : `<div class="sn-qa-conv-empty-hint">SOAP não disponível nesta sessão (comum em períodos muito recentes).</div>`;
-  const messages = Array.isArray(item.messages) ? item.messages : [];
-  const messagesHtml = messages.length
-    ? messages.map((msg) => {
-        const sender = formatMessageSenderNew(msg.sender);
-        const roleClass = sender === 'Paciente' ? 'is-user' : (sender === 'Atendente' ? 'is-agent' : 'is-bot');
-        return `<div class="sn-qa-conv-msg ${roleClass}">
-          <div class="sn-qa-conv-msg-meta">${escapeHtml(sender)}${msg.at ? ` · ${escapeHtml(msg.at)}` : ''}</div>
-          <div class="sn-qa-conv-msg-text">${escapeHtml(msg.text)}</div>
-        </div>`;
-      }).join('')
-    : `<div class="sn-qa-conv-empty-hint">Sem mensagens de texto disponíveis para esta sessão.</div>`;
+  let messagesHtml;
+  if (opts.messagesLoading) {
+    messagesHtml = `<div class="sn-qa-conv-empty-hint"><i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando mensagens...</div>`;
+  } else {
+    const messages = Array.isArray(item.messages) ? item.messages : [];
+    messagesHtml = messages.length
+      ? messages.map((msg) => {
+          const sender = formatMessageSenderNew(msg.sender);
+          const roleClass = sender === 'Paciente' ? 'is-user' : (sender === 'Atendente' ? 'is-agent' : 'is-bot');
+          return `<div class="sn-qa-conv-msg ${roleClass}">
+            <div class="sn-qa-conv-msg-meta">${escapeHtml(sender)}${msg.at ? ` · ${escapeHtml(msg.at)}` : ''}</div>
+            <div class="sn-qa-conv-msg-text">${escapeHtml(msg.text)}</div>
+          </div>`;
+        }).join('')
+      : `<div class="sn-qa-conv-empty-hint">Sem mensagens de texto disponíveis para esta sessão.</div>`;
+  }
   body.innerHTML = `
     <div class="sn-qa-conv-detail-grid">
       ${fields.map(([label, value]) => `
@@ -713,7 +708,39 @@ function openQaConversationModalNew(index) {
       <div class="sn-qa-conv-msg-list">${messagesHtml}</div>
     </div>
   `;
+}
+
+async function openQaConversationModalNew(index) {
+  const item = snQaConversationsCacheNew[Number(index)];
+  const modal = document.getElementById('sn-qa-conv-modal');
+  const title = document.getElementById('sn-qa-conv-modal-title');
+  const subtitle = document.getElementById('sn-qa-conv-modal-subtitle');
+  if (!item || !modal) return;
+  if (title) title.textContent = item.tipificacao || 'Conversa';
+  if (subtitle) {
+    const patientLabel = item.patient_name || item.patient_cpf || null;
+    subtitle.textContent = [patientLabel, item.event_at, item.closed_by, item.organization_name || item.economic_group]
+      .filter(Boolean)
+      .join(' · ') || '—';
+  }
+  const needsMessages = !item.messages_loaded;
+  renderQaConversationModalBodyNew(item, { messagesLoading: needsMessages });
   modal.hidden = false;
+  if (!needsMessages || !item.session_id) return;
+
+  const requestToken = `${item.session_id}:${Date.now()}`;
+  item._messagesRequestToken = requestToken;
+  const p = new URLSearchParams();
+  p.set('scope', 'typification_sample_messages');
+  p.set('session_id', item.session_id);
+  const data = await safeGet('/api/sessions?' + p.toString());
+  if (item._messagesRequestToken !== requestToken) return;
+  if (selectedTypificationLiveNew == null) return;
+  item.messages = Array.isArray(data && data.messages) ? data.messages : [];
+  item.messages_loaded = true;
+  if (!modal.hidden && snQaConversationsCacheNew[Number(index)] === item) {
+    renderQaConversationModalBodyNew(item, { messagesLoading: false });
+  }
 }
 
 document.addEventListener('click', (event) => {
