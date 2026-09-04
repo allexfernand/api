@@ -491,36 +491,77 @@ body[data-sidebar="collapsed"] .sidebar-tab span{opacity:0;position:absolute;tra
 .sessions-q11-note{font-size:11px;color:#f59e0b;margin-top:6px;text-align:right;flex-shrink:0}
 .sessions-q11-context{font-size:11px;color:#64748b;font-weight:700;max-width:min(100%,280px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .card-box[data-qtag="#Q11"],
-.card-box[data-qtag="#Q11B"],
 .card-box[data-qtag="#Q11C"],
-.card-box[data-qtag="#Q11D"]{display:flex;flex-direction:column;max-height:clamp(360px,60vh,560px);min-height:360px}
+.card-box[data-qtag="#Q11D"],
+.card-box[data-qtag="#Q11E"]{display:flex;flex-direction:column;max-height:clamp(360px,60vh,560px);min-height:360px}
 .card-box[data-qtag="#Q11"] #session-typifications-content,
 .card-box[data-qtag="#Q11"] #sn-session-typifications-content,
-.card-box[data-qtag="#Q11B"] #typification-groups-content,
-.card-box[data-qtag="#Q11B"] #sn-typification-groups-content,
 .card-box[data-qtag="#Q11C"] #sn-session-typifications-live-content,
-.card-box[data-qtag="#Q11D"] #sn-typification-groups-live-content{flex:1 1 auto;min-height:0;display:flex;flex-direction:column}
+.card-box[data-qtag="#Q11D"] #sn-typification-groups-live-content,
+.card-box[data-qtag="#Q11E"] #sn-status-demanda-content{flex:1 1 auto;min-height:0;display:flex;flex-direction:column}
 .card-box[data-qtag="#Q11"] #session-typifications-list,
 .card-box[data-qtag="#Q11"] #sn-session-typifications-list,
-.card-box[data-qtag="#Q11B"] #typification-groups-list,
-.card-box[data-qtag="#Q11B"] #sn-typification-groups-list,
 .card-box[data-qtag="#Q11C"] #sn-session-typifications-live-list,
 .card-box[data-qtag="#Q11D"] #sn-typification-groups-live-list{flex:1 1 auto;min-height:0;overflow-y:auto;padding-right:6px;scrollbar-width:thin;scrollbar-color:#cbd5e1 transparent}
 .card-box[data-qtag="#Q11"] #session-typifications-list::-webkit-scrollbar,
 .card-box[data-qtag="#Q11"] #sn-session-typifications-list::-webkit-scrollbar,
-.card-box[data-qtag="#Q11B"] #typification-groups-list::-webkit-scrollbar,
-.card-box[data-qtag="#Q11B"] #sn-typification-groups-list::-webkit-scrollbar,
 .card-box[data-qtag="#Q11C"] #sn-session-typifications-live-list::-webkit-scrollbar,
 .card-box[data-qtag="#Q11D"] #sn-typification-groups-live-list::-webkit-scrollbar{width:6px}
 .card-box[data-qtag="#Q11"] #session-typifications-list::-webkit-scrollbar-thumb,
 .card-box[data-qtag="#Q11"] #sn-session-typifications-list::-webkit-scrollbar-thumb,
-.card-box[data-qtag="#Q11B"] #typification-groups-list::-webkit-scrollbar-thumb,
-.card-box[data-qtag="#Q11B"] #sn-typification-groups-list::-webkit-scrollbar-thumb,
 .card-box[data-qtag="#Q11C"] #sn-session-typifications-live-list::-webkit-scrollbar-thumb,
 .card-box[data-qtag="#Q11D"] #sn-typification-groups-live-list::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:999px}
-.card-box[data-qtag="#Q11B"] #typification-groups-empty,
-.card-box[data-qtag="#Q11B"] #sn-typification-groups-empty,
 .card-box[data-qtag="#Q11D"] #sn-typification-groups-live-empty{flex:1 1 auto}
+.sn-status-demanda-grid{
+  display:grid;
+  grid-template-columns:1fr;
+  gap:10px;
+  flex:1 1 auto;
+  align-content:start;
+}
+.sn-status-demanda-card{
+  border:1px solid #e2e8f0;
+  border-radius:12px;
+  padding:14px 16px;
+  background:linear-gradient(180deg,#fafafa,#fff);
+}
+.sn-status-demanda-label{
+  font-size:11px;
+  font-weight:800;
+  text-transform:uppercase;
+  letter-spacing:.4px;
+  color:#64748b;
+  margin-bottom:6px;
+}
+.sn-status-demanda-value{
+  font-size:28px;
+  font-weight:800;
+  color:#0f172a;
+  letter-spacing:-.6px;
+  line-height:1.1;
+  font-variant-numeric:tabular-nums;
+}
+.sn-status-demanda-pct{
+  margin-top:6px;
+  font-size:12px;
+  font-weight:700;
+  color:#64748b;
+}
+.sn-status-demanda-atendida{
+  border-color:#bbf7d0;
+  background:linear-gradient(180deg,#f0fdf4,#fff);
+}
+.sn-status-demanda-atendida .sn-status-demanda-value{color:#15803d}
+.sn-status-demanda-nao_atendida{
+  border-color:#fed7aa;
+  background:linear-gradient(180deg,#fff7ed,#fff);
+}
+.sn-status-demanda-nao_atendida .sn-status-demanda-value{color:#c2410c}
+.sn-status-demanda-abandono{
+  border-color:#e2e8f0;
+  background:linear-gradient(180deg,#f8fafc,#fff);
+}
+.sn-status-demanda-abandono .sn-status-demanda-value{color:#475569}
 .sn-qa-loading{
   display:flex;
   flex-direction:column;

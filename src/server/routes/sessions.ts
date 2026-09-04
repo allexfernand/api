@@ -860,6 +860,87 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       }
     }
 
+    // Q11E (Sessões - New): status_demanda da quality_analysis_silver_summary
+    // Join: qa.id = gold.session_id · mesmos filtros da página + teve_user.
+    if (scope === 'status_demanda_live') {
+      const statusExpr = `CASE
+        WHEN q.${quoteIdent('status_demanda')} IS NULL THEN '(NULO)'
+        WHEN TRIM(CAST(q.${quoteIdent('status_demanda')} AS STRING)) = '' THEN '(VAZIO/BRANCO)'
+        ELSE TRIM(CAST(q.${quoteIdent('status_demanda')} AS STRING))
+      END`;
+      const where = [
+        companySessionsDateFilter,
+        companySessionsScopeFilter,
+        `COALESCE(s.${quoteIdent('teve_user')}, 0) = 1`,
+      ].filter(Boolean).join(' AND ');
+      const queryParams = params.list.length ? params.list : undefined;
+      try {
+        const rows = await runQuery(warehouseId, `
+          SELECT
+            ${statusExpr} AS status_demanda,
+            COUNT(*) AS total_sessions
+          FROM ${dashboardSessionsTable} s
+          INNER JOIN ${QUALITY_SUMMARY_TABLE} q
+            ON CAST(q.${quoteIdent('id')} AS STRING) = CAST(s.${quoteIdent('session_id')} AS STRING)
+          ${where ? `WHERE ${where}` : ''}
+          GROUP BY 1
+          ORDER BY total_sessions DESC
+        `, queryParams);
+        const statuses = rows.map((r) => ({
+          status: String(getCell(r[0]) || '—'),
+          total: toInt(r[1]),
+        }));
+        const total = statuses.reduce((acc, item) => acc + item.total, 0);
+        const pick = (matcher: (value: string) => boolean) => {
+          const hit = statuses.find((item) => matcher(item.status.toLowerCase()));
+          return hit ? hit.total : 0;
+        };
+        const indicators = [
+          {
+            key: 'atendida',
+            label: 'Demanda atendida',
+            total: pick((v) => v.includes('atendida') && !v.includes('não') && !v.includes('nao')),
+          },
+          {
+            key: 'nao_atendida',
+            label: 'Demanda não atendida',
+            total: pick((v) => v.includes('não atendida') || v.includes('nao atendida')),
+          },
+          {
+            key: 'abandono',
+            label: 'Abandono',
+            total: pick((v) => v.includes('abandono')),
+          },
+        ].map((item) => ({
+          ...item,
+          pct: total > 0 ? Math.round((item.total / total) * 1000) / 10 : 0,
+        }));
+        setStableCache(res);
+        return res.status(200).json({
+          scope: 'status_demanda_live',
+          indicators,
+          statuses,
+          total,
+          filters_applied: {
+            period: meses.length > 0,
+            organization: Boolean(groupNames.length || company || partnerBrokerId),
+            user_interaction: true,
+          },
+          source: 'quality_analysis_silver_summary.status_demanda · join qa.id = gold.session_id',
+          rule: 'Q11E = status da demanda QA · gold c/ interação · filtros da página',
+        });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        return res.status(200).json({
+          scope: 'status_demanda_live',
+          indicators: [],
+          statuses: [],
+          total: 0,
+          error: msg,
+        });
+      }
+    }
+
     // Q11C / Q11D (Sessões - New): tipificação de quality_analysis_silver_summary
     // Join: qa.id = gold.session_id · filtros/interação via gold.
     if (scope === 'typification_live' || scope === 'typification_groups_live' || scope === 'typification_samples_live') {

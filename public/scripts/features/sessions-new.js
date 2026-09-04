@@ -15,6 +15,7 @@ let selectedTypificationNew = null;
 let selectedTypificationLiveNew = null;
 let typificationLiveGroupsRequestIdNew = 0;
 let typificationLiveRequestIdNew = 0;
+let statusDemandaLiveRequestIdNew = 0;
 let snQaConversationsCacheNew = [];
 let snQaLoadingProgressTimerNew = null;
 let snQaLoadingProgressValueNew = 0;
@@ -409,51 +410,6 @@ function onSessionTypificationFinisherChangeNew(value) {
   loadSessionsNew();
 }
 
-function resetTypificationGroupsCardNew(reason) {
-  const hadSelection = Boolean(selectedTypificationNew);
-  selectedTypificationNew = null;
-  const empty = document.getElementById('sn-typification-groups-empty');
-  const loading = document.getElementById('sn-typification-groups-loading');
-  const content = document.getElementById('sn-typification-groups-content');
-  const context = document.getElementById('sn-typification-groups-context');
-  const list = document.getElementById('sn-typification-groups-list');
-  const meta = document.getElementById('sn-typification-groups-meta');
-  const note = document.getElementById('sn-typification-groups-note');
-  if (loading) loading.style.display = 'none';
-  if (content) content.style.display = 'none';
-  if (list) list.innerHTML = '';
-  if (meta) meta.textContent = '—';
-  if (note) { note.style.display = 'none'; note.textContent = ''; }
-  if (context) context.textContent = '—';
-  if (empty) {
-    empty.style.display = 'flex';
-    if (reason === 'reload' && hadSelection) {
-      empty.innerHTML = '<i class="fa-solid fa-arrows-rotate"></i><div>Os filtros mudaram. Selecione novamente um tipo de encerramento ao lado.</div>';
-    } else {
-      empty.innerHTML = '<i class="fa-solid fa-hand-pointer"></i><div>Selecione um tipo de encerramento ao lado para ver o volume por grupo econômico.</div>';
-    }
-  }
-}
-
-function onSessionTypificationClickNew(rawTipo) {
-  const tipo = String(rawTipo || '').trim();
-  if (!tipo) return;
-  if (selectedTypificationNew === tipo) {
-    resetTypificationGroupsCardNew();
-    refreshTypificationActiveStateNew();
-    return;
-  }
-  selectedTypificationNew = tipo;
-  refreshTypificationActiveStateNew();
-  loadTypificationGroupsBreakdownNew(tipo);
-}
-
-function refreshTypificationActiveStateNew() {
-  document.querySelectorAll('#sn-session-typifications-list .session-typification-row').forEach((row) => {
-    row.classList.toggle('is-active', row.dataset.tipo === selectedTypificationNew);
-  });
-}
-
 function resetTypificationGroupsLiveCardNew(reason) {
   const hadSelection = Boolean(selectedTypificationLiveNew);
   selectedTypificationLiveNew = null;
@@ -478,7 +434,7 @@ function resetTypificationGroupsLiveCardNew(reason) {
     if (reason === 'reload' && hadSelection) {
       empty.innerHTML = '<i class="fa-solid fa-arrows-rotate"></i><div>Os filtros mudaram. Selecione novamente um tipo de encerramento ao lado.</div>';
     } else {
-      empty.innerHTML = '<i class="fa-solid fa-hand-pointer"></i><div>Selecione um tipo de encerramento ao lado para ver 7 conversas com SOAP.</div>';
+      empty.innerHTML = '<i class="fa-solid fa-hand-pointer"></i><div>Selecione um tipo de encerramento · QA acima para ver 7 conversas com SOAP.</div>';
     }
   }
 }
@@ -860,7 +816,7 @@ function renderSessionTypificationsLiveNew(items, opts) {
       const tipoAttr = escapeHtml(rawTipo);
       const isActive = selectedTypificationLiveNew === rawTipo;
       const activeClass = isActive ? ' is-active' : '';
-      return `<div class="session-typification-row is-interactive${activeClass}" role="button" tabindex="0" data-tipo="${tipoAttr}" onclick="onSessionTypificationLiveClickNew(this.dataset.tipo)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();onSessionTypificationLiveClickNew(this.dataset.tipo);}" title="${label} — clique para ver 3 conversas recentes">
+      return `<div class="session-typification-row is-interactive${activeClass}" role="button" tabindex="0" data-tipo="${tipoAttr}" onclick="onSessionTypificationLiveClickNew(this.dataset.tipo)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();onSessionTypificationLiveClickNew(this.dataset.tipo);}" title="${label} — clique para ver 7 conversas">
         <div class="session-typification-label">${label}</div>
         <div class="session-typification-track"><div class="session-typification-bar" style="width:${width}%"></div></div>
         <div class="session-typification-value">${fmt(value)} <span style="color:#94a3b8;font-weight:700">(${pct}%)</span></div>
@@ -910,81 +866,93 @@ async function loadSessionTypificationsLiveNew() {
   });
 }
 
-async function loadTypificationGroupsBreakdownNew(tipo) {
-  const requestId = ++typificationGroupsRequestId;
-  const empty = document.getElementById('sn-typification-groups-empty');
-  const loading = document.getElementById('sn-typification-groups-loading');
-  const content = document.getElementById('sn-typification-groups-content');
-  const context = document.getElementById('sn-typification-groups-context');
-  const list = document.getElementById('sn-typification-groups-list');
-  const meta = document.getElementById('sn-typification-groups-meta');
-  const note = document.getElementById('sn-typification-groups-note');
-  if (empty) empty.style.display = 'none';
+async function loadStatusDemandaLiveNew() {
+  const requestId = ++statusDemandaLiveRequestIdNew;
+  const loading = document.getElementById('sn-status-demanda-loading');
+  const content = document.getElementById('sn-status-demanda-content');
+  if (loading) {
+    loading.style.display = 'block';
+    loading.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...';
+  }
   if (content) content.style.display = 'none';
-  if (loading) loading.style.display = 'block';
-  if (context) context.textContent = tipo;
 
   const meses = [...selectedMonths].sort();
   const p = new URLSearchParams();
-  p.set('scope', 'typification_groups');
-  p.set('typification_value', tipo);
+  p.set('scope', 'status_demanda_live');
   if (meses.length > 0) p.set('meses', meses.join(','));
   appendGroupParams(p);
-  if (selectedSessionTypificationFinisherNew) p.set('typification_finisher', selectedSessionTypificationFinisherNew);
-  p.set('include_user_interaction', '1');
-
   const data = await safeGet('/api/sessions?' + p.toString());
-  if (requestId !== typificationGroupsRequestId) return;
-  if (selectedTypificationNew !== tipo) return;
-
-  if (loading) loading.style.display = 'none';
-
+  if (requestId !== statusDemandaLiveRequestIdNew) return;
   if (!data || data.error) {
-    if (empty) {
-      empty.style.display = 'flex';
-      empty.innerHTML = `<i class="fa-solid fa-triangle-exclamation" style="color:#f87171"></i><div>Erro ao carregar grupos: ${escapeHtml(String((data && data.error) || 'falha de rede').slice(0, 200))}</div>`;
-    }
+    renderStatusDemandaLiveNew([], {
+      error: data?.error || 'Erro ao carregar status da demanda',
+      total: 0,
+    });
     return;
   }
+  renderStatusDemandaLiveNew(data.indicators || [], {
+    source: data.source,
+    total: data.total || 0,
+  });
+}
 
-  const groups = Array.isArray(data.groups) ? data.groups : [];
-  const total = Number(data.total) || groups.reduce((acc, g) => acc + (Number(g.total) || 0), 0);
-  if (!groups.length) {
-    if (empty) {
-      empty.style.display = 'flex';
-      empty.innerHTML = `<i class="fa-solid fa-circle-info"></i><div>Nenhum grupo encontrado para <strong>${escapeHtml(tipo)}</strong> com os filtros atuais.</div>`;
+function renderStatusDemandaLiveNew(indicators, opts) {
+  const loading = document.getElementById('sn-status-demanda-loading');
+  const content = document.getElementById('sn-status-demanda-content');
+  const grid = document.getElementById('sn-status-demanda-grid');
+  const meta = document.getElementById('sn-status-demanda-meta');
+  const note = document.getElementById('sn-status-demanda-note');
+  opts = opts || {};
+  if (opts.error) {
+    if (loading) {
+      loading.style.display = 'block';
+      loading.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>Erro ao carregar status da demanda: ' + String(opts.error).slice(0, 200);
     }
+    if (content) content.style.display = 'none';
     return;
   }
-
+  const rows = Array.isArray(indicators) ? indicators : [];
+  const total = Number(opts.total) || rows.reduce((acc, item) => acc + (Number(item.total) || 0), 0);
+  const defaults = [
+    { key: 'atendida', label: 'Demanda atendida', total: 0, pct: 0 },
+    { key: 'nao_atendida', label: 'Demanda não atendida', total: 0, pct: 0 },
+    { key: 'abandono', label: 'Abandono', total: 0, pct: 0 },
+  ];
+  const byKey = new Map(rows.map((item) => [item.key, item]));
+  const cards = defaults.map((item) => {
+    const hit = byKey.get(item.key);
+    return hit
+      ? {
+          ...item,
+          total: Number(hit.total) || 0,
+          pct: Number(hit.pct) || 0,
+          label: hit.label || item.label,
+        }
+      : item;
+  });
+  if (grid) {
+    grid.innerHTML = cards.map((item) => {
+      const pct = Number.isFinite(Number(item.pct))
+        ? Number(item.pct).toFixed(1).replace('.', ',')
+        : '0,0';
+      return `<div class="sn-status-demanda-card sn-status-demanda-${escapeHtml(item.key)}">
+        <div class="sn-status-demanda-label">${escapeHtml(item.label)}</div>
+        <div class="sn-status-demanda-value">${fmt(item.total)}</div>
+        <div class="sn-status-demanda-pct">${pct}% do total QA</div>
+      </div>`;
+    }).join('');
+  }
+  if (meta) meta.textContent = `total ${fmt(total)} sessões QA c/ interação`;
+  if (note) {
+    note.style.display = 'block';
+    note.textContent = opts.source || 'quality_analysis_silver_summary.status_demanda';
+  }
+  if (loading) loading.style.display = 'none';
   if (content) {
     content.style.display = 'flex';
     content.style.flexDirection = 'column';
     content.style.minHeight = '0';
     content.style.flex = '1 1 auto';
-  }
-  const max = Number(groups[0].total) || 1;
-  if (list) {
-    list.innerHTML = groups.map((g) => {
-      const value = Number(g.total) || 0;
-      const width = Math.max((value / max) * 100, 2);
-      const pct = total > 0 ? ((value / total) * 100).toFixed(1).replace('.', ',') : '0,0';
-      const label = escapeHtml(g.grupo || 'Sem grupo');
-      return `<div class="session-typification-row variant-indigo" title="${label}">
-        <div class="session-typification-label">${label}</div>
-        <div class="session-typification-track"><div class="session-typification-bar" style="width:${width}%"></div></div>
-        <div class="session-typification-value">${fmt(value)} <span style="color:#94a3b8;font-weight:700">(${pct}%)</span></div>
-      </div>`;
-    }).join('');
-  }
-  if (meta) meta.textContent = `${groups.length} grupos · total ${fmt(total)} sessões`;
-  if (note) {
-    const messages = [];
-    if (selectedSessionScopeText()) messages.push(`recortado por: ${selectedSessionScopeText()}`);
-    if (selectedSessionTypificationFinisherNew === 'humano') messages.push('finalizadas por Humano');
-    else if (selectedSessionTypificationFinisherNew === 'ia') messages.push('finalizadas por IA');
-    note.style.display = messages.length ? 'block' : 'none';
-    note.textContent = messages.join(' · ');
   }
 }
 
@@ -1012,12 +980,8 @@ function renderSessionTypificationsNew(items, opts) {
       const value = Number(item.total) || 0;
       const width = Math.max((value / max) * 100, 2);
       const pct = total > 0 ? ((value / total) * 100).toFixed(1).replace('.', ',') : '0,0';
-      const rawTipo = item.tipo || 'Sem tipificação';
-      const label = escapeHtml(rawTipo);
-      const tipoAttr = escapeAttr(rawTipo);
-      const isActive = selectedTypificationNew === rawTipo;
-      const activeClass = isActive ? ' is-active' : '';
-      return `<div class="session-typification-row is-interactive${activeClass}" role="button" tabindex="0" data-tipo="${tipoAttr}" onclick="onSessionTypificationClickNew(this.dataset.tipo)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();onSessionTypificationClickNew(this.dataset.tipo);}" title="${label} — clique para detalhar por grupo">
+      const label = escapeHtml(item.tipo || 'Sem tipificação');
+      return `<div class="session-typification-row" title="${label}">
         <div class="session-typification-label">${label}</div>
         <div class="session-typification-track"><div class="session-typification-bar" style="width:${width}%"></div></div>
         <div class="session-typification-value">${fmt(value)} <span style="color:#94a3b8;font-weight:700">(${pct}%)</span></div>
@@ -1484,7 +1448,6 @@ async function loadSessionsDepartmentEvolutionNew(requestId) {
 async function loadSessionsNew() {
   if (typeof getActiveTab === "function" && getActiveTab() !== "sessoes-new") return;
   const requestId = ++sessionsRequestIdNew;
-  resetTypificationGroupsCardNew('reload');
   resetTypificationGroupsLiveCardNew('reload');
   buildAppointmentTypesPeriodoOptionsNew();
   buildSessionsDailyMonthOptionsNew();
@@ -1497,6 +1460,8 @@ async function loadSessionsNew() {
   const sessionCompaniesWrap = document.getElementById('sn-session-companies-wrap');
   const typificationsLoading = document.getElementById('sn-session-typifications-loading');
   const typificationsContent = document.getElementById('sn-session-typifications-content');
+  const statusDemandaLoading = document.getElementById('sn-status-demanda-loading');
+  const statusDemandaContent = document.getElementById('sn-status-demanda-content');
   const topGroupsSkel = document.getElementById('sn-skel-s-top-groups');
   const topGroupsCanvas = document.getElementById('sn-sessionsTopGroupsChart');
   const topGroupsError = document.getElementById('sn-s-top-groups-error');
@@ -1517,6 +1482,11 @@ async function loadSessionsNew() {
     typificationsLoading.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...';
   }
   if (typificationsContent) typificationsContent.style.display = 'none';
+  if (statusDemandaLoading) {
+    statusDemandaLoading.style.display = 'block';
+    statusDemandaLoading.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...';
+  }
+  if (statusDemandaContent) statusDemandaContent.style.display = 'none';
   if (topGroupsSkel) {
     topGroupsSkel.style.display = 'block';
     topGroupsSkel.innerHTML = '';
@@ -1539,6 +1509,7 @@ async function loadSessionsNew() {
   loadSessionsDepartmentEvolutionNew(requestId);
   loadSessionHumanDepartmentsNew();
   loadSessionTypificationsLiveNew();
+  loadStatusDemandaLiveNew();
 
   const sessions = await safeGet('/api/sessions' + qs);
   if (requestId !== sessionsRequestIdNew) return;
