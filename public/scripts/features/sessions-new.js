@@ -280,9 +280,16 @@ function renderSessionsDepartmentEvolutionNew(data) {
   if (source) source.textContent = '';
   if (mode) {
     const parts = [];
-    parts.push('últimos 12 meses');
+    const periodMonths = Array.isArray(data.months) ? data.months : months;
+    if (periodMonths.length === 1) parts.push(monthShortLabel(periodMonths[0]));
+    else if (periodMonths.length > 1 && periodMonths.length < 12) {
+      parts.push(`${periodMonths.length} meses selecionados`);
+    } else {
+      parts.push('últimos 12 meses');
+    }
     parts.push('setores = Q12B Humano');
     parts.push('total = Humano + IA');
+    parts.push('só c/ interação do cliente');
     if (selectedSessionScopeText()) parts.push(`recorte: ${selectedSessionScopeText()}`);
     if (currentCompany) parts.push(`empresa: ${currentCompany}`);
     mode.textContent = parts.join(' · ');
@@ -941,6 +948,7 @@ function sessionsDeptEvolutionScopeKeyNew() {
     partners: Array.isArray(currentPartnerBrokerIds) ? [...currentPartnerBrokerIds].map(String).sort() : [],
     company: currentCompany || null,
     partner: currentPartnerBrokerId || null,
+    months: [...selectedMonths].sort(),
     user_interaction: 1,
   });
 }
@@ -951,9 +959,11 @@ async function loadSessionsDepartmentEvolutionNew(requestId) {
     renderSessionsDepartmentEvolutionNew(sessionsDeptEvolutionCacheNew.data);
     return;
   }
+  const meses = [...selectedMonths].sort();
   const p = new URLSearchParams();
   p.set('scope', 'human_department_evolution');
   p.set('include_user_interaction', '1');
+  if (meses.length > 0) p.set('meses', meses.join(','));
   appendGroupParams(p);
   const data = await safeGet('/api/sessions?' + p.toString());
   if (requestId !== sessionsRequestIdNew) return;
@@ -1064,7 +1074,6 @@ async function loadSessionsNew() {
     if (messageFinishersLoading) messageFinishersLoading.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>Erro ao carregar interações por mensagem';
     if (sessionCompaniesLoading) sessionCompaniesLoading.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>Erro ao carregar sessões por empresa';
     if (typificationsLoading) typificationsLoading.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>Erro ao carregar encerramentos';
-    if (topGroupsSkel) topGroupsSkel.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>Erro ao carregar evolução por departamento';
   }
 }
 

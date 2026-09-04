@@ -516,43 +516,47 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     if (scope === 'human_by_department') {
       const { groupSessionsByDepartment, listAttendantMappings } = await import("../attendants/service");
       // Mesma base do Q12B: só sessões Humano por tipo_atendimento_agent + mesmos filtros.
-      const q12bWhere = withUserInteractionFilter(
-        companySessionsMode === "company"
-          ? [companySessionsDateFilter, companySessionsScopeFilter].filter(Boolean).join(' AND ')
-          : (companySessionsDateFilter || ''),
-      );
+      // Interação do cliente via JOIN (não EXISTS correlacionado) — bem mais rápido com grupo/período.
+      const baseWhere = companySessionsMode === "company"
+        ? [companySessionsDateFilter, companySessionsScopeFilter].filter(Boolean).join(' AND ')
+        : (companySessionsDateFilter || '');
+      const queryParams = params.list.length ? params.list : undefined;
 
       try {
         const [mappingRows, attendantRows] = await Promise.all([
           listAttendantMappings(),
           runQuery(warehouseId, `
-            WITH human_sessions AS (
+            WITH scoped AS (
               SELECT
                 CAST(s.${quoteIdent('session_id')} AS STRING) AS session_id
               FROM ${dashboardSessionsTable} s
               WHERE s.${quoteIdent('tipo_atendimento_agent')} = 'Humano'
-                ${q12bWhere ? `AND ${q12bWhere}` : ''}
+                ${baseWhere ? `AND ${baseWhere}` : ''}
             ),
-            with_attendant AS (
-              SELECT
-                h.session_id,
-                COALESCE(
-                  NULLIF(TRIM(CAST(MAX(b.${quoteIdent('finished_by')}) AS STRING)), ''),
-                  '(Sem finished_by)'
-                ) AS attendant
-              FROM human_sessions h
-              LEFT JOIN ${SESSION_TABLE} b
-                ON CAST(b.${quoteIdent('session_id')} AS STRING) = h.session_id
-              GROUP BY h.session_id
+            with_user AS (
+              SELECT sc.session_id
+              FROM scoped sc
+              ${includeUserInteraction ? `INNER JOIN (
+                SELECT DISTINCT CAST(m.${quoteIdent('session_id')} AS STRING) AS session_id
+                FROM ${MESSAGE_TABLE} m
+                INNER JOIN scoped sc2
+                  ON CAST(m.${quoteIdent('session_id')} AS STRING) = sc2.session_id
+                WHERE LOWER(TRIM(CAST(m.${quoteIdent('sender_type')} AS STRING))) = 'user'
+              ) u ON u.session_id = sc.session_id` : ''}
             )
             SELECT
-              w.attendant AS attendant,
+              COALESCE(
+                NULLIF(TRIM(CAST(b.${quoteIdent('finished_by')} AS STRING)), ''),
+                '(Sem finished_by)'
+              ) AS attendant,
               COUNT(*) AS total_sessions
-            FROM with_attendant w
-            GROUP BY w.attendant
+            FROM with_user w
+            LEFT JOIN ${SESSION_TABLE} b
+              ON CAST(b.${quoteIdent('session_id')} AS STRING) = w.session_id
+            GROUP BY 1
             ORDER BY total_sessions DESC
             LIMIT 2000
-          `, companySessionsMode === "company" ? params.list : undefined),
+          `, queryParams),
         ]);
 
         const attendants = attendantRows.map((row) => ({
@@ -689,56 +693,84 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       }
     }
 
-    // Q15: janela fixa dos últimos 12 meses (igual Q3), sem impacto do filtro de data.
+    // Q15: últimos 12 meses por padrão; respeita filtro de período quando enviado.
     if (scope === 'human_department_evolution') {
-      const topGroupMonths = lastNMonthsList(12);
+      const topGroupMonths = meses.length > 0 ? meses : lastNMonthsList(12);
       const topGroupDateFilter = `s.${quoteIdent('mes')} IN (${topGroupMonths.map((m) => `'${m}'`).join(',')})`;
-      const humanDeptEvolWhere = withUserInteractionFilter(
-        companySessionsMode === "company"
-          ? [topGroupDateFilter, companySessionsScopeFilter].filter(Boolean).join(' AND ')
-          : topGroupDateFilter,
-      );
+      const baseWhere = companySessionsMode === "company"
+        ? [topGroupDateFilter, companySessionsScopeFilter].filter(Boolean).join(' AND ')
+        : topGroupDateFilter;
+      const queryParams = params.list.length ? params.list : undefined;
       try {
         const { groupSessionsEvolutionByDepartment, listAttendantMappings } = await import("../attendants/service");
-        const queryParams = companySessionsMode === "company" ? params.list : undefined;
+        const userJoinSql = includeUserInteraction ? `
+              INNER JOIN (
+                SELECT DISTINCT CAST(m.${quoteIdent('session_id')} AS STRING) AS session_id
+                FROM ${MESSAGE_TABLE} m
+                INNER JOIN scoped sc2
+                  ON CAST(m.${quoteIdent('session_id')} AS STRING) = sc2.session_id
+                WHERE LOWER(TRIM(CAST(m.${quoteIdent('sender_type')} AS STRING))) = 'user'
+              ) u ON u.session_id = sc.session_id` : '';
         const [mappingRows, attendantRows, monthlyTotalRows] = await Promise.all([
           listAttendantMappings(),
           runQuery(warehouseId, `
-            WITH human_sessions AS (
+            WITH scoped AS (
               SELECT
                 CAST(s.${quoteIdent('session_id')} AS STRING) AS session_id,
                 s.${quoteIdent('mes')} AS mes
               FROM ${dashboardSessionsTable} s
               WHERE s.${quoteIdent('tipo_atendimento_agent')} = 'Humano'
-                ${humanDeptEvolWhere ? `AND ${humanDeptEvolWhere}` : ''}
+                ${baseWhere ? `AND ${baseWhere}` : ''}
             ),
-            with_attendant AS (
-              SELECT
-                h.session_id,
-                h.mes,
-                COALESCE(
-                  NULLIF(TRIM(CAST(MAX(b.${quoteIdent('finished_by')}) AS STRING)), ''),
-                  '(Sem finished_by)'
-                ) AS attendant
-              FROM human_sessions h
-              LEFT JOIN ${SESSION_TABLE} b
-                ON CAST(b.${quoteIdent('session_id')} AS STRING) = h.session_id
-              GROUP BY h.session_id, h.mes
+            with_user AS (
+              SELECT sc.session_id, sc.mes
+              FROM scoped sc
+              ${userJoinSql}
             )
             SELECT
               w.mes AS mes,
-              w.attendant AS attendant,
+              COALESCE(
+                NULLIF(TRIM(CAST(b.${quoteIdent('finished_by')} AS STRING)), ''),
+                '(Sem finished_by)'
+              ) AS attendant,
               COUNT(*) AS total_sessions
-            FROM with_attendant w
-            GROUP BY w.mes, w.attendant
+            FROM with_user w
+            LEFT JOIN ${SESSION_TABLE} b
+              ON CAST(b.${quoteIdent('session_id')} AS STRING) = w.session_id
+            GROUP BY w.mes, 2
             ORDER BY w.mes, total_sessions DESC
           `, queryParams),
-          runQuery(warehouseId, `
+          runQuery(warehouseId, includeUserInteraction ? `
+            WITH scoped AS (
+              SELECT
+                CAST(s.${quoteIdent('session_id')} AS STRING) AS session_id,
+                s.${quoteIdent('mes')} AS mes
+              FROM ${dashboardSessionsTable} s
+              ${baseWhere ? `WHERE ${baseWhere}` : ''}
+            ),
+            with_user AS (
+              SELECT sc.mes
+              FROM scoped sc
+              INNER JOIN (
+                SELECT DISTINCT CAST(m.${quoteIdent('session_id')} AS STRING) AS session_id
+                FROM ${MESSAGE_TABLE} m
+                INNER JOIN scoped sc2
+                  ON CAST(m.${quoteIdent('session_id')} AS STRING) = sc2.session_id
+                WHERE LOWER(TRIM(CAST(m.${quoteIdent('sender_type')} AS STRING))) = 'user'
+              ) u ON u.session_id = sc.session_id
+            )
+            SELECT
+              mes,
+              COUNT(*) AS total_sessions
+            FROM with_user
+            GROUP BY mes
+            ORDER BY mes
+          ` : `
             SELECT
               s.${quoteIdent('mes')} AS mes,
               COUNT(*) AS total_sessions
             FROM ${dashboardSessionsTable} s
-            ${humanDeptEvolWhere ? `WHERE ${humanDeptEvolWhere}` : ''}
+            ${baseWhere ? `WHERE ${baseWhere}` : ''}
             GROUP BY s.${quoteIdent('mes')}
             ORDER BY s.${quoteIdent('mes')}
           `, queryParams),
@@ -764,6 +796,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           series: grouped.series,
           monthly_totals: monthlyTotals,
           filters_applied: {
+            period: meses.length > 0,
             organization: Boolean(groupNames.length || company || partnerBrokerId),
             user_interaction: includeUserInteraction,
           },
@@ -776,7 +809,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         const msg = e instanceof Error ? e.message : String(e);
         return res.status(200).json({
           scope: 'human_department_evolution',
-          months: lastNMonthsList(12),
+          months: meses.length > 0 ? meses : lastNMonthsList(12),
           departments: [],
           series: [],
           monthly_totals: [],
