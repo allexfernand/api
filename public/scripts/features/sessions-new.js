@@ -12,6 +12,9 @@ let selectedAppointmentTypeMonthsNew = new Set();
 let sessionsEvolChartNew, sessionsEvolInteractionChartNew, sessionsTotalEvolChartNew, sessionsTotalEvolInteractionChartNew, sessionsAttendanceChartNew, sessionsDailyChartNew, sessionsTopGroupsChartNew;
 let sessionCompaniesDataNew = [];
 let selectedTypificationNew = null;
+let selectedTypificationLiveNew = null;
+let typificationLiveGroupsRequestIdNew = 0;
+let typificationLiveRequestIdNew = 0;
 
 function renderSessionMessageAgentFinishersNew(items, opts) {
   const loading = document.getElementById('sn-session-message-finishers-loading');
@@ -443,8 +446,203 @@ function onSessionTypificationClickNew(rawTipo) {
 }
 
 function refreshTypificationActiveStateNew() {
-  document.querySelectorAll('#session-typifications-list .session-typification-row').forEach((row) => {
+  document.querySelectorAll('#sn-session-typifications-list .session-typification-row').forEach((row) => {
     row.classList.toggle('is-active', row.dataset.tipo === selectedTypificationNew);
+  });
+}
+
+function resetTypificationGroupsLiveCardNew(reason) {
+  const hadSelection = Boolean(selectedTypificationLiveNew);
+  selectedTypificationLiveNew = null;
+  const empty = document.getElementById('sn-typification-groups-live-empty');
+  const loading = document.getElementById('sn-typification-groups-live-loading');
+  const content = document.getElementById('sn-typification-groups-live-content');
+  const context = document.getElementById('sn-typification-groups-live-context');
+  const list = document.getElementById('sn-typification-groups-live-list');
+  const meta = document.getElementById('sn-typification-groups-live-meta');
+  const note = document.getElementById('sn-typification-groups-live-note');
+  if (loading) loading.style.display = 'none';
+  if (content) content.style.display = 'none';
+  if (list) list.innerHTML = '';
+  if (meta) meta.textContent = '—';
+  if (note) { note.style.display = 'none'; note.textContent = ''; }
+  if (context) context.textContent = '—';
+  if (empty) {
+    empty.style.display = 'flex';
+    if (reason === 'reload' && hadSelection) {
+      empty.innerHTML = '<i class="fa-solid fa-arrows-rotate"></i><div>Os filtros mudaram. Selecione novamente um tipo de encerramento ao lado.</div>';
+    } else {
+      empty.innerHTML = '<i class="fa-solid fa-hand-pointer"></i><div>Selecione um tipo de encerramento ao lado para ver o volume por grupo econômico.</div>';
+    }
+  }
+}
+
+function onSessionTypificationLiveClickNew(rawTipo) {
+  const tipo = String(rawTipo || '').trim();
+  if (!tipo) return;
+  if (selectedTypificationLiveNew === tipo) {
+    resetTypificationGroupsLiveCardNew();
+    refreshTypificationLiveActiveStateNew();
+    return;
+  }
+  selectedTypificationLiveNew = tipo;
+  refreshTypificationLiveActiveStateNew();
+  loadTypificationGroupsLiveBreakdownNew(tipo);
+}
+
+function refreshTypificationLiveActiveStateNew() {
+  document.querySelectorAll('#sn-session-typifications-live-list .session-typification-row').forEach((row) => {
+    row.classList.toggle('is-active', row.dataset.tipo === selectedTypificationLiveNew);
+  });
+}
+
+async function loadTypificationGroupsLiveBreakdownNew(tipo) {
+  const requestId = ++typificationLiveGroupsRequestIdNew;
+  const empty = document.getElementById('sn-typification-groups-live-empty');
+  const loading = document.getElementById('sn-typification-groups-live-loading');
+  const content = document.getElementById('sn-typification-groups-live-content');
+  const context = document.getElementById('sn-typification-groups-live-context');
+  const list = document.getElementById('sn-typification-groups-live-list');
+  const meta = document.getElementById('sn-typification-groups-live-meta');
+  const note = document.getElementById('sn-typification-groups-live-note');
+  if (empty) empty.style.display = 'none';
+  if (content) content.style.display = 'none';
+  if (loading) loading.style.display = 'block';
+  if (context) context.textContent = tipo;
+
+  const meses = [...selectedMonths].sort();
+  const p = new URLSearchParams();
+  p.set('scope', 'typification_groups_live');
+  p.set('typification_value', tipo);
+  if (meses.length > 0) p.set('meses', meses.join(','));
+  appendGroupParams(p);
+
+  const data = await safeGet('/api/sessions?' + p.toString());
+  if (requestId !== typificationLiveGroupsRequestIdNew) return;
+  if (selectedTypificationLiveNew !== tipo) return;
+
+  if (loading) loading.style.display = 'none';
+
+  if (!data || data.error) {
+    if (empty) {
+      empty.style.display = 'flex';
+      empty.innerHTML = `<i class="fa-solid fa-triangle-exclamation" style="color:#f87171"></i><div>Erro ao carregar grupos: ${escapeHtml(String((data && data.error) || 'falha de rede').slice(0, 200))}</div>`;
+    }
+    return;
+  }
+
+  const groups = Array.isArray(data.groups) ? data.groups : [];
+  const total = Number(data.total) || groups.reduce((acc, g) => acc + (Number(g.total) || 0), 0);
+  if (!groups.length) {
+    if (empty) {
+      empty.style.display = 'flex';
+      empty.innerHTML = `<i class="fa-solid fa-circle-info"></i><div>Nenhum grupo encontrado para <strong>${escapeHtml(tipo)}</strong> com os filtros atuais.</div>`;
+    }
+    return;
+  }
+
+  if (content) {
+    content.style.display = 'flex';
+    content.style.flexDirection = 'column';
+    content.style.minHeight = '0';
+    content.style.flex = '1 1 auto';
+  }
+  const max = Number(groups[0].total) || 1;
+  if (list) {
+    list.innerHTML = groups.map((g) => {
+      const value = Number(g.total) || 0;
+      const width = Math.max((value / max) * 100, 2);
+      const pct = total > 0 ? ((value / total) * 100).toFixed(1).replace('.', ',') : '0,0';
+      const label = escapeHtml(g.grupo || 'Sem grupo');
+      return `<div class="session-typification-row variant-indigo" title="${label}">
+        <div class="session-typification-label">${label}</div>
+        <div class="session-typification-track"><div class="session-typification-bar" style="width:${width}%"></div></div>
+        <div class="session-typification-value">${fmt(value)} <span style="color:#94a3b8;font-weight:700">(${pct}%)</span></div>
+      </div>`;
+    }).join('');
+  }
+  if (meta) meta.textContent = `${groups.length} grupos · total ${fmt(total)} sessões`;
+  if (note) {
+    note.style.display = 'block';
+    note.textContent = data.source || "botmaker_session.variables['typification']";
+  }
+}
+
+function renderSessionTypificationsLiveNew(items, opts) {
+  const loading = document.getElementById('sn-session-typifications-live-loading');
+  const content = document.getElementById('sn-session-typifications-live-content');
+  const list = document.getElementById('sn-session-typifications-live-list');
+  const meta = document.getElementById('sn-session-typifications-live-meta');
+  const note = document.getElementById('sn-session-typifications-live-note');
+  opts = opts || {};
+  if (opts.error) {
+    if (loading) {
+      loading.style.display = 'block';
+      loading.innerHTML = '<i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-right:6px"></i>Erro ao carregar tipificações live: ' + String(opts.error).slice(0, 200);
+    }
+    if (content) content.style.display = 'none';
+    return;
+  }
+  const rows = (items || []).filter((item) => Number(item.total) > 0);
+  const total = rows.reduce((acc, item) => acc + (Number(item.total) || 0), 0);
+  const max = rows.length ? Number(rows[0].total) || 1 : 1;
+  if (list) {
+    list.innerHTML = rows.length ? rows.map((item) => {
+      const rawTipo = item.tipo || 'Sem tipificação';
+      const value = Number(item.total) || 0;
+      const width = Math.max((value / max) * 100, 2);
+      const pct = total > 0 ? ((value / total) * 100).toFixed(1).replace('.', ',') : '0,0';
+      const label = escapeHtml(rawTipo);
+      const tipoAttr = escapeHtml(rawTipo);
+      const isActive = selectedTypificationLiveNew === rawTipo;
+      const activeClass = isActive ? ' is-active' : '';
+      return `<div class="session-typification-row is-interactive${activeClass}" role="button" tabindex="0" data-tipo="${tipoAttr}" onclick="onSessionTypificationLiveClickNew(this.dataset.tipo)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();onSessionTypificationLiveClickNew(this.dataset.tipo);}" title="${label} — clique para detalhar por grupo">
+        <div class="session-typification-label">${label}</div>
+        <div class="session-typification-track"><div class="session-typification-bar" style="width:${width}%"></div></div>
+        <div class="session-typification-value">${fmt(value)} <span style="color:#94a3b8;font-weight:700">(${pct}%)</span></div>
+      </div>`;
+    }).join('') : '<div style="font-size:13px;color:#94a3b8;text-align:center;padding:14px 0">Nenhum encerramento tipificado encontrado para o filtro atual.</div>';
+  }
+  if (meta) meta.textContent = `${rows.length} tipos · total ${fmt(total)} sessões tipificadas c/ interação`;
+  if (note) {
+    note.style.display = 'block';
+    note.textContent = opts.source || "botmaker_session.variables['typification']";
+  }
+  if (loading) loading.style.display = 'none';
+  if (content) {
+    content.style.display = 'flex';
+    content.style.flexDirection = 'column';
+    content.style.minHeight = '0';
+    content.style.flex = '1 1 auto';
+  }
+}
+
+async function loadSessionTypificationsLiveNew() {
+  const requestId = ++typificationLiveRequestIdNew;
+  const loading = document.getElementById('sn-session-typifications-live-loading');
+  const content = document.getElementById('sn-session-typifications-live-content');
+  if (loading) {
+    loading.style.display = 'block';
+    loading.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin" style="margin-right:6px"></i>Carregando...';
+  }
+  if (content) content.style.display = 'none';
+  resetTypificationGroupsLiveCardNew('reload');
+
+  const meses = [...selectedMonths].sort();
+  const p = new URLSearchParams();
+  p.set('scope', 'typification_live');
+  if (meses.length > 0) p.set('meses', meses.join(','));
+  appendGroupParams(p);
+  const data = await safeGet('/api/sessions?' + p.toString());
+  if (requestId !== typificationLiveRequestIdNew) return;
+  if (!data || data.error) {
+    renderSessionTypificationsLiveNew([], {
+      error: data?.error || 'Erro ao carregar tipificações live',
+    });
+    return;
+  }
+  renderSessionTypificationsLiveNew(data.typifications || [], {
+    source: data.source,
   });
 }
 
@@ -1023,6 +1221,7 @@ async function loadSessionsNew() {
   if (typeof getActiveTab === "function" && getActiveTab() !== "sessoes-new") return;
   const requestId = ++sessionsRequestIdNew;
   resetTypificationGroupsCardNew('reload');
+  resetTypificationGroupsLiveCardNew('reload');
   buildAppointmentTypesPeriodoOptionsNew();
   buildSessionsDailyMonthOptionsNew();
   const economicGroupBullet = document.getElementById('sn-bullet-sessoes-eg');
@@ -1075,6 +1274,7 @@ async function loadSessionsNew() {
   loadSessionsDailyEvolutionNew();
   loadSessionsDepartmentEvolutionNew(requestId);
   loadSessionHumanDepartmentsNew();
+  loadSessionTypificationsLiveNew();
 
   const sessions = await safeGet('/api/sessions' + qs);
   if (requestId !== sessionsRequestIdNew) return;

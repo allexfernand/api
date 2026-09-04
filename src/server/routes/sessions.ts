@@ -782,6 +782,156 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       }
     }
 
+    // Q11C / Q11D (Sessões - New): tipificação ao vivo de botmaker_session.variables['typification']
+    if (scope === 'typification_live' || scope === 'typification_groups_live') {
+      if (scope === 'typification_groups_live' && !typificationValue) {
+        return res.status(200).json({
+          scope: 'typification_groups_live',
+          typification: null,
+          groups: [],
+          total: 0,
+          error: 'typification_value é obrigatório',
+        });
+      }
+      const liveDateFilter = meses.length > 0
+        ? `DATE_FORMAT(try_cast(s.${quoteIdent('creation_time')} AS TIMESTAMP), 'yyyy-MM') IN (${meses.map((m: string) => `'${m}'`).join(',')})`
+        : null;
+      const liveTipExpr = sessionTypificationExpr('variables', 's');
+      const liveScopeWhere = companySessionsScopeFilter || '';
+      const caps = await resolveGoldDeptCapabilities(warehouseId);
+      const boundsMonths = meses.length > 0 ? meses : lastNMonthsList(24);
+      const { start, endExclusive } = monthRangeBounds(boundsMonths);
+      const userJoinSql = caps.hasTeveUser
+        ? `INNER JOIN ${DASHBOARD_SESSIONS_TABLE} g
+            ON g.${quoteIdent('session_id')} = lb.session_id
+           AND COALESCE(g.${quoteIdent('teve_user')}, 0) = 1`
+        : '';
+      const userExistsSql = caps.hasTeveUser
+        ? ''
+        : `WHERE EXISTS (
+            SELECT 1
+            FROM ${MESSAGE_TABLE} m
+            WHERE CAST(m.${quoteIdent('session_id')} AS STRING) = lb.session_id
+              AND LOWER(TRIM(CAST(m.${quoteIdent('sender_type')} AS STRING))) = 'user'
+              AND try_cast(m.${quoteIdent('creation_time')} AS TIMESTAMP) >= TIMESTAMP '${start}'
+              AND try_cast(m.${quoteIdent('creation_time')} AS TIMESTAMP) < TIMESTAMP '${endExclusive}'
+          )`;
+      const tipValueFilter = scope === 'typification_groups_live' && typificationValue
+        ? `s.${quoteIdent('tipificacao')} = ${params.add(typificationValue)}`
+        : null;
+      const finalWhere = [
+        liveScopeWhere ? liveScopeWhere : null,
+        tipValueFilter,
+      ].filter(Boolean).join(' AND ');
+      const queryParams = params.list.length ? params.list : undefined;
+
+      try {
+        const rows = await runQuery(warehouseId, `
+          WITH live_base AS (
+            SELECT
+              CAST(s.${quoteIdent('session_id')} AS STRING) AS session_id,
+              CAST(s.${quoteIdent('organization_id')} AS STRING) AS organization_id,
+              NULLIF(TRIM(CAST(o.${quoteIdent('name')} AS STRING)), '') AS organization_name,
+              COALESCE(
+                NULLIF(TRIM(CAST(o.${quoteIdent('name_economic_group')} AS STRING)), ''),
+                NULLIF(TRIM(CAST(s.${quoteIdent('economic_group_name')} AS STRING)), ''),
+                'Nulos'
+              ) AS economic_group_canonical,
+              ${liveTipExpr} AS tipificacao
+            FROM ${SESSION_TABLE} s
+            LEFT JOIN ${ORGANIZATIONS_TABLE} o
+              ON CAST(s.${quoteIdent('organization_id')} AS STRING) = CAST(o.${quoteIdent('id')} AS STRING)
+            WHERE s.${quoteIdent('creation_time')} IS NOT NULL
+              ${liveDateFilter ? `AND ${liveDateFilter}` : ''}
+          ),
+          live_user AS (
+            SELECT lb.*
+            FROM live_base lb
+            ${userJoinSql}
+            ${userExistsSql}
+          )
+          ${scope === 'typification_live' ? `
+            SELECT
+              s.tipificacao AS tipificacao,
+              COUNT(*) AS total_sessions
+            FROM live_user s
+            ${finalWhere ? `WHERE ${finalWhere}` : ''}
+            GROUP BY s.tipificacao
+            ORDER BY total_sessions DESC
+            LIMIT 40
+          ` : `
+            SELECT
+              s.economic_group_canonical AS grupo,
+              COUNT(*) AS total_sessions
+            FROM live_user s
+            WHERE ${finalWhere || '1=1'}
+              AND s.economic_group_canonical IS NOT NULL
+              AND TRIM(CAST(s.economic_group_canonical AS STRING)) != ''
+            GROUP BY s.economic_group_canonical
+            ORDER BY total_sessions DESC
+            LIMIT 50
+          `}
+        `, queryParams);
+
+        if (scope === 'typification_live') {
+          const typifications = rows.map((r) => ({
+            tipo: String(getCell(r[0]) || '—'),
+            total: toInt(r[1]),
+          }));
+          setStableCache(res);
+          return res.status(200).json({
+            scope: 'typification_live',
+            typifications,
+            total: typifications.reduce((acc, item) => acc + item.total, 0),
+            filters_applied: {
+              period: meses.length > 0,
+              organization: Boolean(groupNames.length || company || partnerBrokerId),
+              user_interaction: true,
+            },
+            source: "botmaker_session.variables['typification']",
+            rule: "Q11C = variables.typification ao vivo · só c/ interação do cliente",
+          });
+        }
+
+        const groups = rows.map((r) => ({
+          grupo: String(getCell(r[0]) || 'Sem grupo'),
+          total: toInt(r[1]),
+        }));
+        const totalSessions = groups.reduce((acc, g) => acc + g.total, 0);
+        setStableCache(res);
+        return res.status(200).json({
+          scope: 'typification_groups_live',
+          typification: typificationValue,
+          groups,
+          total: totalSessions,
+          filters_applied: {
+            period: meses.length > 0,
+            organization: Boolean(groupNames.length || company || partnerBrokerId),
+            user_interaction: true,
+          },
+          source: "botmaker_session.variables['typification'] + economic_group",
+          rule: "Q11D = tipificação live + grupo · só c/ interação do cliente",
+        });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (scope === 'typification_live') {
+          return res.status(200).json({
+            scope: 'typification_live',
+            typifications: [],
+            total: 0,
+            error: msg,
+          });
+        }
+        return res.status(200).json({
+          scope: 'typification_groups_live',
+          typification: typificationValue,
+          groups: [],
+          total: 0,
+          error: msg,
+        });
+      }
+    }
+
     // Q15: janela fixa dos últimos 12 meses (igual Q3). Preferir colunas gold (finished_by/teve_user).
     if (scope === 'human_department_evolution') {
       const topGroupMonths = lastNMonthsList(12);

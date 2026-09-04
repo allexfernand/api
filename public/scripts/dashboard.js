@@ -1,5 +1,5 @@
 (async function loadSanusDashboard() {
-  const CACHE = "20260904-q15b-filters";
+  const CACHE = "20260904-q11c-live";
 
   function loadScript(src, { ordered = false } = {}) {
     return new Promise((resolve, reject) => {

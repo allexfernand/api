@@ -495,21 +495,30 @@ body[data-sidebar="collapsed"] .sidebar-tab span{opacity:0;position:absolute;tra
 .card-box[data-qtag="#Q11"] #session-typifications-content,
 .card-box[data-qtag="#Q11"] #sn-session-typifications-content,
 .card-box[data-qtag="#Q11B"] #typification-groups-content,
-.card-box[data-qtag="#Q11B"] #sn-typification-groups-content{flex:1 1 auto;min-height:0;display:flex;flex-direction:column}
+.card-box[data-qtag="#Q11B"] #sn-typification-groups-content,
+.card-box[data-qtag="#Q11C"] #sn-session-typifications-live-content,
+.card-box[data-qtag="#Q11D"] #sn-typification-groups-live-content{flex:1 1 auto;min-height:0;display:flex;flex-direction:column}
 .card-box[data-qtag="#Q11"] #session-typifications-list,
 .card-box[data-qtag="#Q11"] #sn-session-typifications-list,
 .card-box[data-qtag="#Q11B"] #typification-groups-list,
-.card-box[data-qtag="#Q11B"] #sn-typification-groups-list{flex:1 1 auto;min-height:0;overflow-y:auto;padding-right:6px;scrollbar-width:thin;scrollbar-color:#cbd5e1 transparent}
+.card-box[data-qtag="#Q11B"] #sn-typification-groups-list,
+.card-box[data-qtag="#Q11C"] #sn-session-typifications-live-list,
+.card-box[data-qtag="#Q11D"] #sn-typification-groups-live-list{flex:1 1 auto;min-height:0;overflow-y:auto;padding-right:6px;scrollbar-width:thin;scrollbar-color:#cbd5e1 transparent}
 .card-box[data-qtag="#Q11"] #session-typifications-list::-webkit-scrollbar,
 .card-box[data-qtag="#Q11"] #sn-session-typifications-list::-webkit-scrollbar,
 .card-box[data-qtag="#Q11B"] #typification-groups-list::-webkit-scrollbar,
-.card-box[data-qtag="#Q11B"] #sn-typification-groups-list::-webkit-scrollbar{width:6px}
+.card-box[data-qtag="#Q11B"] #sn-typification-groups-list::-webkit-scrollbar,
+.card-box[data-qtag="#Q11C"] #sn-session-typifications-live-list::-webkit-scrollbar,
+.card-box[data-qtag="#Q11D"] #sn-typification-groups-live-list::-webkit-scrollbar{width:6px}
 .card-box[data-qtag="#Q11"] #session-typifications-list::-webkit-scrollbar-thumb,
 .card-box[data-qtag="#Q11"] #sn-session-typifications-list::-webkit-scrollbar-thumb,
 .card-box[data-qtag="#Q11B"] #typification-groups-list::-webkit-scrollbar-thumb,
-.card-box[data-qtag="#Q11B"] #sn-typification-groups-list::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:999px}
+.card-box[data-qtag="#Q11B"] #sn-typification-groups-list::-webkit-scrollbar-thumb,
+.card-box[data-qtag="#Q11C"] #sn-session-typifications-live-list::-webkit-scrollbar-thumb,
+.card-box[data-qtag="#Q11D"] #sn-typification-groups-live-list::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:999px}
 .card-box[data-qtag="#Q11B"] #typification-groups-empty,
-.card-box[data-qtag="#Q11B"] #sn-typification-groups-empty{flex:1 1 auto}
+.card-box[data-qtag="#Q11B"] #sn-typification-groups-empty,
+.card-box[data-qtag="#Q11D"] #sn-typification-groups-live-empty{flex:1 1 auto}
 .session-typification-list{display:grid;gap:6px}
 .session-typification-row{display:grid;grid-template-columns:minmax(140px,1.1fr) minmax(80px,1fr) minmax(120px,140px);gap:12px;align-items:center;padding:8px 10px;border-radius:8px;border:1px solid transparent;transition:background .15s ease,border-color .15s ease,box-shadow .15s ease}
 .session-typification-row.is-interactive{cursor:pointer}
