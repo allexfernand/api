@@ -785,12 +785,13 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
     // Q11C / Q11D (Sessões - New): tipificação de quality_analysis_silver_summary
     // Join: qa.id = gold.session_id · filtros/interação via gold.
-    if (scope === 'typification_live' || scope === 'typification_groups_live') {
-      if (scope === 'typification_groups_live' && !typificationValue) {
+    if (scope === 'typification_live' || scope === 'typification_groups_live' || scope === 'typification_samples_live') {
+      const wantsSamples = scope === 'typification_groups_live' || scope === 'typification_samples_live';
+      if (wantsSamples && !typificationValue) {
         return res.status(200).json({
-          scope: 'typification_groups_live',
+          scope: 'typification_samples_live',
           typification: null,
-          groups: [],
+          conversations: [],
           total: 0,
           error: 'typification_value é obrigatório',
         });
@@ -800,20 +801,27 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         WHEN TRIM(CAST(q.${quoteIdent('tipificacao')} AS STRING)) = '' THEN '(VAZIO/BRANCO)'
         ELSE TRIM(CAST(q.${quoteIdent('tipificacao')} AS STRING))
       END`;
+      const qaJsonExpr = `regexp_replace(CAST(b.${quoteIdent('quality_analysis')} AS STRING), r'^\`\`\`json\\s*|\\s*\`\`\`$', '')`;
+      const resumoExpr = `COALESCE(
+        NULLIF(TRIM(CAST(get_json_object(${qaJsonExpr}, '$.resumo_qualitativo') AS STRING)), ''),
+        NULLIF(TRIM(CAST(get_json_object(${qaJsonExpr}, '$.resumo_atendimento') AS STRING)), ''),
+        NULLIF(TRIM(CAST(get_json_object(${qaJsonExpr}, '$.sintese') AS STRING)), ''),
+        NULLIF(TRIM(CAST(get_json_object(${qaJsonExpr}, '$.resumo') AS STRING)), '')
+      )`;
       const baseWhere = [
         companySessionsDateFilter,
         companySessionsScopeFilter,
         `COALESCE(s.${quoteIdent('teve_user')}, 0) = 1`,
       ].filter(Boolean).join(' AND ');
-      const tipValueFilter = scope === 'typification_groups_live' && typificationValue
+      const tipValueFilter = wantsSamples && typificationValue
         ? `${qaTipExpr} = ${params.add(typificationValue)}`
         : null;
       const where = [baseWhere, tipValueFilter].filter(Boolean).join(' AND ');
       const queryParams = params.list.length ? params.list : undefined;
 
       try {
-        const rows = await runQuery(warehouseId, `
-          ${scope === 'typification_live' ? `
+        if (!wantsSamples) {
+          const rows = await runQuery(warehouseId, `
             SELECT
               ${qaTipExpr} AS tipificacao,
               COUNT(*) AS total_sessions
@@ -824,23 +832,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
             GROUP BY 1
             ORDER BY total_sessions DESC
             LIMIT 40
-          ` : `
-            SELECT
-              s.${quoteIdent('economic_group_canonical')} AS grupo,
-              COUNT(*) AS total_sessions
-            FROM ${dashboardSessionsTable} s
-            INNER JOIN ${QUALITY_SUMMARY_TABLE} q
-              ON CAST(q.${quoteIdent('id')} AS STRING) = CAST(s.${quoteIdent('session_id')} AS STRING)
-            WHERE ${where || '1=1'}
-              AND s.${quoteIdent('economic_group_canonical')} IS NOT NULL
-              AND TRIM(CAST(s.${quoteIdent('economic_group_canonical')} AS STRING)) != ''
-            GROUP BY 1
-            ORDER BY total_sessions DESC
-            LIMIT 50
-          `}
-        `, queryParams);
-
-        if (scope === 'typification_live') {
+          `, queryParams);
           const typifications = rows.map((r) => ({
             tipo: String(getCell(r[0]) || '—'),
             total: toInt(r[1]),
@@ -857,32 +849,86 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
             },
             source: 'quality_analysis_silver_summary.tipificacao · join qa.id = gold.session_id',
             rule: 'Q11C = tipificação QA summary · gold c/ interação · filtros da página',
-            coverage_note: 'QA cobre só sessões com quality analysis (~82k); gold tem mais sessões sem match em qa.id',
+            coverage_note: 'QA a partir de 2026-01; cobertura ~90%+ das sessões gold c/ interação nesse período',
           });
         }
 
-        const groups = rows.map((r) => ({
-          grupo: String(getCell(r[0]) || 'Sem grupo'),
-          total: toInt(r[1]),
-        }));
-        const totalSessions = groups.reduce((acc, g) => acc + g.total, 0);
+        const rows = await runQuery(warehouseId, `
+          SELECT
+            CAST(q.${quoteIdent('id')} AS STRING) AS qa_id,
+            CAST(s.${quoteIdent('session_id')} AS STRING) AS session_id,
+            ${qaTipExpr} AS tipificacao,
+            DATE_FORMAT(try_cast(q.${quoteIdent('event_timestamp')} AS TIMESTAMP), 'yyyy-MM-dd HH:mm') AS event_at,
+            NULLIF(TRIM(CAST(q.${quoteIdent('closed_by')} AS STRING)), '') AS closed_by,
+            NULLIF(TRIM(CAST(q.${quoteIdent('linha_de_cuidado')} AS STRING)), '') AS linha_de_cuidado,
+            NULLIF(TRIM(CAST(q.${quoteIdent('categoria_linha_de_cuidado')} AS STRING)), '') AS categoria_linha_de_cuidado,
+            NULLIF(TRIM(CAST(q.${quoteIdent('status_demanda')} AS STRING)), '') AS status_demanda,
+            LOWER(TRIM(CAST(q.${quoteIdent('problema_resolvido')} AS STRING))) AS problema_resolvido,
+            try_cast(q.${quoteIdent('percentual_desempenho')} AS DOUBLE) AS percentual_desempenho,
+            try_cast(q.${quoteIdent('nota_atendimento')} AS DOUBLE) AS nota_atendimento,
+            try_cast(q.${quoteIdent('nota_maxima_possivel')} AS DOUBLE) AS nota_maxima_possivel,
+            NULLIF(TRIM(CAST(q.${quoteIdent('tipo_atendimento_agendamento')} AS STRING)), '') AS tipo_atendimento_agendamento,
+            CAST(q.${quoteIdent('has_bot')} AS STRING) AS has_bot,
+            CAST(q.${quoteIdent('has_agent')} AS STRING) AS has_agent,
+            NULLIF(TRIM(CAST(s.${quoteIdent('economic_group_canonical')} AS STRING)), '') AS economic_group,
+            NULLIF(TRIM(CAST(s.${quoteIdent('organization_name')} AS STRING)), '') AS organization_name,
+            ${resumoExpr} AS resumo
+          FROM ${dashboardSessionsTable} s
+          INNER JOIN ${QUALITY_SUMMARY_TABLE} q
+            ON CAST(q.${quoteIdent('id')} AS STRING) = CAST(s.${quoteIdent('session_id')} AS STRING)
+          LEFT JOIN ${SESSION_TABLE} b
+            ON CAST(b.${quoteIdent('session_id')} AS STRING) = CAST(s.${quoteIdent('session_id')} AS STRING)
+          WHERE ${where || '1=1'}
+          ORDER BY try_cast(q.${quoteIdent('event_timestamp')} AS TIMESTAMP) DESC
+          LIMIT 3
+        `, queryParams);
+
+        const conversations = rows.map((r) => {
+          const resumo = String(getCell(r[17]) || '').trim();
+          const preview = resumo.length > 180 ? `${resumo.slice(0, 177)}…` : resumo;
+          const pctRaw = getCell(r[9]);
+          const notaRaw = getCell(r[10]);
+          const notaMaxRaw = getCell(r[11]);
+          return {
+            qa_id: String(getCell(r[0]) || ''),
+            session_id: String(getCell(r[1]) || ''),
+            tipificacao: String(getCell(r[2]) || '—'),
+            event_at: String(getCell(r[3]) || ''),
+            closed_by: String(getCell(r[4]) || '') || null,
+            linha_de_cuidado: String(getCell(r[5]) || '') || null,
+            categoria_linha_de_cuidado: String(getCell(r[6]) || '') || null,
+            status_demanda: String(getCell(r[7]) || '') || null,
+            problema_resolvido: String(getCell(r[8]) || '') || null,
+            percentual_desempenho: Number.isFinite(Number(pctRaw)) ? Number(pctRaw) : null,
+            nota_atendimento: Number.isFinite(Number(notaRaw)) ? Number(notaRaw) : null,
+            nota_maxima_possivel: Number.isFinite(Number(notaMaxRaw)) ? Number(notaMaxRaw) : null,
+            tipo_atendimento_agendamento: String(getCell(r[12]) || '') || null,
+            has_bot: String(getCell(r[13]) || '').toLowerCase() === 'true',
+            has_agent: String(getCell(r[14]) || '').toLowerCase() === 'true',
+            economic_group: String(getCell(r[15]) || '') || null,
+            organization_name: String(getCell(r[16]) || '') || null,
+            resumo: resumo || null,
+            preview: preview || null,
+          };
+        });
+
         setStableCache(res);
         return res.status(200).json({
-          scope: 'typification_groups_live',
+          scope: 'typification_samples_live',
           typification: typificationValue,
-          groups,
-          total: totalSessions,
+          conversations,
+          total: conversations.length,
           filters_applied: {
             period: meses.length > 0,
             organization: Boolean(groupNames.length || company || partnerBrokerId),
             user_interaction: true,
           },
-          source: 'quality_analysis_silver_summary.tipificacao + gold.economic_group_canonical',
-          rule: 'Q11D = tipificação QA + grupo · gold c/ interação · filtros da página',
+          source: 'quality_analysis_silver_summary + botmaker_session.quality_analysis.resumo_qualitativo',
+          rule: 'Q11D = 3 conversas mais recentes do motivo QA · clique para ver resumo completo',
         });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        if (scope === 'typification_live') {
+        if (!wantsSamples) {
           return res.status(200).json({
             scope: 'typification_live',
             typifications: [],
@@ -891,9 +937,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           });
         }
         return res.status(200).json({
-          scope: 'typification_groups_live',
+          scope: 'typification_samples_live',
           typification: typificationValue,
-          groups: [],
+          conversations: [],
           total: 0,
           error: msg,
         });

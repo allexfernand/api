@@ -15,6 +15,7 @@ let selectedTypificationNew = null;
 let selectedTypificationLiveNew = null;
 let typificationLiveGroupsRequestIdNew = 0;
 let typificationLiveRequestIdNew = 0;
+let snQaConversationsCacheNew = [];
 
 function renderSessionMessageAgentFinishersNew(items, opts) {
   const loading = document.getElementById('sn-session-message-finishers-loading');
@@ -454,6 +455,8 @@ function refreshTypificationActiveStateNew() {
 function resetTypificationGroupsLiveCardNew(reason) {
   const hadSelection = Boolean(selectedTypificationLiveNew);
   selectedTypificationLiveNew = null;
+  snQaConversationsCacheNew = [];
+  closeQaConversationModalNew();
   const empty = document.getElementById('sn-typification-groups-live-empty');
   const loading = document.getElementById('sn-typification-groups-live-loading');
   const content = document.getElementById('sn-typification-groups-live-content');
@@ -472,7 +475,7 @@ function resetTypificationGroupsLiveCardNew(reason) {
     if (reason === 'reload' && hadSelection) {
       empty.innerHTML = '<i class="fa-solid fa-arrows-rotate"></i><div>Os filtros mudaram. Selecione novamente um tipo de encerramento ao lado.</div>';
     } else {
-      empty.innerHTML = '<i class="fa-solid fa-hand-pointer"></i><div>Selecione um tipo de encerramento ao lado para ver o volume por grupo econômico.</div>';
+      empty.innerHTML = '<i class="fa-solid fa-hand-pointer"></i><div>Selecione um tipo de encerramento ao lado para ver as 3 conversas mais recentes.</div>';
     }
   }
 }
@@ -487,7 +490,7 @@ function onSessionTypificationLiveClickNew(rawTipo) {
   }
   selectedTypificationLiveNew = tipo;
   refreshTypificationLiveActiveStateNew();
-  loadTypificationGroupsLiveBreakdownNew(tipo);
+  loadTypificationSamplesLiveNew(tipo);
 }
 
 function refreshTypificationLiveActiveStateNew() {
@@ -496,7 +499,26 @@ function refreshTypificationLiveActiveStateNew() {
   });
 }
 
-async function loadTypificationGroupsLiveBreakdownNew(tipo) {
+function formatQaScoreNew(item) {
+  const pct = Number(item?.percentual_desempenho);
+  if (Number.isFinite(pct)) return `${pct.toFixed(1).replace('.', ',')}%`;
+  const nota = Number(item?.nota_atendimento);
+  const max = Number(item?.nota_maxima_possivel);
+  if (Number.isFinite(nota) && Number.isFinite(max) && max > 0) {
+    return `${nota}/${max}`;
+  }
+  if (Number.isFinite(nota)) return String(nota);
+  return '—';
+}
+
+function formatQaResolvedNew(value) {
+  const raw = String(value || '').toLowerCase();
+  if (raw === 'true' || raw === '1' || raw === 'sim') return 'Resolvido';
+  if (raw === 'false' || raw === '0' || raw === 'nao' || raw === 'não') return 'Não resolvido';
+  return value ? String(value) : '—';
+}
+
+async function loadTypificationSamplesLiveNew(tipo) {
   const requestId = ++typificationLiveGroupsRequestIdNew;
   const empty = document.getElementById('sn-typification-groups-live-empty');
   const loading = document.getElementById('sn-typification-groups-live-loading');
@@ -512,7 +534,7 @@ async function loadTypificationGroupsLiveBreakdownNew(tipo) {
 
   const meses = [...selectedMonths].sort();
   const p = new URLSearchParams();
-  p.set('scope', 'typification_groups_live');
+  p.set('scope', 'typification_samples_live');
   p.set('typification_value', tipo);
   if (meses.length > 0) p.set('meses', meses.join(','));
   appendGroupParams(p);
@@ -524,19 +546,20 @@ async function loadTypificationGroupsLiveBreakdownNew(tipo) {
   if (loading) loading.style.display = 'none';
 
   if (!data || data.error) {
+    snQaConversationsCacheNew = [];
     if (empty) {
       empty.style.display = 'flex';
-      empty.innerHTML = `<i class="fa-solid fa-triangle-exclamation" style="color:#f87171"></i><div>Erro ao carregar grupos: ${escapeHtml(String((data && data.error) || 'falha de rede').slice(0, 200))}</div>`;
+      empty.innerHTML = `<i class="fa-solid fa-triangle-exclamation" style="color:#f87171"></i><div>Erro ao carregar conversas: ${escapeHtml(String((data && data.error) || 'falha de rede').slice(0, 200))}</div>`;
     }
     return;
   }
 
-  const groups = Array.isArray(data.groups) ? data.groups : [];
-  const total = Number(data.total) || groups.reduce((acc, g) => acc + (Number(g.total) || 0), 0);
-  if (!groups.length) {
+  const conversations = Array.isArray(data.conversations) ? data.conversations : [];
+  snQaConversationsCacheNew = conversations;
+  if (!conversations.length) {
     if (empty) {
       empty.style.display = 'flex';
-      empty.innerHTML = `<i class="fa-solid fa-circle-info"></i><div>Nenhum grupo encontrado para <strong>${escapeHtml(tipo)}</strong> com os filtros atuais.</div>`;
+      empty.innerHTML = `<i class="fa-solid fa-circle-info"></i><div>Nenhuma conversa QA encontrada para <strong>${escapeHtml(tipo)}</strong> com os filtros atuais.</div>`;
     }
     return;
   }
@@ -547,26 +570,84 @@ async function loadTypificationGroupsLiveBreakdownNew(tipo) {
     content.style.minHeight = '0';
     content.style.flex = '1 1 auto';
   }
-  const max = Number(groups[0].total) || 1;
   if (list) {
-    list.innerHTML = groups.map((g) => {
-      const value = Number(g.total) || 0;
-      const width = Math.max((value / max) * 100, 2);
-      const pct = total > 0 ? ((value / total) * 100).toFixed(1).replace('.', ',') : '0,0';
-      const label = escapeHtml(g.grupo || 'Sem grupo');
-      return `<div class="session-typification-row variant-indigo" title="${label}">
-        <div class="session-typification-label">${label}</div>
-        <div class="session-typification-track"><div class="session-typification-bar" style="width:${width}%"></div></div>
-        <div class="session-typification-value">${fmt(value)} <span style="color:#94a3b8;font-weight:700">(${pct}%)</span></div>
-      </div>`;
+    list.innerHTML = conversations.map((item, index) => {
+      const when = escapeHtml(item.event_at || '—');
+      const who = escapeHtml(item.closed_by || 'Sem closed_by');
+      const status = escapeHtml(item.status_demanda || 'Sem status');
+      const score = escapeHtml(formatQaScoreNew(item));
+      const preview = escapeHtml(item.preview || item.linha_de_cuidado || 'Sem resumo qualitativo disponível.');
+      const org = escapeHtml(item.organization_name || item.economic_group || '');
+      return `<button type="button" class="sn-qa-conv-card" data-qa-index="${index}" onclick="openQaConversationModalNew(${index})">
+        <div class="sn-qa-conv-card-top">
+          <div class="sn-qa-conv-card-title">${when} · ${who}</div>
+          <span class="sn-qa-conv-pill">${score}</span>
+        </div>
+        <div class="sn-qa-conv-card-meta">${status}${org ? ` · ${org}` : ''}</div>
+        <div class="sn-qa-conv-card-preview">${preview}</div>
+      </button>`;
     }).join('');
   }
-  if (meta) meta.textContent = `${groups.length} grupos · total ${fmt(total)} sessões`;
+  if (meta) meta.textContent = `${conversations.length} conversas mais recentes · clique para ver o resumo`;
   if (note) {
     note.style.display = 'block';
-    note.textContent = data.source || 'quality_analysis_silver_summary.tipificacao';
+    note.textContent = data.source || 'quality_analysis_silver_summary + resumo_qualitativo';
   }
 }
+
+function closeQaConversationModalNew() {
+  const modal = document.getElementById('sn-qa-conv-modal');
+  if (modal) modal.hidden = true;
+}
+
+function openQaConversationModalNew(index) {
+  const item = snQaConversationsCacheNew[Number(index)];
+  const modal = document.getElementById('sn-qa-conv-modal');
+  const title = document.getElementById('sn-qa-conv-modal-title');
+  const subtitle = document.getElementById('sn-qa-conv-modal-subtitle');
+  const body = document.getElementById('sn-qa-conv-modal-body');
+  if (!item || !modal || !body) return;
+  if (title) title.textContent = item.tipificacao || 'Resumo da conversa';
+  if (subtitle) {
+    subtitle.textContent = [item.event_at, item.closed_by, item.organization_name || item.economic_group]
+      .filter(Boolean)
+      .join(' · ') || '—';
+  }
+  const fields = [
+    ['Status', item.status_demanda],
+    ['Problema', formatQaResolvedNew(item.problema_resolvido)],
+    ['Desempenho', formatQaScoreNew(item)],
+    ['Linha de cuidado', item.linha_de_cuidado],
+    ['Categoria', item.categoria_linha_de_cuidado],
+    ['Tipo agendamento', item.tipo_atendimento_agendamento],
+    ['Bot / Agent', `${item.has_bot ? 'Bot' : '—'} · ${item.has_agent ? 'Agent' : '—'}`],
+    ['Session', item.session_id],
+  ];
+  body.innerHTML = `
+    <div class="sn-qa-conv-detail-grid">
+      ${fields.map(([label, value]) => `
+        <div class="sn-qa-conv-detail-item">
+          <div class="sn-qa-conv-detail-label">${escapeHtml(label)}</div>
+          <div class="sn-qa-conv-detail-value">${escapeHtml(value || '—')}</div>
+        </div>
+      `).join('')}
+    </div>
+    <div class="sn-qa-conv-detail-resumo">
+      <div class="sn-qa-conv-detail-label">Resumo qualitativo</div>
+      <p>${escapeHtml(item.resumo || item.preview || 'Sem resumo qualitativo disponível para esta conversa.')}</p>
+    </div>
+  `;
+  modal.hidden = false;
+}
+
+document.addEventListener('click', (event) => {
+  if (event.target && event.target.closest && event.target.closest('[data-close-qa-modal]')) {
+    closeQaConversationModalNew();
+  }
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') closeQaConversationModalNew();
+});
 
 function renderSessionTypificationsLiveNew(items, opts) {
   const loading = document.getElementById('sn-session-typifications-live-loading');
@@ -596,7 +677,7 @@ function renderSessionTypificationsLiveNew(items, opts) {
       const tipoAttr = escapeHtml(rawTipo);
       const isActive = selectedTypificationLiveNew === rawTipo;
       const activeClass = isActive ? ' is-active' : '';
-      return `<div class="session-typification-row is-interactive${activeClass}" role="button" tabindex="0" data-tipo="${tipoAttr}" onclick="onSessionTypificationLiveClickNew(this.dataset.tipo)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();onSessionTypificationLiveClickNew(this.dataset.tipo);}" title="${label} — clique para detalhar por grupo">
+      return `<div class="session-typification-row is-interactive${activeClass}" role="button" tabindex="0" data-tipo="${tipoAttr}" onclick="onSessionTypificationLiveClickNew(this.dataset.tipo)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();onSessionTypificationLiveClickNew(this.dataset.tipo);}" title="${label} — clique para ver 3 conversas recentes">
         <div class="session-typification-label">${label}</div>
         <div class="session-typification-track"><div class="session-typification-bar" style="width:${width}%"></div></div>
         <div class="session-typification-value">${fmt(value)} <span style="color:#94a3b8;font-weight:700">(${pct}%)</span></div>
