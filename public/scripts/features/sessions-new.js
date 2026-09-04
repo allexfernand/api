@@ -1,6 +1,7 @@
 // --- Sessões - New (cópia independente) ---
 // Gerado a partir de sessions.js — edite este arquivo livremente.
 let sessionsRequestIdNew = 0;
+let sessionsHumanDeptRequestIdNew = 0;
 let sessionsDeptEvolutionCacheNew = { key: "", data: null };
 let sessionsInteractionMonthlyNew = { months: [], totals: [] };
 let sessionsDailySeriesCacheNew = [];
@@ -67,6 +68,7 @@ function renderSessionHumanDepartmentsNew(data, opts) {
   const meta = document.getElementById('sn-s-human-dept-meta');
   const errorBox = document.getElementById('sn-session-human-dept-error');
   opts = opts || {};
+  if (opts.scopeKey && opts.scopeKey !== sessionsHumanDeptScopeKeyNew()) return;
   if (loading) loading.style.display = 'none';
   if (errorBox) {
     errorBox.style.display = opts.error ? 'block' : 'none';
@@ -76,13 +78,22 @@ function renderSessionHumanDepartmentsNew(data, opts) {
   const departments = Array.isArray(data?.departments) ? data.departments : [];
   const total = Number(data?.total) || departments.reduce((sum, item) => sum + (Number(item.total) || 0), 0);
   const periodMonths = Array.isArray(opts.periodMonths) ? opts.periodMonths : [];
+  const filtersApplied = opts.filtersApplied || data?.filters_applied || {};
   let periodLabel = 'todo o período';
   if (periodMonths.length === 1) periodLabel = monthShortLabel(periodMonths[0]);
   else if (periodMonths.length > 1) periodLabel = `${periodMonths.length} meses`;
+  const scopeParts = [];
+  if (filtersApplied.organization || selectedSessionScopeText()) {
+    scopeParts.push(selectedSessionScopeText() || 'recorte org');
+  }
   if (meta) {
-    meta.textContent = total > 0
-      ? `${fmt(total)} sessões · Q12B Humano c/ interação · ${periodLabel}`
-      : `sem sessões humanas · ${periodLabel}`;
+    const parts = [
+      total > 0 ? `${fmt(total)} sessões` : 'sem sessões humanas',
+      'Q12B Humano c/ interação',
+      periodLabel,
+      ...scopeParts,
+    ];
+    meta.textContent = parts.join(' · ');
   }
   if (!departments.length) {
     list.innerHTML = '<div style="font-size:12px;color:#94a3b8">Sem dados por departamento neste recorte.</div>';
@@ -107,7 +118,20 @@ function renderSessionHumanDepartmentsNew(data, opts) {
   }).join('');
 }
 
-async function loadSessionHumanDepartmentsNew(requestId) {
+function sessionsHumanDeptScopeKeyNew() {
+  return JSON.stringify({
+    groups: Array.isArray(currentGroups) ? [...currentGroups].sort() : [],
+    partners: Array.isArray(currentPartnerBrokerIds) ? [...currentPartnerBrokerIds].map(String).sort() : [],
+    company: currentCompany || null,
+    partner: currentPartnerBrokerId || null,
+    months: [...selectedMonths].sort(),
+    user_interaction: 1,
+  });
+}
+
+async function loadSessionHumanDepartmentsNew() {
+  const requestId = ++sessionsHumanDeptRequestIdNew;
+  const scopeKey = sessionsHumanDeptScopeKeyNew();
   const loading = document.getElementById('sn-session-human-dept-loading');
   const list = document.getElementById('sn-session-human-dept-list');
   const errorBox = document.getElementById('sn-session-human-dept-error');
@@ -124,15 +148,22 @@ async function loadSessionHumanDepartmentsNew(requestId) {
   if (meses.length > 0) p.set('meses', meses.join(','));
   appendGroupParams(p);
   const data = await safeGet('/api/sessions?' + p.toString());
-  if (requestId !== sessionsRequestIdNew) return;
+  if (requestId !== sessionsHumanDeptRequestIdNew) return;
+  if (scopeKey !== sessionsHumanDeptScopeKeyNew()) return;
   if (!data || data.error) {
     renderSessionHumanDepartmentsNew(null, {
       error: data?.error || 'Erro ao carregar humano por departamento',
       periodMonths: meses,
+      scopeKey,
     });
     return;
   }
-  renderSessionHumanDepartmentsNew(data, { error: data.error, periodMonths: meses });
+  renderSessionHumanDepartmentsNew(data, {
+    error: data.error,
+    periodMonths: Array.isArray(data.months) && data.months.length ? data.months : meses,
+    filtersApplied: data.filters_applied || null,
+    scopeKey,
+  });
 }
 
 function filterSessionCompaniesNew() {
@@ -1043,7 +1074,7 @@ async function loadSessionsNew() {
   loadSessionsEvolutionNew();
   loadSessionsDailyEvolutionNew();
   loadSessionsDepartmentEvolutionNew(requestId);
-  loadSessionHumanDepartmentsNew(requestId);
+  loadSessionHumanDepartmentsNew();
 
   const sessions = await safeGet('/api/sessions' + qs);
   if (requestId !== sessionsRequestIdNew) return;

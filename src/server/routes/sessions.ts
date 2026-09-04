@@ -316,7 +316,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   if (!requireBasicAuth(req, res)) return;
   if (!requireMenuAccess(req, res, CORE_DATA_MENUS)) return;
 
-  const meses = req.query.meses ? req.query.meses.split(',').filter((m: string) => /^\d{4}-\d{2}$/.test(m)) : [];
+  const mesesRaw = req.query.meses;
+  const meses = (Array.isArray(mesesRaw) ? mesesRaw.join(",") : String(mesesRaw || ""))
+    .split(",")
+    .map((m: string) => String(m || "").trim())
+    .filter((m: string) => /^\d{4}-\d{2}$/.test(m));
   const groupNames = await scopedGroupNames(req, parseGroupNames(req.query));
   const company = req.query.company || null;
   const partnerBrokerId = await parsePartnerBrokerSelection(
@@ -575,7 +579,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const dateFilter = monthList.length > 0 ? `s.${quoteIdent('mes')} IN (${monthInList})` : null;
       const baseWhere = [
         dateFilter,
-        companySessionsMode === "company" ? companySessionsScopeFilter : null,
+        companySessionsScopeFilter,
       ].filter(Boolean).join(' AND ');
       const queryParams = params.list.length ? params.list : undefined;
       const caps = await resolveGoldDeptCapabilities(warehouseId);
@@ -649,6 +653,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         setStableCache(res);
         return res.status(200).json({
           scope: 'human_by_department',
+          months: monthList,
           ...grouped,
           attendants: attendants.slice(0, 50),
           filters_applied: {
@@ -667,6 +672,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         const msg = e instanceof Error ? e.message : String(e);
         return res.status(200).json({
           scope: 'human_by_department',
+          months: monthList,
           departments: [],
           total: 0,
           attendants: [],
@@ -783,7 +789,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const topGroupDateFilter = `s.${quoteIdent('mes')} IN (${monthInList})`;
       const baseWhere = [
         topGroupDateFilter,
-        companySessionsMode === "company" ? companySessionsScopeFilter : null,
+        companySessionsScopeFilter,
       ].filter(Boolean).join(' AND ');
       const queryParams = params.list.length ? params.list : undefined;
       const cacheKey = JSON.stringify({
