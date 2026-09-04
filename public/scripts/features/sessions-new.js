@@ -564,7 +564,7 @@ async function loadTypificationGroupsLiveBreakdownNew(tipo) {
   if (meta) meta.textContent = `${groups.length} grupos · total ${fmt(total)} sessões`;
   if (note) {
     note.style.display = 'block';
-    note.textContent = data.source || "botmaker_session.variables['typification']";
+    note.textContent = data.source || 'quality_analysis_silver_summary.tipificacao';
   }
 }
 
@@ -606,7 +606,7 @@ function renderSessionTypificationsLiveNew(items, opts) {
   if (meta) meta.textContent = `${rows.length} tipos · total ${fmt(total)} sessões tipificadas c/ interação`;
   if (note) {
     note.style.display = 'block';
-    note.textContent = opts.source || "botmaker_session.variables['typification']";
+    note.textContent = opts.source || 'quality_analysis_silver_summary.tipificacao';
   }
   if (loading) loading.style.display = 'none';
   if (content) {
