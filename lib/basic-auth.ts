@@ -97,11 +97,18 @@ export function requireBasicAuth(req: AuthRequest, res: AuthResponse) {
   const mdsUser = process.env.DASHBOARD_MDS_AUTH_USER;
   const mdsPassword = process.env.DASHBOARD_MDS_AUTH_PASSWORD;
   if (!expectedUser || !expectedPassword) {
-    res.status(500).json({ error: "Autenticação não configurada." });
+    // 503 (não 500 genérico): falta DASHBOARD_AUTH_USER/PASSWORD no .env.local
+    res.status(503).json({
+      error: "Autenticação não configurada. Defina DASHBOARD_AUTH_USER e DASHBOARD_AUTH_PASSWORD no .env.local e reinicie o servidor.",
+      code: "AUTH_NOT_CONFIGURED",
+    });
     return false;
   }
   if ((mdsUser && !mdsPassword) || (!mdsUser && mdsPassword)) {
-    res.status(500).json({ error: "Autenticação MDS incompleta." });
+    res.status(503).json({
+      error: "Autenticação MDS incompleta. Defina DASHBOARD_MDS_AUTH_USER e DASHBOARD_MDS_AUTH_PASSWORD juntos.",
+      code: "AUTH_MDS_INCOMPLETE",
+    });
     return false;
   }
 

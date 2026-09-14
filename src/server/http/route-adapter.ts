@@ -65,8 +65,8 @@ export function adaptLegacyRoute(handler: LegacyHandler) {
       responseBody = { error: { code: "INTERNAL_ERROR", message, requestId } };
     }
     // Nunca vaza detalhe interno (mensagem de SQL/Databricks, stack) para o
-    // cliente em erros 5xx. O detalhe fica só no log, correlacionado por
-    // requestId; o cliente recebe uma mensagem genérica.
+    // cliente em erros 5xx — exceto misconfiguração de auth, que o dev precisa
+    // ver na cara pra saber que falta DASHBOARD_AUTH_* no .env.local.
     if (statusCode >= 500) {
       logger.error("api.error_response", {
         requestId,
@@ -74,13 +74,20 @@ export function adaptLegacyRoute(handler: LegacyHandler) {
         statusCode,
         detail: responseBody,
       });
-      responseBody = {
-        error: {
-          code: "INTERNAL_ERROR",
-          message: "Erro interno ao processar a requisição.",
-          requestId,
-        },
-      };
+      const body = responseBody as { code?: string; error?: string | { code?: string } } | null;
+      const authCode =
+        body && typeof body === "object"
+          ? body.code || (typeof body.error === "object" ? body.error?.code : undefined)
+          : undefined;
+      if (authCode !== "AUTH_NOT_CONFIGURED" && authCode !== "AUTH_MDS_INCOMPLETE") {
+        responseBody = {
+          error: {
+            code: "INTERNAL_ERROR",
+            message: "Erro interno ao processar a requisição.",
+            requestId,
+          },
+        };
+      }
     }
     applyCors(request, headers);
     if (responseBody === null) return new NextResponse(null, { status: statusCode, headers });

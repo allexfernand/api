@@ -710,55 +710,66 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     if (scope === 'partners') {
       // Lista leve pro seletor: sem expandir filiais (UNION child) — isso
       // competia com o boot do /api/data e estourava o warehouse (HTTP 500).
-      const cacheKey = String(partnerBrokerId || 'all');
-      const cachedPartners = partnersListCache.get(cacheKey);
-      if (cachedPartners && Date.now() - cachedPartners.at < PARTNERS_LIST_CACHE_TTL_MS) {
+      try {
+        const cacheKey = String(partnerBrokerId || 'all');
+        const cachedPartners = partnersListCache.get(cacheKey);
+        if (cachedPartners && Date.now() - cachedPartners.at < PARTNERS_LIST_CACHE_TTL_MS) {
+          setStableCache(res);
+          return res.status(200).json({
+            partners: cachedPartners.partners,
+            auth_role: getDashboardAuth(req)?.role || 'full',
+            updatedAt: new Date().toISOString(),
+            cached: true,
+          });
+        }
+        const partnerRows = await runQuery(warehouseId, `
+          SELECT
+            CAST(pb.id AS STRING) AS broker_id,
+            COALESCE(
+              NULLIF(TRIM(CAST(pb.name AS STRING)), ''),
+              NULLIF(TRIM(CAST(pb.name_secondary AS STRING)), ''),
+              'Sem nome'
+            ) AS broker_name,
+            NULLIF(TRIM(CAST(pb.name_secondary AS STRING)), '') AS broker_name_secondary,
+            pb.active AS broker_active,
+            COUNT(DISTINCT CAST(opb.organization_id AS STRING)) AS total_orgs
+          FROM ${PARTNER_BROKERS_TABLE} pb
+          LEFT JOIN ${ORGANIZATION_PARTNER_BROKERS_TABLE} opb
+            ON CAST(opb.partner_broker_id AS STRING) = CAST(pb.id AS STRING)
+           AND opb.deleted_at IS NULL
+          WHERE pb.id IS NOT NULL
+            ${String(partnerBrokerId) === MDS_PARTNER_SCOPE ? "AND (UPPER(TRIM(COALESCE(CAST(pb.name AS STRING), ''))) = 'MDS' OR UPPER(TRIM(COALESCE(CAST(pb.name_secondary AS STRING), ''))) = 'MDS')" : ""}
+          GROUP BY
+            CAST(pb.id AS STRING),
+            COALESCE(
+              NULLIF(TRIM(CAST(pb.name AS STRING)), ''),
+              NULLIF(TRIM(CAST(pb.name_secondary AS STRING)), ''),
+              'Sem nome'
+            ),
+            NULLIF(TRIM(CAST(pb.name_secondary AS STRING)), ''),
+            pb.active
+          ORDER BY broker_name ASC
+        `);
+        const partners = await filterPartnersByScope(req, partnerRows.map((r) => ({
+          broker_id: String(getCell(r[0]) || '').trim(),
+          broker_name: String(getCell(r[1]) || 'Sem nome').trim(),
+          broker_name_secondary: getCell(r[2]) ? String(getCell(r[2])).trim() : '',
+          broker_active: String(getCell(r[3])).toLowerCase() === 'true',
+          total_orgs: toInt(r[4]),
+        })).filter((partner) => partner.broker_id));
+        partnersListCache.set(cacheKey, { at: Date.now(), partners });
+        setStableCache(res);
+        return res.status(200).json({ partners, auth_role: getDashboardAuth(req)?.role || 'full', updatedAt: new Date().toISOString() });
+      } catch (partnersErr) {
+        console.error('[api/data] partners failed', partnersErr);
         setStableCache(res);
         return res.status(200).json({
-          partners: cachedPartners.partners,
+          partners: [],
+          error: partnersErr instanceof Error ? partnersErr.message : String(partnersErr),
           auth_role: getDashboardAuth(req)?.role || 'full',
           updatedAt: new Date().toISOString(),
-          cached: true,
         });
       }
-      const partnerRows = await runQuery(warehouseId, `
-        SELECT
-          CAST(pb.id AS STRING) AS broker_id,
-          COALESCE(
-            NULLIF(TRIM(CAST(pb.name AS STRING)), ''),
-            NULLIF(TRIM(CAST(pb.name_secondary AS STRING)), ''),
-            'Sem nome'
-          ) AS broker_name,
-          NULLIF(TRIM(CAST(pb.name_secondary AS STRING)), '') AS broker_name_secondary,
-          pb.active AS broker_active,
-          COUNT(DISTINCT CAST(opb.organization_id AS STRING)) AS total_orgs
-        FROM ${PARTNER_BROKERS_TABLE} pb
-        LEFT JOIN ${ORGANIZATION_PARTNER_BROKERS_TABLE} opb
-          ON CAST(opb.partner_broker_id AS STRING) = CAST(pb.id AS STRING)
-         AND opb.deleted_at IS NULL
-        WHERE pb.id IS NOT NULL
-          ${String(partnerBrokerId) === MDS_PARTNER_SCOPE ? "AND (UPPER(TRIM(COALESCE(CAST(pb.name AS STRING), ''))) = 'MDS' OR UPPER(TRIM(COALESCE(CAST(pb.name_secondary AS STRING), ''))) = 'MDS')" : ""}
-        GROUP BY
-          CAST(pb.id AS STRING),
-          COALESCE(
-            NULLIF(TRIM(CAST(pb.name AS STRING)), ''),
-            NULLIF(TRIM(CAST(pb.name_secondary AS STRING)), ''),
-            'Sem nome'
-          ),
-          NULLIF(TRIM(CAST(pb.name_secondary AS STRING)), ''),
-          pb.active
-        ORDER BY broker_name ASC
-      `);
-      const partners = await filterPartnersByScope(req, partnerRows.map((r) => ({
-        broker_id: String(getCell(r[0]) || '').trim(),
-        broker_name: String(getCell(r[1]) || 'Sem nome').trim(),
-        broker_name_secondary: getCell(r[2]) ? String(getCell(r[2])).trim() : '',
-        broker_active: String(getCell(r[3])).toLowerCase() === 'true',
-        total_orgs: toInt(r[4]),
-      })).filter((partner) => partner.broker_id));
-      partnersListCache.set(cacheKey, { at: Date.now(), partners });
-      setStableCache(res);
-      return res.status(200).json({ partners, auth_role: getDashboardAuth(req)?.role || 'full', updatedAt: new Date().toISOString() });
     }
 
     if (scope === 'care_lines') {
@@ -2009,9 +2020,10 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const groupsError = groupsSettled.status === 'rejected'
       ? (groupsSettled.reason instanceof Error ? groupsSettled.reason.message : String(groupsSettled.reason))
       : null;
-    // Só 500 se AMBAS falharem — senão a tela sobe com o que deu.
+    // Nunca derruba o boot com 500 por falha de warehouse:
+    // devolve arrays vazios + *_error para a UI degradar com graça.
     if (!userRows && !groupRows) {
-      throw new Error(usersError || groupsError || 'Falha ao carregar /api/data');
+      console.error('[api/data] boot falhou', { usersError, groupsError });
     }
 
     const parse = (rows: DatabricksRow[] | null) => (rows || []).map((r) => [toDate(r[0]), toInt(r[1])]);
