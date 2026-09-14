@@ -1608,14 +1608,22 @@ async function loadAll(fetchOrgs=true) {
     renderEvol();
     setStatus('ok','✓ Dados ao vivo');
     document.getElementById('last-upd').textContent='Atualizado: '+new Date().toLocaleTimeString('pt-BR');
-    loadDemographics();
-    loadCompanies();
-    loadAgeGroups();
-    // AD06 só na Demográfica/Parceiros — não disputa warehouse com sinistro no boot.
-    if (getActiveTab() === 'demografica' || getActiveTab() === 'visao-parceiros') {
-      loadLivesNetEvolution();
-    }
-    if (getActiveTab() === 'visao-parceiros') loadPartnerVision();
+    // Sequencial: 4 queries pesadas em paralelo saturam o SQL Warehouse
+    // e ficam (pending) até timeout. Uma por vez carrega mais confiável.
+    void (async () => {
+      // Se partners ainda estiver no ar (updateFilterVisibility no boot), espera.
+      if (typeof partnerOptionsInflight !== 'undefined' && partnerOptionsInflight) {
+        try { await partnerOptionsInflight; } catch (_) {}
+      }
+      await loadDemographics();
+      await loadCompanies();
+      await loadAgeGroups();
+      // AD06 só na Demográfica/Parceiros — e só depois dos cards principais.
+      if (getActiveTab() === 'demografica' || getActiveTab() === 'visao-parceiros') {
+        await loadLivesNetEvolution();
+      }
+      if (getActiveTab() === 'visao-parceiros') await loadPartnerVision();
+    })();
   } catch(err) {
     setStatus('error','✗ Erro: '+err.message);
   }
