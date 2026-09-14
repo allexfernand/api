@@ -1,5 +1,5 @@
 (async function loadSanusDashboard() {
-  const CACHE = "20260914-demo-unblocked";
+  const CACHE = "20260914-db-queue";
 
   function loadScript(src, { ordered = false } = {}) {
     return new Promise((resolve, reject) => {

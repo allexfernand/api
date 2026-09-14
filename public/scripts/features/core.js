@@ -20,6 +20,7 @@ let currentPartnerBrokerId = '';
 let currentPartnerBrokerIds = [];
 let partnerVisionSelectionTouched = false;
 let partnerVisionRequestId = 0;
+let partnerVisionInflight = null;
 let partnerVisionEvolutionRequestId = 0;
 let partnerVisionSummaryRequestId = 0;
 let partnerVisionCompanyDrilldownRequestId = 0;

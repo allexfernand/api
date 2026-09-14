@@ -31,6 +31,26 @@ type DbOptions = RequestInit & { headers?: Record<string, string> };
 
 let warehouseIdCache: string | null = null;
 const columnsCache = new Map<string, string[]>();
+const MAX_CONCURRENT_QUERIES = 3;
+let activeQueries = 0;
+const queryWaiters: Array<() => void> = [];
+
+async function acquireQuerySlot() {
+  if (activeQueries < MAX_CONCURRENT_QUERIES) {
+    activeQueries += 1;
+    return;
+  }
+  await new Promise<void>((resolve) => queryWaiters.push(resolve));
+}
+
+function releaseQuerySlot() {
+  activeQueries = Math.max(0, activeQueries - 1);
+  const next = queryWaiters.shift();
+  if (next) {
+    activeQueries += 1;
+    next();
+  }
+}
 
 export async function dbFetch(path: string, options: DbOptions = {}) {
   const res = await fetch(`${HOST}${path}`, {
@@ -46,42 +66,50 @@ export async function runQuery(
   sql: string,
   parameters?: SqlParameter[],
 ): Promise<DatabricksRow[]> {
-  const startedAt = Date.now();
-  const deadline = startedAt + 55_000;
-  let data = await dbFetch("/api/2.0/sql/statements", {
-    method: "POST",
-    body: JSON.stringify({
-      warehouse_id: warehouseId,
-      statement: sql,
-      ...(parameters?.length ? { parameters } : {}),
-      wait_timeout: "50s",
-      on_wait_timeout: "CONTINUE",
-    }),
-  });
-  const { statement_id: sid } = data;
-  let {
-    status: { state },
-  } = data;
-  while (state === "PENDING" || state === "RUNNING") {
-    if (Date.now() >= deadline) {
-      logger.warn("databricks.query.timeout", { statementId: sid, durationMs: Date.now() - startedAt });
-      throw new Error("Consulta ao Databricks excedeu o limite de 55 segundos.");
+  await acquireQuerySlot();
+  try {
+    const startedAt = Date.now();
+    const deadline = startedAt + 55_000;
+    let data = await dbFetch("/api/2.0/sql/statements", {
+      method: "POST",
+      body: JSON.stringify({
+        warehouse_id: warehouseId,
+        statement: sql,
+        ...(parameters?.length ? { parameters } : {}),
+        wait_timeout: "50s",
+        on_wait_timeout: "CONTINUE",
+      }),
+    });
+    const { statement_id: sid } = data;
+    let {
+      status: { state },
+    } = data;
+    while (state === "PENDING" || state === "RUNNING") {
+      if (Date.now() >= deadline) {
+        logger.warn("databricks.query.timeout", { statementId: sid, durationMs: Date.now() - startedAt });
+        // O timeout HTTP não cancela a statement automaticamente. Sem isso,
+        // queries órfãs continuam consumindo o warehouse e causam novos 504.
+        void dbFetch(`/api/2.0/sql/statements/${sid}/cancel`, { method: "POST" }).catch(() => undefined);
+        throw new Error("Consulta ao Databricks excedeu o limite de 55 segundos.");
+      }
+      await new Promise((r) => setTimeout(r, 2000));
+      data = await dbFetch(`/api/2.0/sql/statements/${sid}`);
+      state = data.status.state;
     }
-    await new Promise((r) => setTimeout(r, 2000));
-    data = await dbFetch(`/api/2.0/sql/statements/${sid}`);
-    state = data.status.state;
+    if (state !== "SUCCEEDED") {
+      logger.error("databricks.query.failed", { statementId: sid, state, durationMs: Date.now() - startedAt });
+      throw new Error(data.status?.error?.message || "Query falhou: " + state);
+    }
+    const rows = data.result?.data_array || [];
+    logger.info("databricks.query.completed", {
+      statementId: sid,
+      durationMs: Date.now() - startedAt,
+      rowCount: rows.length,
+    });
+    return rows;
+  } finally {
+    releaseQuerySlot();
   }
-  if (state !== "SUCCEEDED") {
-    logger.error("databricks.query.failed", { statementId: sid, state, durationMs: Date.now() - startedAt });
-    throw new Error(data.status?.error?.message || "Query falhou: " + state);
-  }
-  const rows = data.result?.data_array || [];
-  logger.info("databricks.query.completed", {
-    statementId: sid,
-    durationMs: Date.now() - startedAt,
-    rowCount: rows.length,
-  });
-  return rows;
 }
 
 export async function resolveWarehouseId(): Promise<string> {

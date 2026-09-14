@@ -395,19 +395,18 @@ async function loadPartnerVisionSummary() {
   if (sessionsPrevHeader) sessionsPrevHeader.textContent = `Sessões ${partnerVisionMonthLabel(sessionComparisonMonths[0] || '')}`;
   if (sessionsCurrentHeader) sessionsCurrentHeader.textContent = `Sessões ${partnerVisionMonthLabel(sessionComparisonMonths[1] || sessionComparisonMonths[0] || '')}`;
   const monthParam = months.join(',');
-  // No máximo 2 parceiros em paralelo (3 APIs cada) — evita stampede no warehouse.
-  const rows = await mapWithConcurrency(partners, 2, async (partner) => {
+  // Um parceiro por vez: cada linha consulta 3 endpoints e o warehouse
+  // serverless começa a devolver 504 quando vários parceiros entram juntos.
+  const rows = await mapWithConcurrency(partners, 1, async (partner) => {
     const demographicsParams = partnerVisionSingleParams(partner.id);
     const sessionsParams = partnerVisionSingleParams(partner.id);
     const appointmentsParams = partnerVisionSingleParams(partner.id);
     sessionsParams.set('meses', monthParam);
     appointmentsParams.set('meses', monthParam);
 
-    const [demographics, sessions, appointments] = await Promise.all([
-      safeGet('/api/demographics?' + demographicsParams.toString()),
-      safeGet('/api/sessions-evolution?' + sessionsParams.toString()),
-      safeGet('/api/appointments-evolution?' + appointmentsParams.toString()),
-    ]);
+    const demographics = await safeGet('/api/demographics?' + demographicsParams.toString());
+    const sessions = await safeGet('/api/sessions-evolution?' + sessionsParams.toString());
+    const appointments = await safeGet('/api/appointments-evolution?' + appointmentsParams.toString());
 
     const sessionsByMonth = seriesTotalsByMonth(sessions);
     return {
@@ -561,6 +560,8 @@ async function loadPartnerVisionEvolution() {
 }
 
 async function loadPartnerVision() {
+  if (partnerVisionInflight) return partnerVisionInflight;
+  partnerVisionInflight = (async () => {
   const requestId = ++partnerVisionRequestId;
   const loading = document.getElementById('partner-vision-loading');
   const error = document.getElementById('partner-vision-error');
@@ -579,10 +580,6 @@ async function loadPartnerVision() {
   if (titulares) titulares.textContent = '—';
   if (dependentes) dependentes.textContent = '—';
 
-  loadPartnerVisionEvolution();
-  loadPartnerVisionSummary();
-  loadPartnerEconomicGroupSessions();
-  loadPartnerSessionsKinship();
   const p = partnerVisionParams();
   const data = await safeGet('/api/demographics' + (p.toString() ? '?' + p.toString() : ''));
   if (requestId !== partnerVisionRequestId) return;
@@ -606,6 +603,16 @@ async function loadPartnerVision() {
       : 'Todos os parceiros · sem filtro de parceiro (igual à Análise Demográfica)';
   }
   if (loading) loading.style.display = 'none';
+  await loadPartnerVisionEvolution();
+  await loadPartnerEconomicGroupSessions();
+  await loadPartnerSessionsKinship();
+  await loadPartnerVisionSummary();
+  })();
+  try {
+    return await partnerVisionInflight;
+  } finally {
+    partnerVisionInflight = null;
+  }
 }
 
 function partnerEgSessionsMonthOptions() {
