@@ -1611,10 +1611,6 @@ async function loadAll(fetchOrgs=true) {
     // Sequencial: 4 queries pesadas em paralelo saturam o SQL Warehouse
     // e ficam (pending) até timeout. Uma por vez carrega mais confiável.
     void (async () => {
-      // Se partners ainda estiver no ar (updateFilterVisibility no boot), espera.
-      if (typeof partnerOptionsInflight !== 'undefined' && partnerOptionsInflight) {
-        try { await partnerOptionsInflight; } catch (_) {}
-      }
       await loadDemographics();
       await loadCompanies();
       await loadAgeGroups();
@@ -1622,6 +1618,8 @@ async function loadAll(fetchOrgs=true) {
       if (getActiveTab() === 'demografica' || getActiveTab() === 'visao-parceiros') {
         await loadLivesNetEvolution();
       }
+      // O seletor de parceiros não faz parte do caminho crítico do dashboard.
+      if (!isSinistroTab() && isPartnerFilteredTab()) await loadPartnerOptions();
       if (getActiveTab() === 'visao-parceiros') await loadPartnerVision();
     })();
   } catch(err) {

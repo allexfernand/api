@@ -242,7 +242,6 @@ function updateFilterVisibility() {
   // Botão PDF: a visibilidade fica a cargo do React (activeTab). Aqui só
   // sincronizamos readiness para não travar o clique.
   if (isPetitTab(activeTab)) schedulePdfReadinessUpdate();
-  if (!isSinistro && isPartnerFilteredTab(activeTab)) loadPartnerOptions();
 }
 
 // --- Filtros ---
