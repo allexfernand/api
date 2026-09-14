@@ -116,6 +116,31 @@ async function resolveGoldDeptCapabilities(warehouseId: string): Promise<GoldDep
   return goldDeptCapabilitiesCache;
 }
 
+/**
+ * Filtro de "teve interação do user".
+ * Preferência: coluna gold `teve_user` (leve).
+ * Fallback: semi-join em botmaker_message com prune por data
+ * (EXISTS correlacionado sem janela estoura timeout → HTTP 500).
+ */
+function buildUserInteractionPredicate(
+  caps: GoldDeptCapabilities,
+  meses: string[],
+  alias = "s",
+): string {
+  if (caps.hasTeveUser) {
+    return `COALESCE(${alias}.${quoteIdent("teve_user")}, 0) = 1`;
+  }
+  const boundsMonths = meses.length > 0 ? meses : lastNMonthsList(24);
+  const { start, endExclusive } = monthRangeBounds(boundsMonths);
+  return `CAST(${alias}.${quoteIdent("session_id")} AS STRING) IN (
+    SELECT DISTINCT CAST(m.${quoteIdent("session_id")} AS STRING)
+    FROM ${MESSAGE_TABLE} m
+    WHERE LOWER(TRIM(CAST(m.${quoteIdent("sender_type")} AS STRING))) = 'user'
+      AND try_cast(m.${quoteIdent("creation_time")} AS TIMESTAMP) >= TIMESTAMP '${start}'
+      AND try_cast(m.${quoteIdent("creation_time")} AS TIMESTAMP) < TIMESTAMP '${endExclusive}'
+  )`;
+}
+
 function monthRangeBounds(months: string[]) {
   const sorted = [...months].filter((month) => /^\d{4}-\d{2}$/.test(month)).sort();
   if (!sorted.length) {
@@ -384,17 +409,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const companySessionsScopeFilter = scopeFilters.length ? scopeFilters.join(' AND ') : null;
     const companySessionsWhere = [companySessionsDateFilter, companySessionsScopeFilter].filter(Boolean).join(' AND ');
     const companySessionsMode = groupNames.length || company || partnerBrokerId ? "company" : "economic_group";
-    const userInteractionExistsSql = `
-      EXISTS (
-        SELECT 1
-        FROM ${MESSAGE_TABLE} m
-        WHERE CAST(m.${quoteIdent('session_id')} AS STRING) = CAST(s.${quoteIdent('session_id')} AS STRING)
-          AND LOWER(TRIM(CAST(m.${quoteIdent('sender_type')} AS STRING))) = 'user'
-      )
-    `;
+    const goldCaps = await resolveGoldDeptCapabilities(warehouseId);
+    const userInteractionFilterSql = buildUserInteractionPredicate(goldCaps, meses, "s");
     const withUserInteractionFilter = (baseWhere: string | null | undefined) => {
       if (!includeUserInteraction) return baseWhere || '';
-      return baseWhere ? `${baseWhere} AND ${userInteractionExistsSql}` : userInteractionExistsSql;
+      return baseWhere ? `${baseWhere} AND ${userInteractionFilterSql}` : userInteractionFilterSql;
     };
     const companySessionsSource = companySessionsMode === "company"
       ? "dashboard_sessions_base_gold.organization_name"
@@ -873,10 +892,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         WHEN TRIM(CAST(q.${quoteIdent('tipificacao')} AS STRING)) = '' THEN '(VAZIO/BRANCO)'
         ELSE TRIM(CAST(q.${quoteIdent('tipificacao')} AS STRING))
       END`;
-      const qaCaps = await resolveGoldDeptCapabilities(warehouseId);
-      const userInteractionFilter = qaCaps.hasTeveUser
-        ? `COALESCE(s.${quoteIdent('teve_user')}, 0) = 1`
-        : userInteractionExistsSql;
+      const userInteractionFilter = buildUserInteractionPredicate(goldCaps, meses, "s");
       const where = [
         companySessionsDateFilter,
         companySessionsScopeFilter,
@@ -990,10 +1006,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         WHEN TRIM(CAST(q.${quoteIdent('tipificacao')} AS STRING)) = '' THEN '(VAZIO/BRANCO)'
         ELSE TRIM(CAST(q.${quoteIdent('tipificacao')} AS STRING))
       END`;
-      const qaCaps = await resolveGoldDeptCapabilities(warehouseId);
-      const userInteractionFilter = qaCaps.hasTeveUser
-        ? `COALESCE(s.${quoteIdent('teve_user')}, 0) = 1`
-        : userInteractionExistsSql;
+      const userInteractionFilter = buildUserInteractionPredicate(goldCaps, meses, "s");
       const baseWhere = [
         companySessionsDateFilter,
         companySessionsScopeFilter,
@@ -1452,7 +1465,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         SELECT COUNT(*) AS total_sessions
         FROM ${dashboardSessionsTable} s
         ${userInteractionWhere ? `WHERE ${userInteractionWhere}` : ''}
-          ${userInteractionWhere ? 'AND' : 'WHERE'} ${userInteractionExistsSql}
+          ${userInteractionWhere ? 'AND' : 'WHERE'} ${userInteractionFilterSql}
       `, companySessionsMode === "company" ? params.list : undefined)
       : Promise.resolve(null);
 
@@ -1543,7 +1556,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       economic_group_with_user_interaction_error: userInteractionError,
       user_interaction_included: includeUserInteraction,
       user_interaction_rule: includeUserInteraction
-        ? "Sessão com ≥1 mensagem em botmaker_message onde sender_type = 'user'"
+        ? (goldCaps.hasTeveUser
+          ? "Sessão com teve_user=1 (gold)"
+          : "Sessão com ≥1 mensagem sender_type=user (semi-join botmaker_message com janela de data)")
         : null,
       company_sessions: companySessions,
       company_sessions_error: companySessionsUiError,
