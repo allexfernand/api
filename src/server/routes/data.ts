@@ -62,6 +62,9 @@ const CLAIMS_EVENT_DATE_CANDIDATES = [
   'competencia',
 ];
 
+const PARTNERS_LIST_CACHE_TTL_MS = 5 * 60 * 1000;
+const partnersListCache = new Map<string, { at: number; partners: Array<Record<string, unknown>> }>();
+
 function partnerBrokerCondition(partnerBrokerId: unknown, p: SqlParams) {
   const partnerIds = Array.isArray(partnerBrokerId)
     ? partnerBrokerId.map((value) => String(value).trim()).filter(Boolean)
@@ -705,22 +708,20 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     }
 
     if (scope === 'partners') {
+      // Lista leve pro seletor: sem expandir filiais (UNION child) — isso
+      // competia com o boot do /api/data e estourava o warehouse (HTTP 500).
+      const cacheKey = String(partnerBrokerId || 'all');
+      const cachedPartners = partnersListCache.get(cacheKey);
+      if (cachedPartners && Date.now() - cachedPartners.at < PARTNERS_LIST_CACHE_TTL_MS) {
+        setStableCache(res);
+        return res.status(200).json({
+          partners: cachedPartners.partners,
+          auth_role: getDashboardAuth(req)?.role || 'full',
+          updatedAt: new Date().toISOString(),
+          cached: true,
+        });
+      }
       const partnerRows = await runQuery(warehouseId, `
-        WITH partner_orgs AS (
-          SELECT
-            CAST(opb.partner_broker_id AS STRING) AS partner_broker_id,
-            CAST(opb.organization_id AS STRING) AS organization_id
-          FROM ${ORGANIZATION_PARTNER_BROKERS_TABLE} opb
-          WHERE opb.deleted_at IS NULL
-          UNION ALL
-          SELECT
-            CAST(opb.partner_broker_id AS STRING) AS partner_broker_id,
-            CAST(child.id AS STRING) AS organization_id
-          FROM ${ORGANIZATION_PARTNER_BROKERS_TABLE} opb
-          INNER JOIN ${ORGANIZATIONS_TABLE} child
-            ON CAST(child.matriz_id AS STRING) = CAST(opb.organization_id AS STRING)
-          WHERE opb.deleted_at IS NULL
-        )
         SELECT
           CAST(pb.id AS STRING) AS broker_id,
           COALESCE(
@@ -730,10 +731,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           ) AS broker_name,
           NULLIF(TRIM(CAST(pb.name_secondary AS STRING)), '') AS broker_name_secondary,
           pb.active AS broker_active,
-          COUNT(DISTINCT po.organization_id) AS total_orgs
-        FROM partner_orgs po
-        INNER JOIN ${PARTNER_BROKERS_TABLE} pb
-          ON po.partner_broker_id = CAST(pb.id AS STRING)
+          COUNT(DISTINCT CAST(opb.organization_id AS STRING)) AS total_orgs
+        FROM ${PARTNER_BROKERS_TABLE} pb
+        LEFT JOIN ${ORGANIZATION_PARTNER_BROKERS_TABLE} opb
+          ON CAST(opb.partner_broker_id AS STRING) = CAST(pb.id AS STRING)
+         AND opb.deleted_at IS NULL
         WHERE pb.id IS NOT NULL
           ${String(partnerBrokerId) === MDS_PARTNER_SCOPE ? "AND (UPPER(TRIM(COALESCE(CAST(pb.name AS STRING), ''))) = 'MDS' OR UPPER(TRIM(COALESCE(CAST(pb.name_secondary AS STRING), ''))) = 'MDS')" : ""}
         GROUP BY
@@ -754,6 +756,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         broker_active: String(getCell(r[3])).toLowerCase() === 'true',
         total_orgs: toInt(r[4]),
       })).filter((partner) => partner.broker_id));
+      partnersListCache.set(cacheKey, { at: Date.now(), partners });
       setStableCache(res);
       return res.status(200).json({ partners, auth_role: getDashboardAuth(req)?.role || 'full', updatedAt: new Date().toISOString() });
     }
@@ -1942,66 +1945,74 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       });
     }
 
-    const [userRows, groupRows, sessionGroupRows] = await Promise.all([
-      runQuery(warehouseId, `
-        SELECT DATE_TRUNC('DAY', b.created_at) AS dia, COUNT(DISTINCT b.id) AS n
-        FROM hive_metastore.sanus_prod.beneficiaries b
-        ${groupFilter}
-        GROUP BY 1 ORDER BY 1
-      `, params.list),
-      !requestedGroupNames.length ? runQuery(warehouseId, partnerBrokerId ? `
-        WITH partner_orgs AS (
-          SELECT CAST(opb.organization_id AS STRING) AS organization_id
-          FROM ${ORGANIZATION_PARTNER_BROKERS_TABLE} opb
-          WHERE ${partnerBrokerCondition(partnerBrokerId, params)}
-            AND opb.deleted_at IS NULL
-          UNION ALL
-          SELECT CAST(child.id AS STRING) AS organization_id
-          FROM ${ORGANIZATION_PARTNER_BROKERS_TABLE} opb
-          INNER JOIN ${ORGANIZATIONS_TABLE} child
-            ON CAST(child.matriz_id AS STRING) = CAST(opb.organization_id AS STRING)
-          WHERE ${partnerBrokerCondition(partnerBrokerId, params)}
-            AND opb.deleted_at IS NULL
+    // Boot do dashboard: NÃO derruba tudo com 500 se uma query estourar.
+    // - users: agregado mensal (o gráfico só usa mês; dia-a-dia era pesado demais)
+    // - groups: lista do seletor
+    // - sessions_groups: removido do boot (não é usado no frontend e full-scan na gold)
+    const usersPromise = runQuery(warehouseId, `
+      SELECT DATE_TRUNC('MONTH', b.created_at) AS mes, COUNT(DISTINCT b.id) AS n
+      FROM hive_metastore.sanus_prod.beneficiaries b
+      ${groupFilter}
+      GROUP BY 1 ORDER BY 1
+    `, params.list);
+    const groupsPromise = !requestedGroupNames.length ? runQuery(warehouseId, partnerBrokerId ? `
+      WITH partner_orgs AS (
+        SELECT CAST(opb.organization_id AS STRING) AS organization_id
+        FROM ${ORGANIZATION_PARTNER_BROKERS_TABLE} opb
+        WHERE ${partnerBrokerCondition(partnerBrokerId, params)}
+          AND opb.deleted_at IS NULL
+        UNION ALL
+        SELECT CAST(child.id AS STRING) AS organization_id
+        FROM ${ORGANIZATION_PARTNER_BROKERS_TABLE} opb
+        INNER JOIN ${ORGANIZATIONS_TABLE} child
+          ON CAST(child.matriz_id AS STRING) = CAST(opb.organization_id AS STRING)
+        WHERE ${partnerBrokerCondition(partnerBrokerId, params)}
+          AND opb.deleted_at IS NULL
+      )
+      SELECT
+        COALESCE(
+          NULLIF(TRIM(CAST(parent.name AS STRING)), ''),
+          NULLIF(TRIM(CAST(o.name AS STRING)), '')
+        ) AS grupo,
+        COUNT(DISTINCT CAST(o.id AS STRING)) AS total_filiais
+      FROM partner_orgs po
+      INNER JOIN ${ORGANIZATIONS_TABLE} o
+        ON CAST(o.id AS STRING) = po.organization_id
+      LEFT JOIN ${ORGANIZATIONS_TABLE} parent
+        ON CAST(parent.id AS STRING) = CAST(o.matriz_id AS STRING)
+      WHERE COALESCE(
+          NULLIF(TRIM(CAST(parent.name AS STRING)), ''),
+          NULLIF(TRIM(CAST(o.name AS STRING)), '')
+        ) IS NOT NULL
+      GROUP BY
+        COALESCE(
+          NULLIF(TRIM(CAST(parent.name AS STRING)), ''),
+          NULLIF(TRIM(CAST(o.name AS STRING)), '')
         )
-        SELECT
-          COALESCE(
-            NULLIF(TRIM(CAST(parent.name AS STRING)), ''),
-            NULLIF(TRIM(CAST(o.name AS STRING)), '')
-          ) AS grupo,
-          COUNT(DISTINCT CAST(o.id AS STRING)) AS total_filiais
-        FROM partner_orgs po
-        INNER JOIN ${ORGANIZATIONS_TABLE} o
-          ON CAST(o.id AS STRING) = po.organization_id
-        LEFT JOIN ${ORGANIZATIONS_TABLE} parent
-          ON CAST(parent.id AS STRING) = CAST(o.matriz_id AS STRING)
-        WHERE COALESCE(
-            NULLIF(TRIM(CAST(parent.name AS STRING)), ''),
-            NULLIF(TRIM(CAST(o.name AS STRING)), '')
-          ) IS NOT NULL
-        GROUP BY
-          COALESCE(
-            NULLIF(TRIM(CAST(parent.name AS STRING)), ''),
-            NULLIF(TRIM(CAST(o.name AS STRING)), '')
-          )
-        ORDER BY grupo ASC
-      ` : `
-        SELECT o.name AS grupo, 0 AS total_filiais
-        FROM hive_metastore.sanus_prod.organizations o
-        WHERE o.active = true
-          AND o.name IS NOT NULL
-          AND TRIM(CAST(o.name AS STRING)) != ''
-          AND (o.is_matriz = true OR o.matriz_id IS NULL)
-        ORDER BY o.name ASC
-      `, params.list) : Promise.resolve(null),
-      !requestedGroupNames.length ? runQuery(warehouseId, `
-        SELECT economic_group_canonical AS grupo, COUNT(*) AS total_sessions
-        FROM hive_metastore.sanus_prod.dashboard_sessions_base_gold
-        WHERE economic_group_canonical IS NOT NULL
-          AND TRIM(economic_group_canonical) != ''
-        GROUP BY economic_group_canonical
-        ORDER BY total_sessions DESC
-      `).catch(() => null) : Promise.resolve(null),
-    ]);
+      ORDER BY grupo ASC
+    ` : `
+      SELECT o.name AS grupo, 0 AS total_filiais
+      FROM hive_metastore.sanus_prod.organizations o
+      WHERE o.active = true
+        AND o.name IS NOT NULL
+        AND TRIM(CAST(o.name AS STRING)) != ''
+        AND (o.is_matriz = true OR o.matriz_id IS NULL)
+      ORDER BY o.name ASC
+    `, params.list) : Promise.resolve(null);
+
+    const [usersSettled, groupsSettled] = await Promise.allSettled([usersPromise, groupsPromise]);
+    const userRows = usersSettled.status === 'fulfilled' ? usersSettled.value : null;
+    const groupRows = groupsSettled.status === 'fulfilled' ? groupsSettled.value : null;
+    const usersError = usersSettled.status === 'rejected'
+      ? (usersSettled.reason instanceof Error ? usersSettled.reason.message : String(usersSettled.reason))
+      : null;
+    const groupsError = groupsSettled.status === 'rejected'
+      ? (groupsSettled.reason instanceof Error ? groupsSettled.reason.message : String(groupsSettled.reason))
+      : null;
+    // Só 500 se AMBAS falharem — senão a tela sobe com o que deu.
+    if (!userRows && !groupRows) {
+      throw new Error(usersError || groupsError || 'Falha ao carregar /api/data');
+    }
 
     const parse = (rows: DatabricksRow[] | null) => (rows || []).map((r) => [toDate(r[0]), toInt(r[1])]);
     // Listagem de grupos disponíveis (popula o seletor "Grupo Econômico"):
@@ -2013,15 +2024,18 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
           total_orgs: toInt(r[1]),
         })).filter((g) => g.economic_group)
       : null);
-    const sessions_groups = await filterGroupsByScope(req, sessionGroupRows
-      ? sessionGroupRows.map((r) => ({
-          economic_group: getCell(r[0]) ? String(getCell(r[0])).trim() : null,
-          total_sessions: toInt(r[1]),
-        })).filter((g) => g.economic_group)
-      : null);
 
     setStableCache(res);
-    res.status(200).json({ users: parse(userRows), groups, sessions_groups, auth_role: dashboardAuth?.role || 'full', auth_user: dashboardAuth?.user || '', updatedAt: new Date().toISOString() });
+    res.status(200).json({
+      users: parse(userRows),
+      users_error: usersError,
+      groups,
+      groups_error: groupsError,
+      sessions_groups: null,
+      auth_role: dashboardAuth?.role || 'full',
+      auth_user: dashboardAuth?.user || '',
+      updatedAt: new Date().toISOString(),
+    });
   } catch (err) {
     res.status(500).json({ error: (err as { message?: string }).message });
   }

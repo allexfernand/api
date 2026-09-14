@@ -671,6 +671,7 @@ function clearPartnerSelection() {
   onPartnerSelectionChange();
 }
 
+let partnerOptionsInflight = null;
 async function loadPartnerOptions() {
   const sel = document.getElementById('partner-select');
   if (!sel) return;
@@ -678,15 +679,27 @@ async function loadPartnerOptions() {
     renderPartnerOptions();
     return;
   }
+  if (partnerOptionsInflight) {
+    await partnerOptionsInflight;
+    if (partnerOptionsCache.length) renderPartnerOptions();
+    return;
+  }
   sel.innerHTML = '<option value="">⏳ Carregando parceiros...</option>';
   sel.disabled = true;
-  const data = await safeGet('/api/data?scope=partners');
-  if (data && !data.error && Array.isArray(data.partners)) {
-    partnerOptionsCache = data.partners;
-    renderPartnerOptions();
-  } else {
-    sel.innerHTML = '<option value="">(Erro ao carregar parceiros)</option>';
-    sel.disabled = true;
+  partnerOptionsInflight = (async () => {
+    const data = await safeGet('/api/data?scope=partners');
+    if (data && !data.error && Array.isArray(data.partners)) {
+      partnerOptionsCache = data.partners;
+      renderPartnerOptions();
+    } else {
+      sel.innerHTML = '<option value="">(Erro ao carregar parceiros)</option>';
+      sel.disabled = true;
+    }
+  })();
+  try {
+    await partnerOptionsInflight;
+  } finally {
+    partnerOptionsInflight = null;
   }
 }
 
