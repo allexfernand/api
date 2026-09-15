@@ -18,8 +18,8 @@ type YearRow = { year: number; claims: number; items: number; gross_cost: number
 type PsRow = { procedure: string; macrogroup: string; episodes: number; billing_lines: number; service_quantity: number; gross_cost: number };
 type CareRow = { used_plan: boolean; had_care_coordination: boolean; eligible_people: number; gross_cost: number; status: string };
 
-async function getJson<T>(path: string): Promise<T> {
-  const response = await fetch(path, { cache: "no-store", credentials: "same-origin" });
+async function getJson<T>(path: string, signal?: AbortSignal): Promise<T> {
+  const response = await fetch(path, { cache: "no-store", credentials: "same-origin", signal });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(body.error || `Falha ${response.status}`);
   return body as T;
@@ -61,7 +61,8 @@ export function LegacyView({
   useEffect(() => {
     if (!companyKey) return;
     let cancelled = false;
-    getJson<{ source: Source; data: MonthRow[] }>(`/api/sinistralidade/v2?scope=overview&company_key=${companyKey}&include_partial=true`)
+    const controller = new AbortController();
+    getJson<{ source: Source; data: MonthRow[] }>(`/api/sinistralidade/v2?scope=overview&company_key=${companyKey}&include_partial=true`, controller.signal)
       .then((overview) => {
         if (cancelled) return;
         setError("");
@@ -71,7 +72,10 @@ export function LegacyView({
         setMonth((current) => current && overview.data.some((item) => item.month === current) ? current : latest);
       })
       .catch((cause) => !cancelled && setError(cause instanceof Error ? cause.message : "Falha ao carregar indicadores."));
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
   }, [companyKey]);
 
   const monthIndex = months.findIndex((item) => item.month === month);
@@ -80,33 +84,43 @@ export function LegacyView({
   useEffect(() => {
     if (!companyKey || !month) return;
     let cancelled = false;
-    const [year, monthNumber] = month.split("-").map(Number);
-    const bimesterKey = `${year}-B${Math.ceil(monthNumber / 2)}`;
-    const base = `/api/sinistralidade/v2?company_key=${companyKey}&include_partial=true`;
-    Promise.all([
-      getJson<{ source: Source; data: TopRow[] }>(`${base}&scope=top10&month=${month}`),
-      previousMonth ? getJson<{ data: TopRow[] }>(`${base}&scope=top10&month=${previousMonth}`) : Promise.resolve({ data: [] as TopRow[] }),
-      getJson<{ data: MentalRow[] }>(`${base}&scope=mental-health&month=${month}`),
-      getJson<{ data: BimesterRow[] }>(`${base}&scope=bimester&bimester=${bimesterKey}`),
-      getJson<{ data: FamilyRow[] }>(`${base}&scope=family-before-after`),
-      getJson<{ data: YearRow[] }>(`${base}&scope=year-over-year&year=${year}`),
-      getJson<{ data: PsRow[] }>(`${base}&scope=ps-package&month=${month}`),
-      getJson<{ data: CareRow[] }>(`${base}&scope=care-coordination`),
-    ]).then(([topResult, priorResult, mentalResult, bimesterResult, familyResult, yearResult, psResult, careResult]) => {
+    const controller = new AbortController();
+    const params = new URLSearchParams({
+      scope: "legacy-bundle",
+      company_key: companyKey,
+      include_partial: "true",
+      month,
+    });
+    getJson<{
+      source: Source;
+      data: {
+        top: TopRow[];
+        previous_top: TopRow[];
+        mental: MentalRow[];
+        bimester: BimesterRow[];
+        family: FamilyRow[];
+        year_comparison: YearRow[];
+        ps_items: PsRow[];
+        care: CareRow[];
+      };
+    }>(`/api/sinistralidade/v2?${params.toString()}`, controller.signal).then((result) => {
       if (cancelled) return;
-      setSource(topResult.source);
-      setTop(topResult.data);
-      setPreviousTop(priorResult.data);
-      setMental(mentalResult.data);
-      setBimester(bimesterResult.data);
-      setFamily(familyResult.data);
-      setYearComparison(yearResult.data);
-      setPsItems(psResult.data);
-      setCare(careResult.data);
+      setSource(result.source);
+      setTop(result.data.top);
+      setPreviousTop(result.data.previous_top);
+      setMental(result.data.mental);
+      setBimester(result.data.bimester);
+      setFamily(result.data.family);
+      setYearComparison(result.data.year_comparison);
+      setPsItems(result.data.ps_items);
+      setCare(result.data.care);
       setError("");
     }).catch((cause) => !cancelled && setError(cause instanceof Error ? cause.message : "Falha ao carregar o detalhamento."));
-    return () => { cancelled = true; };
-  }, [companyKey, month, previousMonth]);
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [companyKey, month]);
 
   const selected = useMemo(() => months.find((item) => item.month === month), [months, month]);
   const previous = useMemo(() => months.find((item) => item.month === previousMonth), [months, previousMonth]);

@@ -77,6 +77,44 @@ async function legacyMonthStatus(q: QueryRunner, companyKey: string, month?: str
   return { status: "unknown" as const, warning: "O período ainda não possui gate de fechamento aprovado." };
 }
 
+function previousMonth(month: string) {
+  const [year, monthNumber] = month.split("-").map(Number);
+  const date = new Date(Date.UTC(year, monthNumber - 2, 1));
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+async function legacyBundleData(q: QueryRunner, input: SinistralidadeQuery, companyKey: string) {
+  if (!input.month) {
+    const error = new Error("month é obrigatório para o bundle legado.");
+    Object.assign(error, { statusCode: 400 });
+    throw error;
+  }
+  const [year, monthNumber] = input.month.split("-").map(Number);
+  const bimester = `${year}-B${Math.ceil(monthNumber / 2)}`;
+  const priorMonth = previousMonth(input.month);
+  const requests: Array<[string, SinistralidadeQuery]> = [
+    ["top", { ...input, scope: "top10", month: input.month }],
+    ["previous_top", { ...input, scope: "top10", month: priorMonth }],
+    ["mental", { ...input, scope: "mental-health", month: input.month }],
+    ["bimester", { ...input, scope: "bimester", bimester }],
+    ["family", { ...input, scope: "family-before-after" }],
+    ["year_comparison", { ...input, scope: "year-over-year", year }],
+    ["ps_items", { ...input, scope: "ps-package", month: input.month }],
+    ["care", { ...input, scope: "care-coordination" }],
+  ];
+  const result: Record<string, unknown> = {};
+  // Duas consultas por onda: reduz de 16 para 9 statements totais (incluindo
+  // o gate de fechamento) sem voltar a saturar o warehouse.
+  for (let index = 0; index < requests.length; index += 2) {
+    const wave = requests.slice(index, index + 2);
+    const values = await Promise.all(wave.map(([, request]) => legacyScopeData(q, request, companyKey)));
+    wave.forEach(([key], waveIndex) => {
+      result[key] = values[waveIndex];
+    });
+  }
+  return result;
+}
+
 function isLongitudinalScope(scope: SinistralidadeQuery["scope"]): scope is LongitudinalScope {
   return (longitudinalScopeSchema.options as readonly string[]).includes(scope);
 }
@@ -336,9 +374,15 @@ export async function sinistralidadeV2Handler(req: ApiRequest, res: ApiResponse)
     if (
       period.status !== "closed" &&
       input.include_partial !== "true" &&
-      ["overview", "top10", "mental-health", "ps-package", "care-coordination"].includes(input.scope)
+      ["overview", "top10", "mental-health", "ps-package", "care-coordination", "legacy-bundle"].includes(input.scope)
     ) {
       return res.status(409).json({ error: period.warning, source: legacyMetadata(companyKey, period.status, period.warning) });
+    }
+
+    if (input.scope === "legacy-bundle") {
+      const data = await legacyBundleData(q, input, companyKey);
+      setStableCache(res);
+      return res.status(200).json({ source: legacyMetadata(companyKey, period.status, period.warning), data });
     }
 
     const data = await legacyScopeData(q, input, companyKey);

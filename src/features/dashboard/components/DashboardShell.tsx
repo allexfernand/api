@@ -8,10 +8,18 @@ import { PASSWORD_RULES, validateStrongPassword } from "../../../lib/password-po
 import { MENU_SECTIONS, type MenuId } from "../../../dashboard/menu-catalog";
 
 type LegacyDashboardApi = Record<string, (...args: unknown[]) => unknown>;
+type DashboardAuthSnapshot = {
+  ok: true;
+  user: string;
+  role: string;
+  allowedMenus: MenuId[] | null;
+  isAdmin: boolean;
+};
 
 declare global {
   interface Window {
     SanusDashboard?: LegacyDashboardApi;
+    __sanusDashboardAuth?: DashboardAuthSnapshot | null;
   }
 }
 
@@ -741,20 +749,31 @@ export function DashboardShell() {
               }
             : null;
         if (!auth) throw new Error("Sessão inválida");
-        setDashboardUser(normalizeDashboardUser(auth.user || ""));
-        setDashboardRole(auth.role || "");
-        setAllowedMenus((auth.allowedMenus as MenuId[] | null) ?? null);
-        setIsAdmin(Boolean(auth.isAdmin));
-        document.body.dataset.isAdmin = auth.isAdmin ? "1" : "0";
+        const snapshot: DashboardAuthSnapshot = {
+          ok: true,
+          user: normalizeDashboardUser(auth.user || ""),
+          role: auth.role || "",
+          allowedMenus: (auth.allowedMenus as MenuId[] | null) ?? null,
+          isAdmin: Boolean(auth.isAdmin),
+        };
+        window.__sanusDashboardAuth = snapshot;
+        setDashboardUser(snapshot.user);
+        setDashboardRole(snapshot.role);
+        setAllowedMenus(snapshot.allowedMenus);
+        setIsAdmin(snapshot.isAdmin);
+        document.body.dataset.isAdmin = snapshot.isAdmin ? "1" : "0";
         setAuthenticated(true);
+        document.dispatchEvent(new CustomEvent("sanus:authready", { detail: snapshot }));
       })
       .catch(() => {
+        window.__sanusDashboardAuth = null;
         setDashboardUser("");
         setDashboardRole("");
         setAllowedMenus(null);
         setIsAdmin(false);
         delete document.body.dataset.isAdmin;
         setAuthenticated(false);
+        document.dispatchEvent(new CustomEvent("sanus:authready", { detail: null }));
       });
     const onTabChange = (event: Event) => setActiveTab((event as CustomEvent<string>).detail);
     const onUserChange = (event: Event) =>

@@ -18,6 +18,7 @@ export const legacyScopeSchema = z.enum([
   "care-coordination",
   "family-before-after",
   "year-over-year",
+  "legacy-bundle",
 ]);
 
 // Escopos aditivos 1.1.0 (evolução longitudinal).

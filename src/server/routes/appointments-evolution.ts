@@ -12,6 +12,7 @@ import { createSqlParams, getCell, getColumns, quoteIdent, resolveWarehouseId, r
 import { setApiCors } from "../../../lib/http";
 
 const APPOINTMENTS_TABLE = `hive_metastore.sanus_prod.atendimento_summarized_gold_live`;
+const APPOINTMENTS_MONTHLY_TABLE = `hive_metastore.sanus_prod.dashboard_appointments_monthly_gold`;
 const APPOINTMENTS_DATE_COLUMN = 'hora_criacao_atendimento';
 const ORGANIZATIONS_TABLE = `hive_metastore.sanus_prod.organizations`;
 const PARTNER_BROKERS_TABLE = `hive_metastore.sanus_prod.partner_brokers`;
@@ -58,7 +59,7 @@ function parseGroupNames(query: Record<string, any>) {
   return query.group_name ? [String(query.group_name).trim()].filter(Boolean) : [];
 }
 
-const companyColumnCandidates = [
+export const companyColumnCandidates = [
   'nome_conta',
   'NOME_CONTA',
   'NOME_CLIENTE',
@@ -145,18 +146,19 @@ function nextMonth(month: string) {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
 }
 
-function assuntoExclusionSql() {
+export function assuntoExclusionSql(tableAlias = "") {
   // Não usar regex de "nome próprio" em assunto: especialidades reais
   // (ex.: "Neurologia Pediátrico", "Buco Maxilo Facial") caíam como falso positivo.
-  const assuntoTextExpr = `UPPER(COALESCE(CAST(assunto AS STRING), ''))`;
-  const assuntoNormalizedExpr = `UPPER(TRIM(REGEXP_REPLACE(COALESCE(CAST(assunto AS STRING), ''), '[^A-Za-z0-9]+', ' ')))`;
+  const assunto = `${tableAlias ? `${tableAlias}.` : ""}${quoteIdent("assunto")}`;
+  const assuntoTextExpr = `UPPER(COALESCE(CAST(${assunto} AS STRING), ''))`;
+  const assuntoNormalizedExpr = `UPPER(TRIM(REGEXP_REPLACE(COALESCE(CAST(${assunto} AS STRING), ''), '[^A-Za-z0-9]+', ' ')))`;
   return `
-    AND UPPER(assunto) NOT IN (
+    AND UPPER(${assunto}) NOT IN (
       'ATENDIMENTO WHATSAPP',
       'ATENDIMENTO HUMANO',
       'FORA DE HORÁRIO DE ATENDIMENTO'
     )
-    AND LOWER(COALESCE(CAST(assunto AS STRING), '')) NOT LIKE '%http%'
+    AND LOWER(COALESCE(CAST(${assunto} AS STRING), '')) NOT LIKE '%http%'
     AND ${assuntoTextExpr} NOT LIKE '%ATENDIMENTO HUMANO%'
     AND ${assuntoNormalizedExpr} NOT LIKE '%ATENDIMENTO%HUMANO%'
   `;
@@ -190,7 +192,7 @@ function appointmentStatusGroupExpr(statusExpr: string) {
   END`;
 }
 
-const appointmentRecordColumnCandidates = [
+export const appointmentRecordColumnCandidates = [
   'id_unico',
   'identificacao_atendimento',
   'record_id',
@@ -296,6 +298,49 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
   try {
     const warehouseId = await resolveWarehouseId();
+
+    const canUseMonthlyGold =
+      process.env.DASHBOARD_USE_MONTHLY_GOLDS === "true"
+      && granularity === "month"
+      && !company
+      && !partnerBrokerId
+      && !includeBeneficiaries
+      && !onlyBeneficiaries;
+    if (canUseMonthlyGold) {
+      const monthlyParams = createSqlParams();
+      const groupPredicate = groupNames.length
+        ? `AND UPPER(TRIM(CAST(grupo_economico AS STRING))) IN (${monthlyParams.addAll(groupNames.map((group) => group.toUpperCase()))})`
+        : "";
+      const rows = await runQuery(warehouseId, `
+        SELECT mes, SUM(total_appointments) AS total
+        FROM ${APPOINTMENTS_MONTHLY_TABLE}
+        WHERE mes IN (${monthList.map((month) => `'${month}'`).join(",")})
+          ${groupPredicate}
+        GROUP BY mes
+        ORDER BY mes
+      `, monthlyParams.list);
+      const byMes = Object.fromEntries(rows.map((row) => [String(getCell(row[0]) || ""), toInt(row[1])]));
+      return res.status(200).json({
+        months: monthList,
+        period_months: monthList,
+        series: monthList.map((month) => ({
+          mes: month,
+          total: byMes[month] || 0,
+          unique_cpfs: 0,
+          unique_beneficiaries: 0,
+        })),
+        utilization: { last_1_month: 0, last_3_months: 0, last_6_months: 0, last_12_months: 0 },
+        utilization_base: 0,
+        utilization_periods: fullMonthScopes,
+        beneficiaries_included: false,
+        volume_metric: "preaggregated_distinct_record",
+        record_column: "id_unico",
+        source: "dashboard_appointments_monthly_gold",
+        filters: { group_name: groupName, company: null, partner_broker_id: null },
+        company_column: null,
+        company_filter_applied: true,
+      });
+    }
 
     let companyColumn = null;
     const needsColumns =

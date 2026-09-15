@@ -56,6 +56,11 @@ sessions_base AS (
       THEN 'Nulos'
       ELSE TRIM(CAST(s.economic_group_name AS STRING))
     END AS economic_group_name,
+    COALESCE(
+      NULLIF(TRIM(CAST(o.name_economic_group AS STRING)), ''),
+      NULLIF(TRIM(CAST(s.economic_group_name AS STRING)), ''),
+      'Nulos'
+    ) AS economic_group_canonical,
     CASE
       WHEN s.variables['typification'] IS NULL THEN '(NULO)'
       WHEN TRIM(CAST(s.variables['typification'] AS STRING)) = '' THEN '(VAZIO/BRANCO)'
@@ -129,30 +134,36 @@ OPTIMIZE hive_metastore.sanus_prod.dashboard_sessions_base_gold
 ZORDER BY (mes, economic_group_name, organization_name);
 
 ANALYZE TABLE hive_metastore.sanus_prod.dashboard_sessions_base_gold COMPUTE STATISTICS
-FOR COLUMNS mes, dia, economic_group_name, organization_name, organization_id, tipo_atendimento_agent, tipo_finished_by, tipificacao, finished_by, teve_user;
+FOR COLUMNS mes, dia, economic_group_canonical, economic_group_name, organization_name, organization_id, tipo_atendimento_agent, tipo_finished_by, tipificacao, finished_by, teve_user;
 
 CREATE OR REPLACE TABLE hive_metastore.sanus_prod.dashboard_sessions_monthly_gold
 USING DELTA
 AS
 SELECT
-  DATE_FORMAT(try_cast(creation_time AS TIMESTAMP), 'yyyy-MM') AS mes,
-  CAST(organization_id AS STRING) AS organization_id,
-  CASE
-    WHEN economic_group_name IS NULL OR TRIM(CAST(economic_group_name AS STRING)) = '' THEN 'Nulos'
-    ELSE TRIM(CAST(economic_group_name AS STRING))
-  END AS economic_group_name,
-  CASE WHEN finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END AS tipo_atendimento,
-  COUNT(*) AS total_sessions
-FROM hive_metastore.sanus_prod.botmaker_session
-WHERE creation_time IS NOT NULL
+  mes,
+  organization_id,
+  MAX(organization_name) AS organization_name,
+  economic_group_name,
+  economic_group_canonical,
+  tipo_atendimento_agent,
+  COUNT(*) AS total_sessions,
+  COUNT(DISTINCT beneficiary_key) AS unique_beneficiaries,
+  SUM(CASE WHEN teve_user = 1 THEN 1 ELSE 0 END) AS sessions_with_user_interaction,
+  COUNT(DISTINCT CASE WHEN teve_user = 1 THEN beneficiary_key END) AS unique_beneficiaries_with_user_interaction,
+  CURRENT_TIMESTAMP() AS refreshed_at
+FROM hive_metastore.sanus_prod.dashboard_sessions_base_gold
 GROUP BY
-  DATE_FORMAT(try_cast(creation_time AS TIMESTAMP), 'yyyy-MM'),
-  CAST(organization_id AS STRING),
-  CASE
-    WHEN economic_group_name IS NULL OR TRIM(CAST(economic_group_name AS STRING)) = '' THEN 'Nulos'
-    ELSE TRIM(CAST(economic_group_name AS STRING))
-  END,
-  CASE WHEN finished_by IS NOT NULL THEN 'Humano' ELSE 'IA' END;
+  mes,
+  organization_id,
+  economic_group_name,
+  economic_group_canonical,
+  tipo_atendimento_agent;
+
+OPTIMIZE hive_metastore.sanus_prod.dashboard_sessions_monthly_gold
+ZORDER BY (mes, economic_group_canonical, organization_id);
+
+ANALYZE TABLE hive_metastore.sanus_prod.dashboard_sessions_monthly_gold COMPUTE STATISTICS
+FOR COLUMNS mes, economic_group_canonical, organization_id, tipo_atendimento_agent;
 
 CREATE OR REPLACE TABLE hive_metastore.sanus_prod.dashboard_sessions_typification_monthly_gold
 USING DELTA
@@ -193,6 +204,7 @@ AS
 SELECT
   DATE_FORMAT(try_cast(hora_criacao_atendimento AS TIMESTAMP), 'yyyy-MM') AS mes,
   TRIM(CAST(grupo_economico AS STRING)) AS grupo_economico,
+  UPPER(TRIM(CAST(nome_conta AS STRING))) AS organization_name,
   CASE
     WHEN UPPER(assunto) LIKE '%DASA%' THEN 'Exames'
     WHEN UPPER(assunto) LIKE '%CONEXA%' AND UPPER(assunto) LIKE '%PA%' THEN 'Conexa PA'
@@ -211,7 +223,7 @@ SELECT
     WHEN tipo_solicitacao IN ('Exame', 'Exames') THEN 'Exames'
     ELSE 'Outros'
   END AS tipo_agrupado,
-  COUNT(*) AS total_appointments
+  COUNT(DISTINCT CAST(id_unico AS STRING)) AS total_appointments
 FROM hive_metastore.sanus_prod.atendimento_summarized_gold_live
 WHERE hora_criacao_atendimento IS NOT NULL
   AND UPPER(assunto) NOT IN (
@@ -222,14 +234,11 @@ WHERE hora_criacao_atendimento IS NOT NULL
   AND LOWER(COALESCE(CAST(assunto AS STRING), '')) NOT LIKE '%http%'
   AND UPPER(COALESCE(CAST(assunto AS STRING), '')) NOT LIKE '%ATENDIMENTO HUMANO%'
   AND UPPER(TRIM(REGEXP_REPLACE(COALESCE(CAST(assunto AS STRING), ''), '[^A-Za-z0-9]+', ' '))) NOT LIKE '%ATENDIMENTO%HUMANO%'
-  AND NOT (
-    assunto RLIKE '^[A-Z][a-z]+ [A-Z]'
-    OR assunto RLIKE '^[A-Z][A-Z]+ [A-Z]'
-    OR assunto RLIKE '^ [A-Z]'
-  )
+  AND id_unico IS NOT NULL
 GROUP BY
   DATE_FORMAT(try_cast(hora_criacao_atendimento AS TIMESTAMP), 'yyyy-MM'),
   TRIM(CAST(grupo_economico AS STRING)),
+  UPPER(TRIM(CAST(nome_conta AS STRING))),
   CASE
     WHEN UPPER(assunto) LIKE '%DASA%' THEN 'Exames'
     WHEN UPPER(assunto) LIKE '%CONEXA%' AND UPPER(assunto) LIKE '%PA%' THEN 'Conexa PA'

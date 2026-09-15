@@ -263,31 +263,23 @@ function partnerVisionSingleParams(partnerId) {
   return p;
 }
 
-async function mapWithConcurrency(items, concurrency, mapper) {
-  const list = Array.isArray(items) ? items : [];
-  const limit = Math.max(1, Math.min(concurrency || 2, list.length || 1));
-  const results = new Array(list.length);
-  let cursor = 0;
-  async function worker() {
-    while (cursor < list.length) {
-      const index = cursor++;
-      results[index] = await mapper(list[index], index);
-    }
+function partnerVisionSummaryParams() {
+  const p = new URLSearchParams();
+  p.set('partner_broker_ids', JSON.stringify(currentPartnerBrokerIds));
+  p.set('meses', partnerVisionMonthWindow().join(','));
+  return p;
+}
+
+async function getPartnerVisionSummaryData() {
+  const params = partnerVisionSummaryParams();
+  const key = params.toString();
+  if (partnerVisionSummaryData && partnerVisionSummaryDataKey === key) return partnerVisionSummaryData;
+  const data = await safeGet('/api/partner-vision-summary?' + key);
+  if (data && !data.error) {
+    partnerVisionSummaryData = data;
+    partnerVisionSummaryDataKey = key;
   }
-  await Promise.all(Array.from({ length: Math.min(limit, list.length) }, () => worker()));
-  return results;
-}
-
-function sumSeriesTotal(data) {
-  if (!data || !Array.isArray(data.series)) return 0;
-  return data.series.reduce((sum, item) => sum + (Number(item.total) || 0), 0);
-}
-
-function seriesTotalsByMonth(data) {
-  const out = new Map();
-  if (!data || !Array.isArray(data.series)) return out;
-  data.series.forEach((item) => out.set(String(item.mes || ''), Number(item.total) || 0));
-  return out;
+  return data;
 }
 
 function partnerVisionRowKey(value) {
@@ -318,39 +310,22 @@ async function togglePartnerCompanyDrilldown(partnerId) {
 
   const months = partnerVisionMonthWindow();
   const sessionComparisonMonths = months.slice(-2);
-  const monthParam = months.join(',');
-  const groupParams = partnerVisionSingleParams(partnerId);
-  const groupData = await safeGet('/api/data?' + groupParams.toString());
+  const groupData = await getPartnerVisionSummaryData();
   if (requestId !== partnerVisionCompanyDrilldownRequestId) return;
-  if (!groupData || groupData.error || !Array.isArray(groupData.groups) || !groupData.groups.length) {
+  const matchingGroups = Array.isArray(groupData?.groups)
+    ? groupData.groups.filter((group) => String(group.partner_id) === String(partnerId))
+    : [];
+  if (!matchingGroups.length) {
     insertPartnerCompanyRows(anchorRow, key, `<tr class="partner-company-row is-loading" data-parent-partner-key="${key}"><td colspan="6">Nenhum grupo econômico encontrado para este parceiro.</td></tr>`);
     return;
   }
 
-  const groupRows = await Promise.all(groupData.groups.map(async (group) => {
-    const groupName = String(group.economic_group || '').trim();
-    const demographicsParams = partnerVisionSingleParams(partnerId);
-    const sessionsParams = partnerVisionSingleParams(partnerId);
-    const appointmentsParams = partnerVisionSingleParams(partnerId);
-    demographicsParams.set('group_name', groupName);
-    sessionsParams.set('group_name', groupName);
-    sessionsParams.set('meses', monthParam);
-    appointmentsParams.set('group_name', groupName);
-    appointmentsParams.set('meses', monthParam);
-
-    const [demographics, sessions, appointments] = await Promise.all([
-      safeGet('/api/demographics?' + demographicsParams.toString()),
-      safeGet('/api/sessions-evolution?' + sessionsParams.toString()),
-      safeGet('/api/appointments-evolution?' + appointmentsParams.toString()),
-    ]);
-    const sessionsByMonth = seriesTotalsByMonth(sessions);
-    return {
-      group: groupName || 'Grupo sem nome',
-      lives: demographics && !demographics.error ? Number(demographics.total_beneficiarios ?? demographics.total_vidas) || 0 : null,
-      sessions: sessions && !sessions.error ? sumSeriesTotal(sessions) : null,
-      appointments: appointments && !appointments.error ? sumSeriesTotal(appointments) : null,
-      sessionComparison: sessionComparisonMonths.map((month) => sessionsByMonth.get(month) || 0),
-    };
+  const groupRows = matchingGroups.map((group) => ({
+    group: String(group.economic_group || 'Grupo sem nome'),
+    lives: Number(group.lives) || 0,
+    sessions: Number(group.sessions) || 0,
+    appointments: Number(group.appointments) || 0,
+    sessionComparison: sessionComparisonMonths.map((month) => Number(group.sessions_by_month?.[month]) || 0),
   }));
   if (requestId !== partnerVisionCompanyDrilldownRequestId) return;
 
@@ -394,29 +369,18 @@ async function loadPartnerVisionSummary() {
   const sessionComparisonMonths = months.slice(-2);
   if (sessionsPrevHeader) sessionsPrevHeader.textContent = `Sessões ${partnerVisionMonthLabel(sessionComparisonMonths[0] || '')}`;
   if (sessionsCurrentHeader) sessionsCurrentHeader.textContent = `Sessões ${partnerVisionMonthLabel(sessionComparisonMonths[1] || sessionComparisonMonths[0] || '')}`;
-  const monthParam = months.join(',');
-  // Um parceiro por vez: cada linha consulta 3 endpoints e o warehouse
-  // serverless começa a devolver 504 quando vários parceiros entram juntos.
-  const rows = await mapWithConcurrency(partners, 1, async (partner) => {
-    const demographicsParams = partnerVisionSingleParams(partner.id);
-    const sessionsParams = partnerVisionSingleParams(partner.id);
-    const appointmentsParams = partnerVisionSingleParams(partner.id);
-    sessionsParams.set('meses', monthParam);
-    appointmentsParams.set('meses', monthParam);
-
-    const demographics = await safeGet('/api/demographics?' + demographicsParams.toString());
-    const sessions = await safeGet('/api/sessions-evolution?' + sessionsParams.toString());
-    const appointments = await safeGet('/api/appointments-evolution?' + appointmentsParams.toString());
-
-    const sessionsByMonth = seriesTotalsByMonth(sessions);
+  const summaryData = await getPartnerVisionSummaryData();
+  const summaries = Array.isArray(summaryData?.partners) ? summaryData.partners : [];
+  const rows = partners.map((partner) => {
+    const summary = summaries.find((item) => String(item.partner_id) === String(partner.id));
     return {
       id: partner.id,
       name: partner.name,
-      lives: demographics && !demographics.error ? Number(demographics.total_beneficiarios ?? demographics.total_vidas) || 0 : null,
-      sessions: sessions && !sessions.error ? sumSeriesTotal(sessions) : null,
-      appointments: appointments && !appointments.error ? sumSeriesTotal(appointments) : null,
-      sessionComparison: sessionComparisonMonths.map((month) => sessionsByMonth.get(month) || 0),
-      hasError: Boolean(demographics?.error || sessions?.error || appointments?.error),
+      lives: summary ? Number(summary.lives) || 0 : null,
+      sessions: summary ? Number(summary.sessions) || 0 : null,
+      appointments: summary ? Number(summary.appointments) || 0 : null,
+      sessionComparison: sessionComparisonMonths.map((month) => Number(summary?.sessions_by_month?.[month]) || 0),
+      hasError: !summary,
     };
   });
   if (requestId !== partnerVisionSummaryRequestId) return;
@@ -923,24 +887,35 @@ function renderAgeGroups(data) {
 }
 
 // --- Cargas ---
+const inflightSafeGets = new Map();
+
 async function safeGet(url) {
+  if (inflightSafeGets.has(url)) return inflightSafeGets.get(url);
+  const request = (async () => {
+    try {
+      const r = await authFetch(url);
+      let body = null;
+      try { body = await r.json(); } catch(_) {}
+      if (r.status === 401) {
+        handleAuthFailure(body?.error || 'Usuário ou senha inválidos.');
+        return { error: body?.error || 'Não autorizado' };
+      }
+      if (!r.ok) {
+        const msg = body && body.error ? body.error : `HTTP ${r.status}`;
+        console.error(`[safeGet] ${url} -> ${msg}`);
+        return { error: msg };
+      }
+      return body;
+    } catch(e) {
+      console.error(`[safeGet] ${url} -> ${e.message}`);
+      return { error: e.message };
+    }
+  })();
+  inflightSafeGets.set(url, request);
   try {
-    const r = await authFetch(url);
-    let body = null;
-    try { body = await r.json(); } catch(_) {}
-    if (r.status === 401) {
-      handleAuthFailure(body?.error || 'Usuário ou senha inválidos.');
-      return { error: body?.error || 'Não autorizado' };
-    }
-    if (!r.ok) {
-      const msg = body && body.error ? body.error : `HTTP ${r.status}`;
-      console.error(`[safeGet] ${url} -> ${msg}`);
-      return { error: msg };
-    }
-    return body;
-  } catch(e) {
-    console.error(`[safeGet] ${url} -> ${e.message}`);
-    return { error: e.message };
+    return await request;
+  } finally {
+    if (inflightSafeGets.get(url) === request) inflightSafeGets.delete(url);
   }
 }
 

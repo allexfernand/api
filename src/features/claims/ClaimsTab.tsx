@@ -13,6 +13,7 @@
 // as regras de modo MDS de styles/dashboard.css — precisam sobreviver
 // intactos para a aba continuar aparecendo/desaparecendo certo no menu.
 
+import { useEffect, useRef, useState } from "react";
 import styles from "./ClaimsTab.module.css";
 import { Concentration } from "./components/Concentration";
 import { EventMix } from "./components/EventMix";
@@ -36,7 +37,8 @@ export function ClaimsTab() {
   // Não disputa warehouse/conexões no boot: só busca ao abrir Análise Sinistro.
   const enabled = useTabActivated("analise-sinistro");
   const filtros = useGoldPreviewFilters();
-  const { status, data, error, retry } = useGoldPreview(filtros.querystring, enabled);
+  const coreQuery = withPreviewMode(filtros.querystring, "core");
+  const { status, data, error, retry } = useGoldPreview(coreQuery, enabled);
   const temFiltroAplicado = Object.values(filtros.aplicados).some((valores) => valores.length > 0);
 
   return (
@@ -78,7 +80,9 @@ export function ClaimsTab() {
           </div>
         ) : null}
 
-        {status === "ready" && data ? <ClaimsContent data={data} filtros={filtros} /> : null}
+        {status === "ready" && data ? (
+          <ClaimsContent data={data} filtros={filtros} detailsQuery={withPreviewMode(filtros.querystring, "full")} />
+        ) : null}
 
         <LineageDrawer />
       </LineageProvider>
@@ -95,9 +99,11 @@ export function ClaimsTab() {
 function ClaimsContent({
   data,
   filtros,
+  detailsQuery,
 }: {
   data: GoldPreview;
   filtros: ReturnType<typeof useGoldPreviewFilters>;
+  detailsQuery: string;
 }) {
   return (
     <>
@@ -106,12 +112,61 @@ function ClaimsContent({
       <ExecutiveKpis kpis={data.kpis} />
       <MonthlySeries mensal={data.mensal} competencia={data.competencia} />
       <EventMix data={data.composicao_tipo_evento} />
-      <Locations lotacoes={data.lotacoes} />
-      <Concentration concentracao={data.concentracao} prestadores={data.prestadores} />
-      <Hospitalization internacao={data.internacao} saudeMental={data.saude_mental} />
-      <SanusImpact impacto={data.impacto_sanus} comparacao={data.comparacao_madura} ultimoMesFechado={data.kpis.ultimo_mes_fechado} />
-      <SanusJourney jornada={data.jornada_sanus} />
+      <LazyClaimsDetails query={detailsQuery} />
       <Methodology />
     </>
+  );
+}
+
+function withPreviewMode(query: string, mode: "core" | "full") {
+  const params = new URLSearchParams(query);
+  params.set("mode", mode);
+  return params.toString();
+}
+
+function LazyClaimsDetails({ query }: { query: string }) {
+  const anchor = useRef<HTMLDivElement>(null);
+  const [enabled, setEnabled] = useState(false);
+  const { status, data, error, retry } = useGoldPreview(query, enabled);
+
+  useEffect(() => {
+    const node = anchor.current;
+    if (!node || enabled) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry.isIntersecting) return;
+        setEnabled(true);
+        observer.disconnect();
+      },
+      { rootMargin: "480px" },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [enabled]);
+
+  return (
+    <div ref={anchor}>
+      {!enabled || status === "loading" ? (
+        <div className={styles.loading} role="status">
+          Carregando análises detalhadas…
+        </div>
+      ) : null}
+      {status === "error" ? (
+        <div className={styles.errorState} role="alert">
+          <strong>Não foi possível carregar os blocos detalhados.</strong>
+          <span>{error}</span>
+          <button type="button" onClick={retry}>Tentar novamente</button>
+        </div>
+      ) : null}
+      {status === "ready" && data ? (
+        <>
+          <Locations lotacoes={data.lotacoes} />
+          <Concentration concentracao={data.concentracao} prestadores={data.prestadores} />
+          <Hospitalization internacao={data.internacao} saudeMental={data.saude_mental} />
+          <SanusImpact impacto={data.impacto_sanus} comparacao={data.comparacao_madura} ultimoMesFechado={data.kpis.ultimo_mes_fechado} />
+          <SanusJourney jornada={data.jornada_sanus} />
+        </>
+      ) : null}
+    </div>
   );
 }

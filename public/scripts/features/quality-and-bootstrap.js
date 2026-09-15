@@ -1573,7 +1573,38 @@ function ensureGroupOptionsForActiveTab() {
   }
 }
 
-async function loadAll(fetchOrgs=true) {
+let dashboardLoadInflight = null;
+let dashboardLoadKey = '';
+let dashboardLoadController = null;
+let demographicPanelsInflight = null;
+let demographicPanelsKey = '';
+
+async function loadDemographicPanels() {
+  if (getActiveTab() !== 'demografica') return;
+  const key = buildQS();
+  if (demographicPanelsInflight && demographicPanelsKey === key) return demographicPanelsInflight;
+  demographicPanelsKey = key;
+  demographicPanelsInflight = (async () => {
+    await loadDemographics();
+    if (getActiveTab() !== 'demografica' || buildQS() !== key) return;
+    await loadCompanies();
+    if (getActiveTab() !== 'demografica' || buildQS() !== key) return;
+    await loadAgeGroups();
+    if (getActiveTab() !== 'demografica' || buildQS() !== key) return;
+    await loadLivesNetEvolution();
+    if (!isSinistroTab() && isPartnerFilteredTab()) await loadPartnerOptions();
+  })();
+  try {
+    return await demographicPanelsInflight;
+  } finally {
+    if (demographicPanelsKey === key) {
+      demographicPanelsInflight = null;
+      demographicPanelsKey = '';
+    }
+  }
+}
+
+async function loadAllRequest(fetchOrgs, controller) {
   if (!getAuthToken()) {
     showAuthScreen();
     return;
@@ -1582,7 +1613,7 @@ async function loadAll(fetchOrgs=true) {
   document.getElementById('skel-e').style.display='block';
   document.getElementById('evolChart').style.display='none';
   try {
-    const res = await authFetch('/api/data'+buildQS());
+    const res = await authFetch('/api/data'+buildQS(), { signal: controller.signal });
     if (res.status === 401) {
       handleAuthFailure();
       throw new Error('Não autorizado');
@@ -1595,7 +1626,10 @@ async function loadAll(fetchOrgs=true) {
       return;
     }
     applyDashboardUser(json.auth_user || '');
-    await applyRouteMode(json.auth_role || '');
+    const nextRole = json.auth_role || '';
+    if ((document.body.dataset.dashboardRole || '') !== nextRole) {
+      await applyRouteMode(nextRole);
+    }
     hideAuthScreen();
     usersData = json.users||[];
     if(fetchOrgs && Array.isArray(json.groups)){
@@ -1608,32 +1642,58 @@ async function loadAll(fetchOrgs=true) {
     renderEvol();
     setStatus('ok','✓ Dados ao vivo');
     document.getElementById('last-upd').textContent='Atualizado: '+new Date().toLocaleTimeString('pt-BR');
-    // Sequencial: 4 queries pesadas em paralelo saturam o SQL Warehouse
-    // e ficam (pending) até timeout. Uma por vez carrega mais confiável.
-    void (async () => {
-      await loadDemographics();
-      await loadCompanies();
-      await loadAgeGroups();
-      // AD06 só na Demográfica/Parceiros — e só depois dos cards principais.
-      if (getActiveTab() === 'demografica' || getActiveTab() === 'visao-parceiros') {
-        await loadLivesNetEvolution();
-      }
-      // O seletor de parceiros não faz parte do caminho crítico do dashboard.
-      if (!isSinistroTab() && isPartnerFilteredTab()) await loadPartnerOptions();
-      if (getActiveTab() === 'visao-parceiros') await loadPartnerVision();
-    })();
+    // Só carrega os painéis da Demográfica quando ela continua ativa.
+    // A sequência também é deduplicada por conjunto de filtros.
+    if (getActiveTab() === 'demografica') void loadDemographicPanels();
   } catch(err) {
+    if (err?.name === 'AbortError') return;
     setStatus('error','✗ Erro: '+err.message);
   }
 }
 
+async function loadAll(fetchOrgs=true) {
+  const key = `${fetchOrgs ? 'orgs' : 'data'}:${buildQS()}`;
+  if (dashboardLoadInflight && dashboardLoadKey === key) return dashboardLoadInflight;
+  if (dashboardLoadController) dashboardLoadController.abort();
+  const controller = new AbortController();
+  dashboardLoadController = controller;
+  dashboardLoadKey = key;
+  dashboardLoadInflight = loadAllRequest(fetchOrgs, controller);
+  try {
+    return await dashboardLoadInflight;
+  } finally {
+    if (dashboardLoadController === controller) {
+      dashboardLoadController = null;
+      dashboardLoadInflight = null;
+      dashboardLoadKey = '';
+    }
+  }
+}
+
 function reload() { loadAll(true); }
+
+function waitForDashboardAuth(timeoutMs = 10000) {
+  if (Object.prototype.hasOwnProperty.call(window, '__sanusDashboardAuth')) {
+    return Promise.resolve(window.__sanusDashboardAuth);
+  }
+  return new Promise((resolve) => {
+    const onReady = (event) => {
+      clearTimeout(timer);
+      resolve(event.detail || null);
+    };
+    const timer = setTimeout(() => {
+      document.removeEventListener('sanus:authready', onReady);
+      resolve(null);
+    }, timeoutMs);
+    document.addEventListener('sanus:authready', onReady, { once: true });
+  });
+}
+
 async function initializeDashboard() {
   updateFilterVisibility();
   if (isMdsRoute()) document.body.dataset.dashboardMode = 'mds';
   try {
-    const response = await fetch('/api/data?scope=auth', { credentials: 'same-origin' });
-    const auth = response.ok ? await response.json() : null;
+    const auth = await waitForDashboardAuth();
     hasAuthenticatedSession = Boolean(auth?.ok);
     applyAllowedMenus(auth?.allowedMenus ?? null);
     if (hasAuthenticatedSession) {

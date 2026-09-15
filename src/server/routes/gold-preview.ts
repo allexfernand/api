@@ -21,8 +21,13 @@ type ApiResponse = {
 };
 
 const GOLD = `hive_metastore.sanus_prod.gold_sinistro_evento_v2`;
-const MART_EVENTO = `hive_metastore.sanus_prod.mart_evento_empresa_mes_v2`;
-const MART_PRESTADOR = `hive_metastore.sanus_prod.mart_prestador_mes_v2`;
+const USE_SERVING_MARTS = process.env.SINISTRALIDADE_USE_SERVING_MARTS === "true";
+const MART_EVENTO = USE_SERVING_MARTS
+  ? `hive_metastore.sanus_prod.serving_evento_empresa_mes_v2`
+  : `hive_metastore.sanus_prod.mart_evento_empresa_mes_v2`;
+const MART_PRESTADOR = USE_SERVING_MARTS
+  ? `hive_metastore.sanus_prod.serving_prestador_mes_v2`
+  : `hive_metastore.sanus_prod.mart_prestador_mes_v2`;
 const COORDENACAO = `hive_metastore.sanus_prod.fact_coordenacao_evento_gold_v2`;
 const SNAPSHOT = `hive_metastore.sanus_prod.beneficiary_eligibility_snapshot_v2`;
 const SILVER_FINAL = `hive_metastore.sanus_prod.utilizacao_silver_final`;
@@ -188,6 +193,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
     const { aplicados, filtroSql: filtroUsuario } = buildFiltroSql(req.query, params);
     const filtroAtivo = filtroUsuario !== "";
+    const previewMode = String(req.query.mode || "full") === "core" ? "core" : "full";
     // Company scope do usuário: aplicado no SQL, nunca só na interface.
     const escopo = companyScopeSql(auth, "g.company_key");
     const escopoMart = companyScopeSql(auth, "company_key");
@@ -294,7 +300,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
     // ---- Fase 2: KPIs, blocos e impacto (dependem da janela 12m)
     // Em ondas de 6 para não estourar o warehouse/gateway (504) com 22 queries paralelas.
-    const [kpiRows, total24Rows, lotacaoRows, prestadorRows, concRows, intAgrupRows, intStatsRows, intSaudeMentalRows, smTemaRows, impactoMesRows, impactoEventoRows, triRows, carteiraRows, topUtiRows, facetRows, cidadeRows, maduro2Rows, maduro4Rows, maduro6Rows, servicoRows, proximidadeRows, competenciaRows] = await waveAll([
+    const phase2Factories = [
       () => q(`SELECT round(sum(g.custo_assistencial_bruto), 2), count(DISTINCT g.person_key),
                 round(sum(CASE WHEN g.flag_reembolso THEN g.custo_assistencial_bruto END), 2),
                 count(DISTINCT CASE WHEN g.month_key = '${ultimoFechadoMes ?? ""}' THEN g.person_key END)
@@ -484,7 +490,14 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
          WHERE NOT g.flag_data_suspeita
            AND date_format(to_date(g.competencia_cobranca, 'dd/MM/yyyy'), 'yyyy-MM') >= ${SERIE_INICIO}${filtroSql}
          GROUP BY 1 ORDER BY 1`)
-    ], 6);
+    ];
+    // O primeiro viewport usa somente KPI, carteira, facetas e competência.
+    // Os blocos abaixo da dobra pedem mode=full quando entram no viewport.
+    const coreFactoryIndexes = new Set([0, 12, 14, 15, 21]);
+    const selectedFactories = previewMode === "core"
+      ? phase2Factories.map((factory, index) => coreFactoryIndexes.has(index) ? factory : () => Promise.resolve([]))
+      : phase2Factories;
+    const [kpiRows, total24Rows, lotacaoRows, prestadorRows, concRows, intAgrupRows, intStatsRows, intSaudeMentalRows, smTemaRows, impactoMesRows, impactoEventoRows, triRows, carteiraRows, topUtiRows, facetRows, cidadeRows, maduro2Rows, maduro4Rows, maduro6Rows, servicoRows, proximidadeRows, competenciaRows] = await waveAll(selectedFactories, 6);
 
     const kpi = kpiRows[0] || [];
     const total24 = total24Rows[0] || [];

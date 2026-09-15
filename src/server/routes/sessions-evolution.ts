@@ -17,6 +17,7 @@ import { setApiCors, setStableCache } from "../../../lib/http";
 const SESSION_TABLE       = `hive_metastore.sanus_prod.botmaker_session`;
 const MESSAGE_TABLE       = `hive_metastore.sanus_prod.botmaker_message`;
 const DASHBOARD_SESSIONS_TABLE = `hive_metastore.sanus_prod.dashboard_sessions_base_gold`;
+const DASHBOARD_SESSIONS_MONTHLY_TABLE = `hive_metastore.sanus_prod.dashboard_sessions_monthly_gold`;
 const ATTENDANCE_GOLD_TABLE = `hive_metastore.sanus_prod.atendimento_gold_live`;
 const BENEFICIARIES_VIEW = `hive_metastore.sanus_prod.vw_beneficiarios`;
 const ORGANIZATIONS_TABLE = `hive_metastore.sanus_prod.organizations`;
@@ -537,6 +538,69 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         filters: { group_name: groupName, company, type: typeFilter, partner_broker_id: partnerBrokerId },
         mode,
         source: "botmaker_session.inline",
+      });
+    }
+
+    const canUseMonthlyGold =
+      process.env.DASHBOARD_USE_MONTHLY_GOLDS === 'true'
+      && !includeBeneficiaries
+      && !onlyBeneficiaries
+      && !includeUserInteraction
+      && !includeAttendanceGoldPatients;
+    if (canUseMonthlyGold) {
+      const monthlyRows = await runQuery(warehouseId, `
+        SELECT
+          s.${quoteIdent('mes')} AS mes,
+          s.${quoteIdent('tipo_atendimento_agent')} AS tipo_atendimento,
+          SUM(s.${quoteIdent('total_sessions')}) AS total
+        FROM ${DASHBOARD_SESSIONS_MONTHLY_TABLE} s
+        ${where}
+        GROUP BY
+          s.${quoteIdent('mes')},
+          s.${quoteIdent('tipo_atendimento_agent')}
+        ORDER BY mes
+      `, params.list);
+      const byMesTipo = new Map(monthlyRows.map((row) => [
+        `${String(getCell(row[0]) || '')}|${String(getCell(row[1]) || '').toUpperCase()}`,
+        toInt(row[2]),
+      ]));
+      const series = monthList.map((month) => {
+        const humano = byMesTipo.get(`${month}|HUMANO`) || 0;
+        const ia = byMesTipo.get(`${month}|IA`) || 0;
+        return {
+          mes: month,
+          humano,
+          ia,
+          total: humano + ia,
+          unique_cpfs: 0,
+          unique_beneficiaries: 0,
+          sessions_with_user_interaction: 0,
+          unique_beneficiaries_with_user_interaction: 0,
+          humano_with_user_interaction: 0,
+          ia_with_user_interaction: 0,
+          total_with_user_interaction: 0,
+          unique_patients_attendance_gold: 0,
+        };
+      });
+      setStableCache(res);
+      return res.status(200).json({
+        months: monthList.length,
+        period_months: monthList,
+        series,
+        utilization: { last_1_month: 0, last_3_months: 0, last_6_months: 0, last_12_months: 0 },
+        utilization_attendance_gold: null,
+        utilization_periods: fullMonthScopes,
+        beneficiaries_included: false,
+        user_interaction_included: false,
+        user_interaction_rule: null,
+        attendance_gold_patients_included: false,
+        attendance_gold_patients_rule: null,
+        utilization_attendance_gold_rule: null,
+        filters: { group_name: groupName, company, type: typeFilter, partner_broker_id: partnerBrokerId },
+        mode,
+        source: "dashboard_sessions_monthly_gold",
+        cpf_source: null,
+        attendance_gold_source: null,
       });
     }
 

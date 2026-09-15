@@ -24,6 +24,8 @@ let partnerVisionInflight = null;
 let partnerVisionEvolutionRequestId = 0;
 let partnerVisionSummaryRequestId = 0;
 let partnerVisionCompanyDrilldownRequestId = 0;
+let partnerVisionSummaryData = null;
+let partnerVisionSummaryDataKey = '';
 let partnerEgSessionsRequestId = 0;
 let partnerEgSessionsMonth = '';
 let partnerSessionsKinshipRequestId = 0;
@@ -179,8 +181,9 @@ async function activateTab(tabName) {
   ensureGroupOptionsForActiveTab();
   updateFilterInfo();
   schedulePdfReadinessUpdate();
+  if (activeTab === 'demografica') loadAll(false);
   if (activeTab === 'visao-parceiros') loadPartnerVision();
-  if (activeTab === 'demografica' || activeTab === 'visao-parceiros') {
+  if (activeTab === 'visao-parceiros') {
     if (typeof loadLivesNetEvolution === 'function') loadLivesNetEvolution();
   }
   if (hasPeriodo) { buildPeriodoOptions(); loadPeriodFilteredTab(); }
@@ -407,8 +410,7 @@ function onGroupSelectionChange() {
     loadActiveSessionsTab();
     return;
   }
-  loadAll(false);
-  if (isPeriodFilteredTab()) loadPeriodFilteredTab();
+  reloadActiveTabData(false);
 }
 
 document.addEventListener('click', (event) => {
@@ -423,13 +425,13 @@ document.addEventListener('click', (event) => {
 document.getElementById('company-select').addEventListener('change', e => {
   currentCompany = e.target.value;
   updateFilterInfo();
-  loadAll(false);
-  if (isPeriodFilteredTab()) loadPeriodFilteredTab();
+  reloadActiveTabData(false);
 });
 
 document.getElementById('type-select').addEventListener('change', e => {
-  currentType = e.target.value; updateFilterInfo(); loadAll(false);
-  if (isPeriodFilteredTab()) loadPeriodFilteredTab();
+  currentType = e.target.value;
+  updateFilterInfo();
+  reloadActiveTabData(false);
 });
 
 document.getElementById('partner-select').addEventListener('change', async e => {
@@ -801,8 +803,7 @@ async function clearFilters() {
     loadPartnerVision();
     return;
   }
-  loadAll(false);
-  if (isPeriodFilteredTab()) loadPeriodFilteredTab();
+  reloadActiveTabData(false);
 }
 
 function buildQS() {
@@ -1497,6 +1498,14 @@ function isPeriodFilteredTab(tab = getActiveTab()) {
   const activeTab = tab;
   if (activeTab === 'sinistralidade-v2') return false;
   return activeTab === 'agendamentos' || activeTab === 'coordenacao-cuidado' || isSessionsFamilyTab(activeTab) || isPetitTab(activeTab) || activeTab.startsWith('qualidade') || isSinistroTab(activeTab);
+}
+
+function reloadActiveTabData(fetchOrgs = false) {
+  const activeTab = getActiveTab();
+  if (activeTab === 'demografica') return loadAll(fetchOrgs);
+  if (activeTab === 'visao-parceiros') return loadPartnerVision();
+  if (isPeriodFilteredTab(activeTab)) return loadPeriodFilteredTab();
+  return undefined;
 }
 
 function loadPeriodFilteredTab() {
