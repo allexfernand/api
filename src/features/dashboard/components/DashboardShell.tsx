@@ -472,6 +472,7 @@ function Navigation({
 
 function Filters({ activeTab }: { activeTab: string }) {
   const isPetit = activeTab === "petit-comite" || activeTab === "petit-comite-mds";
+  const hideGlobalFilters = activeTab === "auditoria-contas";
 
   // Reaplica filtros legados e o disabled do PDF (100% pronto) após cada
   // commit do React, para o JSX não sobrescrever o estado calculado no legado.
@@ -481,7 +482,7 @@ function Filters({ activeTab }: { activeTab: string }) {
   });
 
   return (
-    <div className="filterbar">
+    <div className="filterbar" style={hideGlobalFilters ? { display: "none" } : undefined}>
       <div className="filter-group" id="filter-group-group">
         <label>🏢 Grupo Econômico</label>
         <div className="multi-select" id="group-select">

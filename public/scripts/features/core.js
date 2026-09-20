@@ -226,9 +226,10 @@ function updateFilterVisibility() {
   const qualityStatusGroup = document.getElementById('filter-quality-operational-status-group');
   const activeTab = getActiveTab();
   const isSinistro = isSinistroTab(activeTab);
+  const hidesGlobalFilters = isSinistro || activeTab === 'auditoria-contas';
   const isQualityOperational = activeTab === 'qualidade-operacional';
   const isPartnerVision = isPartnerVisionTab(activeTab);
-  if (filterbar) filterbar.style.display = isSinistro ? 'none' : 'flex';
+  if (filterbar) filterbar.style.display = hidesGlobalFilters ? 'none' : 'flex';
   document.body.dataset.activeTab = activeTab;
   if (isSessionsFamilyTab(activeTab)) {
     currentCompany = '';
