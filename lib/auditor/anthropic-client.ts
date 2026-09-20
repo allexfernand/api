@@ -35,7 +35,7 @@ export async function callAuditor({ mode, message, caseId, history = [] }: Audit
   const caseContext = caseMarkdown
     ? `\n\n---\nARQUIVO DE CASO CARREGADO (${caseId}.md):\n\n${caseMarkdown}`
     : "";
-  const documents = loadNivel1Documents();
+  const documents = await loadNivel1Documents();
   const currentMessage = [
     ...documents,
     {

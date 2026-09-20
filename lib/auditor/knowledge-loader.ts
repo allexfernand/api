@@ -3,6 +3,12 @@ import "server-only";
 import fs from "node:fs";
 import path from "node:path";
 import * as XLSX from "xlsx";
+import {
+  blobStorageConfigured,
+  getActiveDocumentVersions,
+  getPrivateDocument,
+} from "./document-store";
+import { categoryLabel } from "./document-types";
 
 const ROOT_KNOWLEDGE_DIR = path.join(process.cwd(), "knowledge");
 const PACKAGED_KNOWLEDGE_DIR = path.join(process.cwd(), "auditor-mestre", "knowledge");
@@ -65,10 +71,66 @@ export function loadSystemPrompt() {
   throw new Error("Prompt mestre não encontrado em knowledge/system-prompt.md.");
 }
 
-let cachedDocuments: AnthropicDocumentBlock[] | null = null;
+let cachedLocalDocuments: AnthropicDocumentBlock[] | null = null;
+let cachedBlobDocuments: { revision: number; documents: AnthropicDocumentBlock[] } | null = null;
 
-export function loadNivel1Documents() {
-  if (cachedDocuments) return cachedDocuments;
+function spreadsheetToText(workbook: XLSX.WorkBook, name: string) {
+  const text = workbook.SheetNames.map((sheetName) => {
+    const csv = XLSX.utils.sheet_to_csv(workbook.Sheets[sheetName], { blankrows: false });
+    return `## Aba: ${sheetName}\n${csv}`;
+  }).join("\n\n");
+  if (text.length > MAX_SPREADSHEET_TEXT_CHARS) {
+    throw new Error(`Planilha ${name} excede o limite de texto processável.`);
+  }
+  return text;
+}
+
+async function loadBlobDocuments() {
+  const active = await getActiveDocumentVersions();
+  if (cachedBlobDocuments?.revision === active.revision) return cachedBlobDocuments.documents;
+
+  const totalBytes = active.documents.reduce((total, document) => total + document.size, 0);
+  if (totalBytes > MAX_TOTAL_SOURCE_BYTES) {
+    throw new Error("Base de conhecimento ativa excede o limite de 20 MB.");
+  }
+
+  const documents: AnthropicDocumentBlock[] = [];
+  for (const version of active.documents) {
+    const result = await getPrivateDocument(version.pathname);
+    if (!result || result.statusCode !== 200) {
+      throw new Error(`Documento ativo não encontrado: ${version.originalName}.`);
+    }
+    const bytes = Buffer.from(await new Response(result.stream).arrayBuffer());
+    const title = `${categoryLabel(version.category)} — ${version.versionLabel}`;
+    const extension = path.extname(version.originalName).toLowerCase();
+    if (extension === ".pdf") {
+      documents.push({
+        type: "document",
+        source: { type: "base64", media_type: "application/pdf", data: bytes.toString("base64") },
+        title,
+      });
+    } else {
+      const workbook = XLSX.read(bytes, {
+        type: "buffer",
+        cellDates: false,
+        cellFormula: false,
+        cellHTML: false,
+      });
+      documents.push({
+        type: "document",
+        source: { type: "text", media_type: "text/plain", data: spreadsheetToText(workbook, version.originalName) },
+        title,
+      });
+    }
+  }
+
+  if (documents.length) documents[documents.length - 1].cache_control = { type: "ephemeral" };
+  cachedBlobDocuments = { revision: active.revision, documents };
+  return documents;
+}
+
+function loadLocalDocuments() {
+  if (cachedLocalDocuments) return cachedLocalDocuments;
 
   const files = nivel1Directories()
     .flatMap((directory) =>
@@ -106,23 +168,20 @@ export function loadNivel1Documents() {
     }
 
     const workbook = XLSX.readFile(fullPath, { cellDates: false, cellFormula: false, cellHTML: false });
-    const text = workbook.SheetNames.map((sheetName) => {
-      const csv = XLSX.utils.sheet_to_csv(workbook.Sheets[sheetName], { blankrows: false });
-      return `## Aba: ${sheetName}\n${csv}`;
-    }).join("\n\n");
-    if (text.length > MAX_SPREADSHEET_TEXT_CHARS) {
-      throw new Error(`Planilha ${name} excede o limite de texto processável.`);
-    }
     documents.push({
       type: "document",
-      source: { type: "text", media_type: "text/plain", data: text },
+      source: { type: "text", media_type: "text/plain", data: spreadsheetToText(workbook, name) },
       title: name,
     });
   }
 
   if (documents.length) documents[documents.length - 1].cache_control = { type: "ephemeral" };
-  cachedDocuments = documents;
+  cachedLocalDocuments = documents;
   return documents;
+}
+
+export async function loadNivel1Documents() {
+  return blobStorageConfigured() ? loadBlobDocuments() : loadLocalDocuments();
 }
 
 export function listCases() {

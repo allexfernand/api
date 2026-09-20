@@ -1,6 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import {
+  categoryLabel,
+  type AuditorDocumentVersion,
+  type DocumentCatalogResponse,
+} from "../../lib/auditor/document-types";
 import { MODE_LABELS, type AuditorMode, type ChatMessage } from "../../lib/auditor/types";
 import styles from "./AuditorChat.module.css";
 
@@ -18,6 +23,8 @@ export default function AuditorChat() {
   const [caseId, setCaseId] = useState("");
   const [message, setMessage] = useState("");
   const [history, setHistory] = useState<ChatMessage[]>([]);
+  const [activeDocuments, setActiveDocuments] = useState<AuditorDocumentVersion[]>([]);
+  const [managedStorage, setManagedStorage] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [persistentCases, setPersistentCases] = useState(true);
@@ -32,6 +39,16 @@ export default function AuditorChat() {
         if (!response.ok) throw new Error(data.error || "Não foi possível listar os casos.");
         setCases(data.cases || []);
         setPersistentCases(data.storage?.persistent !== false);
+      })
+      .catch((cause) => {
+        if (cause instanceof Error && cause.name !== "AbortError") setError(cause.message);
+      });
+    fetch("/api/auditor/documents", { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        const data = await response.json() as DocumentCatalogResponse & { error?: string };
+        if (!response.ok) throw new Error(data.error || "Não foi possível carregar a base ativa.");
+        setManagedStorage(data.configured);
+        setActiveDocuments(data.documents.filter((document) => document.status === "active"));
       })
       .catch((cause) => {
         if (cause instanceof Error && cause.name !== "AbortError") setError(cause.message);
@@ -126,6 +143,17 @@ export default function AuditorChat() {
           {!persistentCases ? (
             <p className={styles.warning}>O storage persistente de casos ainda não foi configurado neste ambiente.</p>
           ) : null}
+        </div>
+
+        <div className={styles.controlGroup}>
+          <span className={styles.label}>Base ativa</span>
+          <div className={styles.activeDocuments}>
+            {activeDocuments.length ? activeDocuments.map((document) => (
+              <span key={document.id} title={document.originalName}>
+                {categoryLabel(document.category)} · {document.versionLabel}
+              </span>
+            )) : <p>{managedStorage ? "Nenhuma versão ativa no storage." : "Documentos locais do projeto."}</p>}
+          </div>
         </div>
 
         <button className={styles.secondaryButton} type="button" onClick={resetConversation} disabled={!history.length && !message}>
