@@ -142,10 +142,11 @@ function isAdminDashboardUser() {
 }
 
 async function activateTab(tabName) {
-  if (tabName === 'sessoes-new' && !isAdminDashboardUser()) {
+  const isAdminTab = tabName === 'sessoes-new' || tabName === 'configuracoes' || tabName === 'auditoria-contas';
+  if (isAdminTab && !isAdminDashboardUser()) {
     tabName = 'demografica';
   }
-  if (Array.isArray(allowedMenusOverride) && tabName !== 'configuracoes' && tabName !== 'sessoes-new' && !allowedMenusOverride.includes(tabName)) {
+  if (Array.isArray(allowedMenusOverride) && !isAdminTab && !allowedMenusOverride.includes(tabName)) {
     tabName = allowedMenusOverride[0] || 'demografica';
   } else if (tabName === 'visao-parceiros' && shouldBlockPartnerVisionLegacy()) {
     tabName = 'demografica';

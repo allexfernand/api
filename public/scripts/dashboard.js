@@ -1,5 +1,5 @@
 (async function loadSanusDashboard() {
-  const CACHE = "20260915-perf-wave1";
+  const CACHE = "20260920-account-audit";
 
   function loadScript(src, { ordered = false } = {}) {
     return new Promise((resolve, reject) => {

@@ -25,7 +25,8 @@ declare global {
 
 const CONFIGURACOES_ITEM = { id: "configuracoes", label: "Configurações", icon: "fa-sliders" } as const;
 const SESSOES_NEW_ITEM = { id: "sessoes-new", label: "Sessões - New", icon: "fa-comments" } as const;
-const ADMIN_ONLY_TABS = new Set<string>([CONFIGURACOES_ITEM.id, SESSOES_NEW_ITEM.id]);
+const AUDITORIA_CONTAS_ITEM = { id: "auditoria-contas", label: "Auditoria de Contas", icon: "fa-clipboard-check" } as const;
+const ADMIN_ONLY_TABS = new Set<string>([CONFIGURACOES_ITEM.id, SESSOES_NEW_ITEM.id, AUDITORIA_CONTAS_ITEM.id]);
 
 const defaultLogo = { src: "/assets/logo_sanus.svg", alt: "Sanus", width: 112, height: 32 };
 
@@ -451,6 +452,16 @@ function Navigation({
             >
               <i className={`fa-solid ${CONFIGURACOES_ITEM.icon}`} aria-hidden="true" />
               <span>{CONFIGURACOES_ITEM.label}</span>
+            </button>
+            <button
+              type="button"
+              className={`tab sidebar-tab ${activeTab === AUDITORIA_CONTAS_ITEM.id ? "active" : ""}`}
+              data-tab={AUDITORIA_CONTAS_ITEM.id}
+              title={sidebarCollapsed ? AUDITORIA_CONTAS_ITEM.label : undefined}
+              onClick={() => onChange(AUDITORIA_CONTAS_ITEM.id)}
+            >
+              <i className={`fa-solid ${AUDITORIA_CONTAS_ITEM.icon}`} aria-hidden="true" />
+              <span>{AUDITORIA_CONTAS_ITEM.label}</span>
             </button>
           </div>
         ) : null}
