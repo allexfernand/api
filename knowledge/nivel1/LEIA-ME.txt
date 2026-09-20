@@ -1,0 +1,10 @@
+Adicione neste diretório os documentos institucionais do Nível 1:
+
+- M.A.M.E. (PDF)
+- M.A.P.H.C. (PDF)
+- Anexo II / DUT vigente (PDF)
+- RN 566/2022 (PDF)
+- Correlação TUSS x Rol (.xlsx ou .xls)
+
+Somente PDF e planilhas Excel são carregados. Não inclua dados de beneficiários
+neste diretório; os casos devem usar o storage privado configurado para o ambiente.

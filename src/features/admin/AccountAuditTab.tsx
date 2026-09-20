@@ -1,5 +1,6 @@
 "use client";
 
+import AuditorChat from "../../../components/auditor/AuditorChat";
 import styles from "./SettingsTab.module.css";
 
 export function AccountAuditTab() {
@@ -8,21 +9,11 @@ export function AccountAuditTab() {
       <header className={styles.header}>
         <h2 className={styles.title}>Auditoria de Contas</h2>
         <p className={styles.subtitle}>
-          Consulte e acompanhe verificações relacionadas às contas do dashboard.
+          Analise casos assistenciais com apoio dos manuais internos e das normas regulatórias.
         </p>
       </header>
 
-      <div className={styles.logsPanel}>
-        <div className={styles.sectionIntro}>
-          <h3 className={styles.sectionTitle}>Visão administrativa</h3>
-          <p className={styles.subtitle}>
-            Esta área é visível somente para usuários que possuem acesso à Administração.
-          </p>
-        </div>
-        <div className={styles.fullAccessNotice} role="status">
-          Os relatórios de auditoria de contas serão exibidos aqui.
-        </div>
-      </div>
+      <AuditorChat />
     </section>
   );
 }

@@ -10,3 +10,7 @@ blob-report
 .env
 .env.*
 !.env.example
+
+# Dados clínicos do Auditor Mestre nunca devem entrar no histórico do Git.
+knowledge/casos/*.md
+auditor-mestre/knowledge/casos/*.md

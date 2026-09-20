@@ -774,6 +774,12 @@ export function DashboardShell() {
         setAllowedMenus(snapshot.allowedMenus);
         setIsAdmin(snapshot.isAdmin);
         document.body.dataset.isAdmin = snapshot.isAdmin ? "1" : "0";
+        const requestedTab = new URLSearchParams(window.location.search).get("tab");
+        if (requestedTab === AUDITORIA_CONTAS_ITEM.id && snapshot.isAdmin) {
+          setActiveTab(AUDITORIA_CONTAS_ITEM.id);
+          document.body.dataset.activeTab = AUDITORIA_CONTAS_ITEM.id;
+          legacy("activateTab", AUDITORIA_CONTAS_ITEM.id);
+        }
         setAuthenticated(true);
         document.dispatchEvent(new CustomEvent("sanus:authready", { detail: snapshot }));
       })
