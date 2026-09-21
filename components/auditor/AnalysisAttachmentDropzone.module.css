@@ -1,0 +1,175 @@
+.root {
+  display: grid;
+  gap: 8px;
+}
+
+.dropzone {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 8px 12px;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--bg) 52%, var(--surface));
+  border: 1px dashed color-mix(in srgb, var(--brand) 28%, var(--border));
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background var(--t) var(--ease), border-color var(--t) var(--ease);
+}
+
+.dropzone:hover,
+.dropzoneDragging {
+  color: var(--text);
+  background: color-mix(in srgb, var(--brand) 7%, var(--surface));
+  border-color: var(--brand);
+}
+
+.dropzone:focus-within {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.dropzone input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+}
+
+.dropzone i {
+  color: var(--brand);
+}
+
+.dropzone span {
+  min-width: 0;
+  font-size: 12px;
+}
+
+.dropzone small {
+  margin-left: auto;
+  color: var(--text-faint);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.list {
+  display: grid;
+  gap: 6px;
+  max-height: 168px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.item {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 32px;
+  gap: 8px;
+  align-items: center;
+  padding: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.fileIcon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  color: var(--brand);
+  background: var(--brand-light);
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.fileInfo {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.fileInfo strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fileInfo small,
+.fileError {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.fileError {
+  color: #991b1b;
+}
+
+.progressTrack {
+  height: 3px;
+  overflow: hidden;
+  background: var(--border-light);
+  border-radius: 999px;
+}
+
+.progressTrack span {
+  display: block;
+  height: 100%;
+  background: var(--brand);
+  border-radius: inherit;
+  transition: width var(--t) var(--ease);
+}
+
+.item button {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.item button:hover:not(:disabled) {
+  color: #991b1b;
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+.item button:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.item button:disabled,
+.dropzone:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+@media (max-width: 520px) {
+  .dropzone {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .dropzone small {
+    width: 100%;
+    margin-left: 24px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dropzone,
+  .progressTrack span {
+    transition: none;
+  }
+}

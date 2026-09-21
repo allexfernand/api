@@ -14,6 +14,7 @@ const ROOT_KNOWLEDGE_DIR = path.join(process.cwd(), "knowledge");
 const PACKAGED_KNOWLEDGE_DIR = path.join(process.cwd(), "auditor-mestre", "knowledge");
 const MAX_TOTAL_SOURCE_BYTES = 20 * 1024 * 1024;
 const MAX_SPREADSHEET_TEXT_CHARS = 2_000_000;
+const MAX_EXTRACTED_TEXT_CHARS = 2_000_000;
 
 export type KnowledgeDocument = {
   title: string;
@@ -75,6 +76,45 @@ async function pdfToText(bytes: Uint8Array, name: string) {
   }
 }
 
+export async function parseKnowledgeFile(
+  bytes: Uint8Array,
+  name: string,
+  title = name,
+): Promise<KnowledgeDocument> {
+  const extension = path.extname(name).toLowerCase();
+  if (extension === ".pdf") {
+    return { title, text: await pdfToText(bytes, name) };
+  }
+  if (extension === ".xlsx" || extension === ".xls") {
+    const workbook = XLSX.read(bytes, {
+      type: "buffer",
+      cellDates: false,
+      cellFormula: false,
+      cellHTML: false,
+    });
+    return { title, text: spreadsheetToText(workbook, name) };
+  }
+  if (extension === ".docx") {
+    const mammoth = await import("mammoth");
+    const result = await mammoth.extractRawText({ buffer: Buffer.from(bytes) });
+    const text = result.value.trim();
+    if (!text) throw new Error(`O DOCX ${name} não contém texto pesquisável.`);
+    if (text.length > MAX_EXTRACTED_TEXT_CHARS) {
+      throw new Error(`O DOCX ${name} excede o limite de texto processável.`);
+    }
+    return { title, text };
+  }
+  if (extension === ".csv" || extension === ".txt") {
+    const text = new TextDecoder("utf-8", { fatal: false }).decode(bytes).trim();
+    if (!text) throw new Error(`O arquivo ${name} está vazio.`);
+    if (text.length > MAX_EXTRACTED_TEXT_CHARS) {
+      throw new Error(`O arquivo ${name} excede o limite de texto processável.`);
+    }
+    return { title, text };
+  }
+  throw new Error(`Formato não suportado: ${name}.`);
+}
+
 async function loadBlobDocuments() {
   const active = await getActiveDocumentVersions();
   if (cachedBlobDocuments?.revision === active.revision) return cachedBlobDocuments.documents;
@@ -92,24 +132,7 @@ async function loadBlobDocuments() {
     }
     const bytes = Buffer.from(await new Response(result.stream).arrayBuffer());
     const title = `${categoryLabel(version.category)} — ${version.versionLabel}`;
-    const extension = path.extname(version.originalName).toLowerCase();
-    if (extension === ".pdf") {
-      documents.push({
-        title,
-        text: await pdfToText(bytes, version.originalName),
-      });
-    } else {
-      const workbook = XLSX.read(bytes, {
-        type: "buffer",
-        cellDates: false,
-        cellFormula: false,
-        cellHTML: false,
-      });
-      documents.push({
-        title,
-        text: spreadsheetToText(workbook, version.originalName),
-      });
-    }
+    documents.push(await parseKnowledgeFile(bytes, version.originalName, title));
   }
 
   cachedBlobDocuments = { revision: active.revision, documents };
@@ -140,21 +163,8 @@ async function loadLocalDocuments() {
       throw new Error("Base de conhecimento Nível 1 excede o limite local de 20 MB.");
     }
 
-    const extension = path.extname(name).toLowerCase();
-    if (extension === ".pdf") {
-      const bytes = fs.readFileSync(/* turbopackIgnore: true */ fullPath);
-      documents.push({
-        title: name,
-        text: await pdfToText(new Uint8Array(bytes), name),
-      });
-      continue;
-    }
-
-    const workbook = XLSX.readFile(fullPath, { cellDates: false, cellFormula: false, cellHTML: false });
-    documents.push({
-      title: name,
-      text: spreadsheetToText(workbook, name),
-    });
+    const bytes = fs.readFileSync(/* turbopackIgnore: true */ fullPath);
+    documents.push(await parseKnowledgeFile(new Uint8Array(bytes), name));
   }
 
   cachedLocalDocuments = documents;

@@ -12,7 +12,7 @@ vi.mock("../../lib/auditor/document-store", () => ({
   getPrivateDocument: mocks.privateDocument,
 }));
 
-import { loadNivel1Documents } from "../../lib/auditor/knowledge-loader";
+import { loadNivel1Documents, parseKnowledgeFile } from "../../lib/auditor/knowledge-loader";
 
 describe("auditor knowledge fallback", () => {
   it("uses the project filesystem when Blob is not configured", async () => {
@@ -20,5 +20,15 @@ describe("auditor knowledge fallback", () => {
     expect(Array.isArray(documents)).toBe(true);
     expect(mocks.active).not.toHaveBeenCalled();
     expect(mocks.privateDocument).not.toHaveBeenCalled();
+  });
+
+  it("extracts temporary plain-text documents", async () => {
+    await expect(parseKnowledgeFile(
+      new TextEncoder().encode("Resumo assistencial para auditoria"),
+      "resumo.txt",
+    )).resolves.toEqual({
+      title: "resumo.txt",
+      text: "Resumo assistencial para auditoria",
+    });
   });
 });
