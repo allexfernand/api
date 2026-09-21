@@ -2,7 +2,6 @@ import "server-only";
 
 import fs from "node:fs";
 import path from "node:path";
-import { PDFParse } from "pdf-parse";
 import * as XLSX from "xlsx";
 import {
   blobStorageConfigured,
@@ -78,6 +77,8 @@ function spreadsheetToText(workbook: XLSX.WorkBook, name: string) {
 }
 
 async function pdfToText(bytes: Uint8Array, name: string) {
+  // Import tardio: rotas de casos não precisam inicializar PDF.js/canvas.
+  const { PDFParse } = await import("pdf-parse");
   const parser = new PDFParse({ data: bytes });
   try {
     const result = await parser.getText();

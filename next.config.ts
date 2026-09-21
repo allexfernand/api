@@ -35,8 +35,14 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  serverExternalPackages: ["pdf-parse", "pdfjs-dist", "@napi-rs/canvas"],
   outputFileTracingIncludes: {
-    "/api/auditor": ["./knowledge/**/*", "./auditor-mestre/knowledge/**/*"],
+    "/api/auditor": [
+      "./knowledge/**/*",
+      "./auditor-mestre/knowledge/**/*",
+      "./node_modules/@napi-rs/canvas/**/*",
+      "./node_modules/@napi-rs/canvas-*/**/*",
+    ],
   },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
