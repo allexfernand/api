@@ -52,6 +52,12 @@ async function streamText(result: GetBlobResult) {
   return new Response(result.stream).text();
 }
 
+function isManifestWriteConflict(cause: unknown) {
+  if (cause instanceof BlobPreconditionFailedError) return true;
+  const message = cause instanceof Error ? cause.message : String(cause);
+  return /precondition failed|etag mismatch/i.test(message);
+}
+
 export async function readDocumentManifest() {
   if (!blobStorageConfigured()) {
     return { manifest: emptyDocumentManifest(), etag: null as string | null };
@@ -97,7 +103,7 @@ async function updateManifest(
       return next;
     } catch (cause) {
       const mayBeConcurrentCreate = !etag && attempt < 2;
-      const concurrentUpdate = cause instanceof BlobPreconditionFailedError && attempt < 2;
+      const concurrentUpdate = isManifestWriteConflict(cause) && attempt < 2;
       if (!mayBeConcurrentCreate && !concurrentUpdate) throw cause;
     }
   }

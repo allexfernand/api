@@ -3,7 +3,6 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   documentPathname,
   MAX_DOCUMENT_BYTES,
-  registerUploadedDocument,
 } from "../../../../../lib/auditor/document-store";
 import { uploadMetadataSchema } from "../../../../../lib/auditor/document-types";
 import { authFromNextRequest } from "../../../../../src/server/auth/request-auth";
@@ -47,12 +46,7 @@ export async function POST(request: NextRequest) {
           addRandomSuffix: false,
           allowOverwrite: false,
           cacheControlMaxAge: 60,
-          tokenPayload: JSON.stringify(metadata),
         };
-      },
-      onUploadCompleted: async ({ blob, tokenPayload }) => {
-        const metadata = uploadMetadataSchema.parse(JSON.parse(tokenPayload || "{}"));
-        await registerUploadedDocument(metadata, blob.pathname);
       },
     });
     return NextResponse.json(result, { headers: { "Cache-Control": "no-store" } });
