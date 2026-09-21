@@ -167,7 +167,7 @@
 
 .workspace {
   display: grid;
-  grid-template-rows: minmax(360px, 1fr) auto auto;
+  grid-template-rows: minmax(220px, 1fr) auto auto;
   min-width: 0;
   max-height: 760px;
 }
@@ -189,7 +189,7 @@
   align-content: center;
   gap: 8px;
   max-width: 440px;
-  min-height: 320px;
+  min-height: 220px;
   margin: auto;
   color: var(--text-muted);
   text-align: center;
