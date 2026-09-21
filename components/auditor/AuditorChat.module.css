@@ -49,7 +49,8 @@
 .select:focus-visible,
 .textarea:focus-visible,
 .primaryButton:focus-visible,
-.secondaryButton:focus-visible {
+.secondaryButton:focus-visible,
+.manageCasesButton:focus-visible {
   outline: 2px solid var(--brand);
   outline-offset: 2px;
 }
@@ -92,7 +93,8 @@
 }
 
 .secondaryButton,
-.primaryButton {
+.primaryButton,
+.manageCasesButton {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -118,10 +120,25 @@
 
 .secondaryButton:disabled,
 .primaryButton:disabled,
+.manageCasesButton:disabled,
 .select:disabled,
 .textarea:disabled {
   cursor: not-allowed;
   opacity: 0.58;
+}
+
+.manageCasesButton {
+  width: 100%;
+  min-height: 36px;
+  padding: 8px 12px;
+  color: var(--brand);
+  background: color-mix(in srgb, var(--brand) 6%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--brand) 24%, var(--border));
+  font-size: 12px;
+}
+
+.manageCasesButton:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--brand) 10%, var(--surface));
 }
 
 .safetyNote {

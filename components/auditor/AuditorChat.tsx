@@ -7,6 +7,7 @@ import {
   type DocumentCatalogResponse,
 } from "../../lib/auditor/document-types";
 import { MODE_LABELS, type AuditorMode, type ChatMessage } from "../../lib/auditor/types";
+import CaseMemoryManager from "./CaseMemoryManager";
 import styles from "./AuditorChat.module.css";
 
 const MODES = Object.keys(MODE_LABELS) as AuditorMode[];
@@ -25,9 +26,10 @@ export default function AuditorChat() {
   const [history, setHistory] = useState<ChatMessage[]>([]);
   const [activeDocuments, setActiveDocuments] = useState<AuditorDocumentVersion[]>([]);
   const [managedStorage, setManagedStorage] = useState(false);
+  const [caseManagerOpen, setCaseManagerOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [persistentCases, setPersistentCases] = useState(true);
+  const [persistentCases, setPersistentCases] = useState<boolean | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const historyEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -140,8 +142,14 @@ export default function AuditorChat() {
             <option value="">Sem caso vinculado</option>
             {cases.map((item) => <option key={item} value={item}>{item.replaceAll("_", " ")}</option>)}
           </select>
-          {!persistentCases ? (
+          {persistentCases === false ? (
             <p className={styles.warning}>O storage persistente de casos ainda não foi configurado neste ambiente.</p>
+          ) : null}
+          {persistentCases === true ? (
+            <button className={styles.manageCasesButton} type="button" onClick={() => setCaseManagerOpen(true)} disabled={loading}>
+              <i className="fa-solid fa-folder-open" aria-hidden="true" />
+              Gerenciar memórias
+            </button>
           ) : null}
         </div>
 
@@ -229,6 +237,18 @@ export default function AuditorChat() {
           </div>
         </div>
       </section>
+      {caseManagerOpen ? (
+        <CaseMemoryManager
+          cases={cases}
+          selectedCaseId={caseId}
+          onClose={() => setCaseManagerOpen(false)}
+          onSaved={(savedCaseId) => {
+            setCases((current) => [...new Set([...current, savedCaseId])].sort((a, b) => a.localeCompare(b, "pt-BR")));
+            setCaseId(savedCaseId);
+            setCaseManagerOpen(false);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

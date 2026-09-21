@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { caseStorageInfo, listCases } from "../../../../lib/auditor/knowledge-loader";
+import { caseStorageInfo, listCases } from "../../../../lib/auditor/case-store";
 import { authFromNextRequest } from "../../../../src/server/auth/request-auth";
 
 export const runtime = "nodejs";
@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
   }
 
   return NextResponse.json(
-    { cases: listCases(), storage: caseStorageInfo() },
+    { cases: await listCases(), storage: caseStorageInfo() },
     { headers: { "Cache-Control": "no-store, max-age=0" } },
   );
 }

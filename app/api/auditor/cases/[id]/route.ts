@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readCase, writeCase } from "../../../../../lib/auditor/knowledge-loader";
+import { readCase, writeCase } from "../../../../../lib/auditor/case-store";
 import { caseContentSchema } from "../../../../../lib/auditor/types";
 import { authFromNextRequest } from "../../../../../src/server/auth/request-auth";
 
@@ -14,7 +14,7 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
   }
 
   const { id } = await params;
-  const content = readCase(id);
+  const content = await readCase(id);
   if (content === null) {
     return NextResponse.json({ error: "Caso não encontrado." }, { status: 404 });
   }
@@ -34,7 +34,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
 
   try {
     const { id } = await params;
-    writeCase(id, parsed.data.content);
+    await writeCase(id, parsed.data.content);
     return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : "Não foi possível salvar o caso.";

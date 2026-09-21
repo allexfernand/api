@@ -32,26 +32,6 @@ function nivel1Directories() {
     .filter((directory) => fs.existsSync(/* turbopackIgnore: true */ directory));
 }
 
-function casesDirectory() {
-  const configured = process.env.AUDITOR_CASES_DIR?.trim();
-  if (configured) return path.resolve(configured);
-  return path.join(ROOT_KNOWLEDGE_DIR, "casos");
-}
-
-function sanitizeCaseId(id: string) {
-  const sanitized = id.normalize("NFKC").replace(/[^\p{L}\p{N}_-]/gu, "").slice(0, 120);
-  if (!sanitized) throw new Error("Identificador de caso inválido.");
-  return sanitized;
-}
-
-export function caseStorageInfo() {
-  const configured = Boolean(process.env.AUDITOR_CASES_DIR?.trim());
-  return {
-    writable: process.env.VERCEL !== "1" || configured,
-    persistent: configured || process.env.VERCEL !== "1",
-  };
-}
-
 export function loadSystemPrompt() {
   for (const directory of knowledgeDirectories()) {
     const file = path.join(directory, "system-prompt.md");
@@ -183,33 +163,4 @@ async function loadLocalDocuments() {
 
 export async function loadNivel1Documents() {
   return blobStorageConfigured() ? loadBlobDocuments() : loadLocalDocuments();
-}
-
-export function listCases() {
-  const directory = casesDirectory();
-  if (!fs.existsSync(/* turbopackIgnore: true */ directory)) return [];
-  return fs.readdirSync(/* turbopackIgnore: true */ directory)
-    .filter((file) => file.endsWith(".md"))
-    .map((file) => file.replace(/\.md$/, ""))
-    .sort((a, b) => a.localeCompare(b, "pt-BR"));
-}
-
-export function readCase(caseId: string) {
-  const file = path.join(casesDirectory(), `${sanitizeCaseId(caseId)}.md`);
-  return fs.existsSync(/* turbopackIgnore: true */ file)
-    ? fs.readFileSync(/* turbopackIgnore: true */ file, "utf8")
-    : null;
-}
-
-export function writeCase(caseId: string, content: string) {
-  const storage = caseStorageInfo();
-  if (!storage.writable) {
-    throw new Error("Persistência de casos não configurada para este ambiente serverless.");
-  }
-  const directory = casesDirectory();
-  fs.mkdirSync(/* turbopackIgnore: true */ directory, { recursive: true });
-  fs.writeFileSync(/* turbopackIgnore: true */ path.join(directory, `${sanitizeCaseId(caseId)}.md`), content, {
-    encoding: "utf8",
-    mode: 0o600,
-  });
 }

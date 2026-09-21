@@ -1,6 +1,7 @@
 import "server-only";
 
-import { loadNivel1Documents, loadSystemPrompt, readCase } from "./knowledge-loader";
+import { readCase } from "./case-store";
+import { loadNivel1Documents, loadSystemPrompt } from "./knowledge-loader";
 import { selectKnowledgeContext } from "./knowledge-retrieval";
 import type { AuditorMode, AuditorRequestBody, ChatMessage } from "./types";
 
@@ -57,7 +58,7 @@ export async function callAuditor({ mode, message, caseId, history = [] }: Audit
 
   const model = process.env.ZAI_MODEL?.trim() || DEFAULT_MODEL;
   const apiUrl = process.env.ZAI_API_URL?.trim() || DEFAULT_API_URL;
-  const caseMarkdown = caseId ? readCase(caseId) : null;
+  const caseMarkdown = caseId ? await readCase(caseId) : null;
   const recentHistory = boundedHistory(history);
   const retrievalQuery = [
     message,
