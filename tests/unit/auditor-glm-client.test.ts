@@ -14,9 +14,11 @@ vi.mock("../../lib/auditor/knowledge-retrieval", () => ({
 }));
 
 import { callAuditor } from "../../lib/auditor/glm-client";
+import { loadNivel1Documents } from "../../lib/auditor/knowledge-loader";
 
 describe("auditor GLM response handling", () => {
   afterEach(() => {
+    vi.clearAllMocks();
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
   });
@@ -44,5 +46,32 @@ describe("auditor GLM response handling", () => {
     expect(result.text).toBe("Parecer consolidado dos documentos.");
     const request = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(request.thinking).toEqual({ type: "disabled" });
+  });
+
+  it("uses the fast path for a short confirmation", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      choices: [{
+        finish_reason: "stop",
+        message: { content: "Minuta preparada." },
+      }],
+    }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubEnv("ZAI_API_KEY", "test-key");
+
+    await callAuditor({
+      mode: "contrarrefer",
+      message: "sim",
+      history: [{
+        role: "assistant",
+        content: "Quer que eu prepare a minuta de contrarreferência?",
+      }],
+      attachments: [],
+    });
+
+    expect(loadNivel1Documents).not.toHaveBeenCalled();
+    const request = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(request.max_tokens).toBe(4096);
+    expect(request.thinking).toEqual({ type: "disabled" });
+    expect(request.tools).toBeUndefined();
   });
 });
