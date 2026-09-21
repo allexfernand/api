@@ -2,6 +2,7 @@ import "server-only";
 
 import fs from "node:fs";
 import path from "node:path";
+import { PDFParse } from "pdf-parse";
 import * as XLSX from "xlsx";
 import {
   blobStorageConfigured,
@@ -15,19 +16,10 @@ const PACKAGED_KNOWLEDGE_DIR = path.join(process.cwd(), "auditor-mestre", "knowl
 const MAX_TOTAL_SOURCE_BYTES = 20 * 1024 * 1024;
 const MAX_SPREADSHEET_TEXT_CHARS = 2_000_000;
 
-export type AnthropicDocumentBlock =
-  | {
-      type: "document";
-      source: { type: "base64"; media_type: "application/pdf"; data: string };
-      title: string;
-      cache_control?: { type: "ephemeral" };
-    }
-  | {
-      type: "document";
-      source: { type: "text"; media_type: "text/plain"; data: string };
-      title: string;
-      cache_control?: { type: "ephemeral" };
-    };
+export type KnowledgeDocument = {
+  title: string;
+  text: string;
+};
 
 function knowledgeDirectories() {
   return [ROOT_KNOWLEDGE_DIR, PACKAGED_KNOWLEDGE_DIR].filter((directory, index, list) =>
@@ -71,8 +63,8 @@ export function loadSystemPrompt() {
   throw new Error("Prompt mestre não encontrado em knowledge/system-prompt.md.");
 }
 
-let cachedLocalDocuments: AnthropicDocumentBlock[] | null = null;
-let cachedBlobDocuments: { revision: number; documents: AnthropicDocumentBlock[] } | null = null;
+let cachedLocalDocuments: KnowledgeDocument[] | null = null;
+let cachedBlobDocuments: { revision: number; documents: KnowledgeDocument[] } | null = null;
 
 function spreadsheetToText(workbook: XLSX.WorkBook, name: string) {
   const text = workbook.SheetNames.map((sheetName) => {
@@ -85,6 +77,23 @@ function spreadsheetToText(workbook: XLSX.WorkBook, name: string) {
   return text;
 }
 
+async function pdfToText(bytes: Uint8Array, name: string) {
+  const parser = new PDFParse({ data: bytes });
+  try {
+    const result = await parser.getText();
+    const text = result.pages
+      .map((page) => `## Página ${page.num}\n${page.text.trim()}`)
+      .join("\n\n")
+      .trim();
+    if (text.length < 200) {
+      throw new Error(`O PDF ${name} não contém texto pesquisável suficiente.`);
+    }
+    return text;
+  } finally {
+    await parser.destroy();
+  }
+}
+
 async function loadBlobDocuments() {
   const active = await getActiveDocumentVersions();
   if (cachedBlobDocuments?.revision === active.revision) return cachedBlobDocuments.documents;
@@ -94,7 +103,7 @@ async function loadBlobDocuments() {
     throw new Error("Base de conhecimento ativa excede o limite de 20 MB.");
   }
 
-  const documents: AnthropicDocumentBlock[] = [];
+  const documents: KnowledgeDocument[] = [];
   for (const version of active.documents) {
     const result = await getPrivateDocument(version.pathname);
     if (!result || result.statusCode !== 200) {
@@ -105,9 +114,8 @@ async function loadBlobDocuments() {
     const extension = path.extname(version.originalName).toLowerCase();
     if (extension === ".pdf") {
       documents.push({
-        type: "document",
-        source: { type: "base64", media_type: "application/pdf", data: bytes.toString("base64") },
         title,
+        text: await pdfToText(bytes, version.originalName),
       });
     } else {
       const workbook = XLSX.read(bytes, {
@@ -117,19 +125,17 @@ async function loadBlobDocuments() {
         cellHTML: false,
       });
       documents.push({
-        type: "document",
-        source: { type: "text", media_type: "text/plain", data: spreadsheetToText(workbook, version.originalName) },
         title,
+        text: spreadsheetToText(workbook, version.originalName),
       });
     }
   }
 
-  if (documents.length) documents[documents.length - 1].cache_control = { type: "ephemeral" };
   cachedBlobDocuments = { revision: active.revision, documents };
   return documents;
 }
 
-function loadLocalDocuments() {
+async function loadLocalDocuments() {
   if (cachedLocalDocuments) return cachedLocalDocuments;
 
   const files = nivel1Directories()
@@ -141,7 +147,7 @@ function loadLocalDocuments() {
 
   let totalBytes = 0;
   const seen = new Set<string>();
-  const documents: AnthropicDocumentBlock[] = [];
+  const documents: KnowledgeDocument[] = [];
 
   for (const { directory, name } of files) {
     if (seen.has(name.toLocaleLowerCase("pt-BR"))) continue;
@@ -155,27 +161,21 @@ function loadLocalDocuments() {
 
     const extension = path.extname(name).toLowerCase();
     if (extension === ".pdf") {
+      const bytes = fs.readFileSync(/* turbopackIgnore: true */ fullPath);
       documents.push({
-        type: "document",
-        source: {
-          type: "base64",
-          media_type: "application/pdf",
-          data: fs.readFileSync(/* turbopackIgnore: true */ fullPath).toString("base64"),
-        },
         title: name,
+        text: await pdfToText(new Uint8Array(bytes), name),
       });
       continue;
     }
 
     const workbook = XLSX.readFile(fullPath, { cellDates: false, cellFormula: false, cellHTML: false });
     documents.push({
-      type: "document",
-      source: { type: "text", media_type: "text/plain", data: spreadsheetToText(workbook, name) },
       title: name,
+      text: spreadsheetToText(workbook, name),
     });
   }
 
-  if (documents.length) documents[documents.length - 1].cache_control = { type: "ephemeral" };
   cachedLocalDocuments = documents;
   return documents;
 }

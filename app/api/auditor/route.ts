@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { callAuditor, AuditorServiceError } from "../../../lib/auditor/anthropic-client";
+import { callAuditor, AuditorServiceError } from "../../../lib/auditor/glm-client";
 import { auditorRequestSchema } from "../../../lib/auditor/types";
 import { authFromNextRequest } from "../../../src/server/auth/request-auth";
 

@@ -34,3 +34,5 @@ A subaba **Auditoria de Contas → Documentos** usa um Vercel Blob privado para 
 4. Revise a versão enviada e clique em **Ativar**. Somente versões ativas entram nas próximas análises.
 
 Sem Blob configurado, o desenvolvimento continua usando os arquivos de `knowledge/nivel1/` como fallback local. O limite é de 12 MB por arquivo e 20 MB no conjunto de versões ativas.
+
+As análises usam `glm-5` pela API geral da Z.AI. Configure `ZAI_API_KEY`; PDFs são convertidos em texto no servidor e apenas os trechos relevantes seguem para o modelo, respeitando a janela de contexto.
