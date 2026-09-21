@@ -33,8 +33,28 @@ type CasesResponse = {
   error?: string;
 };
 
+type AnalysisSource = {
+  message: string;
+  attachments: LocalAnalysisAttachment[];
+};
+
+function isShortConfirmation(value: string) {
+  const normalized = value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("pt-BR")
+    .replace(/[.!?,;:]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return /^(sim|pode|pode sim|prossiga|continue|vamos|bora|ok|certo|confirmo|quero|faca isso)$/.test(
+    normalized,
+  );
+}
+
 export default function AuditorChat() {
   const [mode, setMode] = useState<AuditorMode>("analise");
+  const [lastCompletedMode, setLastCompletedMode] = useState<AuditorMode | null>(null);
+  const [analysisSource, setAnalysisSource] = useState<AnalysisSource | null>(null);
   const [cases, setCases] = useState<string[]>([]);
   const [caseId, setCaseId] = useState("");
   const [message, setMessage] = useState("");
@@ -182,14 +202,36 @@ export default function AuditorChat() {
 
   async function handleSend() {
     const content = message.trim();
-    if ((!content && attachments.length === 0) || loading) return;
+    const canReanalyze = Boolean(
+      analysisSource && lastCompletedMode && lastCompletedMode !== mode,
+    );
+    const reanalyzing = !content && attachments.length === 0 && canReanalyze;
+    if ((!content && attachments.length === 0 && !reanalyzing) || loading) return;
 
-    const attachmentSummary = attachments.length
-      ? `Documentos anexados: ${attachments.map((attachment) => attachment.file.name).join(", ")}`
+    const workingAttachments = reanalyzing
+      ? analysisSource!.attachments.map((attachment) => ({
+        ...attachment,
+        status: "selected" as const,
+        progress: 0,
+        error: undefined,
+      }))
+      : attachments;
+    const effectiveContent = reanalyzing
+      ? [
+        `Reanalise integralmente o caso no modo “${MODE_LABELS[mode]}”.`,
+        "Gere uma nova resposta completa; não apenas explique as diferenças entre os modos.",
+        analysisSource!.message
+          ? `Solicitação original: ${analysisSource!.message}`
+          : "Use os documentos originais reenviados e o histórico da conversa.",
+      ].join("\n")
+      : content;
+
+    const attachmentSummary = workingAttachments.length
+      ? `Documentos anexados: ${workingAttachments.map((attachment) => attachment.file.name).join(", ")}`
       : "";
     const userMessage: ChatMessage = {
       role: "user",
-      content: [content, attachmentSummary].filter(Boolean).join("\n\n"),
+      content: [effectiveContent, attachmentSummary].filter(Boolean).join("\n\n"),
     };
     const previousHistory = history;
     const nextHistory = [...previousHistory, userMessage];
@@ -197,13 +239,15 @@ export default function AuditorChat() {
     setMessage("");
     setError(null);
     setLoading(true);
+    if (reanalyzing) setAttachments(workingAttachments);
 
     const controller = new AbortController();
     abortRef.current = controller;
     let uploadedAttachments: AnalysisAttachment[] = [];
     try {
       const uploadResults = await Promise.allSettled(
-        attachments.map((attachment) => uploadAnalysisAttachment(attachment, controller.signal)),
+        workingAttachments.map((attachment) =>
+          uploadAnalysisAttachment(attachment, controller.signal)),
       );
       uploadedAttachments = uploadResults.flatMap((result) =>
         result.status === "fulfilled" ? [result.value] : []);
@@ -218,7 +262,7 @@ export default function AuditorChat() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           mode,
-          message: content,
+          message: effectiveContent,
           caseId: caseId || undefined,
           history: previousHistory,
           attachments: uploadedAttachments,
@@ -229,13 +273,25 @@ export default function AuditorChat() {
       const data = await response.json() as { text?: string; error?: string };
       if (!response.ok || !data.text) throw new Error(data.error || "A análise não retornou conteúdo.");
       setHistory([...nextHistory, { role: "assistant", content: data.text }]);
+      setLastCompletedMode(mode);
+      if (!reanalyzing && (workingAttachments.length > 0 || !isShortConfirmation(content))) {
+        setAnalysisSource({
+          message: content,
+          attachments: workingAttachments.map((attachment) => ({
+            ...attachment,
+            status: "selected",
+            progress: 0,
+            error: undefined,
+          })),
+        });
+      }
       setAttachments([]);
     } catch (cause) {
       await cleanupRemoteAttachments(uploadedAttachments);
       if (cause instanceof Error && cause.name === "AbortError") return;
       setError(cause instanceof Error ? cause.message : "Não foi possível concluir a análise.");
       setHistory(previousHistory);
-      setMessage(content);
+      setMessage(reanalyzing ? "" : content);
       setAttachments((current) =>
         current.map((attachment) => ({
           ...attachment,
@@ -254,9 +310,15 @@ export default function AuditorChat() {
     setHistory([]);
     setMessage("");
     setAttachments([]);
+    setLastCompletedMode(null);
+    setAnalysisSource(null);
     setError(null);
     setLoading(false);
   }
+
+  const canReanalyze = Boolean(
+    analysisSource && lastCompletedMode && lastCompletedMode !== mode,
+  );
 
   return (
     <div className={styles.shell}>
@@ -267,12 +329,19 @@ export default function AuditorChat() {
             id="auditor-mode"
             className={styles.select}
             value={mode}
-            onChange={(event) => setMode(event.target.value as AuditorMode)}
+            onChange={(event) => {
+              setMode(event.target.value as AuditorMode);
+              setError(null);
+            }}
             disabled={loading}
           >
             {MODES.map((item) => <option key={item} value={item}>{MODE_LABELS[item]}</option>)}
           </select>
-          <p className={styles.hint}>O modo ajusta a estrutura e o destinatário da resposta.</p>
+          <p className={styles.hint}>
+            {canReanalyze
+              ? "Modo alterado. Reenvie para gerar uma nova versão com esta inferência."
+              : "O modo ajusta a estrutura e o destinatário da resposta."}
+          </p>
         </div>
 
         <div className={styles.controlGroup}>
@@ -381,9 +450,13 @@ export default function AuditorChat() {
               className={styles.primaryButton}
               type="button"
               onClick={() => void handleSend()}
-              disabled={loading || (!message.trim() && attachments.length === 0)}
+              disabled={loading || (!message.trim() && attachments.length === 0 && !canReanalyze)}
             >
-              {loading ? "Analisando…" : "Enviar para análise"}
+              {loading
+                ? "Analisando…"
+                : canReanalyze && !message.trim() && attachments.length === 0
+                  ? `Reanalisar como ${MODE_LABELS[mode]}`
+                  : "Enviar para análise"}
               <i className="fa-solid fa-arrow-up" aria-hidden="true" />
             </button>
           </div>
