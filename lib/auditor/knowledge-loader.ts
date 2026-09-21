@@ -104,7 +104,7 @@ export async function parseKnowledgeFile(
     }
     return { title, text };
   }
-  if (extension === ".csv" || extension === ".txt") {
+  if (extension === ".csv" || extension === ".txt" || extension === ".md") {
     const text = new TextDecoder("utf-8", { fatal: false }).decode(bytes).trim();
     if (!text) throw new Error(`O arquivo ${name} está vazio.`);
     if (text.length > MAX_EXTRACTED_TEXT_CHARS) {

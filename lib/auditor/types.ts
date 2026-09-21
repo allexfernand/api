@@ -9,6 +9,7 @@ export const ANALYSIS_ATTACHMENT_CONTENT_TYPES = [
   "application/vnd.ms-excel",
   "text/csv",
   "text/plain",
+  "text/markdown",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 ] as const;
 
@@ -36,7 +37,7 @@ export const analysisAttachmentUploadSchema = analysisAttachmentSchema.pick({
 });
 
 export function safeAnalysisAttachmentFilename(name: string) {
-  const extension = name.match(/\.(pdf|xlsx|xls|csv|txt|docx)$/i)?.[0]?.toLowerCase() || "";
+  const extension = name.match(/\.(pdf|xlsx|xls|csv|txt|md|docx)$/i)?.[0]?.toLowerCase() || "";
   if (!extension) throw new Error("Formato de anexo não permitido.");
   const base = name
     .slice(0, -extension.length)
@@ -60,6 +61,7 @@ export function analysisAttachmentContentType(originalName: string) {
     ".xls": "application/vnd.ms-excel",
     ".csv": "text/csv",
     ".txt": "text/plain",
+    ".md": "text/markdown",
     ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   };
   return contentTypes[extension] || "application/octet-stream";

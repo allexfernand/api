@@ -31,4 +31,14 @@ describe("auditor knowledge fallback", () => {
       text: "Resumo assistencial para auditoria",
     });
   });
+
+  it("extracts temporary Markdown documents", async () => {
+    await expect(parseKnowledgeFile(
+      new TextEncoder().encode("# Caso\n\n- Conduta proposta"),
+      "caso.md",
+    )).resolves.toEqual({
+      title: "caso.md",
+      text: "# Caso\n\n- Conduta proposta",
+    });
+  });
 });

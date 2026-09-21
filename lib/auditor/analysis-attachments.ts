@@ -15,7 +15,7 @@ export const ANALYSIS_ATTACHMENT_PREFIX = "auditor/analysis-temp/";
 
 const STALE_AFTER_MS = 24 * 60 * 60 * 1000;
 const CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
-const ALLOWED_EXTENSIONS = new Set([".pdf", ".xlsx", ".xls", ".csv", ".txt", ".docx"]);
+const ALLOWED_EXTENSIONS = new Set([".pdf", ".xlsx", ".xls", ".csv", ".txt", ".md", ".docx"]);
 
 let lastCleanupAt = 0;
 
@@ -33,7 +33,10 @@ function validateSignature(bytes: Uint8Array, originalName: string) {
   if (extension === ".xls" && !isOle) {
     throw new Error(`${originalName} não possui uma assinatura Excel válida.`);
   }
-  if ((extension === ".csv" || extension === ".txt") && bytes.slice(0, 4096).includes(0)) {
+  if (
+    (extension === ".csv" || extension === ".txt" || extension === ".md") &&
+    bytes.slice(0, 4096).includes(0)
+  ) {
     throw new Error(`${originalName} não é um arquivo de texto válido.`);
   }
 }

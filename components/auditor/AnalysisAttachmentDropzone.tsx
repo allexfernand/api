@@ -63,13 +63,13 @@ export default function AnalysisAttachmentDropzone({
           ref={inputRef}
           type="file"
           multiple
-          accept=".pdf,.xlsx,.xls,.csv,.txt,.docx"
+          accept=".pdf,.xlsx,.xls,.csv,.txt,.md,.docx"
           onChange={(event) => receiveFiles(event.target.files)}
           disabled={disabled}
         />
         <i className="fa-solid fa-paperclip" aria-hidden="true" />
         <span><strong>Adicionar documentos</strong> ou arraste aqui</span>
-        <small>PDF, Excel, CSV, TXT ou DOCX</small>
+        <small>PDF, Excel, CSV, TXT, Markdown ou DOCX</small>
       </label>
 
       {attachments.length ? (
