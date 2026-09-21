@@ -11,7 +11,7 @@ const contentSecurityPolicy = [
   "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com",
   "font-src 'self' data: https://cdnjs.cloudflare.com",
   "img-src 'self' data: blob:",
-  "connect-src 'self'",
+  "connect-src 'self' https://vercel.com https://*.blob.vercel-storage.com",
   "worker-src 'self' blob:",
   "child-src 'self' blob:",
   "object-src 'none'",
