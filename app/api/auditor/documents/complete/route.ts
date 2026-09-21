@@ -28,6 +28,7 @@ export async function POST(request: NextRequest) {
     );
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : "Não foi possível registrar o documento.";
+    console.error("[auditor-documents] completion failure", message);
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }

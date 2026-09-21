@@ -92,13 +92,14 @@ async function updateManifest(
     next.revision = current.revision + 1;
     next.updatedAt = new Date().toISOString();
     try {
+      const useConditionalWrite = Boolean(etag) && attempt < 2;
       await put(MANIFEST_PATH, JSON.stringify(next), {
         access: "private",
         addRandomSuffix: false,
         allowOverwrite: Boolean(etag),
         contentType: "application/json",
         cacheControlMaxAge: 60,
-        ...(etag ? { ifMatch: etag } : {}),
+        ...(useConditionalWrite ? { ifMatch: etag } : {}),
       });
       return next;
     } catch (cause) {
